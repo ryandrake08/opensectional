@@ -4,5 +4,7 @@
 .vscode
 build
 nasr_data
+nasr.db
+vfr
 IMPLEMENTATION_PLAN.md
 REQUIREMENTS.md

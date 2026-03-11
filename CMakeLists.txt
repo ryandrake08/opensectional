@@ -8,6 +8,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(SDL3 REQUIRED CONFIG)
 find_package(SDL3_image REQUIRED CONFIG)
 find_package(SDL3_ttf REQUIRED CONFIG)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 
 # Main executable
 add_executable(nasrbrowse
@@ -16,6 +18,7 @@ add_executable(nasrbrowse
     src/layer.cpp
     src/layer_map.cpp
     src/main.cpp
+    src/nasr_database.cpp
     src/render_context.cpp
     src/tile_renderer.cpp
 
@@ -78,7 +81,9 @@ target_link_libraries(nasrbrowse PRIVATE
     SDL3::SDL3
     SDL3_image::SDL3_image
     SDL3_ttf::SDL3_ttf
+    ${SQLITE3_LIBRARIES}
 )
+target_include_directories(nasrbrowse PRIVATE ${SQLITE3_INCLUDE_DIRS})
 
 # Shader compilation (Metal, SPIRV)
 add_subdirectory(shaders)
