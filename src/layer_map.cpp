@@ -1,0 +1,232 @@
+#include "layer_map.hpp"
+#include "map_view.hpp"
+#include "render_context.hpp"
+#include <glm/glm.hpp>
+#include <sdl/buffer.hpp>
+#include <sdl/copy_pass.hpp>
+#include <sdl/device.hpp>
+#include <sdl/render_pass.hpp>
+#include <sdl/types.hpp>
+#include <vector>
+
+struct layer_map::impl
+{
+    nasrbrowse::map_view view;
+    sdl::device& dev;
+    int viewport_width;
+    int viewport_height;
+    bool needs_update;
+
+    // Grid line vertex buffer (rebuilt on viewport change)
+    std::vector<sdl::vertex_t2f_c4ub_v3f> grid_vertices;
+    std::unique_ptr<sdl::buffer> grid_buffer;
+
+    impl(sdl::device& dev)
+        : dev(dev)
+        , viewport_width(0)
+        , viewport_height(0)
+        , needs_update(true)
+    {
+    }
+
+    void rebuild_grid()
+    {
+        grid_vertices.clear();
+
+        double vx_min = view.view_x_min();
+        double vx_max = view.view_x_max();
+        double vy_min = view.view_y_min();
+        double vy_max = view.view_y_max();
+        double range_x = vx_max - vx_min;
+        double range_y = vy_max - vy_min;
+
+        // Normalize coordinates to -0.5..0.5 for rendering
+        auto to_ndc_x = [&](double mx) -> float
+        {
+            return static_cast<float>((mx - vx_min) / range_x - 0.5) * view.aspect_ratio;
+        };
+        auto to_ndc_y = [&](double my) -> float
+        {
+            return static_cast<float>((my - vy_min) / range_y - 0.5);
+        };
+
+        // Draw grid lines at regular lat/lon intervals
+        // Choose interval based on zoom level
+        double approx_zoom = view.zoom_level(viewport_height);
+        double lon_step, lat_step;
+        if(approx_zoom < 3)
+        {
+            lon_step = 30.0;
+            lat_step = 30.0;
+        }
+        else if(approx_zoom < 5)
+        {
+            lon_step = 10.0;
+            lat_step = 10.0;
+        }
+        else if(approx_zoom < 7)
+        {
+            lon_step = 5.0;
+            lat_step = 5.0;
+        }
+        else if(approx_zoom < 9)
+        {
+            lon_step = 1.0;
+            lat_step = 1.0;
+        }
+        else
+        {
+            lon_step = 0.5;
+            lat_step = 0.5;
+        }
+
+        // Grid line color: dark gray, semi-transparent
+        uint8_t r = 80, g = 80, b = 80, a = 160;
+
+        // Longitude lines (vertical)
+        double lon_min = nasrbrowse::mx_to_lon(vx_min);
+        double lon_max = nasrbrowse::mx_to_lon(vx_max);
+        double lon_start = std::floor(lon_min / lon_step) * lon_step;
+        for(double lon = lon_start; lon <= lon_max; lon += lon_step)
+        {
+            double mx = nasrbrowse::lon_to_mx(lon);
+            float nx = to_ndc_x(mx);
+            float ny0 = to_ndc_y(vy_min);
+            float ny1 = to_ndc_y(vy_max);
+            grid_vertices.push_back({ 0, 0, r, g, b, a, nx, ny0, 0 });
+            grid_vertices.push_back({ 0, 0, r, g, b, a, nx, ny1, 0 });
+        }
+
+        // Latitude lines (horizontal, non-uniform spacing in Mercator)
+        double lat_min = nasrbrowse::my_to_lat(vy_min);
+        double lat_max = nasrbrowse::my_to_lat(vy_max);
+        if(lat_min < -nasrbrowse::MAX_LATITUDE) lat_min = -nasrbrowse::MAX_LATITUDE;
+        if(lat_max > nasrbrowse::MAX_LATITUDE) lat_max = nasrbrowse::MAX_LATITUDE;
+        double lat_start = std::floor(lat_min / lat_step) * lat_step;
+        for(double lat = lat_start; lat <= lat_max; lat += lat_step)
+        {
+            double my = nasrbrowse::lat_to_my(lat);
+            float ny = to_ndc_y(my);
+            float nx0 = to_ndc_x(vx_min);
+            float nx1 = to_ndc_x(vx_max);
+            grid_vertices.push_back({ 0, 0, r, g, b, a, nx0, ny, 0 });
+            grid_vertices.push_back({ 0, 0, r, g, b, a, nx1, ny, 0 });
+        }
+
+        needs_update = true;
+    }
+};
+
+layer_map::layer_map(sdl::device& dev) : layer(), pimpl(new impl(dev))
+{
+}
+
+layer_map::~layer_map() = default;
+
+void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t)
+{
+    if(action != sdl::input_action::release)
+    {
+        switch(static_cast<int>(key))
+        {
+        case 'w':
+        case 'W':
+            pimpl->view.pan(0.0, 0.1);
+            pimpl->rebuild_grid();
+            break;
+        case 's':
+        case 'S':
+            pimpl->view.pan(0.0, -0.1);
+            pimpl->rebuild_grid();
+            break;
+        case 'a':
+        case 'A':
+            pimpl->view.pan(-0.1, 0.0);
+            pimpl->rebuild_grid();
+            break;
+        case 'd':
+        case 'D':
+            pimpl->view.pan(0.1, 0.0);
+            pimpl->rebuild_grid();
+            break;
+        case 'r':
+        case 'R':
+            pimpl->view.zoom(0.5);
+            pimpl->rebuild_grid();
+            break;
+        case 'f':
+        case 'F':
+            pimpl->view.zoom(2.0);
+            pimpl->rebuild_grid();
+            break;
+        }
+    }
+}
+
+void layer_map::on_drag_input(const std::vector<sdl::input_button_t>&, double xdelta, double ydelta)
+{
+    // Convert NDC delta to meters
+    double dx_meters = -xdelta * pimpl->view.half_extent_y * 2.0;
+    double dy_meters = -ydelta * pimpl->view.half_extent_y * 2.0;
+    pimpl->view.pan_meters(dx_meters, dy_meters);
+    pimpl->rebuild_grid();
+}
+
+void layer_map::on_scroll(double, double yoffset)
+{
+    double factor = (yoffset > 0) ? 0.9 : 1.0 / 0.9;
+    pimpl->view.zoom(factor);
+    pimpl->rebuild_grid();
+}
+
+void layer_map::on_resize(float normalized_viewport_width, int viewport_height_pixels)
+{
+    pimpl->viewport_width = static_cast<int>(normalized_viewport_width * viewport_height_pixels);
+    pimpl->viewport_height = viewport_height_pixels;
+    pimpl->view.set_aspect_ratio(static_cast<double>(normalized_viewport_width));
+    pimpl->rebuild_grid();
+}
+
+bool layer_map::on_update()
+{
+    return pimpl->needs_update;
+}
+
+void layer_map::on_prepare(size_t& size) const
+{
+    if(!pimpl->grid_vertices.empty())
+    {
+        size += pimpl->grid_vertices.size() * sizeof(sdl::vertex_t2f_c4ub_v3f);
+    }
+}
+
+void layer_map::on_copy(sdl::copy_pass& pass)
+{
+    if(!pimpl->grid_vertices.empty())
+    {
+        pimpl->grid_buffer.reset();
+        auto buf = pass.create_and_upload_buffer(pimpl->dev, sdl::buffer_usage::vertex, pimpl->grid_vertices);
+        pimpl->grid_buffer = std::make_unique<sdl::buffer>(std::move(buf));
+    }
+    pimpl->needs_update = false;
+}
+
+void layer_map::on_render(sdl::render_pass& pass, const nasrbrowse::render_context& ctx) const
+{
+    if(ctx.current_pass != nasrbrowse::render_pass_id::trianglelist_0)
+    {
+        return;
+    }
+
+    if(pimpl->grid_buffer && pimpl->grid_buffer->count() > 0)
+    {
+        sdl::uniform_buffer uniforms;
+        uniforms.projection_matrix = ctx.projection_matrix;
+
+        pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
+        pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
+        pass.bind_vertex_buffer(*pimpl->grid_buffer);
+        // Draw as line pairs (2 vertices per line)
+        pass.draw(pimpl->grid_buffer->count());
+    }
+}

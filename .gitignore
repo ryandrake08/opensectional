@@ -1,0 +1,8 @@
+.DS_Store
+.cache
+.examples
+.vscode
+build
+nasr_data
+IMPLEMENTATION_PLAN.md
+REQUIREMENTS.md

@@ -1,0 +1,29 @@
+#pragma once
+#include "layer.hpp"
+#include <memory>
+
+namespace sdl
+{
+    class device;
+    class render_pass;
+    class copy_pass;
+}
+
+class layer_map : public layer
+{
+    struct impl;
+    std::unique_ptr<impl> pimpl;
+
+public:
+    explicit layer_map(sdl::device& dev);
+    ~layer_map() override;
+
+    void on_key_input(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t mods) override;
+    void on_drag_input(const std::vector<sdl::input_button_t>& buttons, double xdelta, double ydelta) override;
+    void on_scroll(double xoffset, double yoffset) override;
+    void on_resize(float normalized_viewport_width, int viewport_height_pixels) override;
+    bool on_update() override;
+    void on_prepare(size_t& size) const override;
+    void on_copy(sdl::copy_pass& pass) override;
+    void on_render(sdl::render_pass& pass, const nasrbrowse::render_context& ctx) const override;
+};
