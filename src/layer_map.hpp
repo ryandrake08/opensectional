@@ -1,7 +1,6 @@
 #pragma once
 #include "layer.hpp"
 #include <memory>
-
 namespace sdl
 {
     class device;
@@ -15,7 +14,7 @@ class layer_map : public layer
     std::unique_ptr<impl> pimpl;
 
 public:
-    explicit layer_map(sdl::device& dev);
+    layer_map(sdl::device& dev, const char* tile_path);
     ~layer_map() override;
 
     void on_key_input(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t mods) override;

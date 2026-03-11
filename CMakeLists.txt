@@ -17,6 +17,7 @@ add_executable(nasrbrowse
     src/layer_map.cpp
     src/main.cpp
     src/render_context.cpp
+    src/tile_renderer.cpp
 
     # SDL wrapper sources
     sdl/buffer.cpp

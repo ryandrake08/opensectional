@@ -94,8 +94,14 @@ namespace
     }
 } // anonymous namespace
 
-int main(int, char**)
+int main(int argc, char** argv)
 {
+    if(argc < 2)
+    {
+        std::cerr << "Usage: nasrbrowse <tile_path>" << std::endl;
+        return EXIT_FAILURE;
+    }
+
     try
     {
         // Initialize SDL
@@ -124,7 +130,7 @@ int main(int, char**)
         sdl::event_manager event_mgr;
 
         // Create map layer
-        auto map_layer = std::make_shared<layer_map>(dev);
+        auto map_layer = std::make_shared<layer_map>(dev, argv[1]);
         event_mgr.add_listener(map_layer);
 
         // Send initial resize
@@ -163,14 +169,14 @@ int main(int, char**)
                 {
                     sdl::render_pass pass(cmd, *swapchain, 0.1F, 0.1F, 0.12F, 1.0F);
 
-                    // Pass 0: Lines (grid)
-                    pass.bind_pipeline(linelist_program);
-                    render_ctx.current_pass = nasrbrowse::render_pass_id::trianglelist_0;
-                    map_layer->render(pass, render_ctx);
-
-                    // Pass 1: Textured triangles (tiles - future)
+                    // Pass 0: Textured triangles (tile basemap)
                     pass.bind_pipeline(textured_trianglelist_program);
                     render_ctx.current_pass = nasrbrowse::render_pass_id::textured_trianglelist_0;
+                    map_layer->render(pass, render_ctx);
+
+                    // Pass 1: Lines (grid overlay)
+                    pass.bind_pipeline(linelist_program);
+                    render_ctx.current_pass = nasrbrowse::render_pass_id::trianglelist_0;
                     map_layer->render(pass, render_ctx);
                 }
             }

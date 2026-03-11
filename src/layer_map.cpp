@@ -1,6 +1,7 @@
 #include "layer_map.hpp"
 #include "map_view.hpp"
 #include "render_context.hpp"
+#include "tile_renderer.hpp"
 #include <glm/glm.hpp>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
@@ -17,15 +18,19 @@ struct layer_map::impl
     int viewport_height;
     bool needs_update;
 
+    // Tile renderer for raster basemap
+    nasrbrowse::tile_renderer tiles;
+
     // Grid line vertex buffer (rebuilt on viewport change)
     std::vector<sdl::vertex_t2f_c4ub_v3f> grid_vertices;
     std::unique_ptr<sdl::buffer> grid_buffer;
 
-    impl(sdl::device& dev)
+    impl(sdl::device& dev, const char* tile_path)
         : dev(dev)
         , viewport_width(0)
         , viewport_height(0)
         , needs_update(true)
+        , tiles(dev, tile_path)
     {
     }
 
@@ -115,9 +120,22 @@ struct layer_map::impl
 
         needs_update = true;
     }
+
+    void update_tiles()
+    {
+        tiles.update(view.view_x_min(), view.view_y_min(),
+                     view.view_x_max(), view.view_y_max(),
+                     viewport_height, view.aspect_ratio);
+        if(tiles.needs_upload())
+        {
+            needs_update = true;
+        }
+    }
 };
 
-layer_map::layer_map(sdl::device& dev) : layer(), pimpl(new impl(dev))
+layer_map::layer_map(sdl::device& dev, const char* tile_path)
+    : layer()
+    , pimpl(new impl(dev, tile_path))
 {
 }
 
@@ -133,31 +151,37 @@ void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, s
         case 'W':
             pimpl->view.pan(0.0, 0.1);
             pimpl->rebuild_grid();
+        pimpl->update_tiles();
             break;
         case 's':
         case 'S':
             pimpl->view.pan(0.0, -0.1);
             pimpl->rebuild_grid();
+        pimpl->update_tiles();
             break;
         case 'a':
         case 'A':
             pimpl->view.pan(-0.1, 0.0);
             pimpl->rebuild_grid();
+        pimpl->update_tiles();
             break;
         case 'd':
         case 'D':
             pimpl->view.pan(0.1, 0.0);
             pimpl->rebuild_grid();
+        pimpl->update_tiles();
             break;
         case 'r':
         case 'R':
             pimpl->view.zoom(0.5);
             pimpl->rebuild_grid();
+        pimpl->update_tiles();
             break;
         case 'f':
         case 'F':
             pimpl->view.zoom(2.0);
             pimpl->rebuild_grid();
+        pimpl->update_tiles();
             break;
         }
     }
@@ -170,6 +194,7 @@ void layer_map::on_drag_input(const std::vector<sdl::input_button_t>&, double xd
     double dy_meters = -ydelta * pimpl->view.half_extent_y * 2.0;
     pimpl->view.pan_meters(dx_meters, dy_meters);
     pimpl->rebuild_grid();
+    pimpl->update_tiles();
 }
 
 void layer_map::on_scroll(double, double yoffset)
@@ -177,6 +202,7 @@ void layer_map::on_scroll(double, double yoffset)
     double factor = (yoffset > 0) ? 0.9 : 1.0 / 0.9;
     pimpl->view.zoom(factor);
     pimpl->rebuild_grid();
+    pimpl->update_tiles();
 }
 
 void layer_map::on_resize(float normalized_viewport_width, int viewport_height_pixels)
@@ -185,11 +211,12 @@ void layer_map::on_resize(float normalized_viewport_width, int viewport_height_p
     pimpl->viewport_height = viewport_height_pixels;
     pimpl->view.set_aspect_ratio(static_cast<double>(normalized_viewport_width));
     pimpl->rebuild_grid();
+    pimpl->update_tiles();
 }
 
 bool layer_map::on_update()
 {
-    return pimpl->needs_update;
+    return pimpl->needs_update || pimpl->tiles.needs_upload();
 }
 
 void layer_map::on_prepare(size_t& size) const
@@ -198,6 +225,7 @@ void layer_map::on_prepare(size_t& size) const
     {
         size += pimpl->grid_vertices.size() * sizeof(sdl::vertex_t2f_c4ub_v3f);
     }
+    pimpl->tiles.prepare(size);
 }
 
 void layer_map::on_copy(sdl::copy_pass& pass)
@@ -208,25 +236,27 @@ void layer_map::on_copy(sdl::copy_pass& pass)
         auto buf = pass.create_and_upload_buffer(pimpl->dev, sdl::buffer_usage::vertex, pimpl->grid_vertices);
         pimpl->grid_buffer = std::make_unique<sdl::buffer>(std::move(buf));
     }
+    pimpl->tiles.copy(pass);
     pimpl->needs_update = false;
 }
 
 void layer_map::on_render(sdl::render_pass& pass, const nasrbrowse::render_context& ctx) const
 {
-    if(ctx.current_pass != nasrbrowse::render_pass_id::trianglelist_0)
-    {
-        return;
-    }
+    // Render tiles (textured pass)
+    pimpl->tiles.render(pass, ctx);
 
-    if(pimpl->grid_buffer && pimpl->grid_buffer->count() > 0)
+    // Render grid (line pass)
+    if(ctx.current_pass == nasrbrowse::render_pass_id::trianglelist_0)
     {
-        sdl::uniform_buffer uniforms;
-        uniforms.projection_matrix = ctx.projection_matrix;
+        if(pimpl->grid_buffer && pimpl->grid_buffer->count() > 0)
+        {
+            sdl::uniform_buffer uniforms;
+            uniforms.projection_matrix = ctx.projection_matrix;
 
-        pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
-        pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
-        pass.bind_vertex_buffer(*pimpl->grid_buffer);
-        // Draw as line pairs (2 vertices per line)
-        pass.draw(pimpl->grid_buffer->count());
+            pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
+            pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
+            pass.bind_vertex_buffer(*pimpl->grid_buffer);
+            pass.draw(pimpl->grid_buffer->count());
+        }
     }
 }
