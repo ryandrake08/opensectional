@@ -51,12 +51,26 @@ namespace nasrbrowse
         double lon;
     };
 
+    // MOA/SUA airspace (from MAA tables)
     struct airspace
     {
         std::string maa_id;
         std::string maa_type;
         std::string maa_name;
         std::vector<airspace_point> shape;
+    };
+
+    // Class B/C/D/E airspace (from shapefile)
+    struct class_airspace
+    {
+        int arsp_id;
+        std::string name;
+        std::string airspace_class;  // "B", "C", "D", "E"
+        std::string local_type;      // "CLASS_B", "CLASS_C", "CLASS_D", "CLASS_E2", etc.
+        std::string upper_val;
+        std::string lower_val;
+        // Each part is a ring (outer boundary or hole)
+        std::vector<std::vector<airspace_point>> parts;
     };
 
     class nasr_database
@@ -80,6 +94,8 @@ namespace nasrbrowse
                                                          double lon_max, double lat_max);
         const std::vector<airspace>& query_airspaces(double lon_min, double lat_min,
                                                      double lon_max, double lat_max);
+        const std::vector<class_airspace>& query_class_airspace(double lon_min, double lat_min,
+                                                                double lon_max, double lat_max);
     };
 
 } // namespace nasrbrowse

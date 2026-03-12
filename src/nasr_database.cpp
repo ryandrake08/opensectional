@@ -27,12 +27,15 @@ namespace nasrbrowse
         sqlite3_stmt* stmt_airways;
         sqlite3_stmt* stmt_airspaces;
         sqlite3_stmt* stmt_airspace_shape;
+        sqlite3_stmt* stmt_cls_arsp;
+        sqlite3_stmt* stmt_cls_arsp_shape;
 
         std::vector<airport> airports;
         std::vector<navaid> navaids;
         std::vector<fix> fixes;
         std::vector<airway_segment> airways;
         std::vector<airspace> airspaces;
+        std::vector<class_airspace> class_airspaces;
 
         impl(const char* db_path)
             : db(nullptr)
@@ -42,6 +45,8 @@ namespace nasrbrowse
             , stmt_airways(nullptr)
             , stmt_airspaces(nullptr)
             , stmt_airspace_shape(nullptr)
+            , stmt_cls_arsp(nullptr)
+            , stmt_cls_arsp_shape(nullptr)
         {
             int rc = sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, nullptr);
             if(rc != SQLITE_OK)
@@ -63,6 +68,8 @@ namespace nasrbrowse
             sqlite3_finalize(stmt_airways);
             sqlite3_finalize(stmt_airspaces);
             sqlite3_finalize(stmt_airspace_shape);
+            sqlite3_finalize(stmt_cls_arsp);
+            sqlite3_finalize(stmt_cls_arsp_shape);
             sqlite3_close(db);
         }
 
@@ -129,6 +136,24 @@ namespace nasrbrowse
                 FROM MAA_SHP
                 WHERE MAA_ID = ?1
                 ORDER BY POINT_SEQ
+            )");
+
+            // Class airspace (B/C/D/E) from shapefile
+            prepare(&stmt_cls_arsp, R"(
+                SELECT ARSP_ID, NAME, CLASS, LOCAL_TYPE, UPPER_VAL, LOWER_VAL
+                FROM CLS_ARSP_BASE
+                WHERE ARSP_ID IN (
+                    SELECT id FROM CLS_ARSP_BASE_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+            )");
+
+            prepare(&stmt_cls_arsp_shape, R"(
+                SELECT PART_NUM, LON_DECIMAL, LAT_DECIMAL
+                FROM CLS_ARSP_SHP
+                WHERE ARSP_ID = ?1
+                ORDER BY PART_NUM, POINT_SEQ
             )");
         }
 
@@ -278,6 +303,47 @@ namespace nasrbrowse
         }
 
         return d.airspaces;
+    }
+
+    const std::vector<class_airspace>& nasr_database::query_class_airspace(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        d.class_airspaces.clear();
+        d.bind_bbox(d.stmt_cls_arsp, lon_min, lat_min, lon_max, lat_max);
+
+        while(sqlite3_step(d.stmt_cls_arsp) == SQLITE_ROW)
+        {
+            class_airspace a;
+            a.arsp_id = sqlite3_column_int(d.stmt_cls_arsp, 0);
+            a.name = col_text(d.stmt_cls_arsp, 1);
+            a.airspace_class = col_text(d.stmt_cls_arsp, 2);
+            a.local_type = col_text(d.stmt_cls_arsp, 3);
+            a.upper_val = col_text(d.stmt_cls_arsp, 4);
+            a.lower_val = col_text(d.stmt_cls_arsp, 5);
+
+            // Load shape parts
+            sqlite3_reset(d.stmt_cls_arsp_shape);
+            sqlite3_bind_int(d.stmt_cls_arsp_shape, 1, a.arsp_id);
+            int current_part = -1;
+            while(sqlite3_step(d.stmt_cls_arsp_shape) == SQLITE_ROW)
+            {
+                int part_num = sqlite3_column_int(d.stmt_cls_arsp_shape, 0);
+                if(part_num != current_part)
+                {
+                    a.parts.emplace_back();
+                    current_part = part_num;
+                }
+                airspace_point pt;
+                pt.lon = col_double(d.stmt_cls_arsp_shape, 1);
+                pt.lat = col_double(d.stmt_cls_arsp_shape, 2);
+                a.parts.back().push_back(pt);
+            }
+
+            d.class_airspaces.push_back(std::move(a));
+        }
+
+        return d.class_airspaces;
     }
 
 } // namespace nasrbrowse
