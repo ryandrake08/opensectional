@@ -78,6 +78,18 @@ def query_class_airspace(conn, lon_min, lat_min, lon_max, lat_max):
     """, (lon_min, lon_max, lat_min, lat_max)).fetchall()
 
 
+def query_sua(conn, lon_min, lat_min, lon_max, lat_max):
+    return conn.execute("""
+        SELECT SUA_ID, DESIGNATOR, NAME, SUA_TYPE, UPPER_LIMIT, LOWER_LIMIT
+        FROM SUA_BASE
+        WHERE SUA_ID IN (
+            SELECT id FROM SUA_BASE_RTREE
+            WHERE max_lon >= ? AND min_lon <= ?
+              AND max_lat >= ? AND min_lat <= ?
+        )
+    """, (lon_min, lon_max, lat_min, lat_max)).fetchall()
+
+
 def query_class_airspace_with_shapes(conn, lon_min, lat_min, lon_max, lat_max):
     """Query class airspace and load shape points (full query path)."""
     bases = query_class_airspace(conn, lon_min, lat_min, lon_max, lat_max)
@@ -227,6 +239,21 @@ def test_correctness(conn):
             dist = abs(part0[0][1] - part0[-1][1]) + abs(part0[0][2] - part0[-1][2])
             check(assert_lt(dist, 0.01, f"ARSP_ID {arsp_id} ring is closed"))
 
+    # SUA: eastern US should have MOAs and restricted areas
+    print("\nSUA (eastern US):")
+    suas = query_sua(conn, -85.0, 33.0, -75.0, 40.0)
+    sua_types = {s[3] for s in suas}
+    check(assert_in("MOA", sua_types, "MOAs in eastern US"))
+    check(assert_in("RA", sua_types, "Restricted areas in eastern US"))
+    check(assert_gt(len(suas), 50, "many SUAs in eastern US"))
+    # Shape points should exist for each SUA
+    if suas:
+        sua_id = suas[0][0]
+        pts = conn.execute(
+            "SELECT COUNT(*) FROM SUA_SHP WHERE SUA_ID = ?", (sua_id,),
+        ).fetchone()[0]
+        check(assert_gt(pts, 2, f"SUA_ID {sua_id} has shape points"))
+
     # R-tree should not return results outside the query box
     print("\nR-tree exclusion:")
     # Query a small box in Alaska - should not contain CONUS airports
@@ -251,6 +278,7 @@ def test_performance(conn):
     benchmark("airways", query_airways, conn, *bbox)
     benchmark("airspaces", query_airspaces, conn, *bbox)
     benchmark("class_airspace", query_class_airspace, conn, *bbox)
+    benchmark("sua", query_sua, conn, *bbox)
     bases, pts = query_class_airspace_with_shapes(conn, *bbox)
     start = time.perf_counter()
     for _ in range(20):

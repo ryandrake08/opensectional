@@ -30,16 +30,20 @@ namespace nasrbrowse
 
         // Vertex buffers for each feature type
         std::vector<sdl::vertex_t2f_c4ub_v3f> airport_vertices;
+        std::vector<sdl::vertex_t2f_c4ub_v3f> runway_vertices;
         std::vector<sdl::vertex_t2f_c4ub_v3f> navaid_vertices;
         std::vector<sdl::vertex_t2f_c4ub_v3f> fix_vertices;
         std::vector<sdl::vertex_t2f_c4ub_v3f> airway_vertices;
         std::vector<sdl::vertex_t2f_c4ub_v3f> airspace_vertices;
+        std::vector<sdl::vertex_t2f_c4ub_v3f> sua_vertices;
 
         std::unique_ptr<sdl::buffer> airport_buffer;
+        std::unique_ptr<sdl::buffer> runway_buffer;
         std::unique_ptr<sdl::buffer> navaid_buffer;
         std::unique_ptr<sdl::buffer> fix_buffer;
         std::unique_ptr<sdl::buffer> airway_buffer;
         std::unique_ptr<sdl::buffer> airspace_buffer;
+        std::unique_ptr<sdl::buffer> sua_buffer;
 
         bool dirty;
 
@@ -109,18 +113,26 @@ namespace nasrbrowse
             has_cached_query = true;
 
             airport_vertices.clear();
+            runway_vertices.clear();
             navaid_vertices.clear();
             fix_vertices.clear();
             airway_vertices.clear();
             airspace_vertices.clear();
+            sua_vertices.clear();
 
             build_airport_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_navaid_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_airway_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_sua_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
 
             if(z >= 7.0)
             {
                 build_fix_vertices(qlon_min, qlat_min, qlon_max, qlat_max);
+            }
+
+            if(z >= 10.0)
+            {
+                build_runway_vertices(qlon_min, qlat_min, qlon_max, qlat_max);
             }
 
             if(z >= 4.0)
@@ -291,6 +303,72 @@ namespace nasrbrowse
             }
         }
 
+        void build_runway_vertices(double lon_min, double lat_min,
+                                    double lon_max, double lat_max)
+        {
+            const auto& runways = db.query_runways(lon_min, lat_min, lon_max, lat_max);
+
+            for(const auto& rwy : runways)
+            {
+                float x0 = static_cast<float>(lon_to_mx(rwy.end1_lon));
+                float y0 = static_cast<float>(lat_to_my(rwy.end1_lat));
+                float x1 = static_cast<float>(lon_to_mx(rwy.end2_lon));
+                float y1 = static_cast<float>(lat_to_my(rwy.end2_lat));
+                runway_vertices.push_back({0, 0, 200, 200, 200, 255, x0, y0, 0});
+                runway_vertices.push_back({0, 0, 200, 200, 200, 255, x1, y1, 0});
+            }
+        }
+
+        void build_sua_vertices(double lon_min, double lat_min,
+                                 double lon_max, double lat_max, double z)
+        {
+            if(z < 4.0)
+            {
+                return;
+            }
+
+            const auto& suas = db.query_sua(lon_min, lat_min, lon_max, lat_max);
+
+            for(const auto& s : suas)
+            {
+                // MOA: orange, Restricted/Prohibited: red, Warning: yellow, Alert: orange
+                uint8_t r, g, b, a;
+                if(s.sua_type == "RA" || s.sua_type == "PA")
+                {
+                    r = 220; g = 60; b = 60; a = 220;
+                }
+                else if(s.sua_type == "WA")
+                {
+                    r = 220; g = 200; b = 60; a = 200;
+                }
+                else
+                {
+                    // MOA, Alert, NSA
+                    r = 255; g = 165; b = 0; a = 200;
+                }
+
+                for(size_t i = 0; i + 1 < s.shape.size(); i++)
+                {
+                    float x0 = static_cast<float>(lon_to_mx(s.shape[i].lon));
+                    float y0 = static_cast<float>(lat_to_my(s.shape[i].lat));
+                    float x1 = static_cast<float>(lon_to_mx(s.shape[i + 1].lon));
+                    float y1 = static_cast<float>(lat_to_my(s.shape[i + 1].lat));
+                    sua_vertices.push_back({0, 0, r, g, b, a, x0, y0, 0});
+                    sua_vertices.push_back({0, 0, r, g, b, a, x1, y1, 0});
+                }
+                // Close the polygon
+                if(s.shape.size() > 2)
+                {
+                    float x0 = static_cast<float>(lon_to_mx(s.shape.back().lon));
+                    float y0 = static_cast<float>(lat_to_my(s.shape.back().lat));
+                    float x1 = static_cast<float>(lon_to_mx(s.shape.front().lon));
+                    float y1 = static_cast<float>(lat_to_my(s.shape.front().lat));
+                    sua_vertices.push_back({0, 0, r, g, b, a, x0, y0, 0});
+                    sua_vertices.push_back({0, 0, r, g, b, a, x1, y1, 0});
+                }
+            }
+        }
+
         void build_airspace_vertices(double lon_min, double lat_min,
                                       double lon_max, double lat_max, double z)
         {
@@ -389,11 +467,13 @@ namespace nasrbrowse
             }
         };
 
+        add(pimpl->sua_vertices);
         add(pimpl->airspace_vertices);
         add(pimpl->airway_vertices);
         add(pimpl->fix_vertices);
         add(pimpl->navaid_vertices);
         add(pimpl->airport_vertices);
+        add(pimpl->runway_vertices);
     }
 
     void feature_renderer::copy(sdl::copy_pass& pass)
@@ -409,11 +489,13 @@ namespace nasrbrowse
             }
         };
 
+        upload(pimpl->sua_vertices, pimpl->sua_buffer);
         upload(pimpl->airspace_vertices, pimpl->airspace_buffer);
         upload(pimpl->airway_vertices, pimpl->airway_buffer);
         upload(pimpl->fix_vertices, pimpl->fix_buffer);
         upload(pimpl->navaid_vertices, pimpl->navaid_buffer);
         upload(pimpl->airport_vertices, pimpl->airport_buffer);
+        upload(pimpl->runway_vertices, pimpl->runway_buffer);
         pimpl->dirty = false;
     }
 
@@ -449,11 +531,13 @@ namespace nasrbrowse
             }
         };
 
+        draw(pimpl->sua_buffer);
         draw(pimpl->airspace_buffer);
         draw(pimpl->airway_buffer);
         draw(pimpl->fix_buffer);
         draw(pimpl->navaid_buffer);
         draw(pimpl->airport_buffer);
+        draw(pimpl->runway_buffer);
     }
 
 } // namespace nasrbrowse

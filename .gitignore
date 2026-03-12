@@ -2,6 +2,7 @@
 .cache
 .examples
 .vscode
+__pycache__
 build
 nasr_data
 nasr.db

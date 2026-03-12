@@ -29,6 +29,9 @@ namespace nasrbrowse
         sqlite3_stmt* stmt_airspace_shape;
         sqlite3_stmt* stmt_cls_arsp;
         sqlite3_stmt* stmt_cls_arsp_shape;
+        sqlite3_stmt* stmt_runways;
+        sqlite3_stmt* stmt_sua;
+        sqlite3_stmt* stmt_sua_shape;
 
         std::vector<airport> airports;
         std::vector<navaid> navaids;
@@ -36,6 +39,8 @@ namespace nasrbrowse
         std::vector<airway_segment> airways;
         std::vector<airspace> airspaces;
         std::vector<class_airspace> class_airspaces;
+        std::vector<runway> runways;
+        std::vector<sua> suas;
 
         impl(const char* db_path)
             : db(nullptr)
@@ -47,6 +52,9 @@ namespace nasrbrowse
             , stmt_airspace_shape(nullptr)
             , stmt_cls_arsp(nullptr)
             , stmt_cls_arsp_shape(nullptr)
+            , stmt_runways(nullptr)
+            , stmt_sua(nullptr)
+            , stmt_sua_shape(nullptr)
         {
             int rc = sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, nullptr);
             if(rc != SQLITE_OK)
@@ -70,6 +78,9 @@ namespace nasrbrowse
             sqlite3_finalize(stmt_airspace_shape);
             sqlite3_finalize(stmt_cls_arsp);
             sqlite3_finalize(stmt_cls_arsp_shape);
+            sqlite3_finalize(stmt_runways);
+            sqlite3_finalize(stmt_sua);
+            sqlite3_finalize(stmt_sua_shape);
             sqlite3_close(db);
         }
 
@@ -154,6 +165,44 @@ namespace nasrbrowse
                 FROM CLS_ARSP_SHP
                 WHERE ARSP_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
+            )");
+
+            // Runways: pair ends by SITE_NO + RWY_ID, filtered by airport bbox
+            prepare(&stmt_runways, R"(
+                SELECT e1.LAT_DECIMAL, e1.LONG_DECIMAL,
+                       e2.LAT_DECIMAL, e2.LONG_DECIMAL
+                FROM APT_RWY_END e1
+                JOIN APT_RWY_END e2
+                    ON e1.SITE_NO = e2.SITE_NO AND e1.RWY_ID = e2.RWY_ID
+                WHERE e1.SITE_NO IN (
+                    SELECT SITE_NO FROM APT_BASE
+                    WHERE rowid IN (
+                        SELECT id FROM APT_BASE_RTREE
+                        WHERE max_lon >= ?1 AND min_lon <= ?3
+                          AND max_lat >= ?2 AND min_lat <= ?4
+                    )
+                )
+                AND e1.rowid < e2.rowid
+                AND e1.LAT_DECIMAL != '' AND e1.LONG_DECIMAL != ''
+                AND e2.LAT_DECIMAL != '' AND e2.LONG_DECIMAL != ''
+            )");
+
+            // SUA (MOA/Restricted/Warning/Alert/Prohibited) from AIXM
+            prepare(&stmt_sua, R"(
+                SELECT SUA_ID, DESIGNATOR, NAME, SUA_TYPE, UPPER_LIMIT, LOWER_LIMIT
+                FROM SUA_BASE
+                WHERE SUA_ID IN (
+                    SELECT id FROM SUA_BASE_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+            )");
+
+            prepare(&stmt_sua_shape, R"(
+                SELECT LON_DECIMAL, LAT_DECIMAL
+                FROM SUA_SHP
+                WHERE SUA_ID = ?1
+                ORDER BY POINT_SEQ
             )");
         }
 
@@ -344,6 +393,60 @@ namespace nasrbrowse
         }
 
         return d.class_airspaces;
+    }
+
+    const std::vector<runway>& nasr_database::query_runways(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        d.runways.clear();
+        d.bind_bbox(d.stmt_runways, lon_min, lat_min, lon_max, lat_max);
+
+        while(sqlite3_step(d.stmt_runways) == SQLITE_ROW)
+        {
+            runway r;
+            r.end1_lat = col_double(d.stmt_runways, 0);
+            r.end1_lon = col_double(d.stmt_runways, 1);
+            r.end2_lat = col_double(d.stmt_runways, 2);
+            r.end2_lon = col_double(d.stmt_runways, 3);
+            d.runways.push_back(r);
+        }
+
+        return d.runways;
+    }
+
+    const std::vector<sua>& nasr_database::query_sua(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        d.suas.clear();
+        d.bind_bbox(d.stmt_sua, lon_min, lat_min, lon_max, lat_max);
+
+        while(sqlite3_step(d.stmt_sua) == SQLITE_ROW)
+        {
+            sua s;
+            s.sua_id = sqlite3_column_int(d.stmt_sua, 0);
+            s.designator = col_text(d.stmt_sua, 1);
+            s.name = col_text(d.stmt_sua, 2);
+            s.sua_type = col_text(d.stmt_sua, 3);
+            s.upper_limit = col_text(d.stmt_sua, 4);
+            s.lower_limit = col_text(d.stmt_sua, 5);
+
+            // Load shape points
+            sqlite3_reset(d.stmt_sua_shape);
+            sqlite3_bind_int(d.stmt_sua_shape, 1, s.sua_id);
+            while(sqlite3_step(d.stmt_sua_shape) == SQLITE_ROW)
+            {
+                airspace_point pt;
+                pt.lon = col_double(d.stmt_sua_shape, 0);
+                pt.lat = col_double(d.stmt_sua_shape, 1);
+                s.shape.push_back(pt);
+            }
+
+            d.suas.push_back(std::move(s));
+        }
+
+        return d.suas;
     }
 
 } // namespace nasrbrowse

@@ -60,6 +60,26 @@ namespace nasrbrowse
         std::vector<airspace_point> shape;
     };
 
+    struct runway
+    {
+        double end1_lat;
+        double end1_lon;
+        double end2_lat;
+        double end2_lon;
+    };
+
+    // Special use airspace (MOA, Restricted, Warning, Alert, etc. from AIXM)
+    struct sua
+    {
+        int sua_id;
+        std::string designator;
+        std::string name;
+        std::string sua_type;  // "MOA", "RA", "WA", "AA", "PA", "NSA"
+        std::string upper_limit;
+        std::string lower_limit;
+        std::vector<airspace_point> shape;
+    };
+
     // Class B/C/D/E airspace (from shapefile)
     struct class_airspace
     {
@@ -96,6 +116,10 @@ namespace nasrbrowse
                                                      double lon_max, double lat_max);
         const std::vector<class_airspace>& query_class_airspace(double lon_min, double lat_min,
                                                                 double lon_max, double lat_max);
+        const std::vector<runway>& query_runways(double lon_min, double lat_min,
+                                                  double lon_max, double lat_max);
+        const std::vector<sua>& query_sua(double lon_min, double lat_min,
+                                          double lon_max, double lat_max);
     };
 
 } // namespace nasrbrowse

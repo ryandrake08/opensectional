@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
 """Build SQLite database from FAA NASR data.
 
-Imports CSV tables and ESRI shapefiles, adds decimal coordinates where
-needed, and creates R-tree spatial indexes for bounding box queries.
+Imports CSV tables, ESRI shapefiles, and AIXM 5.0 XML, adds decimal
+coordinates where needed, and creates R-tree spatial indexes for
+bounding box queries.
 
 Usage:
-    python3 build_nasr_db.py <csv_dir> <shapefile_dir> <output.db>
+    python3 build_nasr_db.py <csv_dir> <shapefile_dir> <aixm_dir> <output.db>
 
 Example:
-    python3 build_nasr_db.py nasr_data/19_Feb_2026_CSV nasr_data/Shape_Files nasr.db
+    python3 build_nasr_db.py nasr_data/19_Feb_2026_CSV nasr_data/Shape_Files nasr_data/SAA-AIXM_5_Schema/SaaSubscriberFile nasr.db
 """
 
 import csv
+import glob
 import math
 import os
 import re
 import sqlite3
 import struct
 import sys
+import xml.etree.ElementTree as ET
 
 
 def parse_dms(dms_str):
@@ -430,6 +433,292 @@ def read_shp_polygons(path):
             yield parts
 
 
+def radius_to_degrees(radius, uom, center_lat):
+    """Convert a radius to approximate degrees for polygon generation.
+
+    Uses a simple spherical approximation. Returns (dlat, dlon) in degrees.
+    """
+    if uom == "NM":
+        meters = radius * 1852.0
+    elif uom == "MI":
+        meters = radius * 1609.344
+    elif uom == "FT":
+        meters = radius * 0.3048
+    else:
+        meters = radius * 1852.0  # default to NM
+    dlat = meters / 111320.0
+    dlon = meters / (111320.0 * math.cos(math.radians(center_lat)))
+    return dlat, dlon
+
+
+def generate_circle(center_lon, center_lat, radius, uom, num_points=72):
+    """Generate a polygon approximating a circle."""
+    dlat, dlon = radius_to_degrees(radius, uom, center_lat)
+    points = []
+    for i in range(num_points):
+        angle = 2.0 * math.pi * i / num_points
+        lon = center_lon + dlon * math.cos(angle)
+        lat = center_lat + dlat * math.sin(angle)
+        points.append((lon, lat))
+    points.append(points[0])  # close the ring
+    return points
+
+
+def generate_arc(center_lon, center_lat, radius, uom, start_deg, end_deg):
+    """Generate points along an arc from start_deg to end_deg (clockwise).
+
+    Angles are in degrees, measured clockwise from north (bearing convention).
+    Returns list of (lon, lat) tuples.
+    """
+    dlat, dlon = radius_to_degrees(radius, uom, center_lat)
+
+    # Convert bearing angles to math angles (counter-clockwise from east)
+    start_rad = math.radians(90.0 - start_deg)
+    end_rad = math.radians(90.0 - end_deg)
+
+    # Arc goes clockwise, which is decreasing math angle
+    if start_rad <= end_rad:
+        start_rad += 2.0 * math.pi
+
+    total = start_rad - end_rad
+    num_points = max(int(total / math.radians(5.0)), 2)
+
+    points = []
+    for i in range(num_points + 1):
+        angle = start_rad - total * i / num_points
+        lon = center_lon + dlon * math.cos(angle)
+        lat = center_lat + dlat * math.sin(angle)
+        points.append((lon, lat))
+    return points
+
+
+GML = "http://www.opengis.net/gml/3.2"
+AIXM = "http://www.aixm.aero/schema/5.0"
+SAA = "urn:us:gov:dot:faa:aim:saa"
+SUA_NS = "urn:us:gov:dot:faa:aim:saa:sua"
+
+
+def parse_ring_points(ring_elem):
+    """Extract polygon points from a GML Ring element.
+
+    Handles LineStringSegment, CircleByCenterPoint, and ArcByCenterPoint
+    curve segments. Multiple curveMember elements within a Ring are
+    concatenated to form the complete boundary.
+    """
+    points = []
+    for curve_member in ring_elem.findall(f"{{{GML}}}curveMember"):
+        curve = curve_member.find(f"{{{GML}}}Curve")
+        if curve is None:
+            continue
+        segments = curve.find(f"{{{GML}}}segments")
+        if segments is None:
+            continue
+        for seg in segments:
+            tag = seg.tag.split("}")[-1]
+            if tag == "LineStringSegment":
+                for pos in seg.findall(f"{{{GML}}}pos"):
+                    lon, lat = pos.text.strip().split()
+                    points.append((float(lon), float(lat)))
+            elif tag == "CircleByCenterPoint":
+                pos = seg.find(f".//{{{GML}}}pos")
+                rad = seg.find(f"{{{GML}}}radius")
+                if pos is not None and rad is not None:
+                    lon, lat = pos.text.strip().split()
+                    return generate_circle(
+                        float(lon), float(lat),
+                        float(rad.text), rad.get("uom", "NM"),
+                    )
+            elif tag == "ArcByCenterPoint":
+                pos = seg.find(f".//{{{GML}}}pos")
+                rad = seg.find(f"{{{GML}}}radius")
+                start_angle = seg.find(f"{{{GML}}}startAngle")
+                end_angle = seg.find(f"{{{GML}}}endAngle")
+                if pos is not None and rad is not None and start_angle is not None and end_angle is not None:
+                    lon, lat = pos.text.strip().split()
+                    arc_pts = generate_arc(
+                        float(lon), float(lat),
+                        float(rad.text), rad.get("uom", "NM"),
+                        float(start_angle.text), float(end_angle.text),
+                    )
+                    points.extend(arc_pts)
+    return points
+
+
+def parse_aixm_sua(xml_path):
+    """Parse an AIXM 5.0 SUA XML file.
+
+    Returns a dict with designator, name, sua_type, upper_limit, lower_limit,
+    and shape (list of (lon, lat) tuples for the BASE geometry component),
+    or None if parsing fails.
+    """
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+
+    airspace = root.find(f".//{{{AIXM}}}Airspace")
+    if airspace is None:
+        return None
+
+    ts = airspace.find(f".//{{{AIXM}}}AirspaceTimeSlice")
+    if ts is None:
+        return None
+
+    desig_elem = ts.find(f"{{{AIXM}}}designator")
+    name_elem = ts.find(f"{{{AIXM}}}name")
+    designator = desig_elem.text if desig_elem is not None else ""
+    name = name_elem.text if name_elem is not None else ""
+
+    # Get SUA type from extension
+    sua_type = ""
+    for ext in ts.iter(f"{{{SUA_NS}}}suaType"):
+        sua_type = ext.text or ""
+        break
+
+    # Find the BASE geometry component for overall shape and limits
+    upper_limit = ""
+    lower_limit = ""
+    shape = []
+    for gc in ts.findall(f"{{{AIXM}}}geometryComponent"):
+        agc = gc.find(f"{{{AIXM}}}AirspaceGeometryComponent")
+        if agc is None:
+            continue
+        op = agc.find(f"{{{AIXM}}}operation")
+        if op is None or op.text != "BASE":
+            continue
+
+        vol = agc.find(f".//{{{AIXM}}}AirspaceVolume")
+        if vol is not None:
+            upper = vol.find(f"{{{AIXM}}}upperLimit")
+            lower = vol.find(f"{{{AIXM}}}lowerLimit")
+            upper_ref = vol.find(f"{{{AIXM}}}upperLimitReference")
+            lower_ref = vol.find(f"{{{AIXM}}}lowerLimitReference")
+            if upper is not None:
+                uom = upper.get("uom", "")
+                ref = upper_ref.text if upper_ref is not None else ""
+                upper_limit = f"{upper.text} {uom} {ref}".strip()
+            if lower is not None:
+                uom = lower.get("uom", "")
+                ref = lower_ref.text if lower_ref is not None else ""
+                lower_limit = f"{lower.text} {uom} {ref}".strip()
+
+        hp = vol.find(f".//{{{AIXM}}}horizontalProjection") if vol is not None else None
+        if hp is not None:
+            ring = hp.find(f".//{{{GML}}}Ring")
+            if ring is not None:
+                shape = parse_ring_points(ring)
+            else:
+                # Some files use LinearRing with pos elements directly
+                linear_ring = hp.find(f".//{{{GML}}}LinearRing")
+                if linear_ring is not None:
+                    for pos in linear_ring.findall(f"{{{GML}}}pos"):
+                        lon, lat = pos.text.strip().split()
+                        shape.append((float(lon), float(lat)))
+        break
+
+    if not shape:
+        return None
+
+    return {
+        "designator": designator,
+        "name": name,
+        "sua_type": sua_type,
+        "upper_limit": upper_limit,
+        "lower_limit": lower_limit,
+        "shape": shape,
+    }
+
+
+def build_sua(conn, aixm_dir):
+    """Import SUA polygon boundaries from AIXM 5.0 XML files."""
+    xml_files = sorted(glob.glob(os.path.join(aixm_dir, "*.xml")))
+    if not xml_files:
+        print("  No XML files found in AIXM directory")
+        return
+
+    conn.execute("DROP TABLE IF EXISTS SUA_BASE")
+    conn.execute("""
+        CREATE TABLE SUA_BASE (
+            SUA_ID INTEGER PRIMARY KEY,
+            DESIGNATOR TEXT,
+            NAME TEXT,
+            SUA_TYPE TEXT,
+            UPPER_LIMIT TEXT,
+            LOWER_LIMIT TEXT
+        )
+    """)
+
+    conn.execute("DROP TABLE IF EXISTS SUA_SHP")
+    conn.execute("""
+        CREATE TABLE SUA_SHP (
+            SUA_ID INTEGER,
+            POINT_SEQ INTEGER,
+            LON_DECIMAL REAL,
+            LAT_DECIMAL REAL
+        )
+    """)
+
+    epsilon = 0.0001
+    total_before = 0
+    total_after = 0
+    base_rows = []
+    shp_rows = []
+    skipped = 0
+
+    for xml_path in xml_files:
+        result = parse_aixm_sua(xml_path)
+        if result is None:
+            skipped += 1
+            continue
+
+        sua_id = len(base_rows) + 1
+        base_rows.append((
+            sua_id,
+            result["designator"],
+            result["name"],
+            result["sua_type"],
+            result["upper_limit"],
+            result["lower_limit"],
+        ))
+
+        total_before += len(result["shape"])
+        simplified = simplify_ring(result["shape"], epsilon)
+        total_after += len(simplified)
+        for point_seq, (lon, lat) in enumerate(simplified):
+            shp_rows.append((sua_id, point_seq, lon, lat))
+
+    conn.executemany(
+        "INSERT INTO SUA_BASE VALUES (?, ?, ?, ?, ?, ?)",
+        base_rows,
+    )
+    conn.executemany(
+        "INSERT INTO SUA_SHP VALUES (?, ?, ?, ?)",
+        shp_rows,
+    )
+
+    print(f"  Parsed {len(xml_files)} files, {skipped} skipped")
+    print(f"  SUA_BASE: {len(base_rows)} airspaces")
+    print(f"  SUA_SHP: {len(shp_rows)} shape points")
+    if total_before > 0:
+        print(f"  Simplified: {total_before} -> {total_after} points "
+              f"({100 * total_after / total_before:.1f}%)")
+
+    # R-tree on bounding boxes
+    conn.execute("""
+        CREATE VIRTUAL TABLE SUA_BASE_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO SUA_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT SUA_ID,
+               MIN(LON_DECIMAL), MAX(LON_DECIMAL),
+               MIN(LAT_DECIMAL), MAX(LAT_DECIMAL)
+        FROM SUA_SHP
+        GROUP BY SUA_ID
+    """)
+
+    conn.execute("CREATE INDEX idx_sua_shp ON SUA_SHP(SUA_ID)")
+
+
 def build_cls_arsp(conn, shp_dir):
     """Import class airspace polygons from ESRI shapefile."""
     shp_path = os.path.join(shp_dir, "Class_Airspace.shp")
@@ -532,19 +821,23 @@ def build_cls_arsp(conn, shp_dir):
 
 
 def main():
-    if len(sys.argv) != 4:
-        print(f"Usage: {sys.argv[0]} <csv_dir> <shapefile_dir> <output.db>")
+    if len(sys.argv) != 5:
+        print(f"Usage: {sys.argv[0]} <csv_dir> <shapefile_dir> <aixm_dir> <output.db>")
         sys.exit(1)
 
     csv_dir = sys.argv[1]
     shp_dir = sys.argv[2]
-    db_path = sys.argv[3]
+    aixm_dir = sys.argv[3]
+    db_path = sys.argv[4]
 
     if not os.path.isdir(csv_dir):
         print(f"Error: {csv_dir} is not a directory")
         sys.exit(1)
     if not os.path.isdir(shp_dir):
         print(f"Error: {shp_dir} is not a directory")
+        sys.exit(1)
+    if not os.path.isdir(aixm_dir):
+        print(f"Error: {aixm_dir} is not a directory")
         sys.exit(1)
 
     # Remove existing database
@@ -578,13 +871,17 @@ def main():
     print("Importing class airspace...")
     build_cls_arsp(conn, shp_dir)
 
+    print("Importing SUA from AIXM 5.0...")
+    build_sua(conn, aixm_dir)
+
     conn.commit()
 
     # Print summary
     print("\nDatabase summary:")
     tables = ["APT_BASE", "NAV_BASE", "FIX_BASE", "AWY_SEG",
               "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
-              "CLS_ARSP_BASE", "CLS_ARSP_SHP"]
+              "CLS_ARSP_BASE", "CLS_ARSP_SHP",
+              "SUA_BASE", "SUA_SHP"]
     for table in tables:
         count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         print(f"  {table}: {count} rows")
