@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """Build SQLite database from FAA NASR data.
 
-Imports CSV tables, ESRI shapefiles, and AIXM 5.0 XML, adds decimal
-coordinates where needed, and creates R-tree spatial indexes for
-bounding box queries.
+Reads directly from the downloaded ZIP files without requiring
+manual extraction. Imports CSV tables, ESRI shapefiles, and AIXM 5.0
+XML, adds decimal coordinates where needed, and creates R-tree spatial
+indexes for bounding box queries.
 
 Usage:
-    python3 build_nasr_db.py <csv_dir> <shapefile_dir> <aixm_dir> <output.db>
+    python3 build_nasr_db.py <csv.zip> <shapefile.zip> <aixm.zip> <output.db>
 
 Example:
-    python3 build_nasr_db.py nasr_data/19_Feb_2026_CSV nasr_data/Shape_Files nasr_data/SAA-AIXM_5_Schema/SaaSubscriberFile nasr.db
+    python3 build_nasr_db.py 19_Feb_2026_CSV.zip class_airspace_shape_files.zip aixm5.0.zip nasr.db
 """
 
 import csv
-import glob
+import io
 import math
 import os
 import re
@@ -21,6 +22,7 @@ import sqlite3
 import struct
 import sys
 import xml.etree.ElementTree as ET
+import zipfile
 
 
 def parse_dms(dms_str):
@@ -42,13 +44,14 @@ def parse_dms(dms_str):
     return decimal
 
 
-def import_csv(conn, table_name, csv_path, columns=None):
-    """Import a CSV file into a SQLite table.
+def import_csv(conn, table_name, zf, csv_name, columns=None):
+    """Import a CSV file from a ZIP archive into a SQLite table.
 
     If columns is None, imports all columns. Otherwise, imports only
     the specified columns.
     """
-    with open(csv_path, "r", encoding="latin-1") as f:
+    with zf.open(csv_name) as raw:
+        f = io.TextIOWrapper(raw, encoding="latin-1")
         reader = csv.DictReader(f)
         all_cols = reader.fieldnames or []
         if columns is None:
@@ -57,7 +60,7 @@ def import_csv(conn, table_name, csv_path, columns=None):
         # Verify all requested columns exist
         for col in columns:
             if col not in all_cols:
-                print(f"  Warning: column '{col}' not found in {csv_path}")
+                print(f"  Warning: column '{col}' not found in {csv_name}")
         columns = [c for c in columns if c in all_cols]
 
         col_defs = ", ".join(f'"{c}" TEXT' for c in columns)
@@ -76,9 +79,9 @@ def import_csv(conn, table_name, csv_path, columns=None):
         print(f"  {table_name}: {len(rows)} rows")
 
 
-def build_apt(conn, csv_dir):
+def build_apt(conn, csv_zf):
     """Import airports with decimal coordinates."""
-    import_csv(conn, "APT_BASE", os.path.join(csv_dir, "APT_BASE.csv"), [
+    import_csv(conn, "APT_BASE", csv_zf, "APT_BASE.csv", [
         "SITE_NO", "SITE_TYPE_CODE", "STATE_CODE", "ARPT_ID", "CITY",
         "COUNTRY_CODE", "ARPT_NAME", "OWNERSHIP_TYPE_CODE",
         "FACILITY_USE_CODE", "LAT_DECIMAL", "LONG_DECIMAL", "ELEV",
@@ -102,9 +105,9 @@ def build_apt(conn, csv_dir):
     """)
 
 
-def build_nav(conn, csv_dir):
+def build_nav(conn, csv_zf):
     """Import navaids with decimal coordinates."""
-    import_csv(conn, "NAV_BASE", os.path.join(csv_dir, "NAV_BASE.csv"), [
+    import_csv(conn, "NAV_BASE", csv_zf, "NAV_BASE.csv", [
         "NAV_ID", "NAV_TYPE", "STATE_CODE", "CITY", "COUNTRY_CODE",
         "NAV_STATUS", "NAME", "LAT_DECIMAL", "LONG_DECIMAL",
         "ELEV", "FREQ", "CHAN",
@@ -126,9 +129,9 @@ def build_nav(conn, csv_dir):
     """)
 
 
-def build_fix(conn, csv_dir):
+def build_fix(conn, csv_zf):
     """Import fixes with decimal coordinates."""
-    import_csv(conn, "FIX_BASE", os.path.join(csv_dir, "FIX_BASE.csv"), [
+    import_csv(conn, "FIX_BASE", csv_zf, "FIX_BASE.csv", [
         "FIX_ID", "STATE_CODE", "COUNTRY_CODE", "LAT_DECIMAL",
         "LONG_DECIMAL", "FIX_USE_CODE",
     ])
@@ -149,13 +152,13 @@ def build_fix(conn, csv_dir):
     """)
 
 
-def build_awy(conn, csv_dir):
+def build_awy(conn, csv_zf):
     """Import airways and build segment table with resolved coordinates.
 
     AWY_SEG_ALT references waypoints by name. We resolve FROM_POINT
     coordinates by joining against NAV_BASE and FIX_BASE.
     """
-    import_csv(conn, "AWY_SEG_ALT", os.path.join(csv_dir, "AWY_SEG_ALT.csv"), [
+    import_csv(conn, "AWY_SEG_ALT", csv_zf, "AWY_SEG_ALT.csv", [
         "AWY_LOCATION", "AWY_ID", "POINT_SEQ", "FROM_POINT", "FROM_PT_TYPE",
         "COUNTRY_CODE", "TO_POINT", "MAG_COURSE_DIST",
         "AWY_SEG_GAP_FLAG", "MIN_ENROUTE_ALT",
@@ -239,14 +242,14 @@ def build_awy(conn, csv_dir):
     """)
 
 
-def build_maa(conn, csv_dir):
+def build_maa(conn, csv_zf):
     """Import MOA/SUA data with polygon shapes."""
-    import_csv(conn, "MAA_BASE", os.path.join(csv_dir, "MAA_BASE.csv"), [
+    import_csv(conn, "MAA_BASE", csv_zf, "MAA_BASE.csv", [
         "MAA_ID", "MAA_TYPE_NAME", "MAA_NAME", "MAX_ALT", "MIN_ALT",
     ])
 
     # Import shape points and convert DMS to decimal
-    import_csv(conn, "MAA_SHP_RAW", os.path.join(csv_dir, "MAA_SHP.csv"), [
+    import_csv(conn, "MAA_SHP_RAW", csv_zf, "MAA_SHP.csv", [
         "MAA_ID", "POINT_SEQ", "LATITUDE", "LONGITUDE",
     ])
 
@@ -295,13 +298,13 @@ def build_maa(conn, csv_dir):
     """)
 
 
-def build_apt_rwy(conn, csv_dir):
+def build_apt_rwy(conn, csv_zf):
     """Import runway data for high-zoom rendering."""
-    import_csv(conn, "APT_RWY", os.path.join(csv_dir, "APT_RWY.csv"), [
+    import_csv(conn, "APT_RWY", csv_zf, "APT_RWY.csv", [
         "SITE_NO", "RWY_ID", "RWY_LEN", "RWY_WIDTH", "SURFACE_TYPE_CODE",
     ])
 
-    import_csv(conn, "APT_RWY_END", os.path.join(csv_dir, "APT_RWY_END.csv"), [
+    import_csv(conn, "APT_RWY_END", csv_zf, "APT_RWY_END.csv", [
         "SITE_NO", "RWY_ID", "RWY_END_ID", "LAT_DECIMAL", "LONG_DECIMAL",
         "RWY_END_ELEV", "TRUE_ALIGNMENT",
     ])
@@ -345,92 +348,94 @@ def simplify_ring(points, epsilon):
         return [start, end]
 
 
-def read_dbf(path):
-    """Read a .dbf file, yielding dicts of field_name -> string value."""
-    with open(path, "rb") as f:
-        f.read(1)  # version
-        f.read(3)  # date
-        nrec = struct.unpack("<I", f.read(4))[0]
-        hdr_size = struct.unpack("<H", f.read(2))[0]
-        rec_size = struct.unpack("<H", f.read(2))[0]
-        f.read(20)  # reserved
+def read_dbf(f):
+    """Read a .dbf file, yielding dicts of field_name -> string value.
 
-        fields = []
-        while True:
-            peek = f.read(1)
-            if peek == b"\r":
-                break
-            name = (peek + f.read(10)).rstrip(b"\x00").decode("ascii")
-            ftype = f.read(1).decode("ascii")
-            f.read(4)  # reserved
-            flen = struct.unpack("B", f.read(1))[0]
-            f.read(15)  # reserved
-            fields.append((name, flen))
+    f is a binary file-like object.
+    """
+    f.read(1)  # version
+    f.read(3)  # date
+    nrec = struct.unpack("<I", f.read(4))[0]
+    hdr_size = struct.unpack("<H", f.read(2))[0]
+    rec_size = struct.unpack("<H", f.read(2))[0]
+    f.read(20)  # reserved
 
-        f.seek(hdr_size)
-        for _ in range(nrec):
-            f.read(1)  # deletion flag
-            record = {}
-            for name, flen in fields:
-                val = f.read(flen).decode("latin-1").strip()
-                record[name] = val
-            yield record
+    fields = []
+    while True:
+        peek = f.read(1)
+        if peek == b"\r":
+            break
+        name = (peek + f.read(10)).rstrip(b"\x00").decode("ascii")
+        ftype = f.read(1).decode("ascii")
+        f.read(4)  # reserved
+        flen = struct.unpack("B", f.read(1))[0]
+        f.read(15)  # reserved
+        fields.append((name, flen))
+
+    f.seek(hdr_size)
+    for _ in range(nrec):
+        f.read(1)  # deletion flag
+        record = {}
+        for name, flen in fields:
+            val = f.read(flen).decode("latin-1").strip()
+            record[name] = val
+        yield record
 
 
-def read_shp_polygons(path):
+def read_shp_polygons(f):
     """Read polygon geometries from a .shp file.
 
+    f is a binary file-like object.
     Yields lists of parts, where each part is a list of (lon, lat) tuples.
     Handles both Polygon (type 5) and PolygonZ (type 15).
     """
-    with open(path, "rb") as f:
-        # File header: 100 bytes
-        f.read(100)
+    # File header: 100 bytes
+    f.read(100)
 
-        while True:
-            # Record header: 8 bytes (record number + content length in 16-bit words)
-            rec_hdr = f.read(8)
-            if len(rec_hdr) < 8:
-                break
-            content_length = struct.unpack(">I", rec_hdr[4:8])[0] * 2
-            rec_data = f.read(content_length)
-            if len(rec_data) < content_length:
-                break
+    while True:
+        # Record header: 8 bytes (record number + content length in 16-bit words)
+        rec_hdr = f.read(8)
+        if len(rec_hdr) < 8:
+            break
+        content_length = struct.unpack(">I", rec_hdr[4:8])[0] * 2
+        rec_data = f.read(content_length)
+        if len(rec_data) < content_length:
+            break
 
-            shape_type = struct.unpack("<I", rec_data[0:4])[0]
-            if shape_type == 0:
-                yield []
-                continue
+        shape_type = struct.unpack("<I", rec_data[0:4])[0]
+        if shape_type == 0:
+            yield []
+            continue
 
-            # Polygon (5) and PolygonZ (15) share the same base layout
-            # bbox: 4 doubles, num_parts: int, num_points: int
-            num_parts = struct.unpack("<I", rec_data[36:40])[0]
-            num_points = struct.unpack("<I", rec_data[40:44])[0]
+        # Polygon (5) and PolygonZ (15) share the same base layout
+        # bbox: 4 doubles, num_parts: int, num_points: int
+        num_parts = struct.unpack("<I", rec_data[36:40])[0]
+        num_points = struct.unpack("<I", rec_data[40:44])[0]
 
-            # Part indices
-            parts_offset = 44
-            part_indices = list(struct.unpack(
-                f"<{num_parts}I",
-                rec_data[parts_offset:parts_offset + 4 * num_parts],
-            ))
-            part_indices.append(num_points)
+        # Part indices
+        parts_offset = 44
+        part_indices = list(struct.unpack(
+            f"<{num_parts}I",
+            rec_data[parts_offset:parts_offset + 4 * num_parts],
+        ))
+        part_indices.append(num_points)
 
-            # Points (x=lon, y=lat pairs)
-            points_offset = parts_offset + 4 * num_parts
-            all_points = struct.unpack(
-                f"<{num_points * 2}d",
-                rec_data[points_offset:points_offset + 16 * num_points],
-            )
+        # Points (x=lon, y=lat pairs)
+        points_offset = parts_offset + 4 * num_parts
+        all_points = struct.unpack(
+            f"<{num_points * 2}d",
+            rec_data[points_offset:points_offset + 16 * num_points],
+        )
 
-            parts = []
-            for i in range(num_parts):
-                start = part_indices[i]
-                end = part_indices[i + 1]
-                ring = [(all_points[j * 2], all_points[j * 2 + 1])
-                        for j in range(start, end)]
-                parts.append(ring)
+        parts = []
+        for i in range(num_parts):
+            start = part_indices[i]
+            end = part_indices[i + 1]
+            ring = [(all_points[j * 2], all_points[j * 2 + 1])
+                    for j in range(start, end)]
+            parts.append(ring)
 
-            yield parts
+        yield parts
 
 
 def radius_to_degrees(radius, uom, center_lat):
@@ -544,15 +549,15 @@ def parse_ring_points(ring_elem):
     return points
 
 
-def parse_aixm_sua(xml_path):
-    """Parse an AIXM 5.0 SUA XML file.
+def parse_aixm_sua(xml_data):
+    """Parse AIXM 5.0 SUA XML data.
 
+    xml_data is bytes or a file-like object.
     Returns a dict with designator, name, sua_type, upper_limit, lower_limit,
     and shape (list of (lon, lat) tuples for the BASE geometry component),
     or None if parsing fails.
     """
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
+    root = ET.fromstring(xml_data)
 
     airspace = root.find(f".//{{{AIXM}}}Airspace")
     if airspace is None:
@@ -610,6 +615,8 @@ def parse_aixm_sua(xml_path):
                 linear_ring = hp.find(f".//{{{GML}}}LinearRing")
                 if linear_ring is not None:
                     for pos in linear_ring.findall(f"{{{GML}}}pos"):
+                        if pos.text is None:
+                            continue
                         lon, lat = pos.text.strip().split()
                         shape.append((float(lon), float(lat)))
         break
@@ -627,11 +634,21 @@ def parse_aixm_sua(xml_path):
     }
 
 
-def build_sua(conn, aixm_dir):
-    """Import SUA polygon boundaries from AIXM 5.0 XML files."""
-    xml_files = sorted(glob.glob(os.path.join(aixm_dir, "*.xml")))
+def build_sua(conn, aixm_zf):
+    """Import SUA polygon boundaries from AIXM 5.0 XML files.
+
+    aixm_zf is the outer AIXM ZIP. The XML files are nested:
+    aixm5.0.zip / SaaSubscriberFile.zip / Saa_Sub_File.zip / *.xml
+    """
+    # Navigate nested ZIPs to reach the XML files
+    mid_name = next(n for n in aixm_zf.namelist() if n.endswith('.zip'))
+    mid_zf = zipfile.ZipFile(io.BytesIO(aixm_zf.read(mid_name)))
+    inner_name = next(n for n in mid_zf.namelist() if n.endswith('.zip'))
+    inner_zf = zipfile.ZipFile(io.BytesIO(mid_zf.read(inner_name)))
+
+    xml_files = sorted(n for n in inner_zf.namelist() if n.endswith('.xml'))
     if not xml_files:
-        print("  No XML files found in AIXM directory")
+        print("  No XML files found in AIXM archive")
         return
 
     conn.execute("DROP TABLE IF EXISTS SUA_BASE")
@@ -663,8 +680,8 @@ def build_sua(conn, aixm_dir):
     shp_rows = []
     skipped = 0
 
-    for xml_path in xml_files:
-        result = parse_aixm_sua(xml_path)
+    for xml_name in xml_files:
+        result = parse_aixm_sua(inner_zf.read(xml_name))
         if result is None:
             skipped += 1
             continue
@@ -719,18 +736,18 @@ def build_sua(conn, aixm_dir):
     conn.execute("CREATE INDEX idx_sua_shp ON SUA_SHP(SUA_ID)")
 
 
-def build_cls_arsp(conn, shp_dir):
+def build_cls_arsp(conn, shp_zf):
     """Import class airspace polygons from ESRI shapefile."""
-    shp_path = os.path.join(shp_dir, "Class_Airspace.shp")
-    dbf_path = os.path.join(shp_dir, "Class_Airspace.dbf")
+    shp_name = next((n for n in shp_zf.namelist() if n.endswith('.shp')), None)
+    dbf_name = next((n for n in shp_zf.namelist() if n.endswith('.dbf')), None)
 
-    if not os.path.exists(shp_path):
-        print("  Skipping: Class_Airspace.shp not found")
+    if shp_name is None or dbf_name is None:
+        print("  Skipping: Class_Airspace.shp not found in archive")
         return
 
-    # Read attributes and geometries in parallel
-    records = list(read_dbf(dbf_path))
-    geometries = list(read_shp_polygons(shp_path))
+    # Read attributes and geometries from ZIP
+    records = list(read_dbf(io.BytesIO(shp_zf.read(dbf_name))))
+    geometries = list(read_shp_polygons(io.BytesIO(shp_zf.read(shp_name))))
     assert len(records) == len(geometries), (
         f"DBF/SHP record count mismatch: {len(records)} vs {len(geometries)}"
     )
@@ -822,23 +839,18 @@ def build_cls_arsp(conn, shp_dir):
 
 def main():
     if len(sys.argv) != 5:
-        print(f"Usage: {sys.argv[0]} <csv_dir> <shapefile_dir> <aixm_dir> <output.db>")
+        print(f"Usage: {sys.argv[0]} <csv.zip> <shapefile.zip> <aixm.zip> <output.db>")
         sys.exit(1)
 
-    csv_dir = sys.argv[1]
-    shp_dir = sys.argv[2]
-    aixm_dir = sys.argv[3]
+    csv_zip_path = sys.argv[1]
+    shp_zip_path = sys.argv[2]
+    aixm_zip_path = sys.argv[3]
     db_path = sys.argv[4]
 
-    if not os.path.isdir(csv_dir):
-        print(f"Error: {csv_dir} is not a directory")
-        sys.exit(1)
-    if not os.path.isdir(shp_dir):
-        print(f"Error: {shp_dir} is not a directory")
-        sys.exit(1)
-    if not os.path.isdir(aixm_dir):
-        print(f"Error: {aixm_dir} is not a directory")
-        sys.exit(1)
+    for path in (csv_zip_path, shp_zip_path, aixm_zip_path):
+        if not os.path.isfile(path):
+            print(f"Error: {path} not found")
+            sys.exit(1)
 
     # Remove existing database
     if os.path.exists(db_path):
@@ -849,30 +861,32 @@ def main():
     conn.execute("PRAGMA synchronous=NORMAL")
 
     print("Building NASR database...")
+    with zipfile.ZipFile(csv_zip_path) as csv_zf:
+        print("Importing airports...")
+        build_apt(conn, csv_zf)
 
-    print("Importing airports...")
-    build_apt(conn, csv_dir)
+        print("Importing navaids...")
+        build_nav(conn, csv_zf)
 
-    print("Importing navaids...")
-    build_nav(conn, csv_dir)
+        print("Importing fixes...")
+        build_fix(conn, csv_zf)
 
-    print("Importing fixes...")
-    build_fix(conn, csv_dir)
+        print("Importing airways...")
+        build_awy(conn, csv_zf)
 
-    print("Importing airways...")
-    build_awy(conn, csv_dir)
+        print("Importing MOA/SUA...")
+        build_maa(conn, csv_zf)
 
-    print("Importing MOA/SUA...")
-    build_maa(conn, csv_dir)
-
-    print("Importing runway data...")
-    build_apt_rwy(conn, csv_dir)
+        print("Importing runway data...")
+        build_apt_rwy(conn, csv_zf)
 
     print("Importing class airspace...")
-    build_cls_arsp(conn, shp_dir)
+    with zipfile.ZipFile(shp_zip_path) as shp_zf:
+        build_cls_arsp(conn, shp_zf)
 
     print("Importing SUA from AIXM 5.0...")
-    build_sua(conn, aixm_dir)
+    with zipfile.ZipFile(aixm_zip_path) as aixm_zf:
+        build_sua(conn, aixm_zf)
 
     conn.commit()
 
