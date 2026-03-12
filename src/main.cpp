@@ -96,9 +96,9 @@ namespace
 
 int main(int argc, char** argv)
 {
-    if(argc < 2)
+    if(argc < 3)
     {
-        std::cerr << "Usage: nasrbrowse <tile_path>" << std::endl;
+        std::cerr << "Usage: nasrbrowse <tile_path> <nasr.db>" << std::endl;
         return EXIT_FAILURE;
     }
 
@@ -130,7 +130,7 @@ int main(int argc, char** argv)
         sdl::event_manager event_mgr;
 
         // Create map layer
-        auto map_layer = std::make_shared<layer_map>(dev, argv[1]);
+        auto map_layer = std::make_shared<layer_map>(dev, argv[1], argv[2]);
         event_mgr.add_listener(map_layer);
 
         // Send initial resize

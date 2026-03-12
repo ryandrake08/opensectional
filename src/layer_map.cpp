@@ -1,4 +1,5 @@
 #include "layer_map.hpp"
+#include "feature_renderer.hpp"
 #include "map_view.hpp"
 #include "render_context.hpp"
 #include "tile_renderer.hpp"
@@ -17,20 +18,26 @@ struct layer_map::impl
     int viewport_width;
     int viewport_height;
     bool needs_update;
+    bool show_tiles;
 
     // Tile renderer for raster basemap
     nasrbrowse::tile_renderer tiles;
+
+    // Vector feature renderer
+    nasrbrowse::feature_renderer features;
 
     // Grid line vertex buffer (rebuilt on viewport change)
     std::vector<sdl::vertex_t2f_c4ub_v3f> grid_vertices;
     std::unique_ptr<sdl::buffer> grid_buffer;
 
-    impl(sdl::device& dev, const char* tile_path)
+    impl(sdl::device& dev, const char* tile_path, const char* db_path)
         : dev(dev)
         , viewport_width(0)
         , viewport_height(0)
         , needs_update(true)
+        , show_tiles(true)
         , tiles(dev, tile_path)
+        , features(dev, db_path)
     {
     }
 
@@ -130,12 +137,18 @@ struct layer_map::impl
         {
             needs_update = true;
         }
+        if(features.update(view.view_x_min(), view.view_y_min(),
+                            view.view_x_max(), view.view_y_max(),
+                            viewport_height, view.aspect_ratio))
+        {
+            needs_update = true;
+        }
     }
 };
 
-layer_map::layer_map(sdl::device& dev, const char* tile_path)
+layer_map::layer_map(sdl::device& dev, const char* tile_path, const char* db_path)
     : layer()
-    , pimpl(new impl(dev, tile_path))
+    , pimpl(new impl(dev, tile_path, db_path))
 {
 }
 
@@ -183,6 +196,11 @@ void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, s
             pimpl->rebuild_grid();
         pimpl->update_tiles();
             break;
+        case 't':
+        case 'T':
+            pimpl->show_tiles = !pimpl->show_tiles;
+            pimpl->needs_update = true;
+            break;
         }
     }
 }
@@ -216,7 +234,8 @@ void layer_map::on_resize(float normalized_viewport_width, int viewport_height_p
 
 bool layer_map::on_update()
 {
-    return pimpl->needs_update || pimpl->tiles.needs_upload();
+    return pimpl->needs_update || pimpl->tiles.needs_upload() ||
+           pimpl->features.needs_upload();
 }
 
 void layer_map::on_prepare(size_t& size) const
@@ -226,6 +245,7 @@ void layer_map::on_prepare(size_t& size) const
         size += pimpl->grid_vertices.size() * sizeof(sdl::vertex_t2f_c4ub_v3f);
     }
     pimpl->tiles.prepare(size);
+    pimpl->features.prepare(size);
 }
 
 void layer_map::on_copy(sdl::copy_pass& pass)
@@ -237,13 +257,20 @@ void layer_map::on_copy(sdl::copy_pass& pass)
         pimpl->grid_buffer = std::make_unique<sdl::buffer>(std::move(buf));
     }
     pimpl->tiles.copy(pass);
+    pimpl->features.copy(pass);
     pimpl->needs_update = false;
 }
 
 void layer_map::on_render(sdl::render_pass& pass, const nasrbrowse::render_context& ctx) const
 {
     // Render tiles (textured pass)
-    pimpl->tiles.render(pass, ctx);
+    if(pimpl->show_tiles)
+    {
+        pimpl->tiles.render(pass, ctx);
+    }
+
+    // Render vector features (line pass)
+    pimpl->features.render(pass, ctx);
 
     // Render grid (line pass)
     if(ctx.current_pass == nasrbrowse::render_pass_id::trianglelist_0)
