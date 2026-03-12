@@ -35,9 +35,9 @@ namespace sdl
         void add_listener(const std::shared_ptr<event_listener>& listener);
         void remove_listener(const std::shared_ptr<event_listener>& listener);
 
-        // Poll SDL events and dispatch to listeners
+        // Block until an event arrives, then dispatch all pending events
         // Returns true if quit event was received
-        bool poll_and_dispatch();
+        bool wait_and_dispatch();
     };
 
 } // namespace sdl

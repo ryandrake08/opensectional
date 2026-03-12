@@ -234,8 +234,13 @@ void layer_map::on_resize(float normalized_viewport_width, int viewport_height_p
 
 bool layer_map::on_update()
 {
-    return pimpl->needs_update || pimpl->tiles.needs_upload() ||
-           pimpl->features.needs_upload();
+    bool result = pimpl->needs_update || pimpl->tiles.needs_upload() ||
+                  pimpl->features.needs_upload();
+    if(result)
+    {
+        pimpl->needs_update = false;
+    }
+    return result;
 }
 
 void layer_map::on_prepare(size_t& size) const
@@ -258,7 +263,6 @@ void layer_map::on_copy(sdl::copy_pass& pass)
     }
     pimpl->tiles.copy(pass);
     pimpl->features.copy(pass);
-    pimpl->needs_update = false;
 }
 
 void layer_map::on_render(sdl::render_pass& pass, const nasrbrowse::render_context& ctx) const

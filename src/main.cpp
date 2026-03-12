@@ -137,15 +137,16 @@ int main(int argc, char** argv)
         map_layer->framebuffer_size_event(1280, 800);
 
         // Main loop
+        bool needs_render = true;
         while(true)
         {
-            if(event_mgr.poll_and_dispatch())
+            if(event_mgr.wait_and_dispatch())
             {
                 break;
             }
 
             // Update
-            bool needs_render = map_layer->update();
+            needs_render = map_layer->update();
 
             if(needs_render)
             {

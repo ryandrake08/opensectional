@@ -201,7 +201,8 @@ namespace nasrbrowse
                 pimpl->visible_tiles.push_back(key);
 
                 auto it = pimpl->tile_map.find(key);
-                if(it == pimpl->tile_map.end() || it->second.expired())
+                if((it == pimpl->tile_map.end() || it->second.expired()) &&
+                   pimpl->tile_file_exists(key))
                 {
                     pimpl->tiles_needing_upload.push_back(key);
                 }
