@@ -83,8 +83,12 @@ target_link_libraries(nasrbrowse PRIVATE
     SDL3_image::SDL3_image
     SDL3_ttf::SDL3_ttf
     ${SQLITE3_LIBRARIES}
+    imgui
 )
 target_include_directories(nasrbrowse PRIVATE ${SQLITE3_INCLUDE_DIRS})
+
+# Third-party libraries
+add_subdirectory(thirdparty/imgui)
 
 # Shader compilation (Metal, SPIRV)
 add_subdirectory(shaders)

@@ -1,5 +1,7 @@
 #pragma once
 #include "types.hpp"
+#include <SDL3/SDL_events.h>
+#include <functional>
 #include <memory>
 
 namespace sdl
@@ -34,6 +36,9 @@ namespace sdl
         // Register/unregister event listeners
         void add_listener(const std::shared_ptr<event_listener>& listener);
         void remove_listener(const std::shared_ptr<event_listener>& listener);
+
+        // Set a hook that receives every raw SDL_Event before dispatch
+        void set_raw_event_hook(std::function<void(const SDL_Event&)> hook);
 
         // Block until an event arrives, then dispatch all pending events
         // Returns true if quit event was received

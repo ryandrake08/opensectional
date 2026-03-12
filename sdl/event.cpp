@@ -8,6 +8,7 @@ namespace sdl
     struct event_manager::impl
     {
         std::vector<std::shared_ptr<event_listener>> listeners;
+        std::function<void(const SDL_Event&)> raw_event_hook;
     };
 
     event_manager::event_manager() : pimpl(new impl())
@@ -28,12 +29,22 @@ namespace sdl
             this->pimpl->listeners.end());
     }
 
+    void event_manager::set_raw_event_hook(std::function<void(const SDL_Event&)> hook)
+    {
+        this->pimpl->raw_event_hook = std::move(hook);
+    }
+
     bool event_manager::wait_and_dispatch()
     {
         SDL_Event event;
         if(!SDL_WaitEvent(&event))
         {
             throw error("SDL_WaitEvent failed");
+        }
+
+        if(this->pimpl->raw_event_hook)
+        {
+            this->pimpl->raw_event_hook(event);
         }
 
         switch(event.type)
