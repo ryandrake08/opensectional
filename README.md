@@ -13,7 +13,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 
 # 3. Build the NASR database from FAA ZIP files
-python3 tools/build_nasr_db.py 19_Feb_2026_CSV.zip class_airspace_shape_files.zip aixm5.0.zip nasr.db
+python3 tools/build_nasr_db.py 19_Feb_2026_CSV.zip class_airspace_shape_files.zip aixm5.0.zip DOF_260215.zip nasr.db
 
 # 4. Run (requires pre-built XYZ tile directory)
 ./build/nasrbrowse <tile_path> nasr.db
@@ -26,6 +26,7 @@ python3 tools/build_nasr_db.py 19_Feb_2026_CSV.zip class_airspace_shape_files.zi
 | SDL3 | Window, input, GPU rendering | System package |
 | SDL3_image | Tile image loading (PNG) | System package |
 | SDL3_ttf | Text rendering | System package |
+| Dear ImGui | UI widgets (layer controls, FPS) | Vendored (thirdparty/) |
 | SQLite3 | NASR database queries | System package |
 | GLM | Matrix/vector math | Vendored (thirdparty/) |
 
@@ -82,14 +83,15 @@ Download the following ZIP files from the [FAA NASR subscription](https://www.fa
 - **28-Day Subscription (CSV)** - e.g., `19_Feb_2026_CSV.zip`
 - **Class Airspace Shapefiles** - `class_airspace_shape_files.zip`
 - **AIXM 5.0 Special Use Airspace** - `aixm5.0.zip`
+- **Digital Obstacle File (DOF)** - e.g., `DOF_260215.zip`
 
 Build the database:
 
 ```bash
-python3 tools/build_nasr_db.py <csv.zip> <shapefile.zip> <aixm.zip> <output.db>
+python3 tools/build_nasr_db.py <csv.zip> <shapefile.zip> <aixm.zip> <dof.zip> <output.db>
 ```
 
-This reads directly from the downloaded ZIP files (no manual extraction needed) and produces a ~54 MB SQLite database containing:
+All inputs are mandatory. The output file is always the last argument. This reads directly from the downloaded ZIP files (no manual extraction needed) and produces a SQLite database containing:
 
 | Table | Contents |
 |-------|----------|
@@ -101,6 +103,7 @@ This reads directly from the downloaded ZIP files (no manual extraction needed) 
 | APT_RWY/RWY_END | 23,431 runways with endpoint coordinates |
 | CLS_ARSP_BASE/SHP | 5,608 class airspace polygons (B/C/D/E) |
 | SUA_BASE/SHP | 1,234 special use airspace polygons (MOA/RA/WA/AA/PA/NSA) |
+| OBS_BASE | ~628,000 obstacles (towers, poles, buildings) with AGL/AMSL heights |
 
 All spatial tables have R-tree indexes for efficient bounding-box queries.
 
@@ -123,7 +126,10 @@ tiles/
 | Scroll wheel | Zoom in/out |
 | W/A/S/D | Pan (keyboard) |
 | R/F | Zoom in/out (keyboard) |
-| T | Toggle tile basemap |
+
+Layer visibility (basemap, airports, runways, navaids, fixes, airways,
+airspace, SUA, obstacles) is controlled via checkbox panel in the top-right
+corner.
 
 ## Project Structure
 
@@ -132,13 +138,15 @@ src/                    Application sources
   main.cpp              Entry point, SDL init, main loop
   layer_map.cpp         Map layer (tiles + features + grid)
   tile_renderer.cpp     XYZ tile loading with LRU GPU cache
-  feature_renderer.cpp  Vector feature rendering (airports, airways, airspace)
+  feature_renderer.cpp  Vector feature rendering (airports, airways, airspace, obstacles)
   nasr_database.cpp     SQLite query interface with R-tree spatial queries
-  map_view.cpp          Web Mercator viewport, pan/zoom state
+  map_view.hpp          Web Mercator viewport, pan/zoom state
   render_context.cpp    Render state (projection matrix, sampler)
+  ui_overlay.cpp        ImGui UI (FPS display + layer visibility checkboxes)
+imgui/                  ImGui RAII wrapper library
 sdl/                    SDL3 GPU API wrapper library
 shaders/                HLSL shaders (cross-compiled to Metal/SPIR-V)
-thirdparty/             Vendored dependencies (GLM)
+thirdparty/             Vendored dependencies (GLM, Dear ImGui)
 tools/
   build_nasr_db.py      NASR database builder (reads FAA ZIP files)
   test_nasr_queries.py  Database query correctness and performance tests

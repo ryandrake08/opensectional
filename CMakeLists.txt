@@ -21,6 +21,7 @@ add_executable(nasrbrowse
     src/main.cpp
     src/nasr_database.cpp
     src/render_context.cpp
+    src/tile_loader.cpp
     src/tile_renderer.cpp
     src/ui_overlay.cpp
 

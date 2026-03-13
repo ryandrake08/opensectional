@@ -2,6 +2,8 @@
 #include "lru_set.hpp"
 #include "map_view.hpp"
 #include "render_context.hpp"
+#include "tile_key.hpp"
+#include "tile_loader.hpp"
 #include <algorithm>
 #include <cmath>
 #include <glm/ext/matrix_transform.hpp>
@@ -18,16 +20,6 @@
 
 namespace nasrbrowse
 {
-    struct tile_key
-    {
-        int z, x, y;
-
-        bool operator==(const tile_key& other) const
-        {
-            return z == other.z && x == other.x && y == other.y;
-        }
-    };
-
     struct tile_gpu
     {
         tile_key key;
@@ -43,19 +35,6 @@ namespace nasrbrowse
 
 namespace std
 {
-    template<>
-    struct hash<nasrbrowse::tile_key>
-    {
-        size_t operator()(const nasrbrowse::tile_key& k) const
-        {
-            size_t h = 0;
-            h ^= std::hash<int>()(k.z) + 0x9e3779b9 + (h << 6) + (h >> 2);
-            h ^= std::hash<int>()(k.x) + 0x9e3779b9 + (h << 6) + (h >> 2);
-            h ^= std::hash<int>()(k.y) + 0x9e3779b9 + (h << 6) + (h >> 2);
-            return h;
-        }
-    };
-
     template<>
     struct hash<std::shared_ptr<nasrbrowse::tile_gpu>>
     {
@@ -119,11 +98,11 @@ namespace nasrbrowse
         // LRU cache owns the shared_ptrs, eviction frees GPU resources
         lru_set<std::shared_ptr<tile_gpu>> cache;
 
-        // Tiles needing upload this frame
-        std::vector<tile_key> tiles_needing_upload;
+        // Background tile loader
+        tile_loader loader;
 
-        // Surfaces loaded during prepare(), consumed in copy()
-        mutable std::vector<std::pair<tile_key, sdl::surface>> surfaces_for_upload;
+        // Results drained from loader, staged for copy()
+        std::vector<tile_load_result> pending_results;
 
         impl(sdl::device& dev, const std::string& tile_path)
             : dev(dev)
@@ -143,15 +122,13 @@ namespace nasrbrowse
                    std::to_string(key.x) + "/" + std::to_string(key.y) + ".png";
         }
 
-        bool tile_file_exists(const tile_key& key) const
+        void request_tile(const tile_key& key)
         {
-            FILE* f = fopen(tile_file_path(key).c_str(), "r");
-            if(f)
+            auto it = tile_map.find(key);
+            if(it == tile_map.end() || it->second.expired())
             {
-                fclose(f);
-                return true;
+                loader.request(key, tile_file_path(key));
             }
-            return false;
         }
     };
 
@@ -191,78 +168,111 @@ namespace nasrbrowse
         ty_max = std::min(n - 1, ty_max);
 
         pimpl->visible_tiles.clear();
-        pimpl->tiles_needing_upload.clear();
+        pimpl->loader.cancel();
 
+        // Request visible tiles (highest priority — enqueued first, notify on load)
         for(int ty = ty_min; ty <= ty_max; ty++)
         {
             for(int tx = tx_min; tx <= tx_max; tx++)
             {
                 tile_key key { zoom, tx, ty };
                 pimpl->visible_tiles.push_back(key);
+                pimpl->request_tile(key);
+            }
+        }
 
-                auto it = pimpl->tile_map.find(key);
-                if((it == pimpl->tile_map.end() || it->second.expired()) &&
-                   pimpl->tile_file_exists(key))
+        // Prefetch: 1-tile border around visible area at current zoom
+        int border_tx_min = std::max(0, tx_min - 1);
+        int border_tx_max = std::min(n - 1, tx_max + 1);
+        int border_ty_min = std::max(0, ty_min - 1);
+        int border_ty_max = std::min(n - 1, ty_max + 1);
+
+        for(int ty = border_ty_min; ty <= border_ty_max; ty++)
+        {
+            for(int tx = border_tx_min; tx <= border_tx_max; tx++)
+            {
+                pimpl->request_tile({ zoom, tx, ty });
+            }
+        }
+
+        // Prefetch: zoom +1 tiles overlapping viewport
+        if(zoom + 1 <= pimpl->max_zoom)
+        {
+            int nz = 1 << (zoom + 1);
+            double tsz = world_size / nz;
+            int ztx_min = std::max(0, static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tsz)));
+            int ztx_max = std::min(nz - 1, static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tsz)));
+            int zty_min = std::max(0, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tsz)));
+            int zty_max = std::min(nz - 1, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tsz)));
+
+            for(int ty = zty_min; ty <= zty_max; ty++)
+            {
+                for(int tx = ztx_min; tx <= ztx_max; tx++)
                 {
-                    pimpl->tiles_needing_upload.push_back(key);
+                    pimpl->request_tile({ zoom + 1, tx, ty });
                 }
             }
         }
 
+        // Prefetch: zoom -1 tiles overlapping viewport
+        if(zoom - 1 >= 0)
+        {
+            int nz = 1 << (zoom - 1);
+            double tsz = world_size / nz;
+            int ztx_min = std::max(0, static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tsz)));
+            int ztx_max = std::min(nz - 1, static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tsz)));
+            int zty_min = std::max(0, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tsz)));
+            int zty_max = std::min(nz - 1, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tsz)));
+
+            for(int ty = zty_min; ty <= zty_max; ty++)
+            {
+                for(int tx = ztx_min; tx <= ztx_max; tx++)
+                {
+                    pimpl->request_tile({ zoom - 1, tx, ty });
+                }
+            }
+        }
     }
 
-    bool tile_renderer::needs_upload() const
+    bool tile_renderer::needs_upload()
     {
-        return !pimpl->tiles_needing_upload.empty();
+        auto results = pimpl->loader.drain_results();
+        for(auto& result : results)
+        {
+            pimpl->pending_results.push_back(std::move(result));
+        }
+        return !pimpl->pending_results.empty();
     }
 
     void tile_renderer::prepare(size_t& size) const
     {
-        pimpl->surfaces_for_upload.clear();
-
-        for(const auto& key : pimpl->tiles_needing_upload)
+        for(const auto& result : pimpl->pending_results)
         {
-            if(!pimpl->tile_file_exists(key))
-            {
-                continue;
-            }
-
-            try
-            {
-                sdl::surface surf(pimpl->tile_file_path(key).c_str());
-                size += 6 * sizeof(sdl::vertex_t2f_c4ub_v3f);
-                size += surf.size();
-                pimpl->surfaces_for_upload.emplace_back(key, std::move(surf));
-            }
-            catch(...)
-            {
-                // Skip tiles that fail to load
-            }
+            size += 6 * sizeof(sdl::vertex_t2f_c4ub_v3f);
+            size += result.surf->size();
         }
     }
 
     void tile_renderer::copy(sdl::copy_pass& pass)
     {
-        for(auto& [key, surf] : pimpl->surfaces_for_upload)
+        for(auto& result : pimpl->pending_results)
         {
             std::vector<sdl::vertex_t2f_c4ub_v3f> vertices(6);
-            get_tile_vertices(key, vertices.data());
+            get_tile_vertices(result.key, vertices.data());
 
             auto gpu = std::make_shared<tile_gpu>();
-            gpu->key = key;
+            gpu->key = result.key;
 
             auto vbuf = pass.create_and_upload_buffer(pimpl->dev, sdl::buffer_usage::vertex, vertices);
             gpu->vertex_buffer = std::make_unique<sdl::buffer>(std::move(vbuf));
 
-            auto tex = pass.create_and_upload_texture(pimpl->dev, surf);
+            auto tex = pass.create_and_upload_texture(pimpl->dev, *result.surf);
             gpu->tex = std::make_unique<sdl::texture>(std::move(tex));
 
             pimpl->cache.put(gpu);
-            pimpl->tile_map[key] = gpu;
+            pimpl->tile_map[result.key] = gpu;
         }
-
-        pimpl->surfaces_for_upload.clear();
-        pimpl->tiles_needing_upload.clear();
+        pimpl->pending_results.clear();
     }
 
     void tile_renderer::render(sdl::render_pass& pass, const render_context& ctx) const

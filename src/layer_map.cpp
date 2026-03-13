@@ -134,16 +134,9 @@ struct layer_map::impl
         tiles.update(view.view_x_min(), view.view_y_min(),
                      view.view_x_max(), view.view_y_max(),
                      viewport_height, view.aspect_ratio);
-        if(tiles.needs_upload())
-        {
-            needs_update = true;
-        }
-        if(features.update(view.view_x_min(), view.view_y_min(),
-                            view.view_x_max(), view.view_y_max(),
-                            viewport_height, view.aspect_ratio))
-        {
-            needs_update = true;
-        }
+        features.update(view.view_x_min(), view.view_y_min(),
+                        view.view_x_max(), view.view_y_max(),
+                        viewport_height, view.aspect_ratio);
     }
 };
 

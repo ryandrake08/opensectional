@@ -24,6 +24,9 @@ namespace nasrbrowse
         tile_renderer(sdl::device& dev, const char* tile_path);
         ~tile_renderer();
 
+        // Drain background loader and check if tiles need upload
+        bool needs_upload();
+
         // Call when viewport changes to recompute visible tiles
         void update(double view_x_min, double view_y_min,
                     double view_x_max, double view_y_max,
@@ -37,9 +40,6 @@ namespace nasrbrowse
 
         // Render visible tiles
         void render(sdl::render_pass& pass, const render_context& ctx) const;
-
-        // Whether there are tiles needing upload
-        bool needs_upload() const;
     };
 
 } // namespace nasrbrowse
