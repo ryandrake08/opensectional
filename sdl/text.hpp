@@ -4,8 +4,6 @@
 #include <memory>
 #include <vector>
 
-class color;
-
 namespace sdl
 {
     // Forward declarations
@@ -118,14 +116,17 @@ namespace sdl
          * @param indices Index buffer to append to (indices adjusted for current vertex count)
          * @param position Position to place the text (in normalized coordinates)
          * @param scale Scale factor to apply to text
-         * @param col Text color
+         * @param r Red component (0-255)
+         * @param g Green component (0-255)
+         * @param b Blue component (0-255)
+         * @param a Alpha component (0-255)
          */
         void append_geometry(
             std::vector<vertex_t2f_c4ub_v3f>& vertices,
             std::vector<int>& indices,
             const glm::vec3& position,
             float scale,
-            const color& col) const;
+            unsigned char r, unsigned char g, unsigned char b, unsigned char a) const;
     };
 
 } // namespace sdl

@@ -1,5 +1,4 @@
 #include "text.hpp"
-#include "color.hpp"
 #include "error.hpp"
 #include "font.hpp"
 #include "text_engine.hpp"
@@ -121,7 +120,7 @@ namespace sdl
         std::vector<int>& indices,
         const glm::vec3& position,
         float scale,
-        const color& col) const
+        unsigned char r, unsigned char g, unsigned char b, unsigned char a) const
     {
         // Get draw data from SDL3_ttf
         TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(pimpl->handle);
@@ -149,10 +148,10 @@ namespace sdl
                 vertex_t2f_c4ub_v3f vert;
                 vert.s = seq->uv[i].x;
                 vert.t = seq->uv[i].y;
-                vert.r = col.r();
-                vert.g = col.g();
-                vert.b = col.b();
-                vert.a = col.a();
+                vert.r = r;
+                vert.g = g;
+                vert.b = b;
+                vert.a = a;
                 vert.x = position.x + seq->xy[i].x * norm_scale;
                 vert.y = position.y + seq->xy[i].y * norm_scale;
                 vert.z = position.z;
