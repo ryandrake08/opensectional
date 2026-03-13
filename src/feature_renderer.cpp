@@ -476,19 +476,7 @@ namespace nasrbrowse
 
     feature_renderer::~feature_renderer() = default;
 
-    void feature_renderer::set_visibility(const layer_visibility& vis)
-    {
-        pimpl->vis_airports = vis.airports;
-        pimpl->vis_runways = vis.runways;
-        pimpl->vis_navaids = vis.navaids;
-        pimpl->vis_fixes = vis.fixes;
-        pimpl->vis_airways = vis.airways;
-        pimpl->vis_airspace = vis.airspace;
-        pimpl->vis_sua = vis.sua;
-        pimpl->vis_obstacles = vis.obstacles;
-    }
-
-    bool feature_renderer::update(double vx_min, double vy_min,
+    void feature_renderer::update(double vx_min, double vy_min,
                                    double vx_max, double vy_max,
                                    int viewport_height, double)
     {
@@ -506,12 +494,10 @@ namespace nasrbrowse
         if(pimpl->needs_requery(lon_min, lat_min, lon_max, lat_max))
         {
             pimpl->build_vertices(lon_min, lat_min, lon_max, lat_max);
-            return true;
         }
-        return false;
     }
 
-    bool feature_renderer::needs_upload() const
+    bool feature_renderer::needs_upload()
     {
         return pimpl->dirty;
     }
@@ -600,6 +586,18 @@ namespace nasrbrowse
         if(pimpl->vis_navaids) draw(pimpl->navaid_buffer);
         if(pimpl->vis_airports) draw(pimpl->airport_buffer);
         if(pimpl->vis_runways) draw(pimpl->runway_buffer);
+    }
+
+    void feature_renderer::set_visibility(const layer_visibility& vis)
+    {
+        pimpl->vis_airports = vis.airports;
+        pimpl->vis_runways = vis.runways;
+        pimpl->vis_navaids = vis.navaids;
+        pimpl->vis_fixes = vis.fixes;
+        pimpl->vis_airways = vis.airways;
+        pimpl->vis_airspace = vis.airspace;
+        pimpl->vis_sua = vis.sua;
+        pimpl->vis_obstacles = vis.obstacles;
     }
 
 } // namespace nasrbrowse

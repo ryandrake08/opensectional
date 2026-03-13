@@ -8,7 +8,6 @@ namespace sdl
     class device;
     class copy_pass;
     class render_pass;
-    class sampler;
 }
 
 namespace nasrbrowse
@@ -24,13 +23,13 @@ namespace nasrbrowse
         tile_renderer(sdl::device& dev, const char* tile_path);
         ~tile_renderer();
 
-        // Drain background loader and check if tiles need upload
-        bool needs_upload();
-
-        // Call when viewport changes to recompute visible tiles
+        // Recompute visible tiles and enqueue background loads
         void update(double view_x_min, double view_y_min,
                     double view_x_max, double view_y_max,
                     int viewport_height, double aspect_ratio);
+
+        // Drain background loader and check if tiles need upload
+        bool needs_upload();
 
         // Accumulate transfer buffer size needed
         void prepare(size_t& size) const;
