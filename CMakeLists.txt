@@ -42,6 +42,7 @@ add_executable(nasrbrowse
     sdl/text.cpp
     sdl/text_engine.cpp
     sdl/texture.cpp
+    sdl/timer.cpp
     sdl/transfer_buffer.cpp
     sdl/types.cpp
     sdl/window.cpp
