@@ -80,6 +80,13 @@ namespace nasrbrowse
         std::vector<airspace_point> shape;
     };
 
+    struct obstacle
+    {
+        double lat;
+        double lon;
+        int agl_ht;
+    };
+
     // Class B/C/D/E airspace (from shapefile)
     struct class_airspace
     {
@@ -120,6 +127,8 @@ namespace nasrbrowse
                                                   double lon_max, double lat_max);
         const std::vector<sua>& query_sua(double lon_min, double lat_min,
                                           double lon_max, double lat_max);
+        const std::vector<obstacle>& query_obstacles(double lon_min, double lat_min,
+                                                      double lon_max, double lat_max);
     };
 
 } // namespace nasrbrowse

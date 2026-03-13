@@ -36,6 +36,7 @@ namespace nasrbrowse
         std::vector<sdl::vertex_t2f_c4ub_v3f> airway_vertices;
         std::vector<sdl::vertex_t2f_c4ub_v3f> airspace_vertices;
         std::vector<sdl::vertex_t2f_c4ub_v3f> sua_vertices;
+        std::vector<sdl::vertex_t2f_c4ub_v3f> obstacle_vertices;
 
         std::unique_ptr<sdl::buffer> airport_buffer;
         std::unique_ptr<sdl::buffer> runway_buffer;
@@ -44,6 +45,7 @@ namespace nasrbrowse
         std::unique_ptr<sdl::buffer> airway_buffer;
         std::unique_ptr<sdl::buffer> airspace_buffer;
         std::unique_ptr<sdl::buffer> sua_buffer;
+        std::unique_ptr<sdl::buffer> obstacle_buffer;
 
         bool dirty;
 
@@ -119,11 +121,17 @@ namespace nasrbrowse
             airway_vertices.clear();
             airspace_vertices.clear();
             sua_vertices.clear();
+            obstacle_vertices.clear();
 
             build_airport_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_navaid_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_airway_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_sua_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
+
+            if(z >= 9.0)
+            {
+                build_obstacle_vertices(qlon_min, qlat_min, qlon_max, qlat_max);
+            }
 
             if(z >= 7.0)
             {
@@ -369,6 +377,36 @@ namespace nasrbrowse
             }
         }
 
+        void build_obstacle_vertices(double lon_min, double lat_min,
+                                      double lon_max, double lat_max)
+        {
+            const auto& obstacles = db.query_obstacles(lon_min, lat_min, lon_max, lat_max);
+            float radius = static_cast<float>(half_extent_y * 0.003);
+
+            for(const auto& obs : obstacles)
+            {
+                double mx = lon_to_mx(obs.lon);
+                double my = lat_to_my(obs.lat);
+
+                uint8_t r, g, b, a;
+                if(obs.agl_ht >= 1000)
+                {
+                    r = 220; g = 60; b = 60; a = 255;
+                }
+                else if(obs.agl_ht >= 200)
+                {
+                    r = 255; g = 165; b = 0; a = 255;
+                }
+                else
+                {
+                    r = 160; g = 160; b = 160; a = 140;
+                }
+
+                // Inverted triangle (point-down)
+                add_triangle(obstacle_vertices, mx, my, -radius, r, g, b, a);
+            }
+        }
+
         void build_airspace_vertices(double lon_min, double lat_min,
                                       double lon_max, double lat_max, double z)
         {
@@ -468,6 +506,7 @@ namespace nasrbrowse
         };
 
         add(pimpl->sua_vertices);
+        add(pimpl->obstacle_vertices);
         add(pimpl->airspace_vertices);
         add(pimpl->airway_vertices);
         add(pimpl->fix_vertices);
@@ -490,6 +529,7 @@ namespace nasrbrowse
         };
 
         upload(pimpl->sua_vertices, pimpl->sua_buffer);
+        upload(pimpl->obstacle_vertices, pimpl->obstacle_buffer);
         upload(pimpl->airspace_vertices, pimpl->airspace_buffer);
         upload(pimpl->airway_vertices, pimpl->airway_buffer);
         upload(pimpl->fix_vertices, pimpl->fix_buffer);
@@ -532,6 +572,7 @@ namespace nasrbrowse
         };
 
         draw(pimpl->sua_buffer);
+        draw(pimpl->obstacle_buffer);
         draw(pimpl->airspace_buffer);
         draw(pimpl->airway_buffer);
         draw(pimpl->fix_buffer);

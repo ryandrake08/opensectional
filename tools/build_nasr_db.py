@@ -7,10 +7,10 @@ XML, adds decimal coordinates where needed, and creates R-tree spatial
 indexes for bounding box queries.
 
 Usage:
-    python3 build_nasr_db.py <csv.zip> <shapefile.zip> <aixm.zip> <output.db>
+    python3 build_nasr_db.py <csv.zip> <shapefile.zip> <aixm.zip> <dof.zip> <output.db>
 
 Example:
-    python3 build_nasr_db.py 19_Feb_2026_CSV.zip class_airspace_shape_files.zip aixm5.0.zip nasr.db
+    python3 build_nasr_db.py 19_Feb_2026_CSV.zip class_airspace_shape_files.zip aixm5.0.zip DOF.zip nasr.db
 """
 
 import csv
@@ -23,6 +23,25 @@ import struct
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
+
+
+def parse_dof_dms(dms_str):
+    """Parse DOF DMS format to decimal degrees.
+
+    Examples: "32 31 54.66N" -> 32.531850
+              " 117 11 11.20W" -> -117.186444
+    """
+    m = re.match(r"\s*(\d+)\s+(\d+)\s+([\d.]+)([NSEW])", dms_str)
+    if not m:
+        return None
+    deg = int(m.group(1))
+    mins = int(m.group(2))
+    secs = float(m.group(3))
+    hem = m.group(4)
+    decimal = deg + mins / 60.0 + secs / 3600.0
+    if hem in ("S", "W"):
+        decimal = -decimal
+    return decimal
 
 
 def parse_dms(dms_str):
@@ -736,6 +755,76 @@ def build_sua(conn, aixm_zf):
     conn.execute("CREATE INDEX idx_sua_shp ON SUA_SHP(SUA_ID)")
 
 
+def build_obstacles(conn, dof_zf):
+    """Import obstacles from FAA Digital Obstacle File (DOF).
+
+    The DOF ZIP contains fixed-width .Dat files with obstacle records.
+    Each file has 4 header lines followed by data rows.
+    """
+    conn.execute("DROP TABLE IF EXISTS OBS_BASE")
+    conn.execute("""
+        CREATE TABLE OBS_BASE (
+            LAT_DECIMAL REAL,
+            LON_DECIMAL REAL,
+            OBSTACLE_TYPE TEXT,
+            AGL_HT INTEGER,
+            AMSL_HT INTEGER,
+            LIGHTING TEXT
+        )
+    """)
+
+    rows = []
+    dat_files = sorted(n for n in dof_zf.namelist() if n.endswith('.Dat'))
+    for dat_name in dat_files:
+        with dof_zf.open(dat_name) as raw:
+            lines = io.TextIOWrapper(raw, encoding="latin-1")
+            # Skip 4 header lines
+            for _ in range(4):
+                next(lines, None)
+            for line in lines:
+                if len(line) < 96:
+                    continue
+                lat_str = line[35:48]
+                lon_str = line[48:62]
+                obs_type = line[62:81].strip()
+                agl_str = line[82:88].strip()
+                amsl_str = line[88:94].strip()
+                lighting = line[95:96].strip()
+
+                lat = parse_dof_dms(lat_str)
+                lon = parse_dof_dms(lon_str)
+                if lat is None or lon is None:
+                    continue
+
+                try:
+                    agl_ht = int(agl_str)
+                except ValueError:
+                    agl_ht = 0
+                try:
+                    amsl_ht = int(amsl_str)
+                except ValueError:
+                    amsl_ht = 0
+
+                rows.append((lat, lon, obs_type, agl_ht, amsl_ht, lighting))
+
+    conn.executemany("INSERT INTO OBS_BASE VALUES (?, ?, ?, ?, ?, ?)", rows)
+    print(f"  OBS_BASE: {len(rows)} obstacles")
+
+    conn.execute("""
+        CREATE VIRTUAL TABLE OBS_BASE_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO OBS_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT rowid,
+               LON_DECIMAL, LON_DECIMAL,
+               LAT_DECIMAL, LAT_DECIMAL
+        FROM OBS_BASE
+        WHERE LAT_DECIMAL IS NOT NULL AND LON_DECIMAL IS NOT NULL
+    """)
+
+
 def build_cls_arsp(conn, shp_zf):
     """Import class airspace polygons from ESRI shapefile."""
     shp_name = next((n for n in shp_zf.namelist() if n.endswith('.shp')), None)
@@ -838,16 +927,17 @@ def build_cls_arsp(conn, shp_zf):
 
 
 def main():
-    if len(sys.argv) != 5:
-        print(f"Usage: {sys.argv[0]} <csv.zip> <shapefile.zip> <aixm.zip> <output.db>")
+    if len(sys.argv) != 6:
+        print(f"Usage: {sys.argv[0]} <csv.zip> <shapefile.zip> <aixm.zip> <dof.zip> <output.db>")
         sys.exit(1)
 
     csv_zip_path = sys.argv[1]
     shp_zip_path = sys.argv[2]
     aixm_zip_path = sys.argv[3]
-    db_path = sys.argv[4]
+    dof_zip_path = sys.argv[4]
+    db_path = sys.argv[5]
 
-    for path in (csv_zip_path, shp_zip_path, aixm_zip_path):
+    for path in (csv_zip_path, shp_zip_path, aixm_zip_path, dof_zip_path):
         if not os.path.isfile(path):
             print(f"Error: {path} not found")
             sys.exit(1)
@@ -888,6 +978,10 @@ def main():
     with zipfile.ZipFile(aixm_zip_path) as aixm_zf:
         build_sua(conn, aixm_zf)
 
+    print("Importing obstacles from DOF...")
+    with zipfile.ZipFile(dof_zip_path) as dof_zf:
+        build_obstacles(conn, dof_zf)
+
     conn.commit()
 
     # Print summary
@@ -895,7 +989,7 @@ def main():
     tables = ["APT_BASE", "NAV_BASE", "FIX_BASE", "AWY_SEG",
               "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
               "CLS_ARSP_BASE", "CLS_ARSP_SHP",
-              "SUA_BASE", "SUA_SHP"]
+              "SUA_BASE", "SUA_SHP", "OBS_BASE"]
     for table in tables:
         count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         print(f"  {table}: {count} rows")

@@ -32,6 +32,7 @@ namespace nasrbrowse
         sqlite3_stmt* stmt_runways;
         sqlite3_stmt* stmt_sua;
         sqlite3_stmt* stmt_sua_shape;
+        sqlite3_stmt* stmt_obstacles;
 
         std::vector<airport> airports;
         std::vector<navaid> navaids;
@@ -41,6 +42,7 @@ namespace nasrbrowse
         std::vector<class_airspace> class_airspaces;
         std::vector<runway> runways;
         std::vector<sua> suas;
+        std::vector<obstacle> obstacles;
 
         impl(const char* db_path)
             : db(nullptr)
@@ -55,6 +57,7 @@ namespace nasrbrowse
             , stmt_runways(nullptr)
             , stmt_sua(nullptr)
             , stmt_sua_shape(nullptr)
+            , stmt_obstacles(nullptr)
         {
             int rc = sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, nullptr);
             if(rc != SQLITE_OK)
@@ -81,6 +84,7 @@ namespace nasrbrowse
             sqlite3_finalize(stmt_runways);
             sqlite3_finalize(stmt_sua);
             sqlite3_finalize(stmt_sua_shape);
+            sqlite3_finalize(stmt_obstacles);
             sqlite3_close(db);
         }
 
@@ -203,6 +207,16 @@ namespace nasrbrowse
                 FROM SUA_SHP
                 WHERE SUA_ID = ?1
                 ORDER BY POINT_SEQ
+            )");
+
+            prepare(&stmt_obstacles, R"(
+                SELECT LAT_DECIMAL, LON_DECIMAL, AGL_HT
+                FROM OBS_BASE
+                WHERE rowid IN (
+                    SELECT id FROM OBS_BASE_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
             )");
         }
 
@@ -447,6 +461,25 @@ namespace nasrbrowse
         }
 
         return d.suas;
+    }
+
+    const std::vector<obstacle>& nasr_database::query_obstacles(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        d.obstacles.clear();
+        d.bind_bbox(d.stmt_obstacles, lon_min, lat_min, lon_max, lat_max);
+
+        while(sqlite3_step(d.stmt_obstacles) == SQLITE_ROW)
+        {
+            obstacle o;
+            o.lat = col_double(d.stmt_obstacles, 0);
+            o.lon = col_double(d.stmt_obstacles, 1);
+            o.agl_ht = sqlite3_column_int(d.stmt_obstacles, 2);
+            d.obstacles.push_back(o);
+        }
+
+        return d.obstacles;
     }
 
 } // namespace nasrbrowse
