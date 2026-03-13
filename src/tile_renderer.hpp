@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <memory>
 
 namespace sdl
@@ -30,9 +29,6 @@ namespace nasrbrowse
 
         // Drain background loader and check if tiles need upload
         bool needs_upload();
-
-        // Accumulate transfer buffer size needed
-        void prepare(size_t& size) const;
 
         // Upload tile data to GPU
         void copy(sdl::copy_pass& pass);

@@ -244,15 +244,6 @@ namespace nasrbrowse
         return !pimpl->pending_results.empty();
     }
 
-    void tile_renderer::prepare(size_t& size) const
-    {
-        for(const auto& result : pimpl->pending_results)
-        {
-            size += 6 * sizeof(sdl::vertex_t2f_c4ub_v3f);
-            size += result.surf->size();
-        }
-    }
-
     void tile_renderer::copy(sdl::copy_pass& pass)
     {
         for(auto& result : pimpl->pending_results)

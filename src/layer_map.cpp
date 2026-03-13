@@ -239,16 +239,6 @@ bool layer_map::on_update()
     return result;
 }
 
-void layer_map::on_prepare(size_t& size) const
-{
-    if(!pimpl->grid_vertices.empty())
-    {
-        size += pimpl->grid_vertices.size() * sizeof(sdl::vertex_t2f_c4ub_v3f);
-    }
-    pimpl->tiles.prepare(size);
-    pimpl->features.prepare(size);
-}
-
 void layer_map::on_copy(sdl::copy_pass& pass)
 {
     if(!pimpl->grid_vertices.empty())

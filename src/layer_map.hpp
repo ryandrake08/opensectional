@@ -30,7 +30,6 @@ public:
     void on_scroll(double xoffset, double yoffset) override;
     void on_resize(float normalized_viewport_width, int viewport_height_pixels) override;
     bool on_update() override;
-    void on_prepare(size_t& size) const override;
     void on_copy(sdl::copy_pass& pass) override;
     void on_render(sdl::render_pass& pass, const nasrbrowse::render_context& ctx) const override;
 };

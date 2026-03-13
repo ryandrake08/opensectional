@@ -100,14 +100,6 @@ bool layer::update()
     return dirty;
 }
 
-void layer::prepare(size_t& size) const
-{
-    if(dirty)
-    {
-        on_prepare(size);
-    }
-}
-
 void layer::copy(sdl::copy_pass& pass)
 {
     if(dirty)
@@ -131,6 +123,5 @@ void layer::on_key_input(sdl::input_key_t, sdl::input_action_t, sdl::input_mod_t
 void layer::on_drag_input(const std::vector<sdl::input_button_t>&, double, double) {}
 void layer::on_scroll(double, double) {}
 bool layer::on_update() { return true; }
-void layer::on_prepare(size_t&) const {}
 void layer::on_copy(sdl::copy_pass&) {}
 void layer::on_render(sdl::render_pass&, const nasrbrowse::render_context&) const {}

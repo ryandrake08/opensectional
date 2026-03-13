@@ -8,18 +8,17 @@
 #include "transfer_buffer.hpp"
 #include "types.hpp"
 #include <SDL3/SDL.h>
+#include <vector>
 
 namespace sdl
 {
-    // Copy pass implementation
     struct copy_pass::impl
     {
-        SDL_GPUCopyPass* handle;    // Owning (ended on destruction)
-        transfer_buffer& transfer;  // Reference to shared transfer buffer
+        SDL_GPUCopyPass* handle;
+        std::vector<transfer_buffer> transfers;
 
-        impl(SDL_GPUCommandBuffer* cmd, transfer_buffer& tbuf)
+        explicit impl(SDL_GPUCommandBuffer* cmd)
             : handle(SDL_BeginGPUCopyPass(cmd))
-            , transfer(tbuf)
         {
             if(!handle)
             {
@@ -31,9 +30,16 @@ namespace sdl
         {
             SDL_EndGPUCopyPass(handle);
         }
+
+        transfer_buffer& alloc(const device& dev, uint32_t size)
+        {
+            transfers.emplace_back(dev, size);
+            return transfers.back();
+        }
     };
 
-    copy_pass::copy_pass(command_buffer& cmd, transfer_buffer& transfer) : pimpl(new impl(cmd.get(), transfer))
+    copy_pass::copy_pass(command_buffer& cmd)
+        : pimpl(new impl(cmd.get()))
     {
     }
 
@@ -59,15 +65,14 @@ namespace sdl
 
     texture copy_pass::create_and_upload_texture(const device& dev, const surface& surf)
     {
-        // Create texture from surface dimensions
         texture tex(dev, surf);
 
-        // Append pixel data to shared transfer buffer
-        uint32_t offset = pimpl->transfer.append(surf.pixels(), surf.size());
+        uint32_t data_size = surf.size();
+        transfer_buffer& transfer = pimpl->alloc(dev, data_size);
+        uint32_t offset = transfer.append(surf.pixels(), data_size);
 
-        // Upload to texture
         SDL_GPUTextureTransferInfo source = {};
-        source.transfer_buffer = pimpl->transfer.get();
+        source.transfer_buffer = transfer.get();
         source.offset = offset;
 
         SDL_GPUTextureRegion destination = {};
@@ -81,7 +86,6 @@ namespace sdl
         return tex;
     }
 
-    // Template implementation for create_and_upload_buffer
     template<typename T>
     buffer copy_pass::create_and_upload_buffer(const device& dev, buffer_usage_t usage, const std::vector<T>& data)
     {
@@ -93,10 +97,11 @@ namespace sdl
         buffer buf(dev, usage, static_cast<uint32_t>(data.size()), sizeof(T));
 
         uint32_t byte_size = static_cast<uint32_t>(data.size() * sizeof(T));
-        uint32_t offset = pimpl->transfer.append(data.data(), byte_size);
+        transfer_buffer& transfer = pimpl->alloc(dev, byte_size);
+        uint32_t offset = transfer.append(data.data(), byte_size);
 
         SDL_GPUTransferBufferLocation source = {};
-        source.transfer_buffer = pimpl->transfer.get();
+        source.transfer_buffer = transfer.get();
         source.offset = offset;
 
         SDL_GPUBufferRegion destination = {};

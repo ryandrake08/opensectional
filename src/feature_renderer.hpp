@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <memory>
 
 namespace sdl
@@ -31,9 +30,6 @@ namespace nasrbrowse
 
         // Check if features need upload
         bool needs_upload();
-
-        // Accumulate transfer buffer size needed
-        void prepare(size_t& size) const;
 
         // Upload feature data to GPU
         void copy(sdl::copy_pass& pass);

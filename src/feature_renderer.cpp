@@ -502,26 +502,6 @@ namespace nasrbrowse
         return pimpl->dirty;
     }
 
-    void feature_renderer::prepare(size_t& size) const
-    {
-        auto add = [&](const auto& verts)
-        {
-            if(!verts.empty())
-            {
-                size += verts.size() * sizeof(sdl::vertex_t2f_c4ub_v3f);
-            }
-        };
-
-        add(pimpl->sua_vertices);
-        add(pimpl->obstacle_vertices);
-        add(pimpl->airspace_vertices);
-        add(pimpl->airway_vertices);
-        add(pimpl->fix_vertices);
-        add(pimpl->navaid_vertices);
-        add(pimpl->airport_vertices);
-        add(pimpl->runway_vertices);
-    }
-
     void feature_renderer::copy(sdl::copy_pass& pass)
     {
         auto upload = [&](auto& verts, auto& buffer)

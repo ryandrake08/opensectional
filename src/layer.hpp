@@ -1,5 +1,4 @@
 #pragma once
-#include <cstddef>
 #include <glm/glm.hpp>
 #include <memory>
 #include <sdl/event.hpp>
@@ -31,7 +30,6 @@ protected:
     virtual void on_drag_input(const std::vector<sdl::input_button_t>& buttons, double xdelta, double ydelta);
     virtual void on_scroll(double xoffset, double yoffset);
     virtual bool on_update();
-    virtual void on_prepare(size_t& size) const;
     virtual void on_copy(sdl::copy_pass& pass);
     virtual void on_render(sdl::render_pass& pass, const nasrbrowse::render_context& ctx) const;
 
@@ -48,7 +46,6 @@ public:
 
     // render pipeline
     bool update();
-    void prepare(size_t& size) const;
     void copy(sdl::copy_pass& pass);
     virtual void render(sdl::render_pass& pass, nasrbrowse::render_context& ctx) const;
 };
