@@ -102,4 +102,11 @@ namespace sdl
         return false;
     }
 
+    void event_manager::push_user_event()
+    {
+        SDL_Event ev = {};
+        ev.type = SDL_EVENT_USER;
+        SDL_PushEvent(&ev);
+    }
+
 } // namespace sdl

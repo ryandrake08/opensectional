@@ -24,6 +24,9 @@ add_executable(nasrbrowse
     src/tile_renderer.cpp
     src/ui_overlay.cpp
 
+    # ImGui wrapper sources
+    imgui/context.cpp
+
     # SDL wrapper sources
     sdl/buffer.cpp
     sdl/command_buffer.cpp

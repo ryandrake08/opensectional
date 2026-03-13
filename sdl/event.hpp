@@ -43,6 +43,9 @@ namespace sdl
         // Block until an event arrives, then dispatch all pending events
         // Returns true if quit event was received
         bool wait_and_dispatch();
+
+        // Push a user event to wake SDL_WaitEvent
+        static void push_user_event();
     };
 
 } // namespace sdl
