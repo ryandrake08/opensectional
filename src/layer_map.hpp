@@ -1,11 +1,17 @@
 #pragma once
 #include "layer.hpp"
 #include <memory>
+
 namespace sdl
 {
     class device;
     class render_pass;
     class copy_pass;
+}
+
+namespace nasrbrowse
+{
+    struct layer_visibility;
 }
 
 class layer_map : public layer
@@ -16,6 +22,8 @@ class layer_map : public layer
 public:
     layer_map(sdl::device& dev, const char* tile_path, const char* db_path);
     ~layer_map() override;
+
+    void set_visibility(const nasrbrowse::layer_visibility& vis);
 
     void on_key_input(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t mods) override;
     void on_drag_input(const std::vector<sdl::input_button_t>& buttons, double xdelta, double ydelta) override;

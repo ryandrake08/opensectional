@@ -2,6 +2,7 @@
 #include "map_view.hpp"
 #include "nasr_database.hpp"
 #include "render_context.hpp"
+#include "ui_overlay.hpp"
 #include <cmath>
 #include <glm/ext/matrix_transform.hpp>
 #include <sdl/buffer.hpp>
@@ -47,6 +48,14 @@ namespace nasrbrowse
         std::unique_ptr<sdl::buffer> sua_buffer;
         std::unique_ptr<sdl::buffer> obstacle_buffer;
 
+        bool vis_airports = true;
+        bool vis_runways = true;
+        bool vis_navaids = true;
+        bool vis_fixes = true;
+        bool vis_airways = true;
+        bool vis_airspace = true;
+        bool vis_sua = true;
+        bool vis_obstacles = true;
         bool dirty;
 
         impl(sdl::device& dev, const char* db_path)
@@ -467,6 +476,18 @@ namespace nasrbrowse
 
     feature_renderer::~feature_renderer() = default;
 
+    void feature_renderer::set_visibility(const layer_visibility& vis)
+    {
+        pimpl->vis_airports = vis.airports;
+        pimpl->vis_runways = vis.runways;
+        pimpl->vis_navaids = vis.navaids;
+        pimpl->vis_fixes = vis.fixes;
+        pimpl->vis_airways = vis.airways;
+        pimpl->vis_airspace = vis.airspace;
+        pimpl->vis_sua = vis.sua;
+        pimpl->vis_obstacles = vis.obstacles;
+    }
+
     bool feature_renderer::update(double vx_min, double vy_min,
                                    double vx_max, double vy_max,
                                    int viewport_height, double)
@@ -571,14 +592,14 @@ namespace nasrbrowse
             }
         };
 
-        draw(pimpl->sua_buffer);
-        draw(pimpl->obstacle_buffer);
-        draw(pimpl->airspace_buffer);
-        draw(pimpl->airway_buffer);
-        draw(pimpl->fix_buffer);
-        draw(pimpl->navaid_buffer);
-        draw(pimpl->airport_buffer);
-        draw(pimpl->runway_buffer);
+        if(pimpl->vis_sua) draw(pimpl->sua_buffer);
+        if(pimpl->vis_obstacles) draw(pimpl->obstacle_buffer);
+        if(pimpl->vis_airspace) draw(pimpl->airspace_buffer);
+        if(pimpl->vis_airways) draw(pimpl->airway_buffer);
+        if(pimpl->vis_fixes) draw(pimpl->fix_buffer);
+        if(pimpl->vis_navaids) draw(pimpl->navaid_buffer);
+        if(pimpl->vis_airports) draw(pimpl->airport_buffer);
+        if(pimpl->vis_runways) draw(pimpl->runway_buffer);
     }
 
 } // namespace nasrbrowse

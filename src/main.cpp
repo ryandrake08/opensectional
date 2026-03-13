@@ -1,5 +1,6 @@
 #include "layer_map.hpp"
 #include "render_context.hpp"
+#include "ui_overlay.hpp"
 #include <cstdlib>
 #include <exception>
 #include <iostream>
@@ -153,8 +154,13 @@ int main(int argc, char** argv)
         // Send initial resize
         map_layer->framebuffer_size_event(1280, 800);
 
+        // UI overlay (FPS display + layer checkboxes)
+        nasrbrowse::ui_overlay ui;
+
         // Main loop
         bool needs_render = true;
+        // ImGui auto-resize windows need two frames to stabilize layout
+        int imgui_warmup = 2;
         float last_render_ms = 0.0F;
         while(true)
         {
@@ -163,40 +169,47 @@ int main(int argc, char** argv)
                 break;
             }
 
-            // Update
+            // Update map state
             needs_render = map_layer->update();
+
+            // Always run ImGui frame so it can process events (hover,
+            // click) even when the map hasn't changed
+            ImGui_ImplSDLGPU3_NewFrame();
+            ImGui_ImplSDL3_NewFrame();
+            ImGui::NewFrame();
+
+            if(ui.draw(last_render_ms))
+            {
+                map_layer->set_visibility(ui.visibility());
+                needs_render = true;
+            }
+
+            ImGuiIO& io = ImGui::GetIO();
+            if(io.WantCaptureMouse)
+            {
+                needs_render = true;
+            }
+
+            if(imgui_warmup > 0)
+            {
+                imgui_warmup--;
+                needs_render = true;
+                // Push a dummy event so SDL_WaitEvent returns immediately
+                // for the next warmup frame
+                if(imgui_warmup > 0)
+                {
+                    SDL_Event ev = {};
+                    ev.type = SDL_EVENT_USER;
+                    SDL_PushEvent(&ev);
+                }
+            }
+
+            ImGui::Render();
+            ImDrawData* draw_data = ImGui::GetDrawData();
 
             if(needs_render)
             {
                 uint64_t render_start = SDL_GetPerformanceCounter();
-
-                // Start ImGui frame
-                ImGui_ImplSDLGPU3_NewFrame();
-                ImGui_ImplSDL3_NewFrame();
-                ImGui::NewFrame();
-
-                // FPS overlay in the bottom-right corner
-                ImGuiIO& io = ImGui::GetIO();
-                ImGui::SetNextWindowPos(
-                    ImVec2(io.DisplaySize.x, io.DisplaySize.y),
-                    ImGuiCond_Always,
-                    ImVec2(1.0F, 1.0F));
-                ImGui::SetNextWindowBgAlpha(0.4F);
-                ImGui::Begin("##fps", nullptr,
-                    ImGuiWindowFlags_NoDecoration |
-                    ImGuiWindowFlags_AlwaysAutoResize |
-                    ImGuiWindowFlags_NoFocusOnAppearing |
-                    ImGuiWindowFlags_NoNav |
-                    ImGuiWindowFlags_NoMove |
-                    ImGuiWindowFlags_NoSavedSettings |
-                    ImGuiWindowFlags_NoInputs);
-                float fps = (last_render_ms > 0.0F) ? 1000.0F / last_render_ms : 0.0F;
-                ImGui::Text("%6.1f FPS (%5.2f ms)", fps, last_render_ms);
-                ImGui::End();
-
-                ImGui::Render();
-                ImDrawData* draw_data = ImGui::GetDrawData();
-
                 sdl::command_buffer cmd(dev);
 
                 // Prepare phase

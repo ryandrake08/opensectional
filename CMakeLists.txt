@@ -22,6 +22,7 @@ add_executable(nasrbrowse
     src/nasr_database.cpp
     src/render_context.cpp
     src/tile_renderer.cpp
+    src/ui_overlay.cpp
 
     # SDL wrapper sources
     sdl/buffer.cpp

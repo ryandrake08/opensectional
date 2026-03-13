@@ -11,6 +11,7 @@ namespace sdl
 namespace nasrbrowse
 {
     struct render_context;
+    struct layer_visibility;
 
     class feature_renderer
     {
@@ -20,6 +21,8 @@ namespace nasrbrowse
     public:
         feature_renderer(sdl::device& dev, const char* db_path);
         ~feature_renderer();
+
+        void set_visibility(const layer_visibility& vis);
 
         // Call when viewport changes. Returns true if features need re-upload.
         bool update(double vx_min, double vy_min,

@@ -3,6 +3,7 @@
 #include "map_view.hpp"
 #include "render_context.hpp"
 #include "tile_renderer.hpp"
+#include "ui_overlay.hpp"
 #include <glm/glm.hpp>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
@@ -154,6 +155,13 @@ layer_map::layer_map(sdl::device& dev, const char* tile_path, const char* db_pat
 
 layer_map::~layer_map() = default;
 
+void layer_map::set_visibility(const nasrbrowse::layer_visibility& vis)
+{
+    pimpl->show_tiles = vis.basemap;
+    pimpl->features.set_visibility(vis);
+    pimpl->needs_update = true;
+}
+
 void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t)
 {
     if(action != sdl::input_action::release)
@@ -195,11 +203,6 @@ void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, s
             pimpl->view.zoom(2.0);
             pimpl->rebuild_grid();
         pimpl->update_tiles();
-            break;
-        case 't':
-        case 'T':
-            pimpl->show_tiles = !pimpl->show_tiles;
-            pimpl->needs_update = true;
             break;
         }
     }
