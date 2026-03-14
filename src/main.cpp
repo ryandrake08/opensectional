@@ -1,6 +1,7 @@
 #include "layer_map.hpp"
 #include "render_context.hpp"
 #include "ui_overlay.hpp"
+#include <csignal>
 #include <cstdlib>
 #include <exception>
 #include <imgui/context.hpp>
@@ -96,6 +97,14 @@ namespace
     }
 } // anonymous namespace
 
+namespace
+{
+    void signal_handler(int)
+    {
+        sdl::event_manager::push_quit_event();
+    }
+}
+
 int main(int argc, char** argv)
 {
     if(argc < 3)
@@ -103,6 +112,12 @@ int main(int argc, char** argv)
         std::cerr << "Usage: nasrbrowse <tile_path> <nasr.db>" << std::endl;
         return EXIT_FAILURE;
     }
+
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
+#if defined(SIGPIPE)
+    std::signal(SIGPIPE, SIG_IGN);
+#endif
 
     try
     {

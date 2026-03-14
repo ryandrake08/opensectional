@@ -137,4 +137,11 @@ namespace sdl
         SDL_PushEvent(&ev);
     }
 
+    void event_manager::push_quit_event()
+    {
+        SDL_Event ev = {};
+        ev.type = SDL_EVENT_QUIT;
+        SDL_PushEvent(&ev);
+    }
+
 } // namespace sdl

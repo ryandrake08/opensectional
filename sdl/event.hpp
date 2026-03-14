@@ -50,6 +50,9 @@ namespace sdl
 
         // Push a user event to wake SDL_WaitEvent
         static void push_user_event();
+
+        // Push a quit event to terminate the event loop
+        static void push_quit_event();
     };
 
 } // namespace sdl
