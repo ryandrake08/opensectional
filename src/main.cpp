@@ -133,8 +133,8 @@ int main(int argc, char** argv)
 
         // Event manager
         sdl::event_manager event_mgr;
-        event_mgr.set_raw_event_hook([&imgui_ctx](const SDL_Event& event) {
-            imgui_ctx.process_event(&event);
+        event_mgr.set_raw_event_hook([&imgui_ctx](const void* event) {
+            imgui_ctx.process_event(event);
         });
 
         // Create map layer
