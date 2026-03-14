@@ -1,4 +1,5 @@
 #include "feature_renderer.hpp"
+#include "line_renderer.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
 #include "render_context.hpp"
@@ -14,6 +15,19 @@
 
 namespace nasrbrowse
 {
+    // Polyline data for a feature type
+    struct polyline_data
+    {
+        std::vector<std::vector<glm::vec2>> polylines;
+        std::vector<line_style> styles;
+
+        void clear()
+        {
+            polylines.clear();
+            styles.clear();
+        }
+    };
+
     struct feature_renderer::impl
     {
         sdl::device& dev;
@@ -21,6 +35,7 @@ namespace nasrbrowse
 
         // Current view state
         double center_x, center_y, half_extent_y;
+        double aspect_ratio;
         int viewport_height;
 
         // Cached query bbox (in lon/lat). We pad the query region and only
@@ -29,24 +44,23 @@ namespace nasrbrowse
         double last_zoom;
         bool has_cached_query;
 
-        // Vertex buffers for each feature type
+        // Point feature vertex buffers (rendered as line_list)
         std::vector<sdl::vertex_t2f_c4ub_v3f> airport_vertices;
-        std::vector<sdl::vertex_t2f_c4ub_v3f> runway_vertices;
         std::vector<sdl::vertex_t2f_c4ub_v3f> navaid_vertices;
         std::vector<sdl::vertex_t2f_c4ub_v3f> fix_vertices;
-        std::vector<sdl::vertex_t2f_c4ub_v3f> airway_vertices;
-        std::vector<sdl::vertex_t2f_c4ub_v3f> airspace_vertices;
-        std::vector<sdl::vertex_t2f_c4ub_v3f> sua_vertices;
         std::vector<sdl::vertex_t2f_c4ub_v3f> obstacle_vertices;
 
         std::unique_ptr<sdl::buffer> airport_buffer;
-        std::unique_ptr<sdl::buffer> runway_buffer;
         std::unique_ptr<sdl::buffer> navaid_buffer;
         std::unique_ptr<sdl::buffer> fix_buffer;
-        std::unique_ptr<sdl::buffer> airway_buffer;
-        std::unique_ptr<sdl::buffer> airspace_buffer;
-        std::unique_ptr<sdl::buffer> sua_buffer;
         std::unique_ptr<sdl::buffer> obstacle_buffer;
+
+        // Line/polygon feature polylines (rendered via SDF line_renderer)
+        polyline_data sua_poly;
+        polyline_data airspace_poly;
+        polyline_data airway_poly;
+        polyline_data runway_poly;
+        line_renderer sdf_lines;
 
         bool vis_airports = true;
         bool vis_runways = true;
@@ -64,6 +78,7 @@ namespace nasrbrowse
             , center_x(0)
             , center_y(0)
             , half_extent_y(HALF_CIRCUMFERENCE)
+            , aspect_ratio(1.0)
             , viewport_height(0)
             , query_lon_min(0)
             , query_lat_min(0)
@@ -124,18 +139,18 @@ namespace nasrbrowse
             has_cached_query = true;
 
             airport_vertices.clear();
-            runway_vertices.clear();
             navaid_vertices.clear();
             fix_vertices.clear();
-            airway_vertices.clear();
-            airspace_vertices.clear();
-            sua_vertices.clear();
             obstacle_vertices.clear();
+            sua_poly.clear();
+            airspace_poly.clear();
+            airway_poly.clear();
+            runway_poly.clear();
 
             build_airport_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_navaid_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
-            build_airway_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
-            build_sua_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_airway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_sua_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
 
             if(z >= 9.0)
             {
@@ -149,14 +164,15 @@ namespace nasrbrowse
 
             if(z >= 10.0)
             {
-                build_runway_vertices(qlon_min, qlat_min, qlon_max, qlat_max);
+                build_runway_polylines(qlon_min, qlat_min, qlon_max, qlat_max);
             }
 
             if(z >= 4.0)
             {
-                build_airspace_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
+                build_airspace_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             }
 
+            rebuild_sdf_lines();
             dirty = true;
         }
 
@@ -279,8 +295,8 @@ namespace nasrbrowse
             }
         }
 
-        void build_airway_vertices(double lon_min, double lat_min,
-                                    double lon_max, double lat_max, double z)
+        void build_airway_polylines(double lon_min, double lat_min,
+                                     double lon_max, double lat_max, double z)
         {
             if(z < 5.0)
             {
@@ -291,37 +307,38 @@ namespace nasrbrowse
 
             for(const auto& seg : airways)
             {
-                double mx0 = lon_to_mx(seg.from_lon);
-                double my0 = lat_to_my(seg.from_lat);
-                double mx1 = lon_to_mx(seg.to_lon);
-                double my1 = lat_to_my(seg.to_lat);
+                float x0 = static_cast<float>(lon_to_mx(seg.from_lon));
+                float y0 = static_cast<float>(lat_to_my(seg.from_lat));
+                float x1 = static_cast<float>(lon_to_mx(seg.to_lon));
+                float y1 = static_cast<float>(lat_to_my(seg.to_lat));
+
+                line_style style;
+                style.line_width = 2.0F;
+                style.border_width = 1.0F;
+                style.dash_length = 0.0F;
+                style.gap_length = 0.0F;
 
                 // Victor airways (V): blue, Jet (J): dark gray, others: magenta
-                uint8_t r, g, b;
                 if(!seg.awy_id.empty() && seg.awy_id[0] == 'V')
                 {
-                    r = 80; g = 80; b = 180;
+                    style.r = 0.31F; style.g = 0.31F; style.b = 0.71F; style.a = 0.63F;
                 }
                 else if(!seg.awy_id.empty() && seg.awy_id[0] == 'J')
                 {
-                    r = 100; g = 100; b = 100;
+                    style.r = 0.39F; style.g = 0.39F; style.b = 0.39F; style.a = 0.63F;
                 }
                 else
                 {
-                    r = 180; g = 80; b = 180;
+                    style.r = 0.71F; style.g = 0.31F; style.b = 0.71F; style.a = 0.63F;
                 }
 
-                float x0 = static_cast<float>(mx0);
-                float y0 = static_cast<float>(my0);
-                float x1 = static_cast<float>(mx1);
-                float y1 = static_cast<float>(my1);
-                airway_vertices.push_back({0, 0, r, g, b, 160, x0, y0, 0});
-                airway_vertices.push_back({0, 0, r, g, b, 160, x1, y1, 0});
+                airway_poly.polylines.push_back({glm::vec2(x0, y0), glm::vec2(x1, y1)});
+                airway_poly.styles.push_back(style);
             }
         }
 
-        void build_runway_vertices(double lon_min, double lat_min,
-                                    double lon_max, double lat_max)
+        void build_runway_polylines(double lon_min, double lat_min,
+                                     double lon_max, double lat_max)
         {
             const auto& runways = db.query_runways(lon_min, lat_min, lon_max, lat_max);
 
@@ -331,13 +348,21 @@ namespace nasrbrowse
                 float y0 = static_cast<float>(lat_to_my(rwy.end1_lat));
                 float x1 = static_cast<float>(lon_to_mx(rwy.end2_lon));
                 float y1 = static_cast<float>(lat_to_my(rwy.end2_lat));
-                runway_vertices.push_back({0, 0, 200, 200, 200, 255, x0, y0, 0});
-                runway_vertices.push_back({0, 0, 200, 200, 200, 255, x1, y1, 0});
+
+                line_style style;
+                style.line_width = 3.0F;
+                style.border_width = 0.0F;
+                style.dash_length = 0.0F;
+                style.gap_length = 0.0F;
+                style.r = 0.78F; style.g = 0.78F; style.b = 0.78F; style.a = 1.0F;
+
+                runway_poly.polylines.push_back({glm::vec2(x0, y0), glm::vec2(x1, y1)});
+                runway_poly.styles.push_back(style);
             }
         }
 
-        void build_sua_vertices(double lon_min, double lat_min,
-                                 double lon_max, double lat_max, double z)
+        void build_sua_polylines(double lon_min, double lat_min,
+                                  double lon_max, double lat_max, double z)
         {
             if(z < 4.0)
             {
@@ -348,41 +373,52 @@ namespace nasrbrowse
 
             for(const auto& s : suas)
             {
-                // MOA: orange, Restricted/Prohibited: red, Warning: yellow, Alert: orange
-                uint8_t r, g, b, a;
+                if(s.shape.size() < 2)
+                {
+                    continue;
+                }
+
+                line_style style;
+                style.line_width = 3.0F;
+                style.border_width = 1.0F;
+
+                // MOA: orange dashed, Restricted/Prohibited: red solid, Warning: yellow solid
                 if(s.sua_type == "RA" || s.sua_type == "PA")
                 {
-                    r = 220; g = 60; b = 60; a = 220;
+                    style.r = 0.86F; style.g = 0.24F; style.b = 0.24F; style.a = 0.86F;
+                    style.dash_length = 0.0F;
+                    style.gap_length = 0.0F;
                 }
                 else if(s.sua_type == "WA")
                 {
-                    r = 220; g = 200; b = 60; a = 200;
+                    style.r = 0.86F; style.g = 0.78F; style.b = 0.24F; style.a = 0.78F;
+                    style.dash_length = 0.0F;
+                    style.gap_length = 0.0F;
                 }
                 else
                 {
-                    // MOA, Alert, NSA
-                    r = 255; g = 165; b = 0; a = 200;
+                    // MOA, Alert, NSA: orange dashed
+                    style.r = 1.0F; style.g = 0.65F; style.b = 0.0F; style.a = 0.78F;
+                    style.dash_length = 15.0F;
+                    style.gap_length = 8.0F;
                 }
 
-                for(size_t i = 0; i + 1 < s.shape.size(); i++)
+                std::vector<glm::vec2> polyline;
+                polyline.reserve(s.shape.size() + 1);
+                for(const auto& pt : s.shape)
                 {
-                    float x0 = static_cast<float>(lon_to_mx(s.shape[i].lon));
-                    float y0 = static_cast<float>(lat_to_my(s.shape[i].lat));
-                    float x1 = static_cast<float>(lon_to_mx(s.shape[i + 1].lon));
-                    float y1 = static_cast<float>(lat_to_my(s.shape[i + 1].lat));
-                    sua_vertices.push_back({0, 0, r, g, b, a, x0, y0, 0});
-                    sua_vertices.push_back({0, 0, r, g, b, a, x1, y1, 0});
+                    polyline.emplace_back(
+                        static_cast<float>(lon_to_mx(pt.lon)),
+                        static_cast<float>(lat_to_my(pt.lat)));
                 }
                 // Close the polygon
-                if(s.shape.size() > 2)
+                if(polyline.size() > 2)
                 {
-                    float x0 = static_cast<float>(lon_to_mx(s.shape.back().lon));
-                    float y0 = static_cast<float>(lat_to_my(s.shape.back().lat));
-                    float x1 = static_cast<float>(lon_to_mx(s.shape.front().lon));
-                    float y1 = static_cast<float>(lat_to_my(s.shape.front().lat));
-                    sua_vertices.push_back({0, 0, r, g, b, a, x0, y0, 0});
-                    sua_vertices.push_back({0, 0, r, g, b, a, x1, y1, 0});
+                    polyline.push_back(polyline.front());
                 }
+
+                sua_poly.polylines.push_back(std::move(polyline));
+                sua_poly.styles.push_back(style);
             }
         }
 
@@ -416,8 +452,8 @@ namespace nasrbrowse
             }
         }
 
-        void build_airspace_vertices(double lon_min, double lat_min,
-                                      double lon_max, double lat_max, double z)
+        void build_airspace_polylines(double lon_min, double lat_min,
+                                       double lon_max, double lat_max, double z)
         {
             const auto& airspaces = db.query_class_airspace(lon_min, lat_min, lon_max, lat_max);
 
@@ -434,38 +470,83 @@ namespace nasrbrowse
                     continue;
                 }
 
-                uint8_t r, g, b, a;
+                line_style style;
+                style.line_width = 3.0F;
+                style.border_width = 1.0F;
+
                 if(arsp.airspace_class == "B")
                 {
-                    r = 60; g = 120; b = 220; a = 200;
+                    style.r = 0.24F; style.g = 0.47F; style.b = 0.86F; style.a = 0.78F;
+                    style.dash_length = 0.0F;
+                    style.gap_length = 0.0F;
                 }
                 else if(arsp.airspace_class == "C")
                 {
-                    r = 180; g = 60; b = 180; a = 200;
+                    style.r = 0.71F; style.g = 0.24F; style.b = 0.71F; style.a = 0.78F;
+                    style.dash_length = 0.0F;
+                    style.gap_length = 0.0F;
                 }
                 else if(arsp.airspace_class == "D")
                 {
-                    r = 60; g = 120; b = 220; a = 160;
+                    style.r = 0.24F; style.g = 0.47F; style.b = 0.86F; style.a = 0.63F;
+                    style.dash_length = 12.0F;
+                    style.gap_length = 6.0F;
                 }
                 else
                 {
                     // Class E
-                    r = 180; g = 60; b = 180; a = 120;
+                    style.r = 0.71F; style.g = 0.24F; style.b = 0.71F; style.a = 0.47F;
+                    style.dash_length = 12.0F;
+                    style.gap_length = 6.0F;
                 }
 
                 for(const auto& ring : arsp.parts)
                 {
-                    for(size_t i = 0; i + 1 < ring.size(); i++)
+                    if(ring.size() < 2)
                     {
-                        float x0 = static_cast<float>(lon_to_mx(ring[i].lon));
-                        float y0 = static_cast<float>(lat_to_my(ring[i].lat));
-                        float x1 = static_cast<float>(lon_to_mx(ring[i + 1].lon));
-                        float y1 = static_cast<float>(lat_to_my(ring[i + 1].lat));
-                        airspace_vertices.push_back({0, 0, r, g, b, a, x0, y0, 0});
-                        airspace_vertices.push_back({0, 0, r, g, b, a, x1, y1, 0});
+                        continue;
                     }
+
+                    std::vector<glm::vec2> polyline;
+                    polyline.reserve(ring.size() + 1);
+                    for(const auto& pt : ring)
+                    {
+                        polyline.emplace_back(
+                            static_cast<float>(lon_to_mx(pt.lon)),
+                            static_cast<float>(lat_to_my(pt.lat)));
+                    }
+                    // Close if not already closed
+                    if(polyline.size() > 2 && polyline.front() != polyline.back())
+                    {
+                        polyline.push_back(polyline.front());
+                    }
+
+                    airspace_poly.polylines.push_back(std::move(polyline));
+                    airspace_poly.styles.push_back(style);
                 }
             }
+        }
+
+        // Combine visible polyline groups and send to the SDF line renderer
+        void rebuild_sdf_lines()
+        {
+            std::vector<std::vector<glm::vec2>> all_polylines;
+            std::vector<line_style> all_styles;
+
+            auto append = [&](const polyline_data& pd)
+            {
+                all_polylines.insert(all_polylines.end(),
+                    pd.polylines.begin(), pd.polylines.end());
+                all_styles.insert(all_styles.end(),
+                    pd.styles.begin(), pd.styles.end());
+            };
+
+            if(vis_sua) append(sua_poly);
+            if(vis_airspace) append(airspace_poly);
+            if(vis_airways) append(airway_poly);
+            if(vis_runways) append(runway_poly);
+
+            sdf_lines.set_polylines(std::move(all_polylines), std::move(all_styles));
         }
     };
 
@@ -478,12 +559,13 @@ namespace nasrbrowse
 
     void feature_renderer::update(double vx_min, double vy_min,
                                    double vx_max, double vy_max,
-                                   int viewport_height, double)
+                                   int viewport_height, double aspect_ratio)
     {
         pimpl->center_x = (vx_min + vx_max) * 0.5;
         pimpl->center_y = (vy_min + vy_max) * 0.5;
         pimpl->half_extent_y = (vy_max - vy_min) * 0.5;
         pimpl->viewport_height = viewport_height;
+        pimpl->aspect_ratio = aspect_ratio;
 
         // Convert view bounds to lon/lat for database query
         double lon_min = mx_to_lon(vx_min);
@@ -499,42 +581,40 @@ namespace nasrbrowse
 
     bool feature_renderer::needs_upload()
     {
-        return pimpl->dirty;
+        return pimpl->dirty || pimpl->sdf_lines.needs_upload();
     }
 
     void feature_renderer::copy(sdl::copy_pass& pass)
     {
-        auto upload = [&](auto& verts, auto& buffer)
+        if(pimpl->dirty)
         {
-            buffer.reset();
-            if(!verts.empty())
+            auto upload = [&](auto& verts, auto& buffer)
             {
-                auto buf = pass.create_and_upload_buffer(
-                    pimpl->dev, sdl::buffer_usage::vertex, verts);
-                buffer = std::make_unique<sdl::buffer>(std::move(buf));
-            }
-        };
+                buffer.reset();
+                if(!verts.empty())
+                {
+                    auto buf = pass.create_and_upload_buffer(
+                        pimpl->dev, sdl::buffer_usage::vertex, verts);
+                    buffer = std::make_unique<sdl::buffer>(std::move(buf));
+                }
+            };
 
-        upload(pimpl->sua_vertices, pimpl->sua_buffer);
-        upload(pimpl->obstacle_vertices, pimpl->obstacle_buffer);
-        upload(pimpl->airspace_vertices, pimpl->airspace_buffer);
-        upload(pimpl->airway_vertices, pimpl->airway_buffer);
-        upload(pimpl->fix_vertices, pimpl->fix_buffer);
-        upload(pimpl->navaid_vertices, pimpl->navaid_buffer);
-        upload(pimpl->airport_vertices, pimpl->airport_buffer);
-        upload(pimpl->runway_vertices, pimpl->runway_buffer);
-        pimpl->dirty = false;
+            upload(pimpl->obstacle_vertices, pimpl->obstacle_buffer);
+            upload(pimpl->fix_vertices, pimpl->fix_buffer);
+            upload(pimpl->navaid_vertices, pimpl->navaid_buffer);
+            upload(pimpl->airport_vertices, pimpl->airport_buffer);
+            pimpl->dirty = false;
+        }
+
+        if(pimpl->sdf_lines.needs_upload())
+        {
+            pimpl->sdf_lines.copy(pass, pimpl->dev);
+        }
     }
 
     void feature_renderer::render(sdl::render_pass& pass,
                                    const render_context& ctx) const
     {
-        if(ctx.current_pass != render_pass_id::trianglelist_0)
-        {
-            return;
-        }
-
-        // View matrix: same approach as tile_renderer
         float s = static_cast<float>(1.0 / (2.0 * pimpl->half_extent_y));
         float cx = static_cast<float>(pimpl->center_x);
         float cy = static_cast<float>(pimpl->center_y);
@@ -542,34 +622,44 @@ namespace nasrbrowse
         glm::mat4 view_matrix = glm::scale(glm::mat4(1.0F), glm::vec3(s, s, 1.0F)) *
                                  glm::translate(glm::mat4(1.0F), glm::vec3(-cx, -cy, 0.0F));
 
-        sdl::uniform_buffer uniforms;
-        uniforms.projection_matrix = ctx.projection_matrix;
-        uniforms.view_matrix = view_matrix;
-
-        // Draw each buffer in back-to-front order
-        auto draw = [&](const auto& buffer)
+        if(ctx.current_pass == render_pass_id::trianglelist_0)
         {
-            if(buffer && buffer->count() > 0)
-            {
-                pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
-                pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
-                pass.bind_vertex_buffer(*buffer);
-                pass.draw(buffer->count());
-            }
-        };
+            sdl::uniform_buffer uniforms;
+            uniforms.projection_matrix = ctx.projection_matrix;
+            uniforms.view_matrix = view_matrix;
 
-        if(pimpl->vis_sua) draw(pimpl->sua_buffer);
-        if(pimpl->vis_obstacles) draw(pimpl->obstacle_buffer);
-        if(pimpl->vis_airspace) draw(pimpl->airspace_buffer);
-        if(pimpl->vis_airways) draw(pimpl->airway_buffer);
-        if(pimpl->vis_fixes) draw(pimpl->fix_buffer);
-        if(pimpl->vis_navaids) draw(pimpl->navaid_buffer);
-        if(pimpl->vis_airports) draw(pimpl->airport_buffer);
-        if(pimpl->vis_runways) draw(pimpl->runway_buffer);
+            auto draw = [&](const auto& buffer)
+            {
+                if(buffer && buffer->count() > 0)
+                {
+                    pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
+                    pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
+                    pass.bind_vertex_buffer(*buffer);
+                    pass.draw(buffer->count());
+                }
+            };
+
+            if(pimpl->vis_obstacles) draw(pimpl->obstacle_buffer);
+            if(pimpl->vis_fixes) draw(pimpl->fix_buffer);
+            if(pimpl->vis_navaids) draw(pimpl->navaid_buffer);
+            if(pimpl->vis_airports) draw(pimpl->airport_buffer);
+        }
+        else if(ctx.current_pass == render_pass_id::line_sdf_0)
+        {
+            int vw = static_cast<int>(pimpl->aspect_ratio * pimpl->viewport_height);
+            pimpl->sdf_lines.render(pass, ctx.projection_matrix, view_matrix,
+                                    vw, pimpl->viewport_height);
+        }
     }
 
     void feature_renderer::set_visibility(const layer_visibility& vis)
     {
+        bool line_vis_changed =
+            pimpl->vis_runways != vis.runways ||
+            pimpl->vis_airways != vis.airways ||
+            pimpl->vis_airspace != vis.airspace ||
+            pimpl->vis_sua != vis.sua;
+
         pimpl->vis_airports = vis.airports;
         pimpl->vis_runways = vis.runways;
         pimpl->vis_navaids = vis.navaids;
@@ -578,6 +668,11 @@ namespace nasrbrowse
         pimpl->vis_airspace = vis.airspace;
         pimpl->vis_sua = vis.sua;
         pimpl->vis_obstacles = vis.obstacles;
+
+        if(line_vis_changed)
+        {
+            pimpl->rebuild_sdf_lines();
+        }
     }
 
 } // namespace nasrbrowse

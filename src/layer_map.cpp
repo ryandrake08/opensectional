@@ -4,7 +4,6 @@
 #include "render_context.hpp"
 #include "tile_renderer.hpp"
 #include "ui_overlay.hpp"
-#include <glm/glm.hpp>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
@@ -232,6 +231,7 @@ bool layer_map::on_update()
 {
     bool result = pimpl->needs_update || pimpl->tiles.needs_upload() ||
                   pimpl->features.needs_upload();
+
     if(result)
     {
         pimpl->needs_update = false;

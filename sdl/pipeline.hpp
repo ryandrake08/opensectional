@@ -30,17 +30,22 @@ namespace sdl
          * - Depth test: enabled if depth_format is non-zero
          * - Culling: none
          *
+         * If vertex_input is false, the vertex input state is empty (for shaders
+         * that generate vertices procedurally from SV_VertexID).
+         *
          * @param dev GPU device
          * @param vertex_shader Vertex shader
          * @param fragment_shader Fragment shader
          * @param topology Primitive topology (TRIANGLELIST, TRIANGLESTRIP, or LINELIST)
          * @param depth_format Depth texture format (0 = no depth testing)
+         * @param vertex_input Whether to use standard vertex input (default: true)
          */
         pipeline(const device& dev,
                  shader&& vertex_shader,
                  shader&& fragment_shader,
                  primitive_type_t topology,
-                 texture_format_t depth_format = texture_format_t(0));
+                 texture_format_t depth_format = texture_format_t(0),
+                 bool vertex_input = true);
 
         /**
          * Destroy pipeline.

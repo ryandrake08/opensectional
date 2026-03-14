@@ -3,6 +3,7 @@
 #include "command_buffer.hpp"
 #include "device.hpp"
 #include "error.hpp"
+#include <glm/glm.hpp>
 #include "surface.hpp"
 #include "texture.hpp"
 #include "transfer_buffer.hpp"
@@ -117,4 +118,5 @@ namespace sdl
     // Explicit template instantiations for the types we use
     template buffer copy_pass::create_and_upload_buffer<vertex_t2f_c4ub_v3f>(const device&, buffer_usage_t, const std::vector<vertex_t2f_c4ub_v3f>&);
     template buffer copy_pass::create_and_upload_buffer<int>(const device&, buffer_usage_t, const std::vector<int>&);
+    template buffer copy_pass::create_and_upload_buffer<glm::vec4>(const device&, buffer_usage_t, const std::vector<glm::vec4>&);
 } // namespace sdl

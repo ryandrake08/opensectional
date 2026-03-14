@@ -17,7 +17,8 @@ namespace sdl
             const std::string& entrypoint,
             SDL_GPUShaderStage stage,
             SDL_GPUShaderFormat format,
-            uint32_t num_samplers)
+            uint32_t num_samplers,
+            uint32_t num_storage_buffers)
         {
             // Auto-detect format if not specified
             if(format == SDL_GPU_SHADERFORMAT_INVALID)
@@ -34,7 +35,7 @@ namespace sdl
             shader_info.stage = stage;
             shader_info.num_samplers = num_samplers;
             shader_info.num_storage_textures = 0;
-            shader_info.num_storage_buffers = 0;
+            shader_info.num_storage_buffers = num_storage_buffers;
             shader_info.num_uniform_buffers = 1; // Most shaders use one uniform buffer
 
             return SDL_CreateGPUShader(dev.get(), &shader_info);
@@ -47,7 +48,8 @@ namespace sdl
             const std::string& entrypoint,
             SDL_GPUShaderStage stage,
             SDL_GPUShaderFormat format,
-            uint32_t num_samplers) : device(dev.get()), handle(create_shader(dev, code, code_size, entrypoint, stage, format, num_samplers))
+            uint32_t num_samplers,
+            uint32_t num_storage_buffers) : device(dev.get()), handle(create_shader(dev, code, code_size, entrypoint, stage, format, num_samplers, num_storage_buffers))
         {
             if(!handle)
             {
@@ -68,13 +70,15 @@ namespace sdl
         const std::string& entrypoint,
         shader_stage_t stage,
         shader_format_t format,
-        uint32_t num_samplers) : pimpl(new impl(dev,
-                                                static_cast<const void*>(code_array),
-                                                code_len,
-                                                entrypoint,
-                                                static_cast<SDL_GPUShaderStage>(static_cast<uint32_t>(stage)),
-                                                static_cast<SDL_GPUShaderFormat>(static_cast<uint32_t>(format)),
-                                                num_samplers))
+        uint32_t num_samplers,
+        uint32_t num_storage_buffers) : pimpl(new impl(dev,
+                                                       static_cast<const void*>(code_array),
+                                                       code_len,
+                                                       entrypoint,
+                                                       static_cast<SDL_GPUShaderStage>(static_cast<uint32_t>(stage)),
+                                                       static_cast<SDL_GPUShaderFormat>(static_cast<uint32_t>(format)),
+                                                       num_samplers,
+                                                       num_storage_buffers))
     {
     }
 

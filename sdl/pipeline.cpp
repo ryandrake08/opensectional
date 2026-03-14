@@ -19,7 +19,8 @@ namespace sdl
             SDL_GPUShader* fs,
             SDL_GPUTextureFormat swapchain_format,
             SDL_GPUPrimitiveType topology,
-            SDL_GPUTextureFormat depth_format)
+            SDL_GPUTextureFormat depth_format,
+            bool use_vertex_input)
         {
             // Set up standard vertex attributes for vertex_t2f_c4ub_v3f
             SDL_GPUVertexAttribute attributes[3] = {};
@@ -45,10 +46,13 @@ namespace sdl
 
             // Set up vertex input state
             SDL_GPUVertexInputState vertex_input_state = {};
-            vertex_input_state.vertex_buffer_descriptions = &vertex_buffer_desc;
-            vertex_input_state.num_vertex_buffers = 1;
-            vertex_input_state.vertex_attributes = attributes;
-            vertex_input_state.num_vertex_attributes = 3;
+            if(use_vertex_input)
+            {
+                vertex_input_state.vertex_buffer_descriptions = &vertex_buffer_desc;
+                vertex_input_state.num_vertex_buffers = 1;
+                vertex_input_state.vertex_attributes = attributes;
+                vertex_input_state.num_vertex_attributes = 3;
+            }
 
             // Set up color target state with alpha blending
             SDL_GPUColorTargetDescription color_target = {};
@@ -101,8 +105,9 @@ namespace sdl
             shader&& fs,
             SDL_GPUTextureFormat swapchain_format,
             SDL_GPUPrimitiveType topology,
-            SDL_GPUTextureFormat depth_format) : device(dev),
-                                                 handle(create_pipeline(dev, vs.get(), fs.get(), swapchain_format, topology, depth_format))
+            SDL_GPUTextureFormat depth_format,
+            bool use_vertex_input) : device(dev),
+                                     handle(create_pipeline(dev, vs.get(), fs.get(), swapchain_format, topology, depth_format, use_vertex_input))
         {
             if(!handle)
             {
@@ -142,12 +147,14 @@ namespace sdl
         shader&& vertex_shader,
         shader&& fragment_shader,
         primitive_type_t topology,
-        texture_format_t depth_format) : pimpl(new impl(dev.get(),
-                                                        std::move(vertex_shader),
-                                                        std::move(fragment_shader),
-                                                        static_cast<SDL_GPUTextureFormat>(static_cast<uint32_t>(dev.get_swapchain_format())),
-                                                        static_cast<SDL_GPUPrimitiveType>(static_cast<uint32_t>(topology)),
-                                                        static_cast<SDL_GPUTextureFormat>(static_cast<uint32_t>(depth_format))))
+        texture_format_t depth_format,
+        bool vertex_input) : pimpl(new impl(dev.get(),
+                                            std::move(vertex_shader),
+                                            std::move(fragment_shader),
+                                            static_cast<SDL_GPUTextureFormat>(static_cast<uint32_t>(dev.get_swapchain_format())),
+                                            static_cast<SDL_GPUPrimitiveType>(static_cast<uint32_t>(topology)),
+                                            static_cast<SDL_GPUTextureFormat>(static_cast<uint32_t>(depth_format)),
+                                            vertex_input))
     {
     }
 } // namespace sdl

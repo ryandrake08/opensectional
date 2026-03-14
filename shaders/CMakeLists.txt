@@ -5,6 +5,7 @@
 # List of shaders to compile
 set(SHADERS
     default
+    line
     textured
 )
 

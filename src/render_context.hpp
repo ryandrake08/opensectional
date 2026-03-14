@@ -13,7 +13,8 @@ namespace nasrbrowse
     enum class render_pass_id
     {
         trianglelist_0,
-        textured_trianglelist_0
+        textured_trianglelist_0,
+        line_sdf_0
     };
 
     struct render_context
