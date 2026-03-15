@@ -154,6 +154,11 @@ void layer_map::set_visibility(const nasrbrowse::layer_visibility& vis)
     pimpl->needs_update = true;
 }
 
+double layer_map::zoom_level() const
+{
+    return pimpl->view.zoom_level(pimpl->viewport_height);
+}
+
 void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t)
 {
     if(action != sdl::input_action::release)

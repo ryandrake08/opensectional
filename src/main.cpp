@@ -202,7 +202,7 @@ int main(int argc, char** argv)
             // click) even when the map hasn't changed
             imgui_ctx.new_frame();
 
-            if(ui.draw(last_render_ms))
+            if(ui.draw(last_render_ms, map_layer->zoom_level()))
             {
                 map_layer->set_visibility(ui.visibility());
                 needs_render = true;

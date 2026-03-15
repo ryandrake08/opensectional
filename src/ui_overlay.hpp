@@ -23,8 +23,8 @@ namespace nasrbrowse
     public:
         ui_overlay();
 
-        // Draw FPS display and layer checkboxes. Returns true if visibility changed.
-        bool draw(float last_render_ms);
+        // Draw FPS display, zoom level, and layer checkboxes. Returns true if visibility changed.
+        bool draw(float last_render_ms, double zoom_level);
 
         const layer_visibility& visibility() const;
     };

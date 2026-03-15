@@ -7,9 +7,26 @@ namespace nasrbrowse
 
     ui_overlay::ui_overlay() = default;
 
-    bool ui_overlay::draw(float last_render_ms)
+    bool ui_overlay::draw(float last_render_ms, double zoom_level)
     {
         ImGuiIO& io = ImGui::GetIO();
+
+        // Zoom level overlay in the bottom-left corner
+        ImGui::SetNextWindowPos(
+            ImVec2(0, io.DisplaySize.y),
+            ImGuiCond_Always,
+            ImVec2(0.0F, 1.0F));
+        ImGui::SetNextWindowBgAlpha(0.4F);
+        ImGui::Begin("##zoom", nullptr,
+            ImGuiWindowFlags_NoDecoration |
+            ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoNav |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoInputs);
+        ImGui::Text("z%.1f", zoom_level);
+        ImGui::End();
 
         // FPS overlay in the bottom-right corner
         ImGui::SetNextWindowPos(

@@ -24,6 +24,7 @@ public:
     ~layer_map() override;
 
     void set_visibility(const nasrbrowse::layer_visibility& vis);
+    double zoom_level() const;
 
     void on_key_input(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t mods) override;
     void on_drag_input(const std::vector<sdl::input_button_t>& buttons, double xdelta, double ydelta) override;
