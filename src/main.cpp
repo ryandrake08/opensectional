@@ -143,7 +143,7 @@ int main(int argc, char** argv)
         auto win_flags = sdl::window_flags_t(
             static_cast<uint64_t>(sdl::window_flags::resizable) |
             static_cast<uint64_t>(sdl::window_flags::high_pixel_density));
-        sdl::window win(sdl_ctx, "NASRBrowse", 1280, 800, win_flags);
+        sdl::window win(sdl_ctx, "NASRBrowse", 1280, 1024, win_flags);
         sdl::device dev(win, true);
 
         // Create pipelines
@@ -180,7 +180,7 @@ int main(int argc, char** argv)
         event_mgr.add_listener(map_layer);
 
         // Send initial resize
-        map_layer->framebuffer_size_event(1280, 800);
+        map_layer->framebuffer_size_event(1280, 1024);
 
         // UI overlay (FPS display + layer checkboxes)
         nasrbrowse::ui_overlay ui;
