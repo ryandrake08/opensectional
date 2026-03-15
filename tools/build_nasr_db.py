@@ -98,6 +98,26 @@ def import_csv(conn, table_name, zf, csv_name, columns=None):
         print(f"  {table_name}: {len(rows)} rows")
 
 
+def classify_surface(code):
+    """Classify a runway surface type code as HARD, SOFT, or OTHER."""
+    hard = {
+        "ASPH", "CONC", "ASPH-CONC", "ASPH-TURF", "CONC-TURF", "PEM",
+        "CONC-GRVL", "ASPH-TRTD", "ASPH-DIRT", "CONC-TRTD", "PSP",
+        "ASPH/GRVL", "TREATED", "CONC-DIRT", "OIL&CHIP-T",
+    }
+    soft = {
+        "TURF", "DIRT", "GRVL", "GRAVEL", "TURF-DIRT", "TURF-GRVL",
+        "GRVL-DIRT", "ASPH-GRVL", "GRVL-TRTD", "TRTD", "TRTD-DIRT",
+        "GRVL-TURF", "GRASS", "DIRT-TRTD", "DIRT-GRVL", "DIRT-TURF",
+        "TURF-SAND", "SAND", "CALICHE", "SNOW", "CORAL",
+    }
+    if code in hard:
+        return "HARD"
+    if code in soft:
+        return "SOFT"
+    return "OTHER"
+
+
 def build_apt(conn, csv_zf):
     """Import airports with decimal coordinates."""
     import_csv(conn, "APT_BASE", csv_zf, "APT_BASE.csv", [
@@ -327,6 +347,48 @@ def build_apt_rwy(conn, csv_zf):
         "SITE_NO", "RWY_ID", "RWY_END_ID", "LAT_DECIMAL", "LONG_DECIMAL",
         "RWY_END_ELEV", "TRUE_ALIGNMENT",
     ])
+
+    # Add surface classification column to APT_BASE.
+    # For each airport, take the hardest surface across all runways
+    # (HARD > SOFT > OTHER), plus the max runway length.
+    conn.execute("ALTER TABLE APT_BASE ADD COLUMN HARD_SURFACE TEXT DEFAULT 'OTHER'")
+    conn.execute("ALTER TABLE APT_BASE ADD COLUMN MAX_RWY_LEN INTEGER DEFAULT 0")
+
+    # Build per-airport surface classification and max runway length
+    cursor = conn.execute("""
+        SELECT a.rowid, r.SURFACE_TYPE_CODE, r.RWY_LEN
+        FROM APT_BASE a
+        JOIN APT_RWY r ON r.SITE_NO = a.SITE_NO
+    """)
+
+    # Accumulate best surface and max length per airport rowid
+    airport_data = {}
+    rank = {"HARD": 2, "SOFT": 1, "OTHER": 0}
+    for rowid, surface_code, rwy_len in cursor:
+        classification = classify_surface(surface_code.strip() if surface_code else "")
+        try:
+            length = int(rwy_len)
+        except (ValueError, TypeError):
+            length = 0
+
+        if rowid not in airport_data:
+            airport_data[rowid] = (classification, length)
+        else:
+            prev_class, prev_len = airport_data[rowid]
+            best_class = classification if rank[classification] > rank[prev_class] else prev_class
+            best_len = max(length, prev_len)
+            airport_data[rowid] = (best_class, best_len)
+
+    updates = [(cls, length, rowid) for rowid, (cls, length) in airport_data.items()]
+    conn.executemany(
+        "UPDATE APT_BASE SET HARD_SURFACE = ?, MAX_RWY_LEN = ? WHERE rowid = ?",
+        updates,
+    )
+
+    counts = {}
+    for cls, _ in airport_data.values():
+        counts[cls] = counts.get(cls, 0) + 1
+    print(f"  Surface classification: {counts}")
 
 
 

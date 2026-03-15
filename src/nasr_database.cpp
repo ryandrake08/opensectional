@@ -94,7 +94,8 @@ namespace nasrbrowse
             // (min=max) overlaps with the search box
             prepare(&stmt_airports, R"(
                 SELECT ARPT_ID, ARPT_NAME, SITE_TYPE_CODE, TWR_TYPE_CODE,
-                       ICAO_ID, LAT_DECIMAL, LONG_DECIMAL, ELEV
+                       ICAO_ID, HARD_SURFACE, LAT_DECIMAL, LONG_DECIMAL,
+                       ELEV, CAST(MAX_RWY_LEN AS INTEGER)
                 FROM APT_BASE
                 WHERE rowid IN (
                     SELECT id FROM APT_BASE_RTREE
@@ -264,9 +265,11 @@ namespace nasrbrowse
             a.site_type_code = col_text(d.stmt_airports, 2);
             a.twr_type_code = col_text(d.stmt_airports, 3);
             a.icao_id = col_text(d.stmt_airports, 4);
-            a.lat = col_double(d.stmt_airports, 5);
-            a.lon = col_double(d.stmt_airports, 6);
-            a.elev = col_double(d.stmt_airports, 7);
+            a.hard_surface = col_text(d.stmt_airports, 5);
+            a.lat = col_double(d.stmt_airports, 6);
+            a.lon = col_double(d.stmt_airports, 7);
+            a.elev = col_double(d.stmt_airports, 8);
+            a.max_rwy_len = sqlite3_column_int(d.stmt_airports, 9);
             d.airports.push_back(std::move(a));
         }
 

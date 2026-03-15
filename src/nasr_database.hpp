@@ -12,9 +12,11 @@ namespace nasrbrowse
         std::string site_type_code;
         std::string twr_type_code;
         std::string icao_id;
+        std::string hard_surface;  // "HARD", "SOFT", or "OTHER"
         double lat;
         double lon;
         double elev;
+        int max_rwy_len;
     };
 
     struct navaid
