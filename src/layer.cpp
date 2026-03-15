@@ -102,10 +102,7 @@ bool layer::update()
 
 void layer::copy(sdl::copy_pass& pass)
 {
-    if(dirty)
-    {
-        on_copy(pass);
-    }
+    on_copy(pass);
 }
 
 void layer::render(sdl::render_pass& pass, nasrbrowse::render_context& ctx) const
