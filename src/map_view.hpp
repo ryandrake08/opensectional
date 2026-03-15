@@ -177,6 +177,15 @@ namespace nasrbrowse
             return std::log2(world_size / (256.0 * meters_per_pixel));
         }
 
+        // Set zoom to an exact zoom level
+        void zoom_to_level(int viewport_height, int z)
+        {
+            double world_size = 2.0 * HALF_CIRCUMFERENCE;
+            double meters_per_pixel = world_size / (256.0 * std::pow(2.0, z));
+            half_extent_y = meters_per_pixel * viewport_height * 0.5;
+            clamp_extent();
+        }
+
         void set_aspect_ratio(double ratio)
         {
             aspect_ratio = ratio;

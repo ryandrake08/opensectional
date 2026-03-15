@@ -191,16 +191,22 @@ void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, s
             break;
         case 'r':
         case 'R':
-            pimpl->view.zoom(0.5);
+        {
+            int z = static_cast<int>(pimpl->view.zoom_level(pimpl->viewport_height)) + 1;
+            pimpl->view.zoom_to_level(pimpl->viewport_height, z);
             pimpl->rebuild_grid();
-        pimpl->update_tiles();
+            pimpl->update_tiles();
             break;
+        }
         case 'f':
         case 'F':
-            pimpl->view.zoom(2.0);
+        {
+            int z = static_cast<int>(pimpl->view.zoom_level(pimpl->viewport_height)) - 1;
+            pimpl->view.zoom_to_level(pimpl->viewport_height, z);
             pimpl->rebuild_grid();
-        pimpl->update_tiles();
+            pimpl->update_tiles();
             break;
+        }
         }
     }
 }
