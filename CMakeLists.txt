@@ -15,6 +15,7 @@ pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 add_executable(nasrbrowse
     # Application sources
     src/color.cpp
+    src/ini_config.cpp
     src/layer.cpp
     src/layer_map.cpp
     src/feature_renderer.cpp
@@ -23,6 +24,7 @@ add_executable(nasrbrowse
     src/nasr_database.cpp
     src/render_context.cpp
     src/tile_loader.cpp
+    src/chart_style.cpp
     src/tile_renderer.cpp
     src/ui_overlay.cpp
 

@@ -4,6 +4,7 @@
 #include "render_context.hpp"
 #include "tile_renderer.hpp"
 #include "ui_overlay.hpp"
+#include "chart_style.hpp"
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
@@ -30,14 +31,15 @@ struct layer_map::impl
     std::vector<sdl::vertex_t2f_c4ub_v3f> grid_vertices;
     std::unique_ptr<sdl::buffer> grid_buffer;
 
-    impl(sdl::device& dev, const char* tile_path, const char* db_path)
+    impl(sdl::device& dev, const char* tile_path, const char* db_path,
+         const nasrbrowse::chart_style& cs)
         : dev(dev)
         , viewport_width(0)
         , viewport_height(0)
         , needs_update(true)
         , show_tiles(true)
         , tiles(dev, tile_path)
-        , features(dev, db_path)
+        , features(dev, db_path, cs)
     {
     }
 
@@ -139,9 +141,10 @@ struct layer_map::impl
     }
 };
 
-layer_map::layer_map(sdl::device& dev, const char* tile_path, const char* db_path)
+layer_map::layer_map(sdl::device& dev, const char* tile_path, const char* db_path,
+                     const nasrbrowse::chart_style& cs)
     : layer()
-    , pimpl(new impl(dev, tile_path, db_path))
+    , pimpl(new impl(dev, tile_path, db_path, cs))
 {
 }
 

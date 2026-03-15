@@ -1,6 +1,7 @@
 #include "layer_map.hpp"
 #include "render_context.hpp"
 #include "ui_overlay.hpp"
+#include "chart_style.hpp"
 #include <csignal>
 #include <cstdlib>
 #include <exception>
@@ -175,8 +176,11 @@ int main(int argc, char** argv)
             imgui_ctx.process_event(event);
         });
 
+        // Load chart style (hardcoded VFR defaults, overridden by INI if present)
+        nasrbrowse::chart_style chart_styles("nasrbrowse.ini", nasrbrowse::chart_mode::vfr);
+
         // Create map layer
-        auto map_layer = std::make_shared<layer_map>(dev, argv[1], argv[2]);
+        auto map_layer = std::make_shared<layer_map>(dev, argv[1], argv[2], chart_styles);
         event_mgr.add_listener(map_layer);
 
         // Send initial resize

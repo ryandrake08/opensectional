@@ -13,6 +13,7 @@ namespace nasrbrowse
 {
     struct render_context;
     struct layer_visibility;
+    class chart_style;
 
     class feature_renderer
     {
@@ -20,7 +21,8 @@ namespace nasrbrowse
         std::unique_ptr<impl> pimpl;
 
     public:
-        feature_renderer(sdl::device& dev, const char* db_path);
+        feature_renderer(sdl::device& dev, const char* db_path,
+                         const chart_style& cs);
         ~feature_renderer();
 
         // Recompute visible features from database

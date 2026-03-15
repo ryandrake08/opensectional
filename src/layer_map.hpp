@@ -12,6 +12,7 @@ namespace sdl
 namespace nasrbrowse
 {
     struct layer_visibility;
+    class chart_style;
 }
 
 class layer_map : public layer
@@ -20,7 +21,8 @@ class layer_map : public layer
     std::unique_ptr<impl> pimpl;
 
 public:
-    layer_map(sdl::device& dev, const char* tile_path, const char* db_path);
+    layer_map(sdl::device& dev, const char* tile_path, const char* db_path,
+              const nasrbrowse::chart_style& cs);
     ~layer_map() override;
 
     void set_visibility(const nasrbrowse::layer_visibility& vis);

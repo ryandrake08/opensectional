@@ -1,4 +1,5 @@
 #include "feature_renderer.hpp"
+#include "chart_style.hpp"
 #include "line_renderer.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
@@ -28,18 +29,98 @@ namespace nasrbrowse
         }
     };
 
+    // Convert feature_style color to uint8 for point features
+    static uint8_t to_u8(float v)
+    {
+        return static_cast<uint8_t>(v * 255.0F + 0.5F);
+    }
+
+    // Convert feature_style to line_style for SDF line features
+    static line_style to_line_style(const feature_style& fs)
+    {
+        return {fs.line_width, fs.border_width, fs.dash_length, fs.gap_length,
+                fs.r, fs.g, fs.b, fs.a};
+    }
+
+    // Extract airway style key from airway ID
+    static std::string airway_key(const std::string& id)
+    {
+        if(id.size() >= 3 && id[0] == 'R' && id[1] == 'T' && id[2] == 'E')
+            return "airway_rte";
+        if(id.size() >= 2)
+        {
+            if(id[0] == 'B' && id[1] == 'R') return "airway_br";
+            if(id[0] == 'T' && id[1] == 'K') return "airway_tk";
+            if(id[0] == 'A' && id[1] == 'R') return "airway_ar";
+        }
+        if(!id.empty())
+        {
+            char c = id[0];
+            std::string key = "airway_";
+            key += static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+            return key;
+        }
+        return "airway_v";
+    }
+
+    // Map SUA type code to style key
+    static const char* sua_key(const std::string& sua_type)
+    {
+        if(sua_type == "RA") return "sua_restricted";
+        if(sua_type == "PA") return "sua_prohibited";
+        if(sua_type == "WA") return "sua_warning";
+        if(sua_type == "AA") return "sua_alert";
+        if(sua_type == "NSA") return "sua_nsa";
+        return "sua_moa";
+    }
+
+    // Map class airspace code to style key
+    static const char* airspace_key(const std::string& cls)
+    {
+        if(cls == "B") return "airspace_b";
+        if(cls == "C") return "airspace_c";
+        if(cls == "D") return "airspace_d";
+        return "airspace_e";
+    }
+
+    // Airport zoom key based on runway classification
+    static const char* airport_zoom_key(const airport& apt)
+    {
+        if(apt.hard_surface == "HARD" && apt.max_rwy_len > 8069)
+            return "airport_hard_long";
+        if(apt.hard_surface == "HARD")
+            return "airport_hard_short";
+        return "airport_other";
+    }
+
+    // Airport color key based on site/tower type
+    static const char* airport_color_key(const airport& apt)
+    {
+        if(apt.site_type_code == "H") return "airport_heliport";
+        if(apt.twr_type_code != "NON-ATCT") return "airport_towered";
+        return "airport_untowered";
+    }
+
+    // Obstacle style key based on AGL height
+    static const char* obstacle_key(int agl_ht)
+    {
+        if(agl_ht >= 1000) return "obstacle_1000ft";
+        if(agl_ht >= 200) return "obstacle_200ft";
+        return "obstacle_low";
+    }
+
     struct feature_renderer::impl
     {
         sdl::device& dev;
         nasr_database db;
+        chart_style styles;
 
         // Current view state
         double center_x, center_y, half_extent_y;
         double aspect_ratio;
         int viewport_height;
 
-        // Cached query bbox (in lon/lat). We pad the query region and only
-        // re-query when the viewport moves outside the padded area.
+        // Cached query bbox (in lon/lat)
         double query_lon_min, query_lat_min, query_lon_max, query_lat_max;
         double last_zoom;
         bool has_cached_query;
@@ -72,9 +153,10 @@ namespace nasrbrowse
         bool vis_obstacles = true;
         bool dirty;
 
-        impl(sdl::device& dev, const char* db_path)
+        impl(sdl::device& dev, const char* db_path, const chart_style& styles)
             : dev(dev)
             , db(db_path)
+            , styles(styles)
             , center_x(0)
             , center_y(0)
             , half_extent_y(HALF_CIRCUMFERENCE)
@@ -97,7 +179,6 @@ namespace nasrbrowse
             return std::log2(world_size / (256.0 * meters_per_pixel));
         }
 
-        // Check if we need to re-query the database
         bool needs_requery(double lon_min, double lat_min,
                            double lon_max, double lat_max) const
         {
@@ -106,14 +187,12 @@ namespace nasrbrowse
                 return true;
             }
 
-            // Re-query if zoom changed significantly
             double z = zoom_level();
             if(std::abs(z - last_zoom) > 0.5)
             {
                 return true;
             }
 
-            // Re-query if viewport moved outside the cached query region
             return lon_min < query_lon_min || lon_max > query_lon_max ||
                    lat_min < query_lat_min || lat_max > query_lat_max;
         }
@@ -123,7 +202,6 @@ namespace nasrbrowse
         {
             double z = zoom_level();
 
-            // Pad the query region by 50% so we don't re-query on small pans
             double lon_pad = (lon_max - lon_min) * 0.5;
             double lat_pad = (lat_max - lat_min) * 0.5;
             double qlon_min = lon_min - lon_pad;
@@ -151,39 +229,21 @@ namespace nasrbrowse
             build_navaid_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_airway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_sua_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
-
-            if(z >= 9.0)
-            {
-                build_obstacle_vertices(qlon_min, qlat_min, qlon_max, qlat_max);
-            }
-
-            if(z >= 7.0)
-            {
-                build_fix_vertices(qlon_min, qlat_min, qlon_max, qlat_max);
-            }
-
-            if(z >= 10.0)
-            {
-                build_runway_polylines(qlon_min, qlat_min, qlon_max, qlat_max);
-            }
-
-            if(z >= 4.0)
-            {
-                build_airspace_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
-            }
+            build_obstacle_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_fix_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_runway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_airspace_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
 
             rebuild_sdf_lines();
             dirty = true;
         }
 
-        // Generate a diamond shape at a point in Web Mercator meters
         void add_diamond(std::vector<sdl::vertex_t2f_c4ub_v3f>& verts,
                          double mx, double my, float radius,
                          uint8_t r, uint8_t g, uint8_t b, uint8_t a)
         {
             float x = static_cast<float>(mx);
             float y = static_cast<float>(my);
-            // Diamond as 4 line segments
             verts.push_back({0, 0, r, g, b, a, x - radius, y, 0});
             verts.push_back({0, 0, r, g, b, a, x, y + radius, 0});
             verts.push_back({0, 0, r, g, b, a, x, y + radius, 0});
@@ -194,14 +254,13 @@ namespace nasrbrowse
             verts.push_back({0, 0, r, g, b, a, x - radius, y, 0});
         }
 
-        // Generate a triangle shape at a point
         void add_triangle(std::vector<sdl::vertex_t2f_c4ub_v3f>& verts,
                           double mx, double my, float radius,
                           uint8_t r, uint8_t g, uint8_t b, uint8_t a)
         {
             float x = static_cast<float>(mx);
             float y = static_cast<float>(my);
-            float h = radius * 0.866F; // sqrt(3)/2
+            float h = radius * 0.866F;
             verts.push_back({0, 0, r, g, b, a, x, y + radius, 0});
             verts.push_back({0, 0, r, g, b, a, x + h, y - radius * 0.5F, 0});
             verts.push_back({0, 0, r, g, b, a, x + h, y - radius * 0.5F, 0});
@@ -214,133 +273,104 @@ namespace nasrbrowse
                                      double lon_max, double lat_max, double z)
         {
             const auto& airports = db.query_airports(lon_min, lat_min, lon_max, lat_max);
-
-            // Symbol size in meters, shrinks with zoom
             float radius = static_cast<float>(half_extent_y * 0.008);
 
             for(const auto& apt : airports)
             {
-                // At low zoom, only show towered airports
-                if(z < 6.0 && apt.twr_type_code == "NON-ATCT")
+                if(!styles.visible(airport_zoom_key(apt), z))
                 {
                     continue;
                 }
 
+                const auto& cs = styles.get(airport_color_key(apt));
                 double mx = lon_to_mx(apt.lon);
                 double my = lat_to_my(apt.lat);
-
-                uint8_t r, g, b, a = 255;
-                if(apt.site_type_code == "H")
-                {
-                    // Heliport: magenta
-                    r = 200; g = 50; b = 200;
-                }
-                else if(apt.twr_type_code != "NON-ATCT")
-                {
-                    // Towered: blue
-                    r = 60; g = 120; b = 255;
-                }
-                else
-                {
-                    // Untowered: magenta
-                    r = 200; g = 50; b = 200;
-                }
-
-                add_diamond(airport_vertices, mx, my, radius, r, g, b, a);
+                add_diamond(airport_vertices, mx, my, radius,
+                            to_u8(cs.r), to_u8(cs.g), to_u8(cs.b), to_u8(cs.a));
             }
         }
 
         void build_navaid_vertices(double lon_min, double lat_min,
                                     double lon_max, double lat_max, double z)
         {
-            if(z < 5.0)
-            {
-                return;
-            }
-
             const auto& navaids = db.query_navaids(lon_min, lat_min, lon_max, lat_max);
             float radius = static_cast<float>(half_extent_y * 0.006);
 
             for(const auto& nav : navaids)
             {
+                const char* key = (nav.nav_type == "NDB" || nav.nav_type == "NDB/DME")
+                    ? "navaid_ndb" : "navaid_vor";
+
+                if(!styles.visible(key, z))
+                {
+                    continue;
+                }
+
+                const auto& cs = styles.get(key);
                 double mx = lon_to_mx(nav.lon);
                 double my = lat_to_my(nav.lat);
-
-                // VOR/VORTAC: green, NDB: red
-                uint8_t r, g, b;
-                if(nav.nav_type == "NDB" || nav.nav_type == "NDB/DME")
-                {
-                    r = 200; g = 80; b = 80;
-                }
-                else
-                {
-                    r = 80; g = 200; b = 80;
-                }
-
-                add_diamond(navaid_vertices, mx, my, radius, r, g, b, 255);
+                add_diamond(navaid_vertices, mx, my, radius,
+                            to_u8(cs.r), to_u8(cs.g), to_u8(cs.b), to_u8(cs.a));
             }
         }
 
         void build_fix_vertices(double lon_min, double lat_min,
-                                 double lon_max, double lat_max)
+                                 double lon_max, double lat_max, double z)
         {
+            if(!styles.visible("fix", z))
+            {
+                return;
+            }
+
             const auto& fixes = db.query_fixes(lon_min, lat_min, lon_max, lat_max);
             float radius = static_cast<float>(half_extent_y * 0.003);
+            const auto& cs = styles.get("fix");
 
             for(const auto& fix : fixes)
             {
                 double mx = lon_to_mx(fix.lon);
                 double my = lat_to_my(fix.lat);
-                add_triangle(fix_vertices, mx, my, radius, 140, 140, 140, 200);
+                add_triangle(fix_vertices, mx, my, radius,
+                             to_u8(cs.r), to_u8(cs.g), to_u8(cs.b), to_u8(cs.a));
             }
         }
 
         void build_airway_polylines(double lon_min, double lat_min,
                                      double lon_max, double lat_max, double z)
         {
-            if(z < 5.0)
-            {
-                return;
-            }
-
             const auto& airways = db.query_airways(lon_min, lat_min, lon_max, lat_max);
 
             for(const auto& seg : airways)
             {
+                std::string key = airway_key(seg.awy_id);
+
+                if(!styles.visible(key, z))
+                {
+                    continue;
+                }
+
+                const auto& fs = styles.get(key);
+
                 float x0 = static_cast<float>(lon_to_mx(seg.from_lon));
                 float y0 = static_cast<float>(lat_to_my(seg.from_lat));
                 float x1 = static_cast<float>(lon_to_mx(seg.to_lon));
                 float y1 = static_cast<float>(lat_to_my(seg.to_lat));
 
-                line_style style;
-                style.line_width = 2.0F;
-                style.border_width = 1.0F;
-                style.dash_length = 0.0F;
-                style.gap_length = 0.0F;
-
-                // Victor airways (V): blue, Jet (J): dark gray, others: magenta
-                if(!seg.awy_id.empty() && seg.awy_id[0] == 'V')
-                {
-                    style.r = 0.31F; style.g = 0.31F; style.b = 0.71F; style.a = 0.63F;
-                }
-                else if(!seg.awy_id.empty() && seg.awy_id[0] == 'J')
-                {
-                    style.r = 0.39F; style.g = 0.39F; style.b = 0.39F; style.a = 0.63F;
-                }
-                else
-                {
-                    style.r = 0.71F; style.g = 0.31F; style.b = 0.71F; style.a = 0.63F;
-                }
-
                 airway_poly.polylines.push_back({glm::vec2(x0, y0), glm::vec2(x1, y1)});
-                airway_poly.styles.push_back(style);
+                airway_poly.styles.push_back(to_line_style(fs));
             }
         }
 
         void build_runway_polylines(double lon_min, double lat_min,
-                                     double lon_max, double lat_max)
+                                     double lon_max, double lat_max, double z)
         {
+            if(!styles.visible("runway", z))
+            {
+                return;
+            }
+
             const auto& runways = db.query_runways(lon_min, lat_min, lon_max, lat_max);
+            const auto& fs = styles.get("runway");
 
             for(const auto& rwy : runways)
             {
@@ -349,26 +379,14 @@ namespace nasrbrowse
                 float x1 = static_cast<float>(lon_to_mx(rwy.end2_lon));
                 float y1 = static_cast<float>(lat_to_my(rwy.end2_lat));
 
-                line_style style;
-                style.line_width = 3.0F;
-                style.border_width = 0.0F;
-                style.dash_length = 0.0F;
-                style.gap_length = 0.0F;
-                style.r = 0.78F; style.g = 0.78F; style.b = 0.78F; style.a = 1.0F;
-
                 runway_poly.polylines.push_back({glm::vec2(x0, y0), glm::vec2(x1, y1)});
-                runway_poly.styles.push_back(style);
+                runway_poly.styles.push_back(to_line_style(fs));
             }
         }
 
         void build_sua_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max, double z)
         {
-            if(z < 4.0)
-            {
-                return;
-            }
-
             const auto& suas = db.query_sua(lon_min, lat_min, lon_max, lat_max);
 
             for(const auto& s : suas)
@@ -378,30 +396,14 @@ namespace nasrbrowse
                     continue;
                 }
 
-                line_style style;
-                style.line_width = 3.0F;
-                style.border_width = 1.0F;
+                const char* key = sua_key(s.sua_type);
 
-                // MOA: orange dashed, Restricted/Prohibited: red solid, Warning: yellow solid
-                if(s.sua_type == "RA" || s.sua_type == "PA")
+                if(!styles.visible(key, z))
                 {
-                    style.r = 0.86F; style.g = 0.24F; style.b = 0.24F; style.a = 0.86F;
-                    style.dash_length = 0.0F;
-                    style.gap_length = 0.0F;
+                    continue;
                 }
-                else if(s.sua_type == "WA")
-                {
-                    style.r = 0.86F; style.g = 0.78F; style.b = 0.24F; style.a = 0.78F;
-                    style.dash_length = 0.0F;
-                    style.gap_length = 0.0F;
-                }
-                else
-                {
-                    // MOA, Alert, NSA: orange dashed
-                    style.r = 1.0F; style.g = 0.65F; style.b = 0.0F; style.a = 0.78F;
-                    style.dash_length = 15.0F;
-                    style.gap_length = 8.0F;
-                }
+
+                const auto& fs = styles.get(key);
 
                 std::vector<glm::vec2> polyline;
                 polyline.reserve(s.shape.size() + 1);
@@ -411,44 +413,36 @@ namespace nasrbrowse
                         static_cast<float>(lon_to_mx(pt.lon)),
                         static_cast<float>(lat_to_my(pt.lat)));
                 }
-                // Close the polygon
                 if(polyline.size() > 2)
                 {
                     polyline.push_back(polyline.front());
                 }
 
                 sua_poly.polylines.push_back(std::move(polyline));
-                sua_poly.styles.push_back(style);
+                sua_poly.styles.push_back(to_line_style(fs));
             }
         }
 
         void build_obstacle_vertices(double lon_min, double lat_min,
-                                      double lon_max, double lat_max)
+                                      double lon_max, double lat_max, double z)
         {
             const auto& obstacles = db.query_obstacles(lon_min, lat_min, lon_max, lat_max);
             float radius = static_cast<float>(half_extent_y * 0.003);
 
             for(const auto& obs : obstacles)
             {
+                const char* key = obstacle_key(obs.agl_ht);
+
+                if(!styles.visible(key, z))
+                {
+                    continue;
+                }
+
+                const auto& cs = styles.get(key);
                 double mx = lon_to_mx(obs.lon);
                 double my = lat_to_my(obs.lat);
-
-                uint8_t r, g, b, a;
-                if(obs.agl_ht >= 1000)
-                {
-                    r = 220; g = 60; b = 60; a = 255;
-                }
-                else if(obs.agl_ht >= 200)
-                {
-                    r = 255; g = 165; b = 0; a = 255;
-                }
-                else
-                {
-                    r = 160; g = 160; b = 160; a = 140;
-                }
-
-                // Inverted triangle (point-down)
-                add_triangle(obstacle_vertices, mx, my, -radius, r, g, b, a);
+                add_triangle(obstacle_vertices, mx, my, -radius,
+                             to_u8(cs.r), to_u8(cs.g), to_u8(cs.b), to_u8(cs.a));
             }
         }
 
@@ -459,46 +453,14 @@ namespace nasrbrowse
 
             for(const auto& arsp : airspaces)
             {
-                // At low zoom, only show Class B
-                if(z < 6.0 && arsp.airspace_class != "B")
-                {
-                    continue;
-                }
-                // At medium zoom, show B and C
-                if(z < 7.0 && arsp.airspace_class != "B" && arsp.airspace_class != "C")
+                const char* key = airspace_key(arsp.airspace_class);
+
+                if(!styles.visible(key, z))
                 {
                     continue;
                 }
 
-                line_style style;
-                style.line_width = 3.0F;
-                style.border_width = 1.0F;
-
-                if(arsp.airspace_class == "B")
-                {
-                    style.r = 0.24F; style.g = 0.47F; style.b = 0.86F; style.a = 0.78F;
-                    style.dash_length = 0.0F;
-                    style.gap_length = 0.0F;
-                }
-                else if(arsp.airspace_class == "C")
-                {
-                    style.r = 0.71F; style.g = 0.24F; style.b = 0.71F; style.a = 0.78F;
-                    style.dash_length = 0.0F;
-                    style.gap_length = 0.0F;
-                }
-                else if(arsp.airspace_class == "D")
-                {
-                    style.r = 0.24F; style.g = 0.47F; style.b = 0.86F; style.a = 0.63F;
-                    style.dash_length = 12.0F;
-                    style.gap_length = 6.0F;
-                }
-                else
-                {
-                    // Class E
-                    style.r = 0.71F; style.g = 0.24F; style.b = 0.71F; style.a = 0.47F;
-                    style.dash_length = 12.0F;
-                    style.gap_length = 6.0F;
-                }
+                const auto& fs = styles.get(key);
 
                 for(const auto& ring : arsp.parts)
                 {
@@ -515,19 +477,17 @@ namespace nasrbrowse
                             static_cast<float>(lon_to_mx(pt.lon)),
                             static_cast<float>(lat_to_my(pt.lat)));
                     }
-                    // Close if not already closed
                     if(polyline.size() > 2 && polyline.front() != polyline.back())
                     {
                         polyline.push_back(polyline.front());
                     }
 
                     airspace_poly.polylines.push_back(std::move(polyline));
-                    airspace_poly.styles.push_back(style);
+                    airspace_poly.styles.push_back(to_line_style(fs));
                 }
             }
         }
 
-        // Combine visible polyline groups and send to the SDF line renderer
         void rebuild_sdf_lines()
         {
             std::vector<std::vector<glm::vec2>> all_polylines;
@@ -550,8 +510,9 @@ namespace nasrbrowse
         }
     };
 
-    feature_renderer::feature_renderer(sdl::device& dev, const char* db_path)
-        : pimpl(new impl(dev, db_path))
+    feature_renderer::feature_renderer(sdl::device& dev, const char* db_path,
+                                       const chart_style& cs)
+        : pimpl(new impl(dev, db_path, cs))
     {
     }
 
@@ -567,7 +528,6 @@ namespace nasrbrowse
         pimpl->viewport_height = viewport_height;
         pimpl->aspect_ratio = aspect_ratio;
 
-        // Convert view bounds to lon/lat for database query
         double lon_min = mx_to_lon(vx_min);
         double lon_max = mx_to_lon(vx_max);
         double lat_min = my_to_lat(vy_min);
