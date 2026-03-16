@@ -143,6 +143,8 @@ def build_apt(conn, csv_zf):
             AND LAT_DECIMAL != '' AND LONG_DECIMAL != ''
     """)
 
+    conn.execute("CREATE INDEX idx_apt_base_site_no ON APT_BASE(SITE_NO)")
+
 
 def build_nav(conn, csv_zf):
     """Import navaids with decimal coordinates."""
@@ -346,6 +348,8 @@ def build_maa(conn, csv_zf):
         GROUP BY b.rowid
     """)
 
+    conn.execute("CREATE INDEX idx_maa_shp ON MAA_SHP(MAA_ID)")
+
 
 def build_apt_rwy(conn, csv_zf):
     """Import runway data for high-zoom rendering."""
@@ -357,6 +361,8 @@ def build_apt_rwy(conn, csv_zf):
         "SITE_NO", "RWY_ID", "RWY_END_ID", "LAT_DECIMAL", "LONG_DECIMAL",
         "RWY_END_ELEV", "TRUE_ALIGNMENT",
     ])
+
+    conn.execute("CREATE INDEX idx_apt_rwy_end_site ON APT_RWY_END(SITE_NO, RWY_ID)")
 
     # Add surface classification column to APT_BASE.
     # For each airport, take the hardest surface across all runways
@@ -400,6 +406,40 @@ def build_apt_rwy(conn, csv_zf):
         counts[cls] = counts.get(cls, 0) + 1
     print(f"  Surface classification: {counts}")
 
+    # Pre-build runway segments with resolved endpoint coordinates
+    # and their own R-tree for direct spatial queries
+    conn.execute("""
+        CREATE TABLE RWY_SEG AS
+        SELECT
+            e1.LAT_DECIMAL AS END1_LAT,
+            e1.LONG_DECIMAL AS END1_LON,
+            e2.LAT_DECIMAL AS END2_LAT,
+            e2.LONG_DECIMAL AS END2_LON
+        FROM APT_RWY_END e1
+        JOIN APT_RWY_END e2
+            ON e1.SITE_NO = e2.SITE_NO AND e1.RWY_ID = e2.RWY_ID
+        WHERE e1.rowid < e2.rowid
+            AND e1.LAT_DECIMAL != '' AND e1.LONG_DECIMAL != ''
+            AND e2.LAT_DECIMAL != '' AND e2.LONG_DECIMAL != ''
+    """)
+
+    count = conn.execute("SELECT COUNT(*) FROM RWY_SEG").fetchone()[0]
+    print(f"  RWY_SEG: {count} runway segments")
+
+    conn.execute("""
+        CREATE VIRTUAL TABLE RWY_SEG_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO RWY_SEG_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT rowid,
+               MIN(CAST(END1_LON AS REAL), CAST(END2_LON AS REAL)),
+               MAX(CAST(END1_LON AS REAL), CAST(END2_LON AS REAL)),
+               MIN(CAST(END1_LAT AS REAL), CAST(END2_LAT AS REAL)),
+               MAX(CAST(END1_LAT AS REAL), CAST(END2_LAT AS REAL))
+        FROM RWY_SEG
+    """)
 
 
 def simplify_ring(points, epsilon):
@@ -1059,7 +1099,7 @@ def main():
     # Print summary
     print("\nDatabase summary:")
     tables = ["APT_BASE", "NAV_BASE", "FIX_BASE", "FIX_CHRT", "AWY_SEG",
-              "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
+              "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END", "RWY_SEG",
               "CLS_ARSP_BASE", "CLS_ARSP_SHP",
               "SUA_BASE", "SUA_SHP", "OBS_BASE"]
     for table in tables:

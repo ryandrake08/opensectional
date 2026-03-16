@@ -7,7 +7,6 @@
 #include "ui_overlay.hpp"
 #include <cmath>
 #include <cstring>
-#include <iostream>
 #include <unordered_set>
 #include <glm/ext/matrix_transform.hpp>
 #include <sdl/buffer.hpp>
@@ -209,12 +208,6 @@ namespace nasrbrowse
                              double lon_max, double lat_max)
         {
             double z = zoom_level();
-            if(z != last_zoom)
-            {
-                std::cerr << "build_vertices: zoom=" << z
-                          << " lat=" << lat_min << ".." << lat_max
-                          << " lon=" << lon_min << ".." << lon_max << std::endl;
-            }
 
             double lon_pad = (lon_max - lon_min) * 0.5;
             double lat_pad = (lat_max - lat_min) * 0.5;

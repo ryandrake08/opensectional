@@ -175,24 +175,15 @@ namespace nasrbrowse
                 ORDER BY PART_NUM, POINT_SEQ
             )");
 
-            // Runways: pair ends by SITE_NO + RWY_ID, filtered by airport bbox
+            // Runways: pre-built segments with direct R-tree query
             prepare(&stmt_runways, R"(
-                SELECT e1.LAT_DECIMAL, e1.LONG_DECIMAL,
-                       e2.LAT_DECIMAL, e2.LONG_DECIMAL
-                FROM APT_RWY_END e1
-                JOIN APT_RWY_END e2
-                    ON e1.SITE_NO = e2.SITE_NO AND e1.RWY_ID = e2.RWY_ID
-                WHERE e1.SITE_NO IN (
-                    SELECT SITE_NO FROM APT_BASE
-                    WHERE rowid IN (
-                        SELECT id FROM APT_BASE_RTREE
-                        WHERE max_lon >= ?1 AND min_lon <= ?3
-                          AND max_lat >= ?2 AND min_lat <= ?4
-                    )
+                SELECT END1_LAT, END1_LON, END2_LAT, END2_LON
+                FROM RWY_SEG
+                WHERE rowid IN (
+                    SELECT id FROM RWY_SEG_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
                 )
-                AND e1.rowid < e2.rowid
-                AND e1.LAT_DECIMAL != '' AND e1.LONG_DECIMAL != ''
-                AND e2.LAT_DECIMAL != '' AND e2.LONG_DECIMAL != ''
             )");
 
             // SUA (MOA/Restricted/Warning/Alert/Prohibited) from AIXM
