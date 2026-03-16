@@ -91,7 +91,7 @@ def import_csv(conn, table_name, zf, csv_name, columns=None):
 
         rows = []
         for row in reader:
-            values = [row.get(c, "") for c in columns]
+            values = [row.get(c, "").strip() for c in columns]
             rows.append(values)
 
         conn.executemany(insert_sql, rows)
@@ -189,6 +189,16 @@ def build_fix(conn, csv_zf):
         WHERE LAT_DECIMAL IS NOT NULL AND LONG_DECIMAL IS NOT NULL
             AND LAT_DECIMAL != '' AND LONG_DECIMAL != ''
     """)
+
+    # Chart association: which charts each fix appears on
+    import_csv(conn, "FIX_CHRT", csv_zf, "FIX_CHRT.csv", [
+        "FIX_ID", "ICAO_REGION_CODE", "STATE_CODE", "COUNTRY_CODE",
+        "CHARTING_TYPE_DESC",
+    ])
+    conn.execute("CREATE INDEX idx_fix_chrt ON FIX_CHRT(FIX_ID)")
+
+    count = conn.execute("SELECT COUNT(*) FROM FIX_CHRT").fetchone()[0]
+    print(f"  FIX_CHRT: {count} rows")
 
 
 def build_awy(conn, csv_zf):
@@ -1048,7 +1058,7 @@ def main():
 
     # Print summary
     print("\nDatabase summary:")
-    tables = ["APT_BASE", "NAV_BASE", "FIX_BASE", "AWY_SEG",
+    tables = ["APT_BASE", "NAV_BASE", "FIX_BASE", "FIX_CHRT", "AWY_SEG",
               "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
               "CLS_ARSP_BASE", "CLS_ARSP_SHP",
               "SUA_BASE", "SUA_SHP", "OBS_BASE"]

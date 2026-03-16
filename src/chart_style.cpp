@@ -48,7 +48,7 @@ namespace nasrbrowse
         "airport_hard_long", "airport_hard_short", "airport_other",
         "airport_towered", "airport_untowered", "airport_heliport",
         "navaid_vor", "navaid_ndb",
-        "fix",
+        "fix_wp", "fix_rp", "fix_vfr",
         "obstacle_1000ft", "obstacle_200ft", "obstacle_low",
         "airway_v", "airway_t", "airway_br", "airway_tk",
         "airway_j", "airway_q", "airway_ar", "airway_rte", "airway_h",

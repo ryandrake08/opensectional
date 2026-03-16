@@ -116,9 +116,10 @@ namespace nasrbrowse
             )");
 
             prepare(&stmt_fixes, R"(
-                SELECT FIX_ID, LAT_DECIMAL, LONG_DECIMAL
+                SELECT FIX_ID, FIX_USE_CODE, LAT_DECIMAL, LONG_DECIMAL
                 FROM FIX_BASE
-                WHERE rowid IN (
+                WHERE FIX_USE_CODE IN ('WP', 'RP', 'VFR')
+                AND rowid IN (
                     SELECT id FROM FIX_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
@@ -129,7 +130,8 @@ namespace nasrbrowse
                 SELECT AWY_ID, FROM_POINT, TO_POINT,
                        FROM_LAT, FROM_LON, TO_LAT, TO_LON
                 FROM AWY_SEG
-                WHERE rowid IN (
+                WHERE AWY_SEG_GAP_FLAG != 'Y'
+                AND rowid IN (
                     SELECT id FROM AWY_SEG_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
@@ -310,8 +312,9 @@ namespace nasrbrowse
         {
             fix f;
             f.fix_id = col_text(d.stmt_fixes, 0);
-            f.lat = col_double(d.stmt_fixes, 1);
-            f.lon = col_double(d.stmt_fixes, 2);
+            f.use_code = col_text(d.stmt_fixes, 1);
+            f.lat = col_double(d.stmt_fixes, 2);
+            f.lon = col_double(d.stmt_fixes, 3);
             d.fixes.push_back(std::move(f));
         }
 

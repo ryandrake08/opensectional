@@ -137,7 +137,8 @@ struct layer_map::impl
                      viewport_height, view.aspect_ratio);
         features.update(view.view_x_min(), view.view_y_min(),
                         view.view_x_max(), view.view_y_max(),
-                        viewport_height, view.aspect_ratio);
+                        view.half_extent_y, viewport_height,
+                        view.aspect_ratio);
     }
 };
 

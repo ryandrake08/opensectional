@@ -32,6 +32,7 @@ namespace nasrbrowse
     struct fix
     {
         std::string fix_id;
+        std::string use_code;
         double lat;
         double lon;
     };

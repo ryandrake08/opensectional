@@ -28,7 +28,8 @@ namespace nasrbrowse
         // Recompute visible features from database
         void update(double view_x_min, double view_y_min,
                     double view_x_max, double view_y_max,
-                    int viewport_height, double aspect_ratio);
+                    double half_extent_y, int viewport_height,
+                    double aspect_ratio);
 
         // Check if features need upload
         bool needs_upload();
