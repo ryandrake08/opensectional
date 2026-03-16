@@ -6,6 +6,7 @@
 #include "render_context.hpp"
 #include "ui_overlay.hpp"
 #include <cmath>
+#include <cstring>
 #include <glm/ext/matrix_transform.hpp>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
@@ -127,16 +128,19 @@ namespace nasrbrowse
 
         // Point feature vertex buffers (rendered as line_list)
         std::vector<sdl::vertex_t2f_c4ub_v3f> airport_vertices;
-        std::vector<sdl::vertex_t2f_c4ub_v3f> navaid_vertices;
         std::vector<sdl::vertex_t2f_c4ub_v3f> fix_vertices;
         std::vector<sdl::vertex_t2f_c4ub_v3f> obstacle_vertices;
 
         std::unique_ptr<sdl::buffer> airport_buffer;
-        std::unique_ptr<sdl::buffer> navaid_buffer;
         std::unique_ptr<sdl::buffer> fix_buffer;
         std::unique_ptr<sdl::buffer> obstacle_buffer;
 
+        // Navaid positions for airway clearance (populated during build_navaid_polylines)
+        std::vector<glm::vec2> navaid_positions;
+        float navaid_clearance;
+
         // Line/polygon feature polylines (rendered via SDF line_renderer)
+        polyline_data navaid_poly;
         polyline_data sua_poly;
         polyline_data airspace_poly;
         polyline_data airway_poly;
@@ -217,16 +221,16 @@ namespace nasrbrowse
             has_cached_query = true;
 
             airport_vertices.clear();
-            navaid_vertices.clear();
             fix_vertices.clear();
             obstacle_vertices.clear();
+            navaid_poly.clear();
             sua_poly.clear();
             airspace_poly.clear();
             airway_poly.clear();
             runway_poly.clear();
 
             build_airport_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
-            build_navaid_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_navaid_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_airway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_sua_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_obstacle_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
@@ -290,14 +294,112 @@ namespace nasrbrowse
             }
         }
 
-        void build_navaid_vertices(double lon_min, double lat_min,
-                                    double lon_max, double lat_max, double z)
+        // --- Navaid symbol geometry builders ---
+
+        // Closed hexagon with flat top/bottom, corners on left/right
+        void add_hexagon(float cx, float cy, float r, const line_style& ls)
+        {
+            std::vector<glm::vec2> pts;
+            for(int i = 0; i < 6; i++)
+            {
+                float angle = glm::radians(60.0F * i);
+                pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
+            }
+            pts.push_back(pts.front());
+            navaid_poly.polylines.push_back(std::move(pts));
+            navaid_poly.styles.push_back(ls);
+        }
+
+        // Small dot (diamond) at center
+        void add_center_dot(float cx, float cy, float r, const line_style& ls)
+        {
+            float d = r * 0.15F;
+            navaid_poly.polylines.push_back({
+                {cx - d, cy}, {cx, cy + d}, {cx + d, cy}, {cx, cy - d}, {cx - d, cy}
+            });
+            navaid_poly.styles.push_back(ls);
+        }
+
+        // Axis-aligned rectangle
+        void add_rect(float cx, float cy, float hw, float hh, const line_style& ls)
+        {
+            navaid_poly.polylines.push_back({
+                {cx - hw, cy - hh}, {cx + hw, cy - hh},
+                {cx + hw, cy + hh}, {cx - hw, cy + hh}, {cx - hw, cy - hh}
+            });
+            navaid_poly.styles.push_back(ls);
+        }
+
+        // Three rectangles sharing edges with the hexagon at 1:30, 10:30, 6:00
+        void add_caltrop(float cx, float cy, float hex_r, const line_style& ls)
+        {
+            // Hexagon vertices at 0°, 60°, 120°, 180°, 240°, 300°
+            float vx[6], vy[6];
+            for(int i = 0; i < 6; i++)
+            {
+                float angle = glm::radians(60.0F * i);
+                vx[i] = cx + hex_r * std::cos(angle);
+                vy[i] = cy + hex_r * std::sin(angle);
+            }
+
+            // Each rectangle shares one hexagon edge (inner side) and extends outward.
+            // Edges: V0→V1 (1:30), V2→V3 (10:30), V4→V5 (6:00)
+            // Outward normal bisects the edge angle: 30°, 150°, 270°
+            int edges[][2] = {{0, 1}, {2, 3}, {4, 5}};
+            float normal_angles[] = {30.0F, 150.0F, 270.0F};
+            float h = hex_r * 0.5F;
+
+            for(int e = 0; e < 3; e++)
+            {
+                int a = edges[e][0], b = edges[e][1];
+                float na = glm::radians(normal_angles[e]);
+                float nx = std::cos(na) * h;
+                float ny = std::sin(na) * h;
+
+                navaid_poly.polylines.push_back({
+                    {vx[a], vy[a]},
+                    {vx[b], vy[b]},
+                    {vx[b] + nx, vy[b] + ny},
+                    {vx[a] + nx, vy[a] + ny},
+                    {vx[a], vy[a]},
+                });
+                navaid_poly.styles.push_back(ls);
+            }
+        }
+
+        // Circle approximated as a 16-sided polygon
+        void add_circle(float cx, float cy, float r, const line_style& ls)
+        {
+            const int n = 16;
+            std::vector<glm::vec2> pts;
+            for(int i = 0; i < n; i++)
+            {
+                float angle = 2.0F * 3.14159265F * i / n;
+                pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
+            }
+            pts.push_back(pts.front());
+            navaid_poly.polylines.push_back(std::move(pts));
+            navaid_poly.styles.push_back(ls);
+        }
+
+        void build_navaid_polylines(double lon_min, double lat_min,
+                                     double lon_max, double lat_max, double z)
         {
             const auto& navaids = db.query_navaids(lon_min, lat_min, lon_max, lat_max);
-            float radius = static_cast<float>(half_extent_y * 0.006);
+            float r = static_cast<float>(half_extent_y * 0.024);
+
+            navaid_positions.clear();
+            navaid_clearance = r * 2.0F;
 
             for(const auto& nav : navaids)
             {
+                // Skip types we don't depict
+                if(nav.nav_type == "VOT" || nav.nav_type == "FAN MARKER" ||
+                   nav.nav_type == "MARINE NDB")
+                {
+                    continue;
+                }
+
                 const char* key = (nav.nav_type == "NDB" || nav.nav_type == "NDB/DME")
                     ? "navaid_ndb" : "navaid_vor";
 
@@ -306,11 +408,45 @@ namespace nasrbrowse
                     continue;
                 }
 
-                const auto& cs = styles.get(key);
-                double mx = lon_to_mx(nav.lon);
-                double my = lat_to_my(nav.lat);
-                add_diamond(navaid_vertices, mx, my, radius,
-                            to_u8(cs.r), to_u8(cs.g), to_u8(cs.b), to_u8(cs.a));
+                const auto& fs = styles.get(key);
+                line_style ls = to_line_style(fs);
+
+                float cx = static_cast<float>(lon_to_mx(nav.lon));
+                float cy = static_cast<float>(lat_to_my(nav.lat));
+
+                navaid_positions.emplace_back(cx, cy);
+
+                if(nav.nav_type == "NDB")
+                {
+                    add_circle(cx, cy, r * 0.4F, ls);
+                }
+                else if(nav.nav_type == "NDB/DME")
+                {
+                    add_circle(cx, cy, r * 0.4F, ls);
+                    add_rect(cx, cy, r * 0.85F, r * 0.85F, ls);
+                }
+                else if(nav.nav_type == "DME")
+                {
+                    add_rect(cx, cy, r * 0.85F, r * 0.85F, ls);
+                }
+                else if(std::strcmp(nav.nav_type.c_str(), "VOR/DME") == 0)
+                {
+                    add_hexagon(cx, cy, r, ls);
+                    add_center_dot(cx, cy, r, ls);
+                    add_rect(cx, cy, r * 1.1F, r * 0.85F, ls);
+                }
+                else if(nav.nav_type == "VORTAC" || nav.nav_type == "TACAN")
+                {
+                    add_hexagon(cx, cy, r, ls);
+                    add_center_dot(cx, cy, r, ls);
+                    add_caltrop(cx, cy, r, ls);
+                }
+                else
+                {
+                    // VOR (plain)
+                    add_hexagon(cx, cy, r, ls);
+                    add_center_dot(cx, cy, r, ls);
+                }
             }
         }
 
@@ -335,6 +471,23 @@ namespace nasrbrowse
             }
         }
 
+        // Check if a point is at a navaid position (within tight tolerance)
+        bool is_at_navaid(float x, float y) const
+        {
+            float tol = navaid_clearance * 0.1F;
+            float tol_sq = tol * tol;
+            for(const auto& np : navaid_positions)
+            {
+                float dx = x - np.x;
+                float dy = y - np.y;
+                if(dx * dx + dy * dy < tol_sq)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         void build_airway_polylines(double lon_min, double lat_min,
                                      double lon_max, double lat_max, double z)
         {
@@ -355,6 +508,33 @@ namespace nasrbrowse
                 float y0 = static_cast<float>(lat_to_my(seg.from_lat));
                 float x1 = static_cast<float>(lon_to_mx(seg.to_lon));
                 float y1 = static_cast<float>(lat_to_my(seg.to_lat));
+
+                // Shorten segment ends that coincide with navaids
+                float dx = x1 - x0;
+                float dy = y1 - y0;
+                float len = std::sqrt(dx * dx + dy * dy);
+                if(len > 0.0F)
+                {
+                    float ux = dx / len;
+                    float uy = dy / len;
+
+                    if(is_at_navaid(x0, y0))
+                    {
+                        x0 += ux * navaid_clearance;
+                        y0 += uy * navaid_clearance;
+                    }
+                    if(is_at_navaid(x1, y1))
+                    {
+                        x1 -= ux * navaid_clearance;
+                        y1 -= uy * navaid_clearance;
+                    }
+                }
+
+                // Skip if shortening collapsed the segment
+                if((x1 - x0) * dx + (y1 - y0) * dy <= 0.0F)
+                {
+                    continue;
+                }
 
                 airway_poly.polylines.push_back({glm::vec2(x0, y0), glm::vec2(x1, y1)});
                 airway_poly.styles.push_back(to_line_style(fs));
@@ -501,6 +681,7 @@ namespace nasrbrowse
                     pd.styles.begin(), pd.styles.end());
             };
 
+            if(vis_navaids) append(navaid_poly);
             if(vis_sua) append(sua_poly);
             if(vis_airspace) append(airspace_poly);
             if(vis_airways) append(airway_poly);
@@ -561,7 +742,6 @@ namespace nasrbrowse
 
             upload(pimpl->obstacle_vertices, pimpl->obstacle_buffer);
             upload(pimpl->fix_vertices, pimpl->fix_buffer);
-            upload(pimpl->navaid_vertices, pimpl->navaid_buffer);
             upload(pimpl->airport_vertices, pimpl->airport_buffer);
             pimpl->dirty = false;
         }
@@ -601,7 +781,6 @@ namespace nasrbrowse
 
             if(pimpl->vis_obstacles) draw(pimpl->obstacle_buffer);
             if(pimpl->vis_fixes) draw(pimpl->fix_buffer);
-            if(pimpl->vis_navaids) draw(pimpl->navaid_buffer);
             if(pimpl->vis_airports) draw(pimpl->airport_buffer);
         }
         else if(ctx.current_pass == render_pass_id::line_sdf_0)
@@ -615,6 +794,7 @@ namespace nasrbrowse
     void feature_renderer::set_visibility(const layer_visibility& vis)
     {
         bool line_vis_changed =
+            pimpl->vis_navaids != vis.navaids ||
             pimpl->vis_runways != vis.runways ||
             pimpl->vis_airways != vis.airways ||
             pimpl->vis_airspace != vis.airspace ||

@@ -107,7 +107,8 @@ namespace nasrbrowse
             prepare(&stmt_navaids, R"(
                 SELECT NAV_ID, NAV_TYPE, NAME, FREQ, LAT_DECIMAL, LONG_DECIMAL
                 FROM NAV_BASE
-                WHERE rowid IN (
+                WHERE NAV_STATUS != 'SHUTDOWN'
+                AND rowid IN (
                     SELECT id FROM NAV_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
