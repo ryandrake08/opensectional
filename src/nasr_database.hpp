@@ -54,6 +54,12 @@ namespace nasrbrowse
         double lon;
     };
 
+    struct polygon_ring
+    {
+        std::vector<airspace_point> points;
+        bool is_hole;
+    };
+
     // MOA/SUA airspace (from MAA tables)
     struct airspace
     {
@@ -71,6 +77,14 @@ namespace nasrbrowse
         double end2_lon;
     };
 
+    // A polygon ring within a special use airspace, with its own altitude limits
+    struct sua_ring
+    {
+        std::vector<airspace_point> points;
+        std::string upper_limit;
+        std::string lower_limit;
+    };
+
     // Special use airspace (MOA, Restricted, Warning, Alert, etc. from AIXM)
     struct sua
     {
@@ -80,8 +94,7 @@ namespace nasrbrowse
         std::string sua_type;  // "MOA", "RA", "WA", "AA", "PA", "NSA"
         std::string upper_limit;
         std::string lower_limit;
-        // Each part is a polygon ring (BASE + UNION components)
-        std::vector<std::vector<airspace_point>> parts;
+        std::vector<sua_ring> parts;
     };
 
     struct obstacle
@@ -100,8 +113,7 @@ namespace nasrbrowse
         std::string local_type;      // "CLASS_B", "CLASS_C", "CLASS_D", "CLASS_E2", etc.
         std::string upper_val;
         std::string lower_val;
-        // Each part is a ring (outer boundary or hole)
-        std::vector<std::vector<airspace_point>> parts;
+        std::vector<polygon_ring> parts;
     };
 
     class nasr_database

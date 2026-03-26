@@ -12,10 +12,14 @@ sudo port install cmake SDL3 SDL3_image SDL3_ttf sqlite3
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 
-# 3. Build the NASR database from FAA ZIP files
-python3 tools/build_nasr_db.py 19_Feb_2026_CSV.zip class_airspace_shape_files.zip aixm5.0.zip DOF_260215.zip nasr.db
+# 3. Set up Python venv for data build tools
+python3 -m venv env
+env/bin/pip install -r requirements.txt
 
-# 4. Run (requires pre-built XYZ tile directory)
+# 4. Build the NASR database from FAA ZIP files
+env/bin/python3 tools/build_nasr_db.py 19_Feb_2026_CSV.zip class_airspace_shape_files.zip aixm5.0.zip DOF_260215.zip nasr.db
+
+# 5. Run (requires pre-built XYZ tile directory)
 ./build/nasrbrowse <tile_path> nasr.db
 ```
 
@@ -85,10 +89,12 @@ Download the following ZIP files from the [FAA NASR subscription](https://www.fa
 - **AIXM 5.0 Special Use Airspace** - `aixm5.0.zip`
 - **Digital Obstacle File (DOF)** - e.g., `DOF_260215.zip`
 
-Build the database:
+Set up the Python environment and build the database:
 
 ```bash
-python3 tools/build_nasr_db.py <csv.zip> <shapefile.zip> <aixm.zip> <dof.zip> <output.db>
+python3 -m venv env
+env/bin/pip install -r requirements.txt
+env/bin/python3 tools/build_nasr_db.py <csv.zip> <shapefile.zip> <aixm.zip> <dof.zip> <output.db>
 ```
 
 All inputs are mandatory. The output file is always the last argument. This reads directly from the downloaded ZIP files (no manual extraction needed) and produces a SQLite database containing:
@@ -156,5 +162,5 @@ tools/
 
 ```bash
 # Run database query tests (requires a built nasr.db)
-python3 tools/test_nasr_queries.py nasr.db
+env/bin/python3 tools/test_nasr_queries.py nasr.db
 ```

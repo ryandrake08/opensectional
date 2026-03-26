@@ -513,11 +513,27 @@ def read_dbf(f):
         yield record
 
 
+def signed_ring_area(ring):
+    """Compute signed area of a polygon ring using the shoelace formula.
+
+    Negative = clockwise (outer ring in ESRI shapefile convention).
+    Positive = counterclockwise (hole in ESRI shapefile convention).
+    """
+    area = 0.0
+    n = len(ring)
+    for i in range(n):
+        x0, y0 = ring[i]
+        x1, y1 = ring[(i + 1) % n]
+        area += x0 * y1 - x1 * y0
+    return area / 2.0
+
+
 def read_shp_polygons(f):
     """Read polygon geometries from a .shp file.
 
     f is a binary file-like object.
-    Yields lists of parts, where each part is a list of (lon, lat) tuples.
+    Yields lists of (ring, is_hole) tuples, where each ring is a list of
+    (lon, lat) tuples and is_hole indicates clockwise winding (hole).
     Handles both Polygon (type 5) and PolygonZ (type 15).
     """
     # File header: 100 bytes
@@ -564,7 +580,8 @@ def read_shp_polygons(f):
             end = part_indices[i + 1]
             ring = [(all_points[j * 2], all_points[j * 2 + 1])
                     for j in range(start, end)]
-            parts.append(ring)
+            is_hole = signed_ring_area(ring) > 0
+            parts.append((ring, is_hole))
 
         yield parts
 
@@ -779,22 +796,27 @@ def parse_aixm_sua(xml_data):
         sua_type = ext.text or ""
         break
 
-    # Collect geometry from BASE and UNION components, ordered by sequence
+    # Collect geometry from all components, ordered by sequence
     upper_limit = ""
     lower_limit = ""
-    components = []
+    additive = []   # BASE + UNION components (merged into outer rings)
+    subtractive = []  # SUBTR components (altitude restriction zones)
     for gc in ts.findall(f"{{{AIXM}}}geometryComponent"):
         agc = gc.find(f"{{{AIXM}}}AirspaceGeometryComponent")
         if agc is None:
             continue
         op = agc.find(f"{{{AIXM}}}operation")
-        if op is None or op.text not in ("BASE", "UNION"):
+        if op is None or op.text not in ("BASE", "UNION", "SUBTR"):
             continue
         seq = agc.find(f"{{{AIXM}}}operationSequence")
         seq_num = int(seq.text) if seq is not None and seq.text else 0
 
         vol = agc.find(f".//{{{AIXM}}}AirspaceVolume")
-        if op.text == "BASE" and vol is not None:
+
+        # Extract altitude limits from this component
+        comp_upper = ""
+        comp_lower = ""
+        if vol is not None:
             upper = vol.find(f"{{{AIXM}}}upperLimit")
             lower = vol.find(f"{{{AIXM}}}lowerLimit")
             upper_ref = vol.find(f"{{{AIXM}}}upperLimitReference")
@@ -802,11 +824,15 @@ def parse_aixm_sua(xml_data):
             if upper is not None:
                 uom = upper.get("uom", "")
                 ref = upper_ref.text if upper_ref is not None else ""
-                upper_limit = f"{upper.text} {uom} {ref}".strip()
+                comp_upper = f"{upper.text} {uom} {ref}".strip()
             if lower is not None:
                 uom = lower.get("uom", "")
                 ref = lower_ref.text if lower_ref is not None else ""
-                lower_limit = f"{lower.text} {uom} {ref}".strip()
+                comp_lower = f"{lower.text} {uom} {ref}".strip()
+
+        if op.text == "BASE":
+            upper_limit = comp_upper
+            lower_limit = comp_lower
 
         shape = []
         hp = vol.find(f".//{{{AIXM}}}horizontalProjection") if vol is not None else None
@@ -823,13 +849,59 @@ def parse_aixm_sua(xml_data):
                         lon, lat = pos.text.strip().split()
                         shape.append((float(lon), float(lat)))
         if shape:
-            components.append((seq_num, shape))
+            if op.text == "SUBTR":
+                subtractive.append((seq_num, shape, comp_upper, comp_lower))
+            else:
+                additive.append((seq_num, shape))
 
-    if not components:
+    if not additive:
         return None
 
-    components.sort(key=lambda c: c[0])
-    parts = merge_shared_edges([shape for _, shape in components])
+    additive.sort(key=lambda c: c[0])
+    outer_parts = merge_shared_edges([shape for _, shape in additive])
+
+    # parts: list of (shape, upper_limit, lower_limit)
+    # Outer rings use the BASE altitude limits
+    parts = [(ring, upper_limit, lower_limit) for ring in outer_parts]
+
+    # SUBTR zones have their own altitude limits (not holes — airspace
+    # still exists inside, just with a different ceiling/floor).
+    # Clip each SUBTR polygon to the outer boundary since SUBTR circles
+    # often extend beyond the airspace limits.
+    if subtractive:
+        from shapely.geometry import Polygon as ShapelyPolygon
+        from shapely.ops import unary_union
+        from shapely.validation import make_valid
+        valid_outers = []
+        for r in outer_parts:
+            if len(r) >= 3:
+                p = make_valid(ShapelyPolygon(r))
+                if not p.is_empty:
+                    valid_outers.append(p)
+        outer_union = unary_union(valid_outers) if valid_outers else None
+        subtractive.sort(key=lambda c: c[0])
+        for _, shape, sub_upper, sub_lower in subtractive:
+            if len(shape) < 3 or outer_union is None:
+                continue
+            sub_poly = make_valid(ShapelyPolygon(shape))
+            if sub_poly.is_empty:
+                continue
+            clipped = sub_poly.intersection(outer_union)
+            if clipped.is_empty:
+                continue
+            # intersection may produce MultiPolygon; take each piece
+            from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
+            if isinstance(clipped, ShapelyMultiPolygon):
+                polys = list(clipped.geoms)
+            elif isinstance(clipped, ShapelyPolygon):
+                polys = [clipped]
+            else:
+                continue
+            for poly in polys:
+                if poly.is_empty:
+                    continue
+                coords = list(poly.exterior.coords)
+                parts.append((coords, sub_upper, sub_lower))
 
     return {
         "designator": designator,
@@ -875,6 +947,8 @@ def build_sua(conn, aixm_zf):
         CREATE TABLE SUA_SHP (
             SUA_ID INTEGER,
             PART_NUM INTEGER,
+            UPPER_LIMIT TEXT,
+            LOWER_LIMIT TEXT,
             POINT_SEQ INTEGER,
             LON_DECIMAL REAL,
             LAT_DECIMAL REAL
@@ -904,19 +978,20 @@ def build_sua(conn, aixm_zf):
             result["lower_limit"],
         ))
 
-        for part_num, part in enumerate(result["parts"]):
+        for part_num, (part, part_upper, part_lower) in enumerate(result["parts"]):
             total_before += len(part)
             simplified = simplify_ring(part, epsilon)
             total_after += len(simplified)
             for point_seq, (lon, lat) in enumerate(simplified):
-                shp_rows.append((sua_id, part_num, point_seq, lon, lat))
+                shp_rows.append((sua_id, part_num, part_upper, part_lower,
+                                 point_seq, lon, lat))
 
     conn.executemany(
         "INSERT INTO SUA_BASE VALUES (?, ?, ?, ?, ?, ?)",
         base_rows,
     )
     conn.executemany(
-        "INSERT INTO SUA_SHP VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_SHP VALUES (?, ?, ?, ?, ?, ?, ?)",
         shp_rows,
     )
 
@@ -1052,6 +1127,7 @@ def build_cls_arsp(conn, shp_zf):
         CREATE TABLE CLS_ARSP_SHP (
             ARSP_ID INTEGER,
             PART_NUM INTEGER,
+            IS_HOLE INTEGER,
             POINT_SEQ INTEGER,
             LON_DECIMAL REAL,
             LAT_DECIMAL REAL
@@ -1076,12 +1152,13 @@ def build_cls_arsp(conn, shp_zf):
             rec.get("LOWER_DESC", ""),
             rec.get("LOWER_VAL", ""),
         ))
-        for part_num, ring in enumerate(parts):
+        for part_num, (ring, is_hole) in enumerate(parts):
             total_before += len(ring)
             simplified = simplify_ring(ring, epsilon)
             total_after += len(simplified)
+            hole_flag = 1 if is_hole else 0
             for point_seq, (lon, lat) in enumerate(simplified):
-                shp_rows.append((arsp_id, part_num, point_seq, lon, lat))
+                shp_rows.append((arsp_id, part_num, hole_flag, point_seq, lon, lat))
 
     print(f"  Simplified: {total_before} -> {total_after} points "
           f"({100 * total_after / total_before:.1f}%)")
@@ -1091,7 +1168,7 @@ def build_cls_arsp(conn, shp_zf):
         base_rows,
     )
     conn.executemany(
-        "INSERT INTO CLS_ARSP_SHP VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO CLS_ARSP_SHP VALUES (?, ?, ?, ?, ?, ?)",
         shp_rows,
     )
     print(f"  CLS_ARSP_BASE: {len(base_rows)} airspaces")

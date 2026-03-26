@@ -642,14 +642,14 @@ namespace nasrbrowse
 
                 for(const auto& ring : s.parts)
                 {
-                    if(ring.size() < 2)
+                    if(ring.points.size() < 2)
                     {
                         continue;
                     }
 
                     std::vector<glm::vec2> polyline;
-                    polyline.reserve(ring.size() + 1);
-                    for(const auto& pt : ring)
+                    polyline.reserve(ring.points.size() + 1);
+                    for(const auto& pt : ring.points)
                     {
                         polyline.emplace_back(
                             static_cast<float>(lon_to_mx(pt.lon)),
@@ -707,14 +707,14 @@ namespace nasrbrowse
 
                 for(const auto& ring : arsp.parts)
                 {
-                    if(ring.size() < 2)
+                    if(ring.points.size() < 2)
                     {
                         continue;
                     }
 
                     std::vector<glm::vec2> polyline;
-                    polyline.reserve(ring.size() + 1);
-                    for(const auto& pt : ring)
+                    polyline.reserve(ring.points.size() + 1);
+                    for(const auto& pt : ring.points)
                     {
                         polyline.emplace_back(
                             static_cast<float>(lon_to_mx(pt.lon)),

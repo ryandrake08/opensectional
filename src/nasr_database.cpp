@@ -169,7 +169,7 @@ namespace nasrbrowse
             )");
 
             prepare(&stmt_cls_arsp_shape, R"(
-                SELECT PART_NUM, LON_DECIMAL, LAT_DECIMAL
+                SELECT PART_NUM, IS_HOLE, LON_DECIMAL, LAT_DECIMAL
                 FROM CLS_ARSP_SHP
                 WHERE ARSP_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
@@ -198,7 +198,7 @@ namespace nasrbrowse
             )");
 
             prepare(&stmt_sua_shape, R"(
-                SELECT PART_NUM, LON_DECIMAL, LAT_DECIMAL
+                SELECT PART_NUM, UPPER_LIMIT, LOWER_LIMIT, LON_DECIMAL, LAT_DECIMAL
                 FROM SUA_SHP
                 WHERE SUA_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
@@ -392,13 +392,15 @@ namespace nasrbrowse
                 int part_num = sqlite3_column_int(d.stmt_cls_arsp_shape, 0);
                 if(part_num != current_part)
                 {
-                    a.parts.emplace_back();
+                    polygon_ring ring;
+                    ring.is_hole = sqlite3_column_int(d.stmt_cls_arsp_shape, 1) != 0;
+                    a.parts.push_back(std::move(ring));
                     current_part = part_num;
                 }
                 airspace_point pt;
-                pt.lon = col_double(d.stmt_cls_arsp_shape, 1);
-                pt.lat = col_double(d.stmt_cls_arsp_shape, 2);
-                a.parts.back().push_back(pt);
+                pt.lon = col_double(d.stmt_cls_arsp_shape, 2);
+                pt.lat = col_double(d.stmt_cls_arsp_shape, 3);
+                a.parts.back().points.push_back(pt);
             }
 
             d.class_airspaces.push_back(std::move(a));
@@ -453,13 +455,16 @@ namespace nasrbrowse
                 int part_num = sqlite3_column_int(d.stmt_sua_shape, 0);
                 if(part_num != current_part)
                 {
-                    s.parts.emplace_back();
+                    sua_ring ring;
+                    ring.upper_limit = col_text(d.stmt_sua_shape, 1);
+                    ring.lower_limit = col_text(d.stmt_sua_shape, 2);
+                    s.parts.push_back(std::move(ring));
                     current_part = part_num;
                 }
                 airspace_point pt;
-                pt.lon = col_double(d.stmt_sua_shape, 1);
-                pt.lat = col_double(d.stmt_sua_shape, 2);
-                s.parts.back().push_back(pt);
+                pt.lon = col_double(d.stmt_sua_shape, 3);
+                pt.lat = col_double(d.stmt_sua_shape, 4);
+                s.parts.back().points.push_back(pt);
             }
 
             d.suas.push_back(std::move(s));

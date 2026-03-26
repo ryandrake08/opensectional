@@ -4,6 +4,7 @@
 .vscode
 __pycache__
 build
+env
 nasr_data
 nasr.db
 vfr
