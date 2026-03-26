@@ -13,6 +13,7 @@ namespace nasrbrowse
         bool airways = true;
         bool airspace = true;
         bool sua = true;
+        bool artcc = true;
         bool obstacles = true;
     };
 

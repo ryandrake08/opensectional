@@ -70,6 +70,7 @@ namespace nasrbrowse
             {"Airways",   &vis.airways},
             {"Airspace",  &vis.airspace},
             {"SUA",       &vis.sua},
+            {"ARTCC",     &vis.artcc},
             {"Obstacles", &vis.obstacles},
         };
 

@@ -105,6 +105,16 @@ namespace nasrbrowse
         int agl_ht;
     };
 
+    // ARTCC (Air Route Traffic Control Center) boundary
+    struct artcc
+    {
+        int artcc_id;
+        std::string location_id;  // "ZLA", "ZNY", etc.
+        std::string name;
+        std::string altitude;     // "LOW", "HIGH", "UNLIMITED"
+        std::vector<airspace_point> points;
+    };
+
     // Class B/C/D/E airspace (from shapefile)
     struct class_airspace
     {
@@ -148,6 +158,8 @@ namespace nasrbrowse
                                           double lon_max, double lat_max);
         const std::vector<obstacle>& query_obstacles(double lon_min, double lat_min,
                                                       double lon_max, double lat_max);
+        const std::vector<artcc>& query_artcc(double lon_min, double lat_min,
+                                               double lon_max, double lat_max);
     };
 
 } // namespace nasrbrowse

@@ -151,6 +151,7 @@ namespace nasrbrowse
         polyline_data navaid_poly;
         polyline_data fix_poly;
         polyline_data sua_poly;
+        polyline_data artcc_poly;
         polyline_data airspace_poly;
         polyline_data airway_poly;
         polyline_data runway_poly;
@@ -163,6 +164,7 @@ namespace nasrbrowse
         bool vis_airways = true;
         bool vis_airspace = true;
         bool vis_sua = true;
+        bool vis_artcc = true;
         bool vis_obstacles = true;
         bool dirty;
 
@@ -234,6 +236,7 @@ namespace nasrbrowse
             navaid_poly.clear();
             fix_poly.clear();
             sua_poly.clear();
+            artcc_poly.clear();
             airspace_poly.clear();
             airway_poly.clear();
             runway_poly.clear();
@@ -242,6 +245,7 @@ namespace nasrbrowse
             build_navaid_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_airway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_sua_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_artcc_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_obstacle_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_fix_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_runway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
@@ -672,6 +676,47 @@ namespace nasrbrowse
             }
         }
 
+        void build_artcc_polylines(double lon_min, double lat_min,
+                                    double lon_max, double lat_max, double z)
+        {
+            const auto& artccs = db.query_artcc(lon_min, lat_min, lon_max, lat_max);
+
+            for(const auto& a : artccs)
+            {
+                const char* key = "artcc_low";
+                if(a.altitude == "HIGH") key = "artcc_high";
+                else if(a.altitude == "UNLIMITED") key = "artcc_oceanic";
+
+                if(!styles.visible(key, z))
+                {
+                    continue;
+                }
+
+                const auto& fs = styles.get(key);
+
+                if(a.points.size() < 2)
+                {
+                    continue;
+                }
+
+                std::vector<glm::vec2> polyline;
+                polyline.reserve(a.points.size() + 1);
+                for(const auto& pt : a.points)
+                {
+                    polyline.emplace_back(
+                        static_cast<float>(lon_to_mx(pt.lon)),
+                        static_cast<float>(lat_to_my(pt.lat)));
+                }
+                if(polyline.size() > 2 && polyline.front() != polyline.back())
+                {
+                    polyline.push_back(polyline.front());
+                }
+
+                artcc_poly.polylines.push_back(std::move(polyline));
+                artcc_poly.styles.push_back(to_line_style(fs));
+            }
+        }
+
         void build_obstacle_vertices(double lon_min, double lat_min,
                                       double lon_max, double lat_max, double z)
         {
@@ -750,6 +795,7 @@ namespace nasrbrowse
                     pd.styles.begin(), pd.styles.end());
             };
 
+            if(vis_artcc) append(artcc_poly);
             if(vis_sua) append(sua_poly);
             if(vis_airspace) append(airspace_poly);
             if(vis_runways) append(runway_poly);
@@ -868,7 +914,8 @@ namespace nasrbrowse
             pimpl->vis_runways != vis.runways ||
             pimpl->vis_airways != vis.airways ||
             pimpl->vis_airspace != vis.airspace ||
-            pimpl->vis_sua != vis.sua;
+            pimpl->vis_sua != vis.sua ||
+            pimpl->vis_artcc != vis.artcc;
 
         pimpl->vis_airports = vis.airports;
         pimpl->vis_runways = vis.runways;
@@ -877,6 +924,7 @@ namespace nasrbrowse
         pimpl->vis_airways = vis.airways;
         pimpl->vis_airspace = vis.airspace;
         pimpl->vis_sua = vis.sua;
+        pimpl->vis_artcc = vis.artcc;
         pimpl->vis_obstacles = vis.obstacles;
 
         if(line_vis_changed)

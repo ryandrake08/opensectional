@@ -33,6 +33,8 @@ namespace nasrbrowse
         sqlite3_stmt* stmt_sua;
         sqlite3_stmt* stmt_sua_shape;
         sqlite3_stmt* stmt_obstacles;
+        sqlite3_stmt* stmt_artcc;
+        sqlite3_stmt* stmt_artcc_shape;
 
         std::vector<airport> airports;
         std::vector<navaid> navaids;
@@ -43,6 +45,7 @@ namespace nasrbrowse
         std::vector<runway> runways;
         std::vector<sua> suas;
         std::vector<obstacle> obstacles;
+        std::vector<artcc> artccs;
 
         impl(const char* db_path)
             : db(nullptr)
@@ -58,6 +61,8 @@ namespace nasrbrowse
             , stmt_sua(nullptr)
             , stmt_sua_shape(nullptr)
             , stmt_obstacles(nullptr)
+            , stmt_artcc(nullptr)
+            , stmt_artcc_shape(nullptr)
         {
             int rc = sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, nullptr);
             if(rc != SQLITE_OK)
@@ -85,6 +90,8 @@ namespace nasrbrowse
             sqlite3_finalize(stmt_sua);
             sqlite3_finalize(stmt_sua_shape);
             sqlite3_finalize(stmt_obstacles);
+            sqlite3_finalize(stmt_artcc);
+            sqlite3_finalize(stmt_artcc_shape);
             sqlite3_close(db);
         }
 
@@ -213,6 +220,23 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
+            )");
+
+            prepare(&stmt_artcc, R"(
+                SELECT ARTCC_ID, LOCATION_ID, LOCATION_NAME, ALTITUDE
+                FROM ARTCC_BASE
+                WHERE ARTCC_ID IN (
+                    SELECT id FROM ARTCC_BASE_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+            )");
+
+            prepare(&stmt_artcc_shape, R"(
+                SELECT LON_DECIMAL, LAT_DECIMAL
+                FROM ARTCC_SHP
+                WHERE ARTCC_ID = ?1
+                ORDER BY POINT_SEQ
             )");
         }
 
@@ -493,6 +517,37 @@ namespace nasrbrowse
         }
 
         return d.obstacles;
+    }
+
+    const std::vector<artcc>& nasr_database::query_artcc(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        d.artccs.clear();
+        d.bind_bbox(d.stmt_artcc, lon_min, lat_min, lon_max, lat_max);
+
+        while(sqlite3_step(d.stmt_artcc) == SQLITE_ROW)
+        {
+            artcc a;
+            a.artcc_id = sqlite3_column_int(d.stmt_artcc, 0);
+            a.location_id = col_text(d.stmt_artcc, 1);
+            a.name = col_text(d.stmt_artcc, 2);
+            a.altitude = col_text(d.stmt_artcc, 3);
+
+            sqlite3_reset(d.stmt_artcc_shape);
+            sqlite3_bind_int(d.stmt_artcc_shape, 1, a.artcc_id);
+            while(sqlite3_step(d.stmt_artcc_shape) == SQLITE_ROW)
+            {
+                airspace_point pt;
+                pt.lon = col_double(d.stmt_artcc_shape, 0);
+                pt.lat = col_double(d.stmt_artcc_shape, 1);
+                a.points.push_back(pt);
+            }
+
+            d.artccs.push_back(std::move(a));
+        }
+
+        return d.artccs;
     }
 
 } // namespace nasrbrowse

@@ -63,6 +63,13 @@ def parse_dms(dms_str):
     return decimal
 
 
+def read_csv_rows(zf, csv_name):
+    """Read CSV rows from a ZIP archive as list of dicts."""
+    with zf.open(csv_name) as f:
+        reader = csv.DictReader(io.TextIOWrapper(f, encoding="utf-8"))
+        return list(reader)
+
+
 def import_csv(conn, table_name, zf, csv_name, columns=None):
     """Import a CSV file from a ZIP archive into a SQLite table.
 
@@ -1202,6 +1209,87 @@ def build_cls_arsp(conn, shp_zf):
     conn.execute("CREATE INDEX idx_cls_arsp_shp ON CLS_ARSP_SHP(ARSP_ID)")
 
 
+def build_artcc(conn, csv_zf):
+    """Import ARTCC boundary polygons from ARB_BASE and ARB_SEG CSVs."""
+    conn.execute("DROP TABLE IF EXISTS ARTCC_BASE")
+    conn.execute("""
+        CREATE TABLE ARTCC_BASE (
+            ARTCC_ID INTEGER PRIMARY KEY,
+            LOCATION_ID TEXT,
+            LOCATION_NAME TEXT,
+            ALTITUDE TEXT
+        )
+    """)
+
+    conn.execute("DROP TABLE IF EXISTS ARTCC_SHP")
+    conn.execute("""
+        CREATE TABLE ARTCC_SHP (
+            ARTCC_ID INTEGER,
+            POINT_SEQ INTEGER,
+            LON_DECIMAL REAL,
+            LAT_DECIMAL REAL
+        )
+    """)
+
+    seg_rows = list(read_csv_rows(csv_zf, "ARB_SEG.csv"))
+
+    # Group segments by LOCATION_ID + ALTITUDE, forming one polygon each
+    from collections import defaultdict
+    boundaries = defaultdict(list)
+    for row in seg_rows:
+        key = (row["LOCATION_ID"], row["ALTITUDE"])
+        try:
+            seq = int(row["POINT_SEQ"])
+            lat = float(row["LAT_DECIMAL"])
+            lon = float(row["LONG_DECIMAL"])
+            boundaries[key].append((seq, lon, lat))
+        except (ValueError, KeyError):
+            continue
+
+    base_rows = []
+    shp_rows = []
+
+    # Get names from ARB_BASE
+    base_info = {}
+    for row in read_csv_rows(csv_zf, "ARB_BASE.csv"):
+        base_info[row["LOCATION_ID"]] = row.get("LOCATION_NAME", "")
+
+    for (loc_id, altitude), points in sorted(boundaries.items()):
+        points.sort(key=lambda p: p[0])  # sort by POINT_SEQ
+        if len(points) < 3:
+            continue
+
+        artcc_id = len(base_rows) + 1
+        name = base_info.get(loc_id, loc_id)
+        base_rows.append((artcc_id, loc_id, name, altitude))
+
+        for point_seq, (_, lon, lat) in enumerate(points):
+            shp_rows.append((artcc_id, point_seq, lon, lat))
+
+    conn.executemany("INSERT INTO ARTCC_BASE VALUES (?, ?, ?, ?)", base_rows)
+    conn.executemany("INSERT INTO ARTCC_SHP VALUES (?, ?, ?, ?)", shp_rows)
+
+    print(f"  ARTCC_BASE: {len(base_rows)} boundaries")
+    print(f"  ARTCC_SHP: {len(shp_rows)} shape points")
+
+    # R-tree on bounding boxes
+    conn.execute("""
+        CREATE VIRTUAL TABLE ARTCC_BASE_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO ARTCC_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT ARTCC_ID,
+               MIN(LON_DECIMAL), MAX(LON_DECIMAL),
+               MIN(LAT_DECIMAL), MAX(LAT_DECIMAL)
+        FROM ARTCC_SHP
+        GROUP BY ARTCC_ID
+    """)
+
+    conn.execute("CREATE INDEX idx_artcc_shp ON ARTCC_SHP(ARTCC_ID)")
+
+
 def main():
     if len(sys.argv) != 6:
         print(f"Usage: {sys.argv[0]} <csv.zip> <shapefile.zip> <aixm.zip> <dof.zip> <output.db>")
@@ -1243,6 +1331,9 @@ def main():
         print("Importing MOA/SUA...")
         build_maa(conn, csv_zf)
 
+        print("Importing ARTCC boundaries...")
+        build_artcc(conn, csv_zf)
+
         print("Importing runway data...")
         build_apt_rwy(conn, csv_zf)
 
@@ -1265,7 +1356,7 @@ def main():
     tables = ["APT_BASE", "NAV_BASE", "FIX_BASE", "FIX_CHRT", "AWY_SEG",
               "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END", "RWY_SEG",
               "CLS_ARSP_BASE", "CLS_ARSP_SHP",
-              "SUA_BASE", "SUA_SHP", "OBS_BASE"]
+              "SUA_BASE", "SUA_SHP", "ARTCC_BASE", "ARTCC_SHP", "OBS_BASE"]
     for table in tables:
         count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         print(f"  {table}: {count} rows")
