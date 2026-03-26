@@ -66,7 +66,9 @@ namespace nasrbrowse
         std::string maa_id;
         std::string maa_type;
         std::string maa_name;
-        std::vector<airspace_point> shape;
+        std::string max_alt;
+        std::string min_alt;
+        std::vector<airspace_point> points;
     };
 
     struct runway
@@ -86,14 +88,13 @@ namespace nasrbrowse
     };
 
     // Special use airspace (MOA, Restricted, Warning, Alert, etc. from AIXM)
+    // Overall altitude limits are on parts[0]; SUBTR zones may differ.
     struct sua
     {
         int sua_id;
         std::string designator;
         std::string name;
         std::string sua_type;  // "MOA", "RA", "WA", "AA", "PA", "NSA"
-        std::string upper_limit;
-        std::string lower_limit;
         std::vector<sua_ring> parts;
     };
 
@@ -111,7 +112,9 @@ namespace nasrbrowse
         std::string name;
         std::string airspace_class;  // "B", "C", "D", "E"
         std::string local_type;      // "CLASS_B", "CLASS_C", "CLASS_D", "CLASS_E2", etc.
+        std::string upper_desc;      // "AA", "TI", "TNI", "ANI"
         std::string upper_val;
+        std::string lower_desc;
         std::string lower_val;
         std::vector<polygon_ring> parts;
     };

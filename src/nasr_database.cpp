@@ -140,7 +140,7 @@ namespace nasrbrowse
 
             // Airspace: query base records whose bounding box overlaps
             prepare(&stmt_airspaces, R"(
-                SELECT MAA_ID, MAA_TYPE_NAME, MAA_NAME
+                SELECT MAA_ID, MAA_TYPE_NAME, MAA_NAME, MAX_ALT, MIN_ALT
                 FROM MAA_BASE
                 WHERE rowid IN (
                     SELECT id FROM MAA_BASE_RTREE
@@ -159,7 +159,8 @@ namespace nasrbrowse
 
             // Class airspace (B/C/D/E) from shapefile
             prepare(&stmt_cls_arsp, R"(
-                SELECT ARSP_ID, NAME, CLASS, LOCAL_TYPE, UPPER_VAL, LOWER_VAL
+                SELECT ARSP_ID, NAME, CLASS, LOCAL_TYPE,
+                       UPPER_DESC, UPPER_VAL, LOWER_DESC, LOWER_VAL
                 FROM CLS_ARSP_BASE
                 WHERE ARSP_ID IN (
                     SELECT id FROM CLS_ARSP_BASE_RTREE
@@ -188,7 +189,7 @@ namespace nasrbrowse
 
             // SUA (MOA/Restricted/Warning/Alert/Prohibited) from AIXM
             prepare(&stmt_sua, R"(
-                SELECT SUA_ID, DESIGNATOR, NAME, SUA_TYPE, UPPER_LIMIT, LOWER_LIMIT
+                SELECT SUA_ID, DESIGNATOR, NAME, SUA_TYPE
                 FROM SUA_BASE
                 WHERE SUA_ID IN (
                     SELECT id FROM SUA_BASE_RTREE
@@ -348,6 +349,8 @@ namespace nasrbrowse
             a.maa_id = col_text(d.stmt_airspaces, 0);
             a.maa_type = col_text(d.stmt_airspaces, 1);
             a.maa_name = col_text(d.stmt_airspaces, 2);
+            a.max_alt = col_text(d.stmt_airspaces, 3);
+            a.min_alt = col_text(d.stmt_airspaces, 4);
 
             // Load shape points
             sqlite3_reset(d.stmt_airspace_shape);
@@ -357,7 +360,7 @@ namespace nasrbrowse
                 airspace_point pt;
                 pt.lat = col_double(d.stmt_airspace_shape, 0);
                 pt.lon = col_double(d.stmt_airspace_shape, 1);
-                a.shape.push_back(pt);
+                a.points.push_back(pt);
             }
 
             d.airspaces.push_back(std::move(a));
@@ -380,8 +383,10 @@ namespace nasrbrowse
             a.name = col_text(d.stmt_cls_arsp, 1);
             a.airspace_class = col_text(d.stmt_cls_arsp, 2);
             a.local_type = col_text(d.stmt_cls_arsp, 3);
-            a.upper_val = col_text(d.stmt_cls_arsp, 4);
-            a.lower_val = col_text(d.stmt_cls_arsp, 5);
+            a.upper_desc = col_text(d.stmt_cls_arsp, 4);
+            a.upper_val = col_text(d.stmt_cls_arsp, 5);
+            a.lower_desc = col_text(d.stmt_cls_arsp, 6);
+            a.lower_val = col_text(d.stmt_cls_arsp, 7);
 
             // Load shape parts
             sqlite3_reset(d.stmt_cls_arsp_shape);
@@ -443,8 +448,6 @@ namespace nasrbrowse
             s.designator = col_text(d.stmt_sua, 1);
             s.name = col_text(d.stmt_sua, 2);
             s.sua_type = col_text(d.stmt_sua, 3);
-            s.upper_limit = col_text(d.stmt_sua, 4);
-            s.lower_limit = col_text(d.stmt_sua, 5);
 
             // Load shape parts
             sqlite3_reset(d.stmt_sua_shape);
