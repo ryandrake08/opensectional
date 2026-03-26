@@ -76,13 +76,19 @@ namespace nasrbrowse
         return "sua_moa";
     }
 
-    // Map class airspace code to style key
-    static const char* airspace_key(const std::string& cls)
+    // Map class airspace to style key, using local_type for Class E subtypes
+    static const char* airspace_key(const std::string& cls, const std::string& local_type)
     {
         if(cls == "B") return "airspace_b";
         if(cls == "C") return "airspace_c";
         if(cls == "D") return "airspace_d";
-        return "airspace_e";
+        if(local_type == "CLASS_E2") return "airspace_e2";
+        if(local_type == "CLASS_E3") return "airspace_e3";
+        if(local_type == "CLASS_E4") return "airspace_e4";
+        if(local_type == "CLASS_E5") return "airspace_e5";
+        if(local_type == "CLASS_E6") return "airspace_e6";
+        if(local_type == "CLASS_E7") return "airspace_e7";
+        return "airspace_e2";
     }
 
     // Airport zoom key based on runway classification
@@ -696,7 +702,7 @@ namespace nasrbrowse
 
             for(const auto& arsp : airspaces)
             {
-                const char* key = airspace_key(arsp.airspace_class);
+                const char* key = airspace_key(arsp.airspace_class, arsp.local_type);
 
                 if(!styles.visible(key, z))
                 {
