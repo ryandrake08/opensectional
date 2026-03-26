@@ -70,6 +70,47 @@ namespace nasrbrowse
         return pimpl->dirty;
     }
 
+    // Split large polylines into chunks to limit per-fragment shader work.
+    // Each chunk overlaps by one point so segments connect continuously.
+    static constexpr size_t max_chunk_points = 128;
+
+    static void upload_chunk(sdl::copy_pass& pass, const sdl::device& dev,
+                             const glm::vec2* points, size_t count,
+                             const line_style& style,
+                             std::vector<polyline_gpu>& out)
+    {
+        if(count < 2)
+        {
+            return;
+        }
+
+        glm::vec2 bmin = points[0];
+        glm::vec2 bmax = points[0];
+        for(size_t j = 1; j < count; j++)
+        {
+            bmin = glm::min(bmin, points[j]);
+            bmax = glm::max(bmax, points[j]);
+        }
+
+        std::vector<glm::vec4> buffer_data;
+        buffer_data.reserve(count);
+        for(size_t j = 0; j < count; j++)
+        {
+            buffer_data.emplace_back(points[j].x, points[j].y, 0.0F, 0.0F);
+        }
+
+        auto storage = pass.create_and_upload_buffer(
+            dev, sdl::buffer_usage::graphics_storage_read, buffer_data);
+
+        polyline_gpu gpu;
+        gpu.storage = std::make_unique<sdl::buffer>(std::move(storage));
+        gpu.bounds_min = bmin;
+        gpu.bounds_max = bmax;
+        gpu.segment_count = static_cast<uint32_t>(count - 1);
+        gpu.style = style;
+        out.push_back(std::move(gpu));
+    }
+
     void line_renderer::copy(sdl::copy_pass& pass, const sdl::device& dev)
     {
         if(!pimpl->dirty)
@@ -87,33 +128,23 @@ namespace nasrbrowse
                 continue;
             }
 
-            // Compute bounding box
-            glm::vec2 bmin = positions[0];
-            glm::vec2 bmax = positions[0];
-            for(const auto& p : positions)
+            if(positions.size() <= max_chunk_points)
             {
-                bmin = glm::min(bmin, p);
-                bmax = glm::max(bmax, p);
+                upload_chunk(pass, dev, positions.data(), positions.size(),
+                             pimpl->styles[i], pimpl->gpu_polylines);
             }
-
-            // Pack positions into float4 storage buffer
-            std::vector<glm::vec4> buffer_data;
-            buffer_data.reserve(positions.size());
-            for(const auto& p : positions)
+            else
             {
-                buffer_data.emplace_back(p.x, p.y, 0.0F, 0.0F);
+                // Split into overlapping chunks of max_chunk_points
+                size_t offset = 0;
+                while(offset < positions.size() - 1)
+                {
+                    size_t end = std::min(offset + max_chunk_points, positions.size());
+                    upload_chunk(pass, dev, positions.data() + offset, end - offset,
+                                 pimpl->styles[i], pimpl->gpu_polylines);
+                    offset = end - 1; // overlap by one point for segment continuity
+                }
             }
-
-            auto storage = pass.create_and_upload_buffer(
-                dev, sdl::buffer_usage::graphics_storage_read, buffer_data);
-
-            polyline_gpu gpu;
-            gpu.storage = std::make_unique<sdl::buffer>(std::move(storage));
-            gpu.bounds_min = bmin;
-            gpu.bounds_max = bmax;
-            gpu.segment_count = static_cast<uint32_t>(positions.size() - 1);
-            gpu.style = pimpl->styles[i];
-            pimpl->gpu_polylines.push_back(std::move(gpu));
         }
 
         pimpl->dirty = false;
