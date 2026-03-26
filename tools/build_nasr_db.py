@@ -601,31 +601,101 @@ def generate_circle(center_lon, center_lat, radius, uom, num_points=72):
 
 
 def generate_arc(center_lon, center_lat, radius, uom, start_deg, end_deg):
-    """Generate points along an arc from start_deg to end_deg (clockwise).
+    """Generate points along an arc from start_deg to end_deg.
 
-    Angles are in degrees, measured clockwise from north (bearing convention).
+    Angles are in degrees, counter-clockwise from east (math convention),
+    matching the CRS84 coordinate convention used in the FAA AIXM data.
+    The arc sweeps directly from start to end: decreasing angle sweeps
+    clockwise on the map, increasing angle sweeps counter-clockwise.
     Returns list of (lon, lat) tuples.
     """
     dlat, dlon = radius_to_degrees(radius, uom, center_lat)
 
-    # Convert bearing angles to math angles (counter-clockwise from east)
-    start_rad = math.radians(90.0 - start_deg)
-    end_rad = math.radians(90.0 - end_deg)
+    start_rad = math.radians(start_deg)
+    end_rad = math.radians(end_deg)
 
-    # Arc goes clockwise, which is decreasing math angle
-    if start_rad <= end_rad:
-        start_rad += 2.0 * math.pi
+    sweep = end_rad - start_rad
 
-    total = start_rad - end_rad
-    num_points = max(int(total / math.radians(5.0)), 2)
+    num_points = max(int(abs(sweep) / math.radians(5.0)), 2)
 
     points = []
     for i in range(num_points + 1):
-        angle = start_rad - total * i / num_points
+        angle = start_rad + sweep * i / num_points
         lon = center_lon + dlon * math.cos(angle)
         lat = center_lat + dlat * math.sin(angle)
         points.append((lon, lat))
     return points
+
+
+def merge_shared_edges(parts):
+    """Merge polygon rings that share edges into combined outlines.
+
+    Adjacent polygons (e.g. BASE + UNION) sharing an edge will have that
+    edge traversed in opposite directions. Removing these opposing edge
+    pairs and following the remaining edges reconstructs the outer boundary.
+
+    Only edges that appear in two different parts are considered shared.
+    Edges within a single part are never removed.
+    """
+    if len(parts) <= 1:
+        return parts
+
+    # Map each directed edge to the set of part indices it appears in
+    edge_parts = {}
+    for part_idx, part in enumerate(parts):
+        n = len(part)
+        for i in range(n):
+            a = part[i]
+            b = part[(i + 1) % n]
+            if a != b:
+                edge_parts.setdefault((a, b), set()).add(part_idx)
+
+    # An edge is shared only if its reverse exists AND they come from
+    # different parts (not a self-intersecting polygon edge)
+    shared = set()
+    for edge, pidxs in edge_parts.items():
+        rev = (edge[1], edge[0])
+        if rev in edge_parts:
+            rev_pidxs = edge_parts[rev]
+            if pidxs != rev_pidxs:
+                shared.add(edge)
+                shared.add(rev)
+
+    if not shared:
+        return parts
+
+    # Keep only non-shared edges, preserving order
+    kept = []
+    for part in parts:
+        n = len(part)
+        for i in range(n):
+            a = part[i]
+            b = part[(i + 1) % n]
+            if a != b and (a, b) not in shared:
+                kept.append((a, b))
+
+    # Build adjacency and reconstruct polygon(s)
+    adj = {}
+    for a, b in kept:
+        adj[a] = b
+
+    visited = set()
+    result = []
+    for start in adj:
+        if start in visited:
+            continue
+        ring = []
+        current = start
+        while current not in visited:
+            visited.add(current)
+            ring.append(current)
+            current = adj.get(current)
+            if current is None:
+                break
+        if len(ring) >= 3:
+            result.append(ring)
+
+    return result if result else parts
 
 
 GML = "http://www.opengis.net/gml/3.2"
@@ -685,7 +755,7 @@ def parse_aixm_sua(xml_data):
 
     xml_data is bytes or a file-like object.
     Returns a dict with designator, name, sua_type, upper_limit, lower_limit,
-    and shape (list of (lon, lat) tuples for the BASE geometry component),
+    and parts (list of polygon rings, one per BASE/UNION geometry component),
     or None if parsing fails.
     """
     root = ET.fromstring(xml_data)
@@ -709,20 +779,22 @@ def parse_aixm_sua(xml_data):
         sua_type = ext.text or ""
         break
 
-    # Find the BASE geometry component for overall shape and limits
+    # Collect geometry from BASE and UNION components, ordered by sequence
     upper_limit = ""
     lower_limit = ""
-    shape = []
+    components = []
     for gc in ts.findall(f"{{{AIXM}}}geometryComponent"):
         agc = gc.find(f"{{{AIXM}}}AirspaceGeometryComponent")
         if agc is None:
             continue
         op = agc.find(f"{{{AIXM}}}operation")
-        if op is None or op.text != "BASE":
+        if op is None or op.text not in ("BASE", "UNION"):
             continue
+        seq = agc.find(f"{{{AIXM}}}operationSequence")
+        seq_num = int(seq.text) if seq is not None and seq.text else 0
 
         vol = agc.find(f".//{{{AIXM}}}AirspaceVolume")
-        if vol is not None:
+        if op.text == "BASE" and vol is not None:
             upper = vol.find(f"{{{AIXM}}}upperLimit")
             lower = vol.find(f"{{{AIXM}}}lowerLimit")
             upper_ref = vol.find(f"{{{AIXM}}}upperLimitReference")
@@ -736,13 +808,13 @@ def parse_aixm_sua(xml_data):
                 ref = lower_ref.text if lower_ref is not None else ""
                 lower_limit = f"{lower.text} {uom} {ref}".strip()
 
+        shape = []
         hp = vol.find(f".//{{{AIXM}}}horizontalProjection") if vol is not None else None
         if hp is not None:
             ring = hp.find(f".//{{{GML}}}Ring")
             if ring is not None:
                 shape = parse_ring_points(ring)
             else:
-                # Some files use LinearRing with pos elements directly
                 linear_ring = hp.find(f".//{{{GML}}}LinearRing")
                 if linear_ring is not None:
                     for pos in linear_ring.findall(f"{{{GML}}}pos"):
@@ -750,10 +822,14 @@ def parse_aixm_sua(xml_data):
                             continue
                         lon, lat = pos.text.strip().split()
                         shape.append((float(lon), float(lat)))
-        break
+        if shape:
+            components.append((seq_num, shape))
 
-    if not shape:
+    if not components:
         return None
+
+    components.sort(key=lambda c: c[0])
+    parts = merge_shared_edges([shape for _, shape in components])
 
     return {
         "designator": designator,
@@ -761,7 +837,7 @@ def parse_aixm_sua(xml_data):
         "sua_type": sua_type,
         "upper_limit": upper_limit,
         "lower_limit": lower_limit,
-        "shape": shape,
+        "parts": parts,
     }
 
 
@@ -798,6 +874,7 @@ def build_sua(conn, aixm_zf):
     conn.execute("""
         CREATE TABLE SUA_SHP (
             SUA_ID INTEGER,
+            PART_NUM INTEGER,
             POINT_SEQ INTEGER,
             LON_DECIMAL REAL,
             LAT_DECIMAL REAL
@@ -827,18 +904,19 @@ def build_sua(conn, aixm_zf):
             result["lower_limit"],
         ))
 
-        total_before += len(result["shape"])
-        simplified = simplify_ring(result["shape"], epsilon)
-        total_after += len(simplified)
-        for point_seq, (lon, lat) in enumerate(simplified):
-            shp_rows.append((sua_id, point_seq, lon, lat))
+        for part_num, part in enumerate(result["parts"]):
+            total_before += len(part)
+            simplified = simplify_ring(part, epsilon)
+            total_after += len(simplified)
+            for point_seq, (lon, lat) in enumerate(simplified):
+                shp_rows.append((sua_id, part_num, point_seq, lon, lat))
 
     conn.executemany(
         "INSERT INTO SUA_BASE VALUES (?, ?, ?, ?, ?, ?)",
         base_rows,
     )
     conn.executemany(
-        "INSERT INTO SUA_SHP VALUES (?, ?, ?, ?)",
+        "INSERT INTO SUA_SHP VALUES (?, ?, ?, ?, ?)",
         shp_rows,
     )
 

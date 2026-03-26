@@ -631,11 +631,6 @@ namespace nasrbrowse
 
             for(const auto& s : suas)
             {
-                if(s.shape.size() < 2)
-                {
-                    continue;
-                }
-
                 const char* key = sua_key(s.sua_type);
 
                 if(!styles.visible(key, z))
@@ -645,21 +640,29 @@ namespace nasrbrowse
 
                 const auto& fs = styles.get(key);
 
-                std::vector<glm::vec2> polyline;
-                polyline.reserve(s.shape.size() + 1);
-                for(const auto& pt : s.shape)
+                for(const auto& ring : s.parts)
                 {
-                    polyline.emplace_back(
-                        static_cast<float>(lon_to_mx(pt.lon)),
-                        static_cast<float>(lat_to_my(pt.lat)));
-                }
-                if(polyline.size() > 2)
-                {
-                    polyline.push_back(polyline.front());
-                }
+                    if(ring.size() < 2)
+                    {
+                        continue;
+                    }
 
-                sua_poly.polylines.push_back(std::move(polyline));
-                sua_poly.styles.push_back(to_line_style(fs));
+                    std::vector<glm::vec2> polyline;
+                    polyline.reserve(ring.size() + 1);
+                    for(const auto& pt : ring)
+                    {
+                        polyline.emplace_back(
+                            static_cast<float>(lon_to_mx(pt.lon)),
+                            static_cast<float>(lat_to_my(pt.lat)));
+                    }
+                    if(polyline.size() > 2 && polyline.front() != polyline.back())
+                    {
+                        polyline.push_back(polyline.front());
+                    }
+
+                    sua_poly.polylines.push_back(std::move(polyline));
+                    sua_poly.styles.push_back(to_line_style(fs));
+                }
             }
         }
 

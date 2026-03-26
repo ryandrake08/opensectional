@@ -80,7 +80,8 @@ namespace nasrbrowse
         std::string sua_type;  // "MOA", "RA", "WA", "AA", "PA", "NSA"
         std::string upper_limit;
         std::string lower_limit;
-        std::vector<airspace_point> shape;
+        // Each part is a polygon ring (BASE + UNION components)
+        std::vector<std::vector<airspace_point>> parts;
     };
 
     struct obstacle

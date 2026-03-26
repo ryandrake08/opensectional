@@ -198,10 +198,10 @@ namespace nasrbrowse
             )");
 
             prepare(&stmt_sua_shape, R"(
-                SELECT LON_DECIMAL, LAT_DECIMAL
+                SELECT PART_NUM, LON_DECIMAL, LAT_DECIMAL
                 FROM SUA_SHP
                 WHERE SUA_ID = ?1
-                ORDER BY POINT_SEQ
+                ORDER BY PART_NUM, POINT_SEQ
             )");
 
             prepare(&stmt_obstacles, R"(
@@ -444,15 +444,22 @@ namespace nasrbrowse
             s.upper_limit = col_text(d.stmt_sua, 4);
             s.lower_limit = col_text(d.stmt_sua, 5);
 
-            // Load shape points
+            // Load shape parts
             sqlite3_reset(d.stmt_sua_shape);
             sqlite3_bind_int(d.stmt_sua_shape, 1, s.sua_id);
+            int current_part = -1;
             while(sqlite3_step(d.stmt_sua_shape) == SQLITE_ROW)
             {
+                int part_num = sqlite3_column_int(d.stmt_sua_shape, 0);
+                if(part_num != current_part)
+                {
+                    s.parts.emplace_back();
+                    current_part = part_num;
+                }
                 airspace_point pt;
-                pt.lon = col_double(d.stmt_sua_shape, 0);
-                pt.lat = col_double(d.stmt_sua_shape, 1);
-                s.shape.push_back(pt);
+                pt.lon = col_double(d.stmt_sua_shape, 1);
+                pt.lat = col_double(d.stmt_sua_shape, 2);
+                s.parts.back().push_back(pt);
             }
 
             d.suas.push_back(std::move(s));
