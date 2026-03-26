@@ -767,20 +767,12 @@ def parse_ring_points(ring_elem):
     return points
 
 
-def parse_aixm_sua(xml_data):
-    """Parse AIXM 5.0 SUA XML data.
+def _parse_one_airspace(airspace):
+    """Parse a single AIXM Airspace element.
 
-    xml_data is bytes or a file-like object.
     Returns a dict with designator, name, sua_type, upper_limit, lower_limit,
-    and parts (list of polygon rings, one per BASE/UNION geometry component),
-    or None if parsing fails.
+    and parts, or None if the element has no usable geometry.
     """
-    root = ET.fromstring(xml_data)
-
-    airspace = root.find(f".//{{{AIXM}}}Airspace")
-    if airspace is None:
-        return None
-
     ts = airspace.find(f".//{{{AIXM}}}AirspaceTimeSlice")
     if ts is None:
         return None
@@ -913,6 +905,22 @@ def parse_aixm_sua(xml_data):
     }
 
 
+def parse_aixm_sua(xml_data):
+    """Parse AIXM 5.0 SUA XML data.
+
+    xml_data is bytes or a file-like object. A single file may contain
+    multiple Airspace elements.
+    Returns a list of parsed airspace dicts (may be empty).
+    """
+    root = ET.fromstring(xml_data)
+    results = []
+    for airspace in root.iter(f"{{{AIXM}}}Airspace"):
+        result = _parse_one_airspace(airspace)
+        if result is not None:
+            results.append(result)
+    return results
+
+
 def build_sua(conn, aixm_zf):
     """Import SUA polygon boundaries from AIXM 5.0 XML files.
 
@@ -963,28 +971,29 @@ def build_sua(conn, aixm_zf):
     skipped = 0
 
     for xml_name in xml_files:
-        result = parse_aixm_sua(inner_zf.read(xml_name))
-        if result is None:
+        results = parse_aixm_sua(inner_zf.read(xml_name))
+        if not results:
             skipped += 1
             continue
 
-        sua_id = len(base_rows) + 1
-        base_rows.append((
-            sua_id,
-            result["designator"],
-            result["name"],
-            result["sua_type"],
-            result["upper_limit"],
-            result["lower_limit"],
-        ))
+        for result in results:
+            sua_id = len(base_rows) + 1
+            base_rows.append((
+                sua_id,
+                result["designator"],
+                result["name"],
+                result["sua_type"],
+                result["upper_limit"],
+                result["lower_limit"],
+            ))
 
-        for part_num, (part, part_upper, part_lower) in enumerate(result["parts"]):
-            total_before += len(part)
-            simplified = simplify_ring(part, epsilon)
-            total_after += len(simplified)
-            for point_seq, (lon, lat) in enumerate(simplified):
-                shp_rows.append((sua_id, part_num, part_upper, part_lower,
-                                 point_seq, lon, lat))
+            for part_num, (part, part_upper, part_lower) in enumerate(result["parts"]):
+                total_before += len(part)
+                simplified = simplify_ring(part, epsilon)
+                total_after += len(simplified)
+                for point_seq, (lon, lat) in enumerate(simplified):
+                    shp_rows.append((sua_id, part_num, part_upper, part_lower,
+                                     point_seq, lon, lat))
 
     conn.executemany(
         "INSERT INTO SUA_BASE VALUES (?, ?, ?, ?, ?, ?)",
