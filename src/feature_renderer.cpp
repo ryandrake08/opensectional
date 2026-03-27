@@ -145,6 +145,11 @@ namespace nasrbrowse
 
         // Line/polygon feature polylines (rendered via SDF line_renderer)
         polyline_data airport_poly;
+        polyline_data heliport_poly;
+        polyline_data seaplane_poly;
+        polyline_data ultralight_poly;
+        polyline_data gliderport_poly;
+        polyline_data balloonport_poly;
         polyline_data navaid_poly;
         polyline_data fix_poly;
         polyline_data sua_poly;
@@ -155,6 +160,11 @@ namespace nasrbrowse
         line_renderer sdf_lines;
 
         bool vis_airports = true;
+        bool vis_heliports = true;
+        bool vis_seaplane = true;
+        bool vis_ultralight = true;
+        bool vis_gliderports = true;
+        bool vis_balloonports = true;
         bool vis_runways = true;
         bool vis_navaids = true;
         bool vis_fixes = true;
@@ -229,6 +239,11 @@ namespace nasrbrowse
             has_cached_query = true;
 
             airport_poly.clear();
+            heliport_poly.clear();
+            seaplane_poly.clear();
+            ultralight_poly.clear();
+            gliderport_poly.clear();
+            balloonport_poly.clear();
             obstacle_vertices.clear();
             navaid_poly.clear();
             fix_poly.clear();
@@ -318,6 +333,17 @@ namespace nasrbrowse
                     continue;
                 }
 
+                // Select polyline_data based on site type
+                auto& pd = [&]() -> polyline_data&
+                {
+                    if(apt.site_type_code == "H") return heliport_poly;
+                    if(apt.site_type_code == "C") return seaplane_poly;
+                    if(apt.site_type_code == "U") return ultralight_poly;
+                    if(apt.site_type_code == "G") return gliderport_poly;
+                    if(apt.site_type_code == "B") return balloonport_poly;
+                    return airport_poly;
+                }();
+
                 const auto& cs = styles.get(airport_color_key(apt));
                 float cx = static_cast<float>(lon_to_mx(apt.lon));
                 float cy = static_cast<float>(lat_to_my(apt.lat));
@@ -345,60 +371,60 @@ namespace nasrbrowse
 
                 auto draw_H = [&]()
                 {
-                    add_seg_to(airport_poly, cx - w, cy - h, cx - w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx + w, cy - h, cx + w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx - w, m, cx + w, m, white_ls);
+                    add_seg_to(pd, cx - w, cy - h, cx - w, cy + h, white_ls);
+                    add_seg_to(pd, cx + w, cy - h, cx + w, cy + h, white_ls);
+                    add_seg_to(pd, cx - w, m, cx + w, m, white_ls);
                 };
                 auto draw_F = [&]()
                 {
-                    add_seg_to(airport_poly, cx - w, cy - h, cx - w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx - w, cy + h, cx + w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx - w, m, cx + w * 0.6F, m, white_ls);
+                    add_seg_to(pd, cx - w, cy - h, cx - w, cy + h, white_ls);
+                    add_seg_to(pd, cx - w, cy + h, cx + w, cy + h, white_ls);
+                    add_seg_to(pd, cx - w, m, cx + w * 0.6F, m, white_ls);
                 };
                 auto draw_G = [&]()
                 {
-                    add_seg_to(airport_poly, cx + w, cy + h, cx - w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx - w, cy + h, cx - w, cy - h, white_ls);
-                    add_seg_to(airport_poly, cx - w, cy - h, cx + w, cy - h, white_ls);
-                    add_seg_to(airport_poly, cx + w, cy - h, cx + w, m, white_ls);
-                    add_seg_to(airport_poly, cx + w, m, cx, m, white_ls);
+                    add_seg_to(pd, cx + w, cy + h, cx - w, cy + h, white_ls);
+                    add_seg_to(pd, cx - w, cy + h, cx - w, cy - h, white_ls);
+                    add_seg_to(pd, cx - w, cy - h, cx + w, cy - h, white_ls);
+                    add_seg_to(pd, cx + w, cy - h, cx + w, m, white_ls);
+                    add_seg_to(pd, cx + w, m, cx, m, white_ls);
                 };
                 auto draw_S = [&]()
                 {
-                    add_seg_to(airport_poly, cx + w, cy + h, cx - w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx - w, cy + h, cx - w, m, white_ls);
-                    add_seg_to(airport_poly, cx - w, m, cx + w, m, white_ls);
-                    add_seg_to(airport_poly, cx + w, m, cx + w, cy - h, white_ls);
-                    add_seg_to(airport_poly, cx + w, cy - h, cx - w, cy - h, white_ls);
+                    add_seg_to(pd, cx + w, cy + h, cx - w, cy + h, white_ls);
+                    add_seg_to(pd, cx - w, cy + h, cx - w, m, white_ls);
+                    add_seg_to(pd, cx - w, m, cx + w, m, white_ls);
+                    add_seg_to(pd, cx + w, m, cx + w, cy - h, white_ls);
+                    add_seg_to(pd, cx + w, cy - h, cx - w, cy - h, white_ls);
                 };
                 auto draw_B = [&]()
                 {
-                    add_seg_to(airport_poly, cx - w, cy - h, cx - w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx - w, cy + h, cx + w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx + w, cy + h, cx + w, m, white_ls);
-                    add_seg_to(airport_poly, cx + w, m, cx - w, m, white_ls);
-                    add_seg_to(airport_poly, cx - w, cy - h, cx + w, cy - h, white_ls);
-                    add_seg_to(airport_poly, cx + w, cy - h, cx + w, m, white_ls);
+                    add_seg_to(pd, cx - w, cy - h, cx - w, cy + h, white_ls);
+                    add_seg_to(pd, cx - w, cy + h, cx + w, cy + h, white_ls);
+                    add_seg_to(pd, cx + w, cy + h, cx + w, m, white_ls);
+                    add_seg_to(pd, cx + w, m, cx - w, m, white_ls);
+                    add_seg_to(pd, cx - w, cy - h, cx + w, cy - h, white_ls);
+                    add_seg_to(pd, cx + w, cy - h, cx + w, m, white_ls);
                 };
                 auto draw_X = [&]()
                 {
-                    add_seg_to(airport_poly, cx - w, cy - h, cx + w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx - w, cy + h, cx + w, cy - h, white_ls);
+                    add_seg_to(pd, cx - w, cy - h, cx + w, cy + h, white_ls);
+                    add_seg_to(pd, cx - w, cy + h, cx + w, cy - h, white_ls);
                 };
                 auto draw_M = [&]()
                 {
-                    add_seg_to(airport_poly, cx - w, cy - h, cx - w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx - w, cy + h, cx, m, white_ls);
-                    add_seg_to(airport_poly, cx, m, cx + w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx + w, cy + h, cx + w, cy - h, white_ls);
+                    add_seg_to(pd, cx - w, cy - h, cx - w, cy + h, white_ls);
+                    add_seg_to(pd, cx - w, cy + h, cx, m, white_ls);
+                    add_seg_to(pd, cx, m, cx + w, cy + h, white_ls);
+                    add_seg_to(pd, cx + w, cy + h, cx + w, cy - h, white_ls);
                 };
                 auto draw_R = [&]()
                 {
-                    add_seg_to(airport_poly, cx - w, cy - h, cx - w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx - w, cy + h, cx + w, cy + h, white_ls);
-                    add_seg_to(airport_poly, cx + w, cy + h, cx + w, m, white_ls);
-                    add_seg_to(airport_poly, cx + w, m, cx - w, m, white_ls);
-                    add_seg_to(airport_poly, cx, m, cx + w, cy - h, white_ls);
+                    add_seg_to(pd, cx - w, cy - h, cx - w, cy + h, white_ls);
+                    add_seg_to(pd, cx - w, cy + h, cx + w, cy + h, white_ls);
+                    add_seg_to(pd, cx + w, cy + h, cx + w, m, white_ls);
+                    add_seg_to(pd, cx + w, m, cx - w, m, white_ls);
+                    add_seg_to(pd, cx, m, cx + w, cy - h, white_ls);
                 };
 
                 std::function<void()> draw_letter;
@@ -417,24 +443,24 @@ namespace nasrbrowse
                     float geom_r = symbol_r * 0.5F;
                     float fill_px = symbol_r * pixels_per_world;
                     line_style fill_ls = {fill_px, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a};
-                    add_circle_to(airport_poly, cx, cy, geom_r, fill_ls);
+                    add_circle_to(pd, cx, cy, geom_r, fill_ls);
                     if(draw_letter) draw_letter();
                 }
                 else if(draw_letter)
                 {
                     // Soft surface with letter: colored ring + black fill + white letter
-                    add_circle_to(airport_poly, cx, cy, ring_geom_r, ring_ls);
+                    add_circle_to(pd, cx, cy, ring_geom_r, ring_ls);
                     float inner_r = ring_geom_r - (ring_line_w * 0.5F) / pixels_per_world;
                     float fill_geom_r = inner_r * 0.5F;
                     float inner_fill_px = inner_r * pixels_per_world;
                     line_style black_fill = {inner_fill_px, 0, 0, 0, 0.0F, 0.0F, 0.0F, 1.0F};
-                    add_circle_to(airport_poly, cx, cy, fill_geom_r, black_fill);
+                    add_circle_to(pd, cx, cy, fill_geom_r, black_fill);
                     draw_letter();
                 }
                 else
                 {
                     // Soft surface public: hollow ring
-                    add_circle_to(airport_poly, cx, cy, ring_geom_r, ring_ls);
+                    add_circle_to(pd, cx, cy, ring_geom_r, ring_ls);
                 }
             }
         }
@@ -935,6 +961,11 @@ namespace nasrbrowse
             if(vis_fixes) append(fix_poly);
             if(vis_navaids) append(navaid_poly);
             if(vis_airports) append(airport_poly);
+            if(vis_heliports) append(heliport_poly);
+            if(vis_seaplane) append(seaplane_poly);
+            if(vis_ultralight) append(ultralight_poly);
+            if(vis_gliderports) append(gliderport_poly);
+            if(vis_balloonports) append(balloonport_poly);
 
             sdf_lines.set_polylines(std::move(all_polylines), std::move(all_styles));
         }
@@ -1041,6 +1072,11 @@ namespace nasrbrowse
     {
         bool line_vis_changed =
             pimpl->vis_airports != vis.airports ||
+            pimpl->vis_heliports != vis.heliports ||
+            pimpl->vis_seaplane != vis.seaplane_bases ||
+            pimpl->vis_ultralight != vis.ultralight ||
+            pimpl->vis_gliderports != vis.gliderports ||
+            pimpl->vis_balloonports != vis.balloonports ||
             pimpl->vis_navaids != vis.navaids ||
             pimpl->vis_fixes != vis.fixes ||
             pimpl->vis_runways != vis.runways ||
@@ -1050,6 +1086,11 @@ namespace nasrbrowse
             pimpl->vis_artcc != vis.artcc;
 
         pimpl->vis_airports = vis.airports;
+        pimpl->vis_heliports = vis.heliports;
+        pimpl->vis_seaplane = vis.seaplane_bases;
+        pimpl->vis_ultralight = vis.ultralight;
+        pimpl->vis_gliderports = vis.gliderports;
+        pimpl->vis_balloonports = vis.balloonports;
         pimpl->vis_runways = vis.runways;
         pimpl->vis_navaids = vis.navaids;
         pimpl->vis_fixes = vis.fixes;

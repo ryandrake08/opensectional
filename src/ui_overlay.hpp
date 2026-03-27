@@ -7,6 +7,11 @@ namespace nasrbrowse
     {
         bool basemap = true;
         bool airports = true;
+        bool heliports = true;
+        bool seaplane_bases = true;
+        bool ultralight = true;
+        bool gliderports = true;
+        bool balloonports = true;
         bool runways = true;
         bool navaids = true;
         bool fixes = true;

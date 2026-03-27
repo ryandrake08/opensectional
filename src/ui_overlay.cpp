@@ -62,9 +62,14 @@ namespace nasrbrowse
 
         struct entry { const char* label; bool* value; };
         entry entries[] = {
-            {"Basemap",   &vis.basemap},
-            {"Airports",  &vis.airports},
-            {"Runways",   &vis.runways},
+            {"Basemap",       &vis.basemap},
+            {"Airports",      &vis.airports},
+            {"Heliports",     &vis.heliports},
+            {"Seaplane",      &vis.seaplane_bases},
+            {"Ultralight",    &vis.ultralight},
+            {"Gliderports",   &vis.gliderports},
+            {"Balloonports",  &vis.balloonports},
+            {"Runways",       &vis.runways},
             {"Navaids",   &vis.navaids},
             {"Fixes",     &vis.fixes},
             {"Airways",   &vis.airways},
