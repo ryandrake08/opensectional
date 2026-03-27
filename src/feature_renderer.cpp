@@ -91,10 +91,15 @@ namespace nasrbrowse
         return "airspace_e2";
     }
 
+    // Classification thresholds
+    constexpr int LONG_RUNWAY_FT = 8069;       // ~1.5 nm, separates "hard long" from "hard short"
+    constexpr int OBSTACLE_HIGH_AGL_FT = 1000;
+    constexpr int OBSTACLE_MED_AGL_FT = 200;
+
     // Airport zoom key based on runway classification
     static const char* airport_zoom_key(const airport& apt)
     {
-        if(apt.hard_surface && apt.max_rwy_len > 8069)
+        if(apt.hard_surface && apt.max_rwy_len > LONG_RUNWAY_FT)
             return "airport_hard_long";
         if(apt.hard_surface)
             return "airport_hard_short";
@@ -111,10 +116,19 @@ namespace nasrbrowse
     // Obstacle style key based on AGL height
     static const char* obstacle_key(int agl_ht)
     {
-        if(agl_ht >= 1000) return "obstacle_1000ft";
-        if(agl_ht >= 200) return "obstacle_200ft";
+        if(agl_ht >= OBSTACLE_HIGH_AGL_FT) return "obstacle_1000ft";
+        if(agl_ht >= OBSTACLE_MED_AGL_FT) return "obstacle_200ft";
         return "obstacle_low";
     }
+
+    // Symbol base radii as fraction of view half-extent
+    constexpr double SYMBOL_RADIUS_AIRPORT  = 0.024;
+    constexpr double SYMBOL_RADIUS_FIX      = 0.012;
+    constexpr double SYMBOL_RADIUS_OBSTACLE = 0.003;
+
+    // Query cache tuning
+    constexpr double REQUERY_ZOOM_THRESHOLD = 0.5;
+    constexpr double QUERY_BBOX_PADDING = 0.5;
 
     struct feature_renderer::impl
     {
@@ -183,7 +197,7 @@ namespace nasrbrowse
             }
 
             double z = zoom_level();
-            if(std::abs(z - last_zoom) > 0.5)
+            if(std::abs(z - last_zoom) > REQUERY_ZOOM_THRESHOLD)
             {
                 return true;
             }
@@ -197,8 +211,8 @@ namespace nasrbrowse
         {
             double z = zoom_level();
 
-            double lon_pad = (lon_max - lon_min) * 0.5;
-            double lat_pad = (lat_max - lat_min) * 0.5;
+            double lon_pad = (lon_max - lon_min) * QUERY_BBOX_PADDING;
+            double lat_pad = (lat_max - lat_min) * QUERY_BBOX_PADDING;
             double qlon_min = lon_min - lon_pad;
             double qlat_min = lat_min - lat_pad;
             double qlon_max = lon_max + lon_pad;
@@ -234,7 +248,8 @@ namespace nasrbrowse
         {
             float x = static_cast<float>(mx);
             float y = static_cast<float>(my);
-            float h = radius * 0.866F;
+            constexpr float SQRT3_2 = 0.866F;
+            float h = radius * SQRT3_2;
             verts.push_back({0, 0, r, g, b, a, x, y + radius, 0});
             verts.push_back({0, 0, r, g, b, a, x + h, y - radius * 0.5F, 0});
             verts.push_back({0, 0, r, g, b, a, x + h, y - radius * 0.5F, 0});
@@ -250,7 +265,7 @@ namespace nasrbrowse
             std::vector<glm::vec2> pts;
             for(int i = 0; i < n; i++)
             {
-                float angle = 2.0F * 3.14159265F * i / n;
+                float angle = 2.0F * static_cast<float>(M_PI) * i / n;
                 pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
             }
             pts.push_back(pts.front());
@@ -326,8 +341,15 @@ namespace nasrbrowse
                                       double lon_max, double lat_max, double z)
         {
             const auto& airports = db.query_airports(lon_min, lat_min, lon_max, lat_max);
-            float r = static_cast<float>(half_extent_y * 0.024);
-            // Convert world-space radius to pixels for line_width
+            // Airport symbol geometry sizing
+            constexpr float APT_OUTER_SCALE = 1.2F;     // outer radius relative to base
+            constexpr float APT_RING_WIDTH_PX = 2.0F;    // ring stroke width in pixels
+            constexpr float APT_LETTER_HEIGHT = 0.385F;  // letter height relative to ring radius (0.55 * 0.7)
+            constexpr float APT_LETTER_ASPECT = 0.7F;    // letter width/height ratio
+            constexpr float APT_LETTER_WIDTH_PX = 4.0F;  // letter stroke width in pixels
+            constexpr float APT_FILL_RADIUS = 0.5F;      // filled circle radius relative to symbol_r
+
+            float r = static_cast<float>(half_extent_y * SYMBOL_RADIUS_AIRPORT);
             float pixels_per_world = static_cast<float>(viewport_height / (2.0 * half_extent_y));
 
             for(const auto& apt : airports)
@@ -352,21 +374,16 @@ namespace nasrbrowse
                 float cx = static_cast<float>(lon_to_mx(apt.lon));
                 float cy = static_cast<float>(lat_to_my(apt.lat));
 
-                // Outer visible radius for all symbol types (matching filled circle)
-                float symbol_r = r * 1.2F;
-                // Hollow ring: geometry radius inset by half the line width
-                float ring_line_w = 2.0F;
-                float ring_geom_r = symbol_r - (ring_line_w * 0.5F) / pixels_per_world;
-                line_style ring_ls = {ring_line_w, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a};
+                float symbol_r = r * APT_OUTER_SCALE;
+                float ring_geom_r = symbol_r - (APT_RING_WIDTH_PX * 0.5F) / pixels_per_world;
+                line_style ring_ls = {APT_RING_WIDTH_PX, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a};
 
-                // Determine overlay letter by priority:
-                // site type > closed > military > private > none
                 bool closed = apt.arpt_status == "CI" || apt.arpt_status == "CP";
                 bool pvt = apt.facility_use_code == "PR";
                 bool mil = is_military(apt);
-                float h = ring_geom_r * 0.55F * 0.7F;
-                line_style white_ls = {4.0F, 0, 0, 0, 1.0F, 1.0F, 1.0F, 1.0F};
-                float w = h * 0.7F;
+                float h = ring_geom_r * APT_LETTER_HEIGHT;
+                line_style white_ls = {APT_LETTER_WIDTH_PX, 0, 0, 0, 1.0F, 1.0F, 1.0F, 1.0F};
+                float w = h * APT_LETTER_ASPECT;
 
                 const letter_def* letter = nullptr;
                 if(closed)                          letter = &letter_X;
@@ -380,8 +397,7 @@ namespace nasrbrowse
 
                 if(apt.hard_surface)
                 {
-                    // Filled colored circle + white letter (if any)
-                    float geom_r = symbol_r * 0.5F;
+                    float geom_r = symbol_r * APT_FILL_RADIUS;
                     float fill_px = symbol_r * pixels_per_world;
                     line_style fill_ls = {fill_px, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a};
                     add_circle_to(pd, cx, cy, geom_r, fill_ls);
@@ -389,10 +405,9 @@ namespace nasrbrowse
                 }
                 else if(letter)
                 {
-                    // Soft surface with letter: colored ring + black fill + white letter
                     add_circle_to(pd, cx, cy, ring_geom_r, ring_ls);
-                    float inner_r = ring_geom_r - (ring_line_w * 0.5F) / pixels_per_world;
-                    float fill_geom_r = inner_r * 0.5F;
+                    float inner_r = ring_geom_r - (APT_RING_WIDTH_PX * 0.5F) / pixels_per_world;
+                    float fill_geom_r = inner_r * APT_FILL_RADIUS;
                     float inner_fill_px = inner_r * pixels_per_world;
                     line_style black_fill = {inner_fill_px, 0, 0, 0, 0.0F, 0.0F, 0.0F, 1.0F};
                     add_circle_to(pd, cx, cy, fill_geom_r, black_fill);
@@ -486,7 +501,7 @@ namespace nasrbrowse
             std::vector<glm::vec2> pts;
             for(int i = 0; i < n; i++)
             {
-                float angle = 2.0F * 3.14159265F * i / n;
+                float angle = 2.0F * static_cast<float>(M_PI) * i / n;
                 pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
             }
             pts.push_back(pts.front());
@@ -497,11 +512,17 @@ namespace nasrbrowse
         void build_navaid_polylines(double lon_min, double lat_min,
                                      double lon_max, double lat_max, double z)
         {
+            // Navaid symbol sizing (relative to base radius)
+            constexpr float NAV_NDB_CIRCLE = 0.4F;
+            constexpr float NAV_DME_RECT = 0.85F;
+            constexpr float NAV_VORDME_WIDTH = 1.1F;
+            constexpr float NAV_CLEARANCE = 2.0F;
+
             const auto& navaids = db.query_navaids(lon_min, lat_min, lon_max, lat_max);
-            float r = static_cast<float>(half_extent_y * 0.024);
+            float r = static_cast<float>(half_extent_y * SYMBOL_RADIUS_AIRPORT);
 
             navaid_positions.clear();
-            navaid_clearance = r * 2.0F;
+            navaid_clearance = r * NAV_CLEARANCE;
 
             for(const auto& nav : navaids)
             {
@@ -530,22 +551,22 @@ namespace nasrbrowse
 
                 if(nav.nav_type == "NDB")
                 {
-                    add_circle(cx, cy, r * 0.4F, ls);
+                    add_circle(cx, cy, r * NAV_NDB_CIRCLE, ls);
                 }
                 else if(nav.nav_type == "NDB/DME")
                 {
-                    add_circle(cx, cy, r * 0.4F, ls);
-                    add_rect(cx, cy, r * 0.85F, r * 0.85F, ls);
+                    add_circle(cx, cy, r * NAV_NDB_CIRCLE, ls);
+                    add_rect(cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, ls);
                 }
                 else if(nav.nav_type == "DME")
                 {
-                    add_rect(cx, cy, r * 0.85F, r * 0.85F, ls);
+                    add_rect(cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, ls);
                 }
                 else if(std::strcmp(nav.nav_type.c_str(), "VOR/DME") == 0)
                 {
                     add_hexagon(cx, cy, r, ls);
                     add_center_dot(cx, cy, r, ls);
-                    add_rect(cx, cy, r * 1.1F, r * 0.85F, ls);
+                    add_rect(cx, cy, r * NAV_VORDME_WIDTH, r * NAV_DME_RECT, ls);
                 }
                 else if(nav.nav_type == "VORTAC" || nav.nav_type == "TACAN")
                 {
@@ -566,7 +587,8 @@ namespace nasrbrowse
         void add_triangle_polyline(polyline_data& pd,
                                     float cx, float cy, float r, const line_style& ls)
         {
-            float h = r * 0.866F; // sqrt(3)/2
+            constexpr float SQRT3_2 = 0.866F;
+            float h = r * SQRT3_2;
             pd.polylines.push_back({
                 {cx, cy + r},
                 {cx + h, cy - r * 0.5F},
@@ -596,8 +618,10 @@ namespace nasrbrowse
         void build_fix_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max, double z)
         {
+            constexpr float FIX_VFR_DIAMOND = 1.5F;  // VFR fix diamond scale relative to base
+
             const auto& fixes = db.query_fixes(lon_min, lat_min, lon_max, lat_max);
-            float radius = static_cast<float>(half_extent_y * 0.012);
+            float radius = static_cast<float>(half_extent_y * SYMBOL_RADIUS_FIX);
 
             for(const auto& fix : fixes)
             {
@@ -623,7 +647,7 @@ namespace nasrbrowse
 
                 if(fix.use_code == "VFR")
                 {
-                    add_diamond_polyline(poly[layer_fixes], cx, cy, radius * 1.5F, ls);
+                    add_diamond_polyline(poly[layer_fixes], cx, cy, radius * FIX_VFR_DIAMOND, ls);
                 }
                 else if(fix.use_code == "RP")
                 {
@@ -639,7 +663,8 @@ namespace nasrbrowse
         // Check if a point is at a navaid position (within tight tolerance)
         bool is_at_navaid(float x, float y) const
         {
-            float tol = navaid_clearance * 0.1F;
+            constexpr float NAVAID_OVERLAP_TOL = 0.1F;
+            float tol = navaid_clearance * NAVAID_OVERLAP_TOL;
             float tol_sq = tol * tol;
             for(const auto& np : navaid_positions)
             {
@@ -800,7 +825,7 @@ namespace nasrbrowse
                                       double lon_max, double lat_max, double z)
         {
             const auto& obstacles = db.query_obstacles(lon_min, lat_min, lon_max, lat_max);
-            float radius = static_cast<float>(half_extent_y * 0.003);
+            float radius = static_cast<float>(half_extent_y * SYMBOL_RADIUS_OBSTACLE);
 
             for(const auto& obs : obstacles)
             {
