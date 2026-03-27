@@ -101,10 +101,9 @@ namespace nasrbrowse
         return "airport_other";
     }
 
-    // Airport color key based on site/tower type
+    // Airport color key based on tower type
     static const char* airport_color_key(const airport& apt)
     {
-        if(apt.site_type_code == "H") return "airport_heliport";
         if(apt.twr_type_code != "NON-ATCT") return "airport_towered";
         return "airport_untowered";
     }
@@ -134,10 +133,7 @@ namespace nasrbrowse
         bool has_cached_query;
 
         // Point feature vertex buffers (rendered as line_list)
-        std::vector<sdl::vertex_t2f_c4ub_v3f> airport_vertices;
         std::vector<sdl::vertex_t2f_c4ub_v3f> obstacle_vertices;
-
-        std::unique_ptr<sdl::buffer> airport_buffer;
         std::unique_ptr<sdl::buffer> obstacle_buffer;
 
         // Navaid positions for airway clearance (populated during build_navaid_polylines)
@@ -148,6 +144,7 @@ namespace nasrbrowse
         std::unordered_set<std::string> airway_waypoints;
 
         // Line/polygon feature polylines (rendered via SDF line_renderer)
+        polyline_data airport_poly;
         polyline_data navaid_poly;
         polyline_data fix_poly;
         polyline_data sua_poly;
@@ -231,7 +228,7 @@ namespace nasrbrowse
             last_zoom = z;
             has_cached_query = true;
 
-            airport_vertices.clear();
+            airport_poly.clear();
             obstacle_vertices.clear();
             navaid_poly.clear();
             fix_poly.clear();
@@ -241,7 +238,7 @@ namespace nasrbrowse
             airway_poly.clear();
             runway_poly.clear();
 
-            build_airport_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_airport_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_navaid_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_airway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_sua_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
@@ -253,22 +250,6 @@ namespace nasrbrowse
 
             rebuild_sdf_lines();
             dirty = true;
-        }
-
-        void add_diamond(std::vector<sdl::vertex_t2f_c4ub_v3f>& verts,
-                         double mx, double my, float radius,
-                         uint8_t r, uint8_t g, uint8_t b, uint8_t a)
-        {
-            float x = static_cast<float>(mx);
-            float y = static_cast<float>(my);
-            verts.push_back({0, 0, r, g, b, a, x - radius, y, 0});
-            verts.push_back({0, 0, r, g, b, a, x, y + radius, 0});
-            verts.push_back({0, 0, r, g, b, a, x, y + radius, 0});
-            verts.push_back({0, 0, r, g, b, a, x + radius, y, 0});
-            verts.push_back({0, 0, r, g, b, a, x + radius, y, 0});
-            verts.push_back({0, 0, r, g, b, a, x, y - radius, 0});
-            verts.push_back({0, 0, r, g, b, a, x, y - radius, 0});
-            verts.push_back({0, 0, r, g, b, a, x - radius, y, 0});
         }
 
         void add_triangle(std::vector<sdl::vertex_t2f_c4ub_v3f>& verts,
@@ -286,11 +267,49 @@ namespace nasrbrowse
             verts.push_back({0, 0, r, g, b, a, x, y + radius, 0});
         }
 
-        void build_airport_vertices(double lon_min, double lat_min,
-                                     double lon_max, double lat_max, double z)
+        // Add a circle polyline to a polyline_data
+        void add_circle_to(polyline_data& pd, float cx, float cy,
+                           float r, const line_style& ls, int n = 24)
+        {
+            std::vector<glm::vec2> pts;
+            for(int i = 0; i < n; i++)
+            {
+                float angle = 2.0F * 3.14159265F * i / n;
+                pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
+            }
+            pts.push_back(pts.front());
+            pd.polylines.push_back(std::move(pts));
+            pd.styles.push_back(ls);
+        }
+
+        // Add a line segment to a polyline_data
+        void add_seg_to(polyline_data& pd, float x0, float y0,
+                        float x1, float y1, const line_style& ls)
+        {
+            pd.polylines.push_back({glm::vec2(x0, y0), glm::vec2(x1, y1)});
+            pd.styles.push_back(ls);
+        }
+
+        bool is_military(const airport& apt)
+        {
+            return apt.ownership_type_code == "MA" ||
+                   apt.ownership_type_code == "MR" ||
+                   apt.ownership_type_code == "MN" ||
+                   apt.ownership_type_code == "CG";
+        }
+
+        bool is_towered(const airport& apt)
+        {
+            return apt.twr_type_code.substr(0, 4) == "ATCT";
+        }
+
+        void build_airport_polylines(double lon_min, double lat_min,
+                                      double lon_max, double lat_max, double z)
         {
             const auto& airports = db.query_airports(lon_min, lat_min, lon_max, lat_max);
-            float radius = static_cast<float>(half_extent_y * 0.008);
+            float r = static_cast<float>(half_extent_y * 0.024);
+            // Convert world-space radius to pixels for line_width
+            float pixels_per_world = static_cast<float>(viewport_height / (2.0 * half_extent_y));
 
             for(const auto& apt : airports)
             {
@@ -300,10 +319,123 @@ namespace nasrbrowse
                 }
 
                 const auto& cs = styles.get(airport_color_key(apt));
-                double mx = lon_to_mx(apt.lon);
-                double my = lat_to_my(apt.lat);
-                add_diamond(airport_vertices, mx, my, radius,
-                            to_u8(cs.r), to_u8(cs.g), to_u8(cs.b), to_u8(cs.a));
+                float cx = static_cast<float>(lon_to_mx(apt.lon));
+                float cy = static_cast<float>(lat_to_my(apt.lat));
+
+                // Outer visible radius for all symbol types (matching filled circle)
+                float symbol_r = r * 1.2F;
+                // Hollow ring: geometry radius inset by half the line width
+                float ring_line_w = 2.0F;
+                float ring_geom_r = symbol_r - (ring_line_w * 0.5F) / pixels_per_world;
+                line_style ring_ls = {ring_line_w, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a};
+
+                // Determine overlay letter by priority:
+                // site type > closed > military > private > none
+                bool closed = apt.arpt_status == "CI" || apt.arpt_status == "CP";
+                bool pvt = apt.facility_use_code == "PR";
+                bool mil = is_military(apt);
+                float h = ring_geom_r * 0.55F * 0.7F;
+                line_style white_ls = {4.0F, 0, 0, 0, 1.0F, 1.0F, 1.0F, 1.0F};
+
+                // Letter drawing lambdas (all drawn in white at center)
+                // Blocky vector letters on a grid:
+                // w = half-width, h = half-height, m = middle y
+                float w = h * 0.7F;
+                float m = cy + h * 0.1F;  // midline slightly above center
+
+                auto draw_H = [&]()
+                {
+                    add_seg_to(airport_poly, cx - w, cy - h, cx - w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx + w, cy - h, cx + w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx - w, m, cx + w, m, white_ls);
+                };
+                auto draw_F = [&]()
+                {
+                    add_seg_to(airport_poly, cx - w, cy - h, cx - w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx - w, cy + h, cx + w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx - w, m, cx + w * 0.6F, m, white_ls);
+                };
+                auto draw_G = [&]()
+                {
+                    add_seg_to(airport_poly, cx + w, cy + h, cx - w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx - w, cy + h, cx - w, cy - h, white_ls);
+                    add_seg_to(airport_poly, cx - w, cy - h, cx + w, cy - h, white_ls);
+                    add_seg_to(airport_poly, cx + w, cy - h, cx + w, m, white_ls);
+                    add_seg_to(airport_poly, cx + w, m, cx, m, white_ls);
+                };
+                auto draw_S = [&]()
+                {
+                    add_seg_to(airport_poly, cx + w, cy + h, cx - w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx - w, cy + h, cx - w, m, white_ls);
+                    add_seg_to(airport_poly, cx - w, m, cx + w, m, white_ls);
+                    add_seg_to(airport_poly, cx + w, m, cx + w, cy - h, white_ls);
+                    add_seg_to(airport_poly, cx + w, cy - h, cx - w, cy - h, white_ls);
+                };
+                auto draw_B = [&]()
+                {
+                    add_seg_to(airport_poly, cx - w, cy - h, cx - w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx - w, cy + h, cx + w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx + w, cy + h, cx + w, m, white_ls);
+                    add_seg_to(airport_poly, cx + w, m, cx - w, m, white_ls);
+                    add_seg_to(airport_poly, cx - w, cy - h, cx + w, cy - h, white_ls);
+                    add_seg_to(airport_poly, cx + w, cy - h, cx + w, m, white_ls);
+                };
+                auto draw_X = [&]()
+                {
+                    add_seg_to(airport_poly, cx - w, cy - h, cx + w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx - w, cy + h, cx + w, cy - h, white_ls);
+                };
+                auto draw_M = [&]()
+                {
+                    add_seg_to(airport_poly, cx - w, cy - h, cx - w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx - w, cy + h, cx, m, white_ls);
+                    add_seg_to(airport_poly, cx, m, cx + w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx + w, cy + h, cx + w, cy - h, white_ls);
+                };
+                auto draw_R = [&]()
+                {
+                    add_seg_to(airport_poly, cx - w, cy - h, cx - w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx - w, cy + h, cx + w, cy + h, white_ls);
+                    add_seg_to(airport_poly, cx + w, cy + h, cx + w, m, white_ls);
+                    add_seg_to(airport_poly, cx + w, m, cx - w, m, white_ls);
+                    add_seg_to(airport_poly, cx, m, cx + w, cy - h, white_ls);
+                };
+
+                std::function<void()> draw_letter;
+                if(closed)                          draw_letter = draw_X;
+                else if(apt.site_type_code == "H")  draw_letter = draw_H;
+                else if(apt.site_type_code == "C")  draw_letter = draw_S;
+                else if(apt.site_type_code == "U")  draw_letter = draw_F;
+                else if(apt.site_type_code == "G")  draw_letter = draw_G;
+                else if(apt.site_type_code == "B")  draw_letter = draw_B;
+                else if(mil)                        draw_letter = draw_M;
+                else if(pvt)                        draw_letter = draw_R;
+
+                if(apt.hard_surface == "HARD")
+                {
+                    // Filled colored circle + white letter (if any)
+                    float geom_r = symbol_r * 0.5F;
+                    float fill_px = symbol_r * pixels_per_world;
+                    line_style fill_ls = {fill_px, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a};
+                    add_circle_to(airport_poly, cx, cy, geom_r, fill_ls);
+                    if(draw_letter) draw_letter();
+                }
+                else if(draw_letter)
+                {
+                    // Soft surface with letter: colored ring + black fill + white letter
+                    add_circle_to(airport_poly, cx, cy, ring_geom_r, ring_ls);
+                    float inner_r = ring_geom_r - (ring_line_w * 0.5F) / pixels_per_world;
+                    float fill_geom_r = inner_r * 0.5F;
+                    float inner_fill_px = inner_r * pixels_per_world;
+                    line_style black_fill = {inner_fill_px, 0, 0, 0, 0.0F, 0.0F, 0.0F, 1.0F};
+                    add_circle_to(airport_poly, cx, cy, fill_geom_r, black_fill);
+                    draw_letter();
+                }
+                else
+                {
+                    // Soft surface public: hollow ring
+                    add_circle_to(airport_poly, cx, cy, ring_geom_r, ring_ls);
+                }
             }
         }
 
@@ -802,6 +934,7 @@ namespace nasrbrowse
             if(vis_airways) append(airway_poly);
             if(vis_fixes) append(fix_poly);
             if(vis_navaids) append(navaid_poly);
+            if(vis_airports) append(airport_poly);
 
             sdf_lines.set_polylines(std::move(all_polylines), std::move(all_styles));
         }
@@ -858,7 +991,6 @@ namespace nasrbrowse
             };
 
             upload(pimpl->obstacle_vertices, pimpl->obstacle_buffer);
-            upload(pimpl->airport_vertices, pimpl->airport_buffer);
             pimpl->dirty = false;
         }
 
@@ -896,7 +1028,6 @@ namespace nasrbrowse
             };
 
             if(pimpl->vis_obstacles) draw(pimpl->obstacle_buffer);
-            if(pimpl->vis_airports) draw(pimpl->airport_buffer);
         }
         else if(ctx.current_pass == render_pass_id::line_sdf_0)
         {
@@ -909,6 +1040,7 @@ namespace nasrbrowse
     void feature_renderer::set_visibility(const layer_visibility& vis)
     {
         bool line_vis_changed =
+            pimpl->vis_airports != vis.airports ||
             pimpl->vis_navaids != vis.navaids ||
             pimpl->vis_fixes != vis.fixes ||
             pimpl->vis_runways != vis.runways ||

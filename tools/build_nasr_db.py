@@ -147,11 +147,11 @@ def classify_surface(code):
     hard = {
         "ASPH", "CONC", "ASPH-CONC", "ASPH-TURF", "CONC-TURF", "PEM",
         "CONC-GRVL", "ASPH-TRTD", "ASPH-DIRT", "CONC-TRTD", "PSP",
-        "ASPH/GRVL", "TREATED", "CONC-DIRT", "OIL&CHIP-T",
+        "ASPH/GRVL", "ASPH-GRVL", "TREATED", "CONC-DIRT", "OIL&CHIP-T",
     }
     soft = {
         "TURF", "DIRT", "GRVL", "GRAVEL", "TURF-DIRT", "TURF-GRVL",
-        "GRVL-DIRT", "ASPH-GRVL", "GRVL-TRTD", "TRTD", "TRTD-DIRT",
+        "GRVL-DIRT", "GRVL-TRTD", "TRTD", "TRTD-DIRT",
         "GRVL-TURF", "GRASS", "DIRT-TRTD", "DIRT-GRVL", "DIRT-TURF",
         "TURF-SAND", "SAND", "CALICHE", "SNOW", "CORAL",
     }

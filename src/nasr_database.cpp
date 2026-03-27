@@ -101,6 +101,7 @@ namespace nasrbrowse
             // (min=max) overlaps with the search box
             prepare(&stmt_airports, R"(
                 SELECT ARPT_ID, ARPT_NAME, SITE_TYPE_CODE, TWR_TYPE_CODE,
+                       OWNERSHIP_TYPE_CODE, FACILITY_USE_CODE, ARPT_STATUS,
                        ICAO_ID, HARD_SURFACE, LAT_DECIMAL, LONG_DECIMAL,
                        ELEV, CAST(MAX_RWY_LEN AS INTEGER)
                 FROM APT_BASE
@@ -283,12 +284,15 @@ namespace nasrbrowse
             a.arpt_name = col_text(d.stmt_airports, 1);
             a.site_type_code = col_text(d.stmt_airports, 2);
             a.twr_type_code = col_text(d.stmt_airports, 3);
-            a.icao_id = col_text(d.stmt_airports, 4);
-            a.hard_surface = col_text(d.stmt_airports, 5);
-            a.lat = col_double(d.stmt_airports, 6);
-            a.lon = col_double(d.stmt_airports, 7);
-            a.elev = col_double(d.stmt_airports, 8);
-            a.max_rwy_len = sqlite3_column_int(d.stmt_airports, 9);
+            a.ownership_type_code = col_text(d.stmt_airports, 4);
+            a.facility_use_code = col_text(d.stmt_airports, 5);
+            a.arpt_status = col_text(d.stmt_airports, 6);
+            a.icao_id = col_text(d.stmt_airports, 7);
+            a.hard_surface = col_text(d.stmt_airports, 8);
+            a.lat = col_double(d.stmt_airports, 9);
+            a.lon = col_double(d.stmt_airports, 10);
+            a.elev = col_double(d.stmt_airports, 11);
+            a.max_rwy_len = sqlite3_column_int(d.stmt_airports, 12);
             d.airports.push_back(std::move(a));
         }
 

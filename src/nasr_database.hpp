@@ -9,10 +9,13 @@ namespace nasrbrowse
     {
         std::string arpt_id;
         std::string arpt_name;
-        std::string site_type_code;
-        std::string twr_type_code;
+        std::string site_type_code;    // "A"=airport, "H"=heliport, "C"=seaplane, "U"=ultralight, "G"=glider, "B"=balloon
+        std::string twr_type_code;     // "ATCT*"=towered, "NON-ATCT"=untowered
+        std::string ownership_type_code; // "PU"=public, "PR"=private, "MA"/"MR"/"MN"=military
+        std::string facility_use_code; // "PU"=public use, "PR"=private use
+        std::string arpt_status;       // "O"=operational, "CI"=closed indef, "CP"=closed perm
         std::string icao_id;
-        std::string hard_surface;  // "HARD", "SOFT", or "OTHER"
+        std::string hard_surface;      // "HARD", "SOFT", or "OTHER"
         double lat;
         double lon;
         double elev;
