@@ -153,7 +153,7 @@ layer_map::~layer_map() = default;
 
 void layer_map::set_visibility(const nasrbrowse::layer_visibility& vis)
 {
-    pimpl->show_tiles = vis.basemap;
+    pimpl->show_tiles = vis[nasrbrowse::layer_basemap];
     pimpl->features.set_visibility(vis);
     pimpl->needs_update = true;
 }

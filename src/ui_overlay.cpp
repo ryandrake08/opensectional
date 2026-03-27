@@ -60,28 +60,9 @@ namespace nasrbrowse
             ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoSavedSettings);
 
-        struct entry { const char* label; bool* value; };
-        entry entries[] = {
-            {"Basemap",       &vis.basemap},
-            {"Airports",      &vis.airports},
-            {"Heliports",     &vis.heliports},
-            {"Seaplane",      &vis.seaplane_bases},
-            {"Ultralight",    &vis.ultralight},
-            {"Gliderports",   &vis.gliderports},
-            {"Balloonports",  &vis.balloonports},
-            {"Runways",       &vis.runways},
-            {"Navaids",   &vis.navaids},
-            {"Fixes",     &vis.fixes},
-            {"Airways",   &vis.airways},
-            {"Airspace",  &vis.airspace},
-            {"SUA",       &vis.sua},
-            {"ARTCC",     &vis.artcc},
-            {"Obstacles", &vis.obstacles},
-        };
-
         // Measure the widest label
         float max_label_w = 0;
-        for(const auto& e : entries)
+        for(const auto& e : layer_entries)
         {
             float w = ImGui::CalcTextSize(e.label).x;
             if(w > max_label_w) max_label_w = w;
@@ -90,7 +71,7 @@ namespace nasrbrowse
         float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
         bool changed = false;
 
-        for(const auto& e : entries)
+        for(const auto& e : layer_entries)
         {
             float label_w = ImGui::CalcTextSize(e.label).x;
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + max_label_w - label_w);
@@ -100,7 +81,7 @@ namespace nasrbrowse
 
             char id[32];
             snprintf(id, sizeof(id), "##%s", e.label);
-            if(ImGui::Checkbox(id, e.value))
+            if(ImGui::Checkbox(id, &vis[e.id]))
             {
                 changed = true;
             }
