@@ -63,6 +63,43 @@ def parse_dms(dms_str):
     return decimal
 
 
+def handle_antimeridian(points):
+    """Handle geometry that crosses the antimeridian (±180° longitude).
+
+    If no crossing is detected, returns [points] unchanged.
+    If a crossing is detected, returns two copies of the geometry:
+    one with longitudes unwrapped to the west (extending past -180)
+    and one shifted +360 to the east (extending past +180).
+    Both copies are complete rings; viewport culling hides the offscreen one.
+    """
+    # Detect if any segment crosses (longitude jump > 180°)
+    has_crossing = False
+    for i in range(len(points) - 1):
+        if abs(points[i + 1][0] - points[i][0]) > 180:
+            has_crossing = True
+            break
+    if not has_crossing:
+        return [points]
+
+    # Unwrap longitudes to be continuous (no ±360 jumps)
+    unwrapped = [points[0]]
+    for i in range(1, len(points)):
+        lon, lat = points[i]
+        prev_lon = unwrapped[i - 1][0]
+        while lon - prev_lon > 180:
+            lon -= 360
+        while lon - prev_lon < -180:
+            lon += 360
+        unwrapped.append((lon, lat))
+
+    # Create second copy shifted by ±360 to cover the other side
+    shifted = [(lon + 360, lat) for lon, lat in unwrapped]
+    if unwrapped[0][0] > 0:
+        shifted = [(lon - 360, lat) for lon, lat in unwrapped]
+        return [shifted, unwrapped]
+    return [unwrapped, shifted]
+
+
 def read_csv_rows(zf, csv_name):
     """Read CSV rows from a ZIP archive as list of dicts."""
     with zf.open(csv_name) as f:
@@ -281,6 +318,32 @@ def build_awy(conn, csv_zf):
     """)
     conn.execute("DROP TABLE AWY_SEG")
     conn.execute("ALTER TABLE AWY_SEG_DEDUP RENAME TO AWY_SEG")
+
+    # Duplicate segments that cross the antimeridian with adjusted longitudes
+    crossing = conn.execute("""
+        SELECT AWY_ID, AWY_LOCATION, POINT_SEQ, FROM_POINT, TO_POINT,
+               FROM_LAT, FROM_LON, TO_LAT, TO_LON,
+               AWY_SEG_GAP_FLAG, MIN_ENROUTE_ALT
+        FROM AWY_SEG
+        WHERE ABS(FROM_LON - TO_LON) > 180
+    """).fetchall()
+    for row in crossing:
+        from_lon, to_lon = row[6], row[8]
+        # West copy: shift the eastern endpoint by -360
+        if to_lon > from_lon:
+            west = row[:6] + (from_lon, row[7], to_lon - 360) + row[9:]
+            east = row[:6] + (from_lon + 360, row[7], to_lon) + row[9:]
+        else:
+            west = row[:6] + (from_lon - 360, row[7], to_lon) + row[9:]
+            east = row[:6] + (from_lon, row[7], to_lon + 360) + row[9:]
+        conn.execute("""
+            INSERT INTO AWY_SEG VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, west)
+        conn.execute("""
+            INSERT INTO AWY_SEG VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, east)
+    # Remove the original crossing segments
+    conn.execute("DELETE FROM AWY_SEG WHERE ABS(FROM_LON - TO_LON) > 180")
 
     count = conn.execute("SELECT COUNT(*) FROM AWY_SEG").fetchone()[0]
     print(f"  AWY_SEG (resolved): {count} segments")
@@ -994,13 +1057,16 @@ def build_sua(conn, aixm_zf):
                 result["lower_limit"],
             ))
 
-            for part_num, (part, part_upper, part_lower) in enumerate(result["parts"]):
-                total_before += len(part)
-                simplified = simplify_ring(part, epsilon)
-                total_after += len(simplified)
-                for point_seq, (lon, lat) in enumerate(simplified):
-                    shp_rows.append((sua_id, part_num, part_upper, part_lower,
-                                     point_seq, lon, lat))
+            part_num = 0
+            for part, part_upper, part_lower in result["parts"]:
+                for copy in handle_antimeridian(part):
+                    total_before += len(copy)
+                    simplified = simplify_ring(copy, epsilon)
+                    total_after += len(simplified)
+                    for point_seq, (lon, lat) in enumerate(simplified):
+                        shp_rows.append((sua_id, part_num, part_upper, part_lower,
+                                         point_seq, lon, lat))
+                    part_num += 1
 
     conn.executemany(
         "INSERT INTO SUA_BASE VALUES (?, ?, ?, ?, ?, ?)",
@@ -1168,13 +1234,16 @@ def build_cls_arsp(conn, shp_zf):
             rec.get("LOWER_DESC", ""),
             rec.get("LOWER_VAL", ""),
         ))
-        for part_num, (ring, is_hole) in enumerate(parts):
-            total_before += len(ring)
-            simplified = simplify_ring(ring, epsilon)
-            total_after += len(simplified)
+        part_num = 0
+        for ring, is_hole in parts:
             hole_flag = 1 if is_hole else 0
-            for point_seq, (lon, lat) in enumerate(simplified):
-                shp_rows.append((arsp_id, part_num, hole_flag, point_seq, lon, lat))
+            for copy in handle_antimeridian(ring):
+                total_before += len(copy)
+                simplified = simplify_ring(copy, epsilon)
+                total_after += len(simplified)
+                for point_seq, (lon, lat) in enumerate(simplified):
+                    shp_rows.append((arsp_id, part_num, hole_flag, point_seq, lon, lat))
+                part_num += 1
 
     print(f"  Simplified: {total_before} -> {total_after} points "
           f"({100 * total_after / total_before:.1f}%)")
@@ -1259,12 +1328,13 @@ def build_artcc(conn, csv_zf):
         if len(points) < 3:
             continue
 
-        artcc_id = len(base_rows) + 1
+        ring = [(lon, lat) for _, lon, lat in points]
         name = base_info.get(loc_id, loc_id)
-        base_rows.append((artcc_id, loc_id, name, altitude))
-
-        for point_seq, (_, lon, lat) in enumerate(points):
-            shp_rows.append((artcc_id, point_seq, lon, lat))
+        for copy in handle_antimeridian(ring):
+            artcc_id = len(base_rows) + 1
+            base_rows.append((artcc_id, loc_id, name, altitude))
+            for point_seq, (lon, lat) in enumerate(copy):
+                shp_rows.append((artcc_id, point_seq, lon, lat))
 
     conn.executemany("INSERT INTO ARTCC_BASE VALUES (?, ?, ?, ?)", base_rows)
     conn.executemany("INSERT INTO ARTCC_SHP VALUES (?, ?, ?, ?)", shp_rows)
