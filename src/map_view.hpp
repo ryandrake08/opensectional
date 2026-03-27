@@ -69,6 +69,14 @@ namespace nasrbrowse
         lat = lat_rad * 180.0 / M_PI;
     }
 
+    // Compute zoom level from view extent and viewport size
+    inline double zoom_level(double half_extent_y, int viewport_height)
+    {
+        double meters_per_pixel = (half_extent_y * 2.0) / viewport_height;
+        double world_size = 2.0 * HALF_CIRCUMFERENCE;
+        return std::log2(world_size / (256.0 * meters_per_pixel));
+    }
+
     // Get Web Mercator bounds (meters) for a tile
     inline void tile_bounds_meters(int tx, int ty, int zoom,
                                    double& x_min, double& y_min,
@@ -167,14 +175,9 @@ namespace nasrbrowse
             lat = my_to_lat(my_val);
         }
 
-        // Approximate zoom level for tile selection
         double zoom_level(int viewport_height) const
         {
-            double meters_per_pixel = (half_extent_y * 2.0) / viewport_height;
-            double world_size = 2.0 * HALF_CIRCUMFERENCE;
-            // At zoom z, each pixel covers world_size / (256 * 2^z) meters
-            // So z = log2(world_size / (256 * meters_per_pixel))
-            return std::log2(world_size / (256.0 * meters_per_pixel));
+            return nasrbrowse::zoom_level(half_extent_y, viewport_height);
         }
 
         // Set zoom to an exact zoom level

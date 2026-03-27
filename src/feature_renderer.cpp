@@ -171,9 +171,7 @@ namespace nasrbrowse
 
         double zoom_level() const
         {
-            double meters_per_pixel = (half_extent_y * 2.0) / viewport_height;
-            double world_size = 2.0 * HALF_CIRCUMFERENCE;
-            return std::log2(world_size / (256.0 * meters_per_pixel));
+            return nasrbrowse::zoom_level(half_extent_y, viewport_height);
         }
 
         bool needs_requery(double lon_min, double lat_min,
