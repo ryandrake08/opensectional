@@ -47,7 +47,7 @@ namespace nasrbrowse
     static const char* all_keys[] = {
         "airport_class_b", "airport_class_c", "airport_class_d",
         "airport_class_e", "airport_other",
-        "airport_towered", "airport_untowered", "airport_heliport",
+        "airport_towered", "airport_untowered",
         "navaid_vor", "navaid_ndb",
         "fix_wp", "fix_rp", "fix_vfr",
         "obstacle_1000ft", "obstacle_200ft", "obstacle_low",
