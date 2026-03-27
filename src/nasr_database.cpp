@@ -261,6 +261,22 @@ namespace nasrbrowse
             sqlite3_bind_double(stmt, 3, lon_max);
             sqlite3_bind_double(stmt, 4, lat_max);
         }
+
+        template<typename T, typename RowMapper>
+        const std::vector<T>& query_bbox(std::vector<T>& results,
+                                          sqlite3_stmt* stmt,
+                                          double lon_min, double lat_min,
+                                          double lon_max, double lat_max,
+                                          RowMapper&& map_row)
+        {
+            results.clear();
+            bind_bbox(stmt, lon_min, lat_min, lon_max, lat_max);
+            while(sqlite3_step(stmt) == SQLITE_ROW)
+            {
+                results.push_back(map_row(stmt));
+            }
+            return results;
+        }
     };
 
     nasr_database::nasr_database(const char* db_path)
@@ -274,149 +290,88 @@ namespace nasrbrowse
         double lon_min, double lat_min, double lon_max, double lat_max)
     {
         auto& d = *pimpl;
-        d.airports.clear();
-        d.bind_bbox(d.stmt_airports, lon_min, lat_min, lon_max, lat_max);
-
-        while(sqlite3_step(d.stmt_airports) == SQLITE_ROW)
+        return d.query_bbox(d.airports, d.stmt_airports,
+            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
         {
-            airport a;
-            a.arpt_id = col_text(d.stmt_airports, 0);
-            a.arpt_name = col_text(d.stmt_airports, 1);
-            a.site_type_code = col_text(d.stmt_airports, 2);
-            a.twr_type_code = col_text(d.stmt_airports, 3);
-            a.ownership_type_code = col_text(d.stmt_airports, 4);
-            a.facility_use_code = col_text(d.stmt_airports, 5);
-            a.arpt_status = col_text(d.stmt_airports, 6);
-            a.icao_id = col_text(d.stmt_airports, 7);
-            a.hard_surface = sqlite3_column_int(d.stmt_airports, 8) != 0;
-            a.lat = col_double(d.stmt_airports, 9);
-            a.lon = col_double(d.stmt_airports, 10);
-            a.elev = col_double(d.stmt_airports, 11);
-            a.max_rwy_len = sqlite3_column_int(d.stmt_airports, 12);
-            d.airports.push_back(std::move(a));
-        }
-
-        return d.airports;
+            return airport{
+                col_text(s, 0), col_text(s, 1), col_text(s, 2), col_text(s, 3),
+                col_text(s, 4), col_text(s, 5), col_text(s, 6), col_text(s, 7),
+                sqlite3_column_int(s, 8) != 0,
+                col_double(s, 9), col_double(s, 10), col_double(s, 11),
+                sqlite3_column_int(s, 12)};
+        });
     }
 
     const std::vector<navaid>& nasr_database::query_navaids(
         double lon_min, double lat_min, double lon_max, double lat_max)
     {
         auto& d = *pimpl;
-        d.navaids.clear();
-        d.bind_bbox(d.stmt_navaids, lon_min, lat_min, lon_max, lat_max);
-
-        while(sqlite3_step(d.stmt_navaids) == SQLITE_ROW)
+        return d.query_bbox(d.navaids, d.stmt_navaids,
+            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
         {
-            navaid n;
-            n.nav_id = col_text(d.stmt_navaids, 0);
-            n.nav_type = col_text(d.stmt_navaids, 1);
-            n.name = col_text(d.stmt_navaids, 2);
-            n.freq = col_text(d.stmt_navaids, 3);
-            n.lat = col_double(d.stmt_navaids, 4);
-            n.lon = col_double(d.stmt_navaids, 5);
-            d.navaids.push_back(std::move(n));
-        }
-
-        return d.navaids;
+            return navaid{col_text(s, 0), col_text(s, 1), col_text(s, 2),
+                          col_text(s, 3), col_double(s, 4), col_double(s, 5)};
+        });
     }
 
     const std::vector<fix>& nasr_database::query_fixes(
         double lon_min, double lat_min, double lon_max, double lat_max)
     {
         auto& d = *pimpl;
-        d.fixes.clear();
-        d.bind_bbox(d.stmt_fixes, lon_min, lat_min, lon_max, lat_max);
-
-        while(sqlite3_step(d.stmt_fixes) == SQLITE_ROW)
+        return d.query_bbox(d.fixes, d.stmt_fixes,
+            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
         {
-            fix f;
-            f.fix_id = col_text(d.stmt_fixes, 0);
-            f.use_code = col_text(d.stmt_fixes, 1);
-            f.lat = col_double(d.stmt_fixes, 2);
-            f.lon = col_double(d.stmt_fixes, 3);
-            d.fixes.push_back(std::move(f));
-        }
-
-        return d.fixes;
+            return fix{col_text(s, 0), col_text(s, 1),
+                       col_double(s, 2), col_double(s, 3)};
+        });
     }
 
     const std::vector<airway_segment>& nasr_database::query_airways(
         double lon_min, double lat_min, double lon_max, double lat_max)
     {
         auto& d = *pimpl;
-        d.airways.clear();
-        d.bind_bbox(d.stmt_airways, lon_min, lat_min, lon_max, lat_max);
-
-        while(sqlite3_step(d.stmt_airways) == SQLITE_ROW)
+        return d.query_bbox(d.airways, d.stmt_airways,
+            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
         {
-            airway_segment s;
-            s.awy_id = col_text(d.stmt_airways, 0);
-            s.from_point = col_text(d.stmt_airways, 1);
-            s.to_point = col_text(d.stmt_airways, 2);
-            s.from_lat = col_double(d.stmt_airways, 3);
-            s.from_lon = col_double(d.stmt_airways, 4);
-            s.to_lat = col_double(d.stmt_airways, 5);
-            s.to_lon = col_double(d.stmt_airways, 6);
-            d.airways.push_back(std::move(s));
-        }
-
-        return d.airways;
+            return airway_segment{
+                col_text(s, 0), col_text(s, 1), col_text(s, 2),
+                col_double(s, 3), col_double(s, 4),
+                col_double(s, 5), col_double(s, 6)};
+        });
     }
 
     const std::vector<airspace>& nasr_database::query_airspaces(
         double lon_min, double lat_min, double lon_max, double lat_max)
     {
         auto& d = *pimpl;
-        d.airspaces.clear();
-        d.bind_bbox(d.stmt_airspaces, lon_min, lat_min, lon_max, lat_max);
-
-        while(sqlite3_step(d.stmt_airspaces) == SQLITE_ROW)
+        return d.query_bbox(d.airspaces, d.stmt_airspaces,
+            lon_min, lat_min, lon_max, lat_max, [&](sqlite3_stmt* s)
         {
-            airspace a;
-            a.maa_id = col_text(d.stmt_airspaces, 0);
-            a.maa_type = col_text(d.stmt_airspaces, 1);
-            a.maa_name = col_text(d.stmt_airspaces, 2);
-            a.max_alt = col_text(d.stmt_airspaces, 3);
-            a.min_alt = col_text(d.stmt_airspaces, 4);
+            airspace a{col_text(s, 0), col_text(s, 1), col_text(s, 2),
+                       col_text(s, 3), col_text(s, 4), {}};
 
-            // Load shape points
             sqlite3_reset(d.stmt_airspace_shape);
             sqlite3_bind_text(d.stmt_airspace_shape, 1, a.maa_id.c_str(), -1, SQLITE_TRANSIENT);
             while(sqlite3_step(d.stmt_airspace_shape) == SQLITE_ROW)
             {
-                airspace_point pt;
-                pt.lat = col_double(d.stmt_airspace_shape, 0);
-                pt.lon = col_double(d.stmt_airspace_shape, 1);
-                a.points.push_back(pt);
+                a.points.push_back({col_double(d.stmt_airspace_shape, 0),
+                                    col_double(d.stmt_airspace_shape, 1)});
             }
-
-            d.airspaces.push_back(std::move(a));
-        }
-
-        return d.airspaces;
+            return a;
+        });
     }
 
     const std::vector<class_airspace>& nasr_database::query_class_airspace(
         double lon_min, double lat_min, double lon_max, double lat_max)
     {
         auto& d = *pimpl;
-        d.class_airspaces.clear();
-        d.bind_bbox(d.stmt_cls_arsp, lon_min, lat_min, lon_max, lat_max);
-
-        while(sqlite3_step(d.stmt_cls_arsp) == SQLITE_ROW)
+        return d.query_bbox(d.class_airspaces, d.stmt_cls_arsp,
+            lon_min, lat_min, lon_max, lat_max, [&](sqlite3_stmt* s)
         {
-            class_airspace a;
-            a.arsp_id = sqlite3_column_int(d.stmt_cls_arsp, 0);
-            a.name = col_text(d.stmt_cls_arsp, 1);
-            a.airspace_class = col_text(d.stmt_cls_arsp, 2);
-            a.local_type = col_text(d.stmt_cls_arsp, 3);
-            a.upper_desc = col_text(d.stmt_cls_arsp, 4);
-            a.upper_val = col_text(d.stmt_cls_arsp, 5);
-            a.lower_desc = col_text(d.stmt_cls_arsp, 6);
-            a.lower_val = col_text(d.stmt_cls_arsp, 7);
+            class_airspace a{sqlite3_column_int(s, 0),
+                col_text(s, 1), col_text(s, 2), col_text(s, 3),
+                col_text(s, 4), col_text(s, 5), col_text(s, 6), col_text(s, 7), {}};
 
-            // Load shape parts
             sqlite3_reset(d.stmt_cls_arsp_shape);
             sqlite3_bind_int(d.stmt_cls_arsp_shape, 1, a.arsp_id);
             int current_part = -1;
@@ -430,56 +385,38 @@ namespace nasrbrowse
                     a.parts.push_back(std::move(ring));
                     current_part = part_num;
                 }
-                airspace_point pt;
-                pt.lon = col_double(d.stmt_cls_arsp_shape, 2);
-                pt.lat = col_double(d.stmt_cls_arsp_shape, 3);
-                a.parts.back().points.push_back(pt);
+                a.parts.back().points.push_back(
+                    {col_double(d.stmt_cls_arsp_shape, 3),
+                     col_double(d.stmt_cls_arsp_shape, 2)});
             }
-
-            d.class_airspaces.push_back(std::move(a));
-        }
-
-        return d.class_airspaces;
+            return a;
+        });
     }
 
     const std::vector<runway>& nasr_database::query_runways(
         double lon_min, double lat_min, double lon_max, double lat_max)
     {
         auto& d = *pimpl;
-        d.runways.clear();
-        d.bind_bbox(d.stmt_runways, lon_min, lat_min, lon_max, lat_max);
-
-        while(sqlite3_step(d.stmt_runways) == SQLITE_ROW)
+        return d.query_bbox(d.runways, d.stmt_runways,
+            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
         {
-            runway r;
-            r.end1_lat = col_double(d.stmt_runways, 0);
-            r.end1_lon = col_double(d.stmt_runways, 1);
-            r.end2_lat = col_double(d.stmt_runways, 2);
-            r.end2_lon = col_double(d.stmt_runways, 3);
-            d.runways.push_back(r);
-        }
-
-        return d.runways;
+            return runway{col_double(s, 0), col_double(s, 1),
+                          col_double(s, 2), col_double(s, 3)};
+        });
     }
 
     const std::vector<sua>& nasr_database::query_sua(
         double lon_min, double lat_min, double lon_max, double lat_max)
     {
         auto& d = *pimpl;
-        d.suas.clear();
-        d.bind_bbox(d.stmt_sua, lon_min, lat_min, lon_max, lat_max);
-
-        while(sqlite3_step(d.stmt_sua) == SQLITE_ROW)
+        return d.query_bbox(d.suas, d.stmt_sua,
+            lon_min, lat_min, lon_max, lat_max, [&](sqlite3_stmt* s)
         {
-            sua s;
-            s.sua_id = sqlite3_column_int(d.stmt_sua, 0);
-            s.designator = col_text(d.stmt_sua, 1);
-            s.name = col_text(d.stmt_sua, 2);
-            s.sua_type = col_text(d.stmt_sua, 3);
+            sua su{sqlite3_column_int(s, 0), col_text(s, 1),
+                   col_text(s, 2), col_text(s, 3), {}};
 
-            // Load shape parts
             sqlite3_reset(d.stmt_sua_shape);
-            sqlite3_bind_int(d.stmt_sua_shape, 1, s.sua_id);
+            sqlite3_bind_int(d.stmt_sua_shape, 1, su.sua_id);
             int current_part = -1;
             while(sqlite3_step(d.stmt_sua_shape) == SQLITE_ROW)
             {
@@ -489,69 +426,48 @@ namespace nasrbrowse
                     sua_ring ring;
                     ring.upper_limit = col_text(d.stmt_sua_shape, 1);
                     ring.lower_limit = col_text(d.stmt_sua_shape, 2);
-                    s.parts.push_back(std::move(ring));
+                    su.parts.push_back(std::move(ring));
                     current_part = part_num;
                 }
-                airspace_point pt;
-                pt.lon = col_double(d.stmt_sua_shape, 3);
-                pt.lat = col_double(d.stmt_sua_shape, 4);
-                s.parts.back().points.push_back(pt);
+                su.parts.back().points.push_back(
+                    {col_double(d.stmt_sua_shape, 4),
+                     col_double(d.stmt_sua_shape, 3)});
             }
-
-            d.suas.push_back(std::move(s));
-        }
-
-        return d.suas;
+            return su;
+        });
     }
 
     const std::vector<obstacle>& nasr_database::query_obstacles(
         double lon_min, double lat_min, double lon_max, double lat_max)
     {
         auto& d = *pimpl;
-        d.obstacles.clear();
-        d.bind_bbox(d.stmt_obstacles, lon_min, lat_min, lon_max, lat_max);
-
-        while(sqlite3_step(d.stmt_obstacles) == SQLITE_ROW)
+        return d.query_bbox(d.obstacles, d.stmt_obstacles,
+            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
         {
-            obstacle o;
-            o.lat = col_double(d.stmt_obstacles, 0);
-            o.lon = col_double(d.stmt_obstacles, 1);
-            o.agl_ht = sqlite3_column_int(d.stmt_obstacles, 2);
-            d.obstacles.push_back(o);
-        }
-
-        return d.obstacles;
+            return obstacle{col_double(s, 0), col_double(s, 1),
+                            sqlite3_column_int(s, 2)};
+        });
     }
 
     const std::vector<artcc>& nasr_database::query_artcc(
         double lon_min, double lat_min, double lon_max, double lat_max)
     {
         auto& d = *pimpl;
-        d.artccs.clear();
-        d.bind_bbox(d.stmt_artcc, lon_min, lat_min, lon_max, lat_max);
-
-        while(sqlite3_step(d.stmt_artcc) == SQLITE_ROW)
+        return d.query_bbox(d.artccs, d.stmt_artcc,
+            lon_min, lat_min, lon_max, lat_max, [&](sqlite3_stmt* s)
         {
-            artcc a;
-            a.artcc_id = sqlite3_column_int(d.stmt_artcc, 0);
-            a.location_id = col_text(d.stmt_artcc, 1);
-            a.name = col_text(d.stmt_artcc, 2);
-            a.altitude = col_text(d.stmt_artcc, 3);
+            artcc a{sqlite3_column_int(s, 0), col_text(s, 1),
+                    col_text(s, 2), col_text(s, 3), {}};
 
             sqlite3_reset(d.stmt_artcc_shape);
             sqlite3_bind_int(d.stmt_artcc_shape, 1, a.artcc_id);
             while(sqlite3_step(d.stmt_artcc_shape) == SQLITE_ROW)
             {
-                airspace_point pt;
-                pt.lon = col_double(d.stmt_artcc_shape, 0);
-                pt.lat = col_double(d.stmt_artcc_shape, 1);
-                a.points.push_back(pt);
+                a.points.push_back({col_double(d.stmt_artcc_shape, 1),
+                                    col_double(d.stmt_artcc_shape, 0)});
             }
-
-            d.artccs.push_back(std::move(a));
-        }
-
-        return d.artccs;
+            return a;
+        });
     }
 
 } // namespace nasrbrowse
