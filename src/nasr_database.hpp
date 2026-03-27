@@ -19,7 +19,7 @@ namespace nasrbrowse
         double lat;
         double lon;
         double elev;
-        int max_rwy_len;
+        std::string airspace_class;  // "B", "C", "D", "E", or "" (none)
     };
 
     struct navaid

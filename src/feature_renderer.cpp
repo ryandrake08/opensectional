@@ -92,17 +92,16 @@ namespace nasrbrowse
     }
 
     // Classification thresholds
-    constexpr int LONG_RUNWAY_FT = 8069;       // ~1.5 nm, separates "hard long" from "hard short"
     constexpr int OBSTACLE_HIGH_AGL_FT = 1000;
     constexpr int OBSTACLE_MED_AGL_FT = 200;
 
-    // Airport zoom key based on runway classification
+    // Airport zoom key based on airspace class
     static const char* airport_zoom_key(const airport& apt)
     {
-        if(apt.hard_surface && apt.max_rwy_len > LONG_RUNWAY_FT)
-            return "airport_hard_long";
-        if(apt.hard_surface)
-            return "airport_hard_short";
+        if(apt.airspace_class == "B") return "airport_class_b";
+        if(apt.airspace_class == "C") return "airport_class_c";
+        if(apt.airspace_class == "D") return "airport_class_d";
+        if(apt.airspace_class == "E") return "airport_class_e";
         return "airport_other";
     }
 

@@ -189,6 +189,13 @@ def build_apt(conn, csv_zf):
 
     conn.execute("CREATE INDEX idx_apt_base_site_no ON APT_BASE(SITE_NO)")
 
+    # Airport airspace class (B/C/D/E flags per airport)
+    import_csv(conn, "CLS_ARSP", csv_zf, "CLS_ARSP.csv", [
+        "SITE_NO", "CLASS_B_AIRSPACE", "CLASS_C_AIRSPACE",
+        "CLASS_D_AIRSPACE", "CLASS_E_AIRSPACE",
+    ])
+    conn.execute("CREATE INDEX idx_cls_arsp_site_no ON CLS_ARSP(SITE_NO)")
+
 
 def build_nav(conn, csv_zf):
     """Import navaids with decimal coordinates."""
@@ -438,7 +445,6 @@ def build_apt_rwy(conn, csv_zf):
     # For each airport, take the hardest surface across all runways
     # (HARD > SOFT > OTHER), plus the max runway length.
     conn.execute("ALTER TABLE APT_BASE ADD COLUMN HARD_SURFACE INTEGER DEFAULT 0")
-    conn.execute("ALTER TABLE APT_BASE ADD COLUMN MAX_RWY_LEN INTEGER DEFAULT 0")
 
     # Build per-airport surface classification and max runway length
     cursor = conn.execute("""
@@ -447,32 +453,26 @@ def build_apt_rwy(conn, csv_zf):
         JOIN APT_RWY r ON r.SITE_NO = a.SITE_NO
     """)
 
-    # Accumulate best surface and max length per airport rowid
+    # Accumulate hardest surface per airport rowid (HARD > SOFT > OTHER)
     airport_data = {}
     rank = {"HARD": 2, "SOFT": 1, "OTHER": 0}
     for rowid, surface_code, rwy_len in cursor:
         classification = classify_surface(surface_code.strip() if surface_code else "")
-        try:
-            length = int(rwy_len)
-        except (ValueError, TypeError):
-            length = 0
-
         if rowid not in airport_data:
-            airport_data[rowid] = (classification, length)
+            airport_data[rowid] = classification
         else:
-            prev_class, prev_len = airport_data[rowid]
-            best_class = classification if rank[classification] > rank[prev_class] else prev_class
-            best_len = max(length, prev_len)
-            airport_data[rowid] = (best_class, best_len)
+            prev = airport_data[rowid]
+            if rank[classification] > rank[prev]:
+                airport_data[rowid] = classification
 
-    updates = [(1 if cls == "HARD" else 0, length, rowid) for rowid, (cls, length) in airport_data.items()]
+    updates = [(1 if cls == "HARD" else 0, rowid) for rowid, cls in airport_data.items()]
     conn.executemany(
-        "UPDATE APT_BASE SET HARD_SURFACE = ?, MAX_RWY_LEN = ? WHERE rowid = ?",
+        "UPDATE APT_BASE SET HARD_SURFACE = ? WHERE rowid = ?",
         updates,
     )
 
     counts = {}
-    for cls, _ in airport_data.values():
+    for cls in airport_data.values():
         counts[cls] = counts.get(cls, 0) + 1
     print(f"  Surface classification: {counts}")
 
@@ -1423,9 +1423,9 @@ def main():
 
     # Print summary
     print("\nDatabase summary:")
-    tables = ["APT_BASE", "NAV_BASE", "FIX_BASE", "FIX_CHRT", "AWY_SEG",
-              "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END", "RWY_SEG",
-              "CLS_ARSP_BASE", "CLS_ARSP_SHP",
+    tables = ["APT_BASE", "CLS_ARSP", "NAV_BASE", "FIX_BASE", "FIX_CHRT",
+              "AWY_SEG", "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
+              "RWY_SEG", "CLS_ARSP_BASE", "CLS_ARSP_SHP",
               "SUA_BASE", "SUA_SHP", "ARTCC_BASE", "ARTCC_SHP", "OBS_BASE"]
     for table in tables:
         count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]

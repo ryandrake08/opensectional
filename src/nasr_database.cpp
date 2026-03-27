@@ -100,12 +100,20 @@ namespace nasrbrowse
             // R-tree overlap query: find points where the stored point
             // (min=max) overlaps with the search box
             prepare(&stmt_airports, R"(
-                SELECT ARPT_ID, ARPT_NAME, SITE_TYPE_CODE, TWR_TYPE_CODE,
-                       OWNERSHIP_TYPE_CODE, FACILITY_USE_CODE, ARPT_STATUS,
-                       ICAO_ID, HARD_SURFACE, LAT_DECIMAL, LONG_DECIMAL,
-                       ELEV, CAST(MAX_RWY_LEN AS INTEGER)
-                FROM APT_BASE
-                WHERE rowid IN (
+                SELECT a.ARPT_ID, a.ARPT_NAME, a.SITE_TYPE_CODE, a.TWR_TYPE_CODE,
+                       a.OWNERSHIP_TYPE_CODE, a.FACILITY_USE_CODE, a.ARPT_STATUS,
+                       a.ICAO_ID, a.HARD_SURFACE, a.LAT_DECIMAL, a.LONG_DECIMAL,
+                       a.ELEV,
+                       CASE
+                           WHEN c.CLASS_B_AIRSPACE = 'Y' THEN 'B'
+                           WHEN c.CLASS_C_AIRSPACE = 'Y' THEN 'C'
+                           WHEN c.CLASS_D_AIRSPACE = 'Y' THEN 'D'
+                           WHEN c.CLASS_E_AIRSPACE = 'Y' THEN 'E'
+                           ELSE ''
+                       END
+                FROM APT_BASE a
+                LEFT JOIN CLS_ARSP c ON c.SITE_NO = a.SITE_NO
+                WHERE a.rowid IN (
                     SELECT id FROM APT_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
@@ -298,7 +306,7 @@ namespace nasrbrowse
                 col_text(s, 4), col_text(s, 5), col_text(s, 6), col_text(s, 7),
                 sqlite3_column_int(s, 8) != 0,
                 col_double(s, 9), col_double(s, 10), col_double(s, 11),
-                sqlite3_column_int(s, 12)};
+                col_text(s, 12)};
         });
     }
 
