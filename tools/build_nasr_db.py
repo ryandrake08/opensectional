@@ -437,7 +437,7 @@ def build_apt_rwy(conn, csv_zf):
     # Add surface classification column to APT_BASE.
     # For each airport, take the hardest surface across all runways
     # (HARD > SOFT > OTHER), plus the max runway length.
-    conn.execute("ALTER TABLE APT_BASE ADD COLUMN HARD_SURFACE TEXT DEFAULT 'OTHER'")
+    conn.execute("ALTER TABLE APT_BASE ADD COLUMN HARD_SURFACE INTEGER DEFAULT 0")
     conn.execute("ALTER TABLE APT_BASE ADD COLUMN MAX_RWY_LEN INTEGER DEFAULT 0")
 
     # Build per-airport surface classification and max runway length
@@ -465,7 +465,7 @@ def build_apt_rwy(conn, csv_zf):
             best_len = max(length, prev_len)
             airport_data[rowid] = (best_class, best_len)
 
-    updates = [(cls, length, rowid) for rowid, (cls, length) in airport_data.items()]
+    updates = [(1 if cls == "HARD" else 0, length, rowid) for rowid, (cls, length) in airport_data.items()]
     conn.executemany(
         "UPDATE APT_BASE SET HARD_SURFACE = ?, MAX_RWY_LEN = ? WHERE rowid = ?",
         updates,

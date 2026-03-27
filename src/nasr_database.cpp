@@ -288,7 +288,7 @@ namespace nasrbrowse
             a.facility_use_code = col_text(d.stmt_airports, 5);
             a.arpt_status = col_text(d.stmt_airports, 6);
             a.icao_id = col_text(d.stmt_airports, 7);
-            a.hard_surface = col_text(d.stmt_airports, 8);
+            a.hard_surface = sqlite3_column_int(d.stmt_airports, 8) != 0;
             a.lat = col_double(d.stmt_airports, 9);
             a.lon = col_double(d.stmt_airports, 10);
             a.elev = col_double(d.stmt_airports, 11);

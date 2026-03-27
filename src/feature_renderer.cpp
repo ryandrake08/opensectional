@@ -94,9 +94,9 @@ namespace nasrbrowse
     // Airport zoom key based on runway classification
     static const char* airport_zoom_key(const airport& apt)
     {
-        if(apt.hard_surface == "HARD" && apt.max_rwy_len > 8069)
+        if(apt.hard_surface && apt.max_rwy_len > 8069)
             return "airport_hard_long";
-        if(apt.hard_surface == "HARD")
+        if(apt.hard_surface)
             return "airport_hard_short";
         return "airport_other";
     }
@@ -411,7 +411,7 @@ namespace nasrbrowse
                 else if(mil)                        draw_letter = draw_M;
                 else if(pvt)                        draw_letter = draw_R;
 
-                if(apt.hard_surface == "HARD")
+                if(apt.hard_surface)
                 {
                     // Filled colored circle + white letter (if any)
                     float geom_r = symbol_r * 0.5F;

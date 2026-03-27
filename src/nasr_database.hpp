@@ -15,7 +15,7 @@ namespace nasrbrowse
         std::string facility_use_code; // "PU"=public use, "PR"=private use
         std::string arpt_status;       // "O"=operational, "CI"=closed indef, "CP"=closed perm
         std::string icao_id;
-        std::string hard_surface;      // "HARD", "SOFT", or "OTHER"
+        bool hard_surface;
         double lat;
         double lon;
         double elev;
