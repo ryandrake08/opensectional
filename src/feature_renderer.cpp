@@ -268,6 +268,49 @@ namespace nasrbrowse
             pd.styles.push_back(ls);
         }
 
+        // Vector letter segment data: pairs of (x,y) endpoints in normalized coords.
+        // x is scaled by w (half-width), y is scaled by h (half-height) and
+        // offset from center. Midline is at y=0.1.
+        struct letter_def
+        {
+            const float* segs;
+            int count;  // number of segments (pairs of xy pairs)
+        };
+
+        // clang-format off
+        static constexpr float segs_H[] = {-1,-1, -1,1,  1,-1, 1,1,  -1,.1f, 1,.1f};
+        static constexpr float segs_F[] = {-1,-1, -1,1,  -1,1, 1,1,  -1,.1f, .6f,.1f};
+        static constexpr float segs_G[] = {1,1, -1,1,  -1,1, -1,-1,  -1,-1, 1,-1,  1,-1, 1,.1f,  1,.1f, 0,.1f};
+        static constexpr float segs_S[] = {1,1, -1,1,  -1,1, -1,.1f,  -1,.1f, 1,.1f,  1,.1f, 1,-1,  1,-1, -1,-1};
+        static constexpr float segs_B[] = {-1,-1, -1,1,  -1,1, 1,1,  1,1, 1,.1f,  1,.1f, -1,.1f,  -1,-1, 1,-1,  1,-1, 1,.1f};
+        static constexpr float segs_X[] = {-1,-1, 1,1,  -1,1, 1,-1};
+        static constexpr float segs_M[] = {-1,-1, -1,1,  -1,1, 0,.1f,  0,.1f, 1,1,  1,1, 1,-1};
+        static constexpr float segs_R[] = {-1,-1, -1,1,  -1,1, 1,1,  1,1, 1,.1f,  1,.1f, -1,.1f,  0,.1f, 1,-1};
+        // clang-format on
+
+        static constexpr letter_def letter_H = {segs_H, 3};
+        static constexpr letter_def letter_F = {segs_F, 3};
+        static constexpr letter_def letter_G = {segs_G, 5};
+        static constexpr letter_def letter_S = {segs_S, 5};
+        static constexpr letter_def letter_B = {segs_B, 6};
+        static constexpr letter_def letter_X = {segs_X, 2};
+        static constexpr letter_def letter_M = {segs_M, 4};
+        static constexpr letter_def letter_R = {segs_R, 5};
+
+        void draw_letter(polyline_data& pd, const letter_def& ld,
+                         float cx, float cy, float w, float h,
+                         const line_style& ls)
+        {
+            for(int i = 0; i < ld.count; i++)
+            {
+                float x0 = cx + ld.segs[i * 4 + 0] * w;
+                float y0 = cy + ld.segs[i * 4 + 1] * h;
+                float x1 = cx + ld.segs[i * 4 + 2] * w;
+                float y1 = cy + ld.segs[i * 4 + 3] * h;
+                add_seg_to(pd, x0, y0, x1, y1, ls);
+            }
+        }
+
         bool is_military(const airport& apt)
         {
             return apt.ownership_type_code == "MA" ||
@@ -325,80 +368,17 @@ namespace nasrbrowse
                 bool mil = is_military(apt);
                 float h = ring_geom_r * 0.55F * 0.7F;
                 line_style white_ls = {4.0F, 0, 0, 0, 1.0F, 1.0F, 1.0F, 1.0F};
-
-                // Letter drawing lambdas (all drawn in white at center)
-                // Blocky vector letters on a grid:
-                // w = half-width, h = half-height, m = middle y
                 float w = h * 0.7F;
-                float m = cy + h * 0.1F;  // midline slightly above center
 
-                auto draw_H = [&]()
-                {
-                    add_seg_to(pd, cx - w, cy - h, cx - w, cy + h, white_ls);
-                    add_seg_to(pd, cx + w, cy - h, cx + w, cy + h, white_ls);
-                    add_seg_to(pd, cx - w, m, cx + w, m, white_ls);
-                };
-                auto draw_F = [&]()
-                {
-                    add_seg_to(pd, cx - w, cy - h, cx - w, cy + h, white_ls);
-                    add_seg_to(pd, cx - w, cy + h, cx + w, cy + h, white_ls);
-                    add_seg_to(pd, cx - w, m, cx + w * 0.6F, m, white_ls);
-                };
-                auto draw_G = [&]()
-                {
-                    add_seg_to(pd, cx + w, cy + h, cx - w, cy + h, white_ls);
-                    add_seg_to(pd, cx - w, cy + h, cx - w, cy - h, white_ls);
-                    add_seg_to(pd, cx - w, cy - h, cx + w, cy - h, white_ls);
-                    add_seg_to(pd, cx + w, cy - h, cx + w, m, white_ls);
-                    add_seg_to(pd, cx + w, m, cx, m, white_ls);
-                };
-                auto draw_S = [&]()
-                {
-                    add_seg_to(pd, cx + w, cy + h, cx - w, cy + h, white_ls);
-                    add_seg_to(pd, cx - w, cy + h, cx - w, m, white_ls);
-                    add_seg_to(pd, cx - w, m, cx + w, m, white_ls);
-                    add_seg_to(pd, cx + w, m, cx + w, cy - h, white_ls);
-                    add_seg_to(pd, cx + w, cy - h, cx - w, cy - h, white_ls);
-                };
-                auto draw_B = [&]()
-                {
-                    add_seg_to(pd, cx - w, cy - h, cx - w, cy + h, white_ls);
-                    add_seg_to(pd, cx - w, cy + h, cx + w, cy + h, white_ls);
-                    add_seg_to(pd, cx + w, cy + h, cx + w, m, white_ls);
-                    add_seg_to(pd, cx + w, m, cx - w, m, white_ls);
-                    add_seg_to(pd, cx - w, cy - h, cx + w, cy - h, white_ls);
-                    add_seg_to(pd, cx + w, cy - h, cx + w, m, white_ls);
-                };
-                auto draw_X = [&]()
-                {
-                    add_seg_to(pd, cx - w, cy - h, cx + w, cy + h, white_ls);
-                    add_seg_to(pd, cx - w, cy + h, cx + w, cy - h, white_ls);
-                };
-                auto draw_M = [&]()
-                {
-                    add_seg_to(pd, cx - w, cy - h, cx - w, cy + h, white_ls);
-                    add_seg_to(pd, cx - w, cy + h, cx, m, white_ls);
-                    add_seg_to(pd, cx, m, cx + w, cy + h, white_ls);
-                    add_seg_to(pd, cx + w, cy + h, cx + w, cy - h, white_ls);
-                };
-                auto draw_R = [&]()
-                {
-                    add_seg_to(pd, cx - w, cy - h, cx - w, cy + h, white_ls);
-                    add_seg_to(pd, cx - w, cy + h, cx + w, cy + h, white_ls);
-                    add_seg_to(pd, cx + w, cy + h, cx + w, m, white_ls);
-                    add_seg_to(pd, cx + w, m, cx - w, m, white_ls);
-                    add_seg_to(pd, cx, m, cx + w, cy - h, white_ls);
-                };
-
-                std::function<void()> draw_letter;
-                if(closed)                          draw_letter = draw_X;
-                else if(apt.site_type_code == "H")  draw_letter = draw_H;
-                else if(apt.site_type_code == "C")  draw_letter = draw_S;
-                else if(apt.site_type_code == "U")  draw_letter = draw_F;
-                else if(apt.site_type_code == "G")  draw_letter = draw_G;
-                else if(apt.site_type_code == "B")  draw_letter = draw_B;
-                else if(mil)                        draw_letter = draw_M;
-                else if(pvt)                        draw_letter = draw_R;
+                const letter_def* letter = nullptr;
+                if(closed)                          letter = &letter_X;
+                else if(apt.site_type_code == "H")  letter = &letter_H;
+                else if(apt.site_type_code == "C")  letter = &letter_S;
+                else if(apt.site_type_code == "U")  letter = &letter_F;
+                else if(apt.site_type_code == "G")  letter = &letter_G;
+                else if(apt.site_type_code == "B")  letter = &letter_B;
+                else if(mil)                        letter = &letter_M;
+                else if(pvt)                        letter = &letter_R;
 
                 if(apt.hard_surface)
                 {
@@ -407,9 +387,9 @@ namespace nasrbrowse
                     float fill_px = symbol_r * pixels_per_world;
                     line_style fill_ls = {fill_px, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a};
                     add_circle_to(pd, cx, cy, geom_r, fill_ls);
-                    if(draw_letter) draw_letter();
+                    if(letter) draw_letter(pd, *letter, cx, cy, w, h, white_ls);
                 }
-                else if(draw_letter)
+                else if(letter)
                 {
                     // Soft surface with letter: colored ring + black fill + white letter
                     add_circle_to(pd, cx, cy, ring_geom_r, ring_ls);
@@ -418,7 +398,7 @@ namespace nasrbrowse
                     float inner_fill_px = inner_r * pixels_per_world;
                     line_style black_fill = {inner_fill_px, 0, 0, 0, 0.0F, 0.0F, 0.0F, 1.0F};
                     add_circle_to(pd, cx, cy, fill_geom_r, black_fill);
-                    draw_letter();
+                    draw_letter(pd, *letter, cx, cy, w, h, white_ls);
                 }
                 else
                 {
