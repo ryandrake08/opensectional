@@ -792,6 +792,33 @@ namespace nasrbrowse
             }
         }
 
+        // Convert a ring of airspace_points to world coords, close it, and append to output
+        void append_polygon_ring(polyline_data& output,
+                                 const std::vector<airspace_point>& points,
+                                 const line_style& ls)
+        {
+            if(points.size() < 2)
+            {
+                return;
+            }
+
+            std::vector<glm::vec2> polyline;
+            polyline.reserve(points.size() + 1);
+            for(const auto& pt : points)
+            {
+                polyline.emplace_back(
+                    static_cast<float>(lon_to_mx(pt.lon)),
+                    static_cast<float>(lat_to_my(pt.lat)));
+            }
+            if(polyline.size() > 2 && polyline.front() != polyline.back())
+            {
+                polyline.push_back(polyline.front());
+            }
+
+            output.polylines.push_back(std::move(polyline));
+            output.styles.push_back(ls);
+        }
+
         void build_sua_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max, double z)
         {
@@ -800,36 +827,12 @@ namespace nasrbrowse
             for(const auto& s : suas)
             {
                 const char* key = sua_key(s.sua_type);
-
-                if(!styles.visible(key, z))
-                {
-                    continue;
-                }
-
-                const auto& fs = styles.get(key);
+                if(!styles.visible(key, z)) continue;
+                auto ls = to_line_style(styles.get(key));
 
                 for(const auto& ring : s.parts)
                 {
-                    if(ring.points.size() < 2)
-                    {
-                        continue;
-                    }
-
-                    std::vector<glm::vec2> polyline;
-                    polyline.reserve(ring.points.size() + 1);
-                    for(const auto& pt : ring.points)
-                    {
-                        polyline.emplace_back(
-                            static_cast<float>(lon_to_mx(pt.lon)),
-                            static_cast<float>(lat_to_my(pt.lat)));
-                    }
-                    if(polyline.size() > 2 && polyline.front() != polyline.back())
-                    {
-                        polyline.push_back(polyline.front());
-                    }
-
-                    sua_poly.polylines.push_back(std::move(polyline));
-                    sua_poly.styles.push_back(to_line_style(fs));
+                    append_polygon_ring(sua_poly, ring.points, ls);
                 }
             }
         }
@@ -845,33 +848,10 @@ namespace nasrbrowse
                 if(a.altitude == "HIGH") key = "artcc_high";
                 else if(a.altitude == "UNLIMITED") key = "artcc_oceanic";
 
-                if(!styles.visible(key, z))
-                {
-                    continue;
-                }
+                if(!styles.visible(key, z)) continue;
+                auto ls = to_line_style(styles.get(key));
 
-                const auto& fs = styles.get(key);
-
-                if(a.points.size() < 2)
-                {
-                    continue;
-                }
-
-                std::vector<glm::vec2> polyline;
-                polyline.reserve(a.points.size() + 1);
-                for(const auto& pt : a.points)
-                {
-                    polyline.emplace_back(
-                        static_cast<float>(lon_to_mx(pt.lon)),
-                        static_cast<float>(lat_to_my(pt.lat)));
-                }
-                if(polyline.size() > 2 && polyline.front() != polyline.back())
-                {
-                    polyline.push_back(polyline.front());
-                }
-
-                artcc_poly.polylines.push_back(std::move(polyline));
-                artcc_poly.styles.push_back(to_line_style(fs));
+                append_polygon_ring(artcc_poly, a.points, ls);
             }
         }
 
@@ -906,36 +886,12 @@ namespace nasrbrowse
             for(const auto& arsp : airspaces)
             {
                 const char* key = airspace_key(arsp.airspace_class, arsp.local_type);
-
-                if(!styles.visible(key, z))
-                {
-                    continue;
-                }
-
-                const auto& fs = styles.get(key);
+                if(!styles.visible(key, z)) continue;
+                auto ls = to_line_style(styles.get(key));
 
                 for(const auto& ring : arsp.parts)
                 {
-                    if(ring.points.size() < 2)
-                    {
-                        continue;
-                    }
-
-                    std::vector<glm::vec2> polyline;
-                    polyline.reserve(ring.points.size() + 1);
-                    for(const auto& pt : ring.points)
-                    {
-                        polyline.emplace_back(
-                            static_cast<float>(lon_to_mx(pt.lon)),
-                            static_cast<float>(lat_to_my(pt.lat)));
-                    }
-                    if(polyline.size() > 2 && polyline.front() != polyline.back())
-                    {
-                        polyline.push_back(polyline.front());
-                    }
-
-                    airspace_poly.polylines.push_back(std::move(polyline));
-                    airspace_poly.styles.push_back(to_line_style(fs));
+                    append_polygon_ring(airspace_poly, ring.points, ls);
                 }
             }
         }
