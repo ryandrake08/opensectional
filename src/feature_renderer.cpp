@@ -597,64 +597,102 @@ namespace nasrbrowse
             pd.styles.push_back(ls);
         }
 
-        // Add a diamond as an SDF polyline
-        void add_diamond_polyline(polyline_data& pd,
-                                   float cx, float cy, float r, const line_style& ls)
+        // Add a four-pointed waypoint star with concave arc edges and inner circle
+        void add_waypoint_star_polyline(polyline_data& pd,
+                                         float cx, float cy, float r, const line_style& ls)
         {
-            pd.polylines.push_back({
-                {cx + r, cy}, {cx, cy + r}, {cx - r, cy}, {cx, cy - r}, {cx + r, cy},
-            });
+            constexpr int ARC_SEGS = 3;
+            constexpr float PI = 3.14159265F;
+            constexpr float SQRT2_M1 = 0.41421356F;  // sqrt(2) - 1
+
+            // Star points at cardinal directions: right, up, left, down
+            // Between adjacent points, draw a concave arc centered at the diagonal
+            // Arc centers: (R,R), (-R,R), (-R,-R), (R,-R) relative to symbol center
+            // Each arc subtends 90 degrees
+            struct arc_def { float acx, acy; float start_angle; };
+            const arc_def arcs[4] = {
+                { r,  r, -PI / 2},   // right→up,   center at (+R,+R), start -90°
+                {-r,  r,  0},        // up→left,     center at (-R,+R), start 0°
+                {-r, -r,  PI / 2},   // left→down,   center at (-R,-R), start 90°
+                { r, -r,  PI},       // down→right,  center at (+R,-R), start 180°
+            };
+
+            std::vector<glm::vec2> star_pts;
+            for(int q = 0; q < 4; q++)
+            {
+                float acx_off = arcs[q].acx;
+                float acy_off = arcs[q].acy;
+                float a0 = arcs[q].start_angle;
+                for(int i = 0; i <= ARC_SEGS; i++)
+                {
+                    float t = static_cast<float>(i) / ARC_SEGS;
+                    float angle = a0 - t * (PI / 2);
+                    float px = cx + acx_off + r * std::cos(angle);
+                    float py = cy + acy_off + r * std::sin(angle);
+                    star_pts.push_back({px, py});
+                }
+            }
+            star_pts.push_back(star_pts[0]);
+            pd.polylines.push_back(std::move(star_pts));
+            pd.styles.push_back(ls);
+
+            // Inner circle at radius where arcs reach their midpoint
+            constexpr int CIRCLE_SEGS = 8;
+            float cr = r * SQRT2_M1;
+            std::vector<glm::vec2> circle_pts;
+            for(int i = 0; i <= CIRCLE_SEGS; i++)
+            {
+                float angle = 2 * PI * static_cast<float>(i) / CIRCLE_SEGS;
+                circle_pts.push_back({cx + cr * std::cos(angle), cy + cr * std::sin(angle)});
+            }
+            pd.polylines.push_back(std::move(circle_pts));
             pd.styles.push_back(ls);
         }
 
-        static const char* fix_key(const std::string& use_code)
+        static const char* fix_color_key(const std::string& use_code)
         {
             if(use_code == "RP") return "fix_rp";
             if(use_code == "VFR") return "fix_vfr";
+            if(use_code == "CN") return "fix_cn";
+            if(use_code == "MR") return "fix_mr";
+            if(use_code == "MW") return "fix_mw";
+            if(use_code == "NRS") return "fix_nrs";
             return "fix_wp";
+        }
+
+        const char* fix_zoom_key(const std::string& fix_id) const
+        {
+            if(airway_waypoints.find(fix_id) != airway_waypoints.end())
+                return "fix_airway";
+            return "fix_noairway";
         }
 
         void build_fix_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max, double z)
         {
-            constexpr float FIX_VFR_DIAMOND = 1.5F;  // VFR fix diamond scale relative to base
-
             const auto& fixes = db.query_fixes(lon_min, lat_min, lon_max, lat_max);
             float radius = static_cast<float>(half_extent_y * SYMBOL_RADIUS_FIX);
 
             for(const auto& fix : fixes)
             {
-                const char* key = fix_key(fix.use_code);
-
-                if(!styles.visible(key, z))
+                if(!styles.visible(fix_zoom_key(fix.fix_id), z))
                 {
                     continue;
                 }
 
-                // WP and RP fixes only shown if on a visible airway
-                if(fix.use_code != "VFR" &&
-                   airway_waypoints.find(fix.fix_id) == airway_waypoints.end())
-                {
-                    continue;
-                }
-
-                const auto& fs = styles.get(key);
+                const auto& fs = styles.get(fix_color_key(fix.use_code));
                 line_style ls = to_line_style(fs);
 
                 float cx = static_cast<float>(lon_to_mx(fix.lon));
                 float cy = static_cast<float>(lat_to_my(fix.lat));
 
-                if(fix.use_code == "VFR")
-                {
-                    add_diamond_polyline(poly[layer_fixes], cx, cy, radius * FIX_VFR_DIAMOND, ls);
-                }
-                else if(fix.use_code == "RP")
+                if(fix.use_code == "RP" || fix.use_code == "MR")
                 {
                     add_triangle_polyline(poly[layer_fixes], cx, cy, radius, ls);
                 }
                 else
                 {
-                    add_triangle_polyline(poly[layer_fixes], cx, cy, -radius, ls);
+                    add_waypoint_star_polyline(poly[layer_fixes], cx, cy, radius, ls);
                 }
             }
         }

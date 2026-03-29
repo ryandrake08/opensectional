@@ -134,7 +134,7 @@ namespace nasrbrowse
             prepare(&stmt_fixes, R"(
                 SELECT FIX_ID, FIX_USE_CODE, LAT_DECIMAL, LONG_DECIMAL
                 FROM FIX_BASE
-                WHERE FIX_USE_CODE IN ('WP', 'RP', 'VFR')
+                WHERE FIX_USE_CODE IN ('WP', 'RP', 'VFR', 'CN', 'MR', 'MW', 'NRS')
                 AND rowid IN (
                     SELECT id FROM FIX_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
