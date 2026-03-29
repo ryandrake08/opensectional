@@ -230,6 +230,7 @@ namespace nasrbrowse
             build_airport_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_navaid_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_airway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_mtr_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_sua_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_artcc_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_obstacle_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
@@ -769,6 +770,30 @@ namespace nasrbrowse
 
                 poly[layer_airways].polylines.push_back({glm::vec2(x0, y0), glm::vec2(x1, y1)});
                 poly[layer_airways].styles.push_back(to_line_style(fs));
+            }
+        }
+
+        void build_mtr_polylines(double lon_min, double lat_min,
+                                  double lon_max, double lat_max, double z)
+        {
+            const char* key = "mtr";
+            if(!styles.visible(key, z))
+            {
+                return;
+            }
+
+            const auto& mtrs = db.query_mtrs(lon_min, lat_min, lon_max, lat_max);
+            const auto& fs = styles.get(key);
+
+            for(const auto& seg : mtrs)
+            {
+                float x0 = static_cast<float>(lon_to_mx(seg.from_lon));
+                float y0 = static_cast<float>(lat_to_my(seg.from_lat));
+                float x1 = static_cast<float>(lon_to_mx(seg.to_lon));
+                float y1 = static_cast<float>(lat_to_my(seg.to_lat));
+
+                poly[layer_mtrs].polylines.push_back({glm::vec2(x0, y0), glm::vec2(x1, y1)});
+                poly[layer_mtrs].styles.push_back(to_line_style(fs));
             }
         }
 

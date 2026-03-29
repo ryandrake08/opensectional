@@ -49,6 +49,7 @@ namespace nasrbrowse
         "airport_class_e", "airport_other",
         "airport_towered", "airport_untowered",
         "navaid_vor", "navaid_ndb",
+        "mtr",
         "fix_airway", "fix_noairway",
         "fix_wp", "fix_rp", "fix_vfr", "fix_cn", "fix_mr", "fix_mw", "fix_nrs",
         "obstacle_1000ft", "obstacle_200ft", "obstacle_low",

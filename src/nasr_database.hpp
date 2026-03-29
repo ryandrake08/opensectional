@@ -151,6 +151,8 @@ namespace nasrbrowse
                                             double lon_max, double lat_max);
         const std::vector<airway_segment>& query_airways(double lon_min, double lat_min,
                                                          double lon_max, double lat_max);
+        const std::vector<airway_segment>& query_mtrs(double lon_min, double lat_min,
+                                                       double lon_max, double lat_max);
         const std::vector<airspace>& query_airspaces(double lon_min, double lat_min,
                                                      double lon_max, double lat_max);
         const std::vector<class_airspace>& query_class_airspace(double lon_min, double lat_min,

@@ -370,6 +370,62 @@ def build_awy(conn, csv_zf):
     """)
 
 
+def build_mtr(conn, csv_zf):
+    """Import military training routes and build segment table.
+
+    MTR_PT contains route points with coordinates. We build segments
+    from consecutive points within each route.
+    """
+    import_csv(conn, "MTR_PT", csv_zf, "MTR_PT.csv", [
+        "ROUTE_TYPE_CODE", "ROUTE_ID", "ROUTE_PT_SEQ",
+        "ROUTE_PT_ID", "NEXT_ROUTE_PT_ID",
+        "LAT_DECIMAL", "LONG_DECIMAL",
+        "NAV_ID",
+    ])
+
+    # Build segments by joining each point to the next point in sequence
+    conn.execute("""
+        CREATE TABLE MTR_SEG AS
+        SELECT
+            p1.ROUTE_TYPE_CODE || p1.ROUTE_ID AS MTR_ID,
+            COALESCE(NULLIF(p1.NAV_ID, ''), p1.ROUTE_PT_ID) AS FROM_POINT,
+            COALESCE(NULLIF(p2.NAV_ID, ''), p2.ROUTE_PT_ID) AS TO_POINT,
+            CAST(p1.LAT_DECIMAL AS REAL) AS FROM_LAT,
+            CAST(p1.LONG_DECIMAL AS REAL) AS FROM_LON,
+            CAST(p2.LAT_DECIMAL AS REAL) AS TO_LAT,
+            CAST(p2.LONG_DECIMAL AS REAL) AS TO_LON
+        FROM MTR_PT p1
+        JOIN MTR_PT p2
+            ON p2.ROUTE_TYPE_CODE = p1.ROUTE_TYPE_CODE
+            AND p2.ROUTE_ID = p1.ROUTE_ID
+            AND p2.ROUTE_PT_ID = p1.NEXT_ROUTE_PT_ID
+        WHERE p1.LAT_DECIMAL IS NOT NULL AND p1.LAT_DECIMAL != ''
+          AND p1.LONG_DECIMAL IS NOT NULL AND p1.LONG_DECIMAL != ''
+          AND p2.LAT_DECIMAL IS NOT NULL AND p2.LAT_DECIMAL != ''
+          AND p2.LONG_DECIMAL IS NOT NULL AND p2.LONG_DECIMAL != ''
+    """)
+
+    # Drop the raw points table
+    conn.execute("DROP TABLE MTR_PT")
+
+    count = conn.execute("SELECT COUNT(*) FROM MTR_SEG").fetchone()[0]
+    print(f"  MTR_SEG: {count} segments")
+
+    # R-tree on segment bounding boxes
+    conn.execute("""
+        CREATE VIRTUAL TABLE MTR_SEG_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO MTR_SEG_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT rowid,
+               MIN(FROM_LON, TO_LON), MAX(FROM_LON, TO_LON),
+               MIN(FROM_LAT, TO_LAT), MAX(FROM_LAT, TO_LAT)
+        FROM MTR_SEG
+    """)
+
+
 def build_maa(conn, csv_zf):
     """Import MOA/SUA data with polygon shapes."""
     import_csv(conn, "MAA_BASE", csv_zf, "MAA_BASE.csv", [
@@ -1398,6 +1454,9 @@ def main():
         print("Importing airways...")
         build_awy(conn, csv_zf)
 
+        print("Importing military training routes...")
+        build_mtr(conn, csv_zf)
+
         print("Importing MOA/SUA...")
         build_maa(conn, csv_zf)
 
@@ -1424,7 +1483,7 @@ def main():
     # Print summary
     print("\nDatabase summary:")
     tables = ["APT_BASE", "CLS_ARSP", "NAV_BASE", "FIX_BASE", "FIX_CHRT",
-              "AWY_SEG", "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
+              "AWY_SEG", "MTR_SEG", "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
               "RWY_SEG", "CLS_ARSP_BASE", "CLS_ARSP_SHP",
               "SUA_BASE", "SUA_SHP", "ARTCC_BASE", "ARTCC_SHP", "OBS_BASE"]
     for table in tables:

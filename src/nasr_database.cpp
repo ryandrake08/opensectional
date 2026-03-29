@@ -25,6 +25,7 @@ namespace nasrbrowse
         sqlite3_stmt* stmt_navaids;
         sqlite3_stmt* stmt_fixes;
         sqlite3_stmt* stmt_airways;
+        sqlite3_stmt* stmt_mtrs;
         sqlite3_stmt* stmt_airspaces;
         sqlite3_stmt* stmt_airspace_shape;
         sqlite3_stmt* stmt_cls_arsp;
@@ -40,6 +41,7 @@ namespace nasrbrowse
         std::vector<navaid> navaids;
         std::vector<fix> fixes;
         std::vector<airway_segment> airways;
+        std::vector<airway_segment> mtrs;
         std::vector<airspace> airspaces;
         std::vector<class_airspace> class_airspaces;
         std::vector<runway> runways;
@@ -53,6 +55,7 @@ namespace nasrbrowse
             , stmt_navaids(nullptr)
             , stmt_fixes(nullptr)
             , stmt_airways(nullptr)
+            , stmt_mtrs(nullptr)
             , stmt_airspaces(nullptr)
             , stmt_airspace_shape(nullptr)
             , stmt_cls_arsp(nullptr)
@@ -82,6 +85,7 @@ namespace nasrbrowse
             sqlite3_finalize(stmt_navaids);
             sqlite3_finalize(stmt_fixes);
             sqlite3_finalize(stmt_airways);
+            sqlite3_finalize(stmt_mtrs);
             sqlite3_finalize(stmt_airspaces);
             sqlite3_finalize(stmt_airspace_shape);
             sqlite3_finalize(stmt_cls_arsp);
@@ -149,6 +153,17 @@ namespace nasrbrowse
                 WHERE AWY_SEG_GAP_FLAG != 'Y'
                 AND rowid IN (
                     SELECT id FROM AWY_SEG_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+            )");
+
+            prepare(&stmt_mtrs, R"(
+                SELECT MTR_ID, FROM_POINT, TO_POINT,
+                       FROM_LAT, FROM_LON, TO_LAT, TO_LON
+                FROM MTR_SEG
+                WHERE rowid IN (
+                    SELECT id FROM MTR_SEG_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
@@ -339,6 +354,20 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.airways, d.stmt_airways,
+            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+        {
+            return airway_segment{
+                col_text(s, 0), col_text(s, 1), col_text(s, 2),
+                col_double(s, 3), col_double(s, 4),
+                col_double(s, 5), col_double(s, 6)};
+        });
+    }
+
+    const std::vector<airway_segment>& nasr_database::query_mtrs(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        return d.query_bbox(d.mtrs, d.stmt_mtrs,
             lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
         {
             return airway_segment{
