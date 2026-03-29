@@ -204,7 +204,7 @@ def main():
     # Print summary
     print(f"\nAll data downloaded to {output_dir}/")
     print("\nTo build the database, run:")
-    print(f"  python3 tools/build_nasr_db.py {csv_path} {shp_path} {aixm_path} {dof_path} nasr.db")
+    print(f"  python3 tools/build_nasr_db.py {csv_path} {shp_path} {aixm_path} {dof_path} {adiz_path} nasr.db")
 
 
 if __name__ == "__main__":

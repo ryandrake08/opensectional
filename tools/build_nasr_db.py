@@ -15,6 +15,7 @@ Example:
 
 import csv
 import io
+import json
 import math
 import os
 import re
@@ -1228,6 +1229,80 @@ def build_obstacles(conn, dof_zf):
     """)
 
 
+def build_adiz(conn, geojson_path):
+    """Import ADIZ boundaries from ArcGIS GeoJSON."""
+    with open(geojson_path) as f:
+        data = json.load(f)
+
+    conn.execute("DROP TABLE IF EXISTS ADIZ_BASE")
+    conn.execute("""
+        CREATE TABLE ADIZ_BASE (
+            ADIZ_ID INTEGER PRIMARY KEY,
+            NAME TEXT
+        )
+    """)
+
+    conn.execute("DROP TABLE IF EXISTS ADIZ_SHP")
+    conn.execute("""
+        CREATE TABLE ADIZ_SHP (
+            ADIZ_ID INTEGER,
+            PART_NUM INTEGER,
+            POINT_SEQ INTEGER,
+            LON_DECIMAL REAL,
+            LAT_DECIMAL REAL
+        )
+    """)
+
+    adiz_id = 0
+    for feature in data.get("features", []):
+        props = feature.get("properties", {})
+        name = props.get("NAME_TXT", "")
+        geom = feature.get("geometry", {})
+        geom_type = geom.get("type", "")
+        coords = geom.get("coordinates", [])
+
+        # Normalize to list of polygons (each polygon is a list of rings)
+        if geom_type == "Polygon":
+            polygons = [coords]
+        elif geom_type == "MultiPolygon":
+            polygons = coords
+        else:
+            continue
+
+        adiz_id += 1
+        conn.execute("INSERT INTO ADIZ_BASE VALUES (?, ?)", (adiz_id, name))
+
+        part_num = 0
+        for polygon in polygons:
+            for ring in polygon:
+                for seq, point in enumerate(ring):
+                    lon, lat = point[0], point[1]
+                    conn.execute(
+                        "INSERT INTO ADIZ_SHP VALUES (?, ?, ?, ?, ?)",
+                        (adiz_id, part_num, seq, lon, lat))
+                part_num += 1
+
+    count = conn.execute("SELECT COUNT(*) FROM ADIZ_BASE").fetchone()[0]
+    shp_count = conn.execute("SELECT COUNT(*) FROM ADIZ_SHP").fetchone()[0]
+    print(f"  ADIZ_BASE: {count} zones, ADIZ_SHP: {shp_count} points")
+
+    conn.execute("""
+        CREATE VIRTUAL TABLE ADIZ_BASE_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO ADIZ_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT ADIZ_ID,
+               MIN(LON_DECIMAL), MAX(LON_DECIMAL),
+               MIN(LAT_DECIMAL), MAX(LAT_DECIMAL)
+        FROM ADIZ_SHP
+        GROUP BY ADIZ_ID
+    """)
+
+    conn.execute("CREATE INDEX idx_adiz_shp ON ADIZ_SHP(ADIZ_ID)")
+
+
 def build_cls_arsp(conn, shp_zf):
     """Import class airspace polygons from ESRI shapefile."""
     shp_name = next((n for n in shp_zf.namelist() if n.endswith('.shp')), None)
@@ -1417,17 +1492,18 @@ def build_artcc(conn, csv_zf):
 
 
 def main():
-    if len(sys.argv) != 6:
-        print(f"Usage: {sys.argv[0]} <csv.zip> <shapefile.zip> <aixm.zip> <dof.zip> <output.db>")
+    if len(sys.argv) != 7:
+        print(f"Usage: {sys.argv[0]} <csv.zip> <shapefile.zip> <aixm.zip> <dof.zip> <adiz.geojson> <output.db>")
         sys.exit(1)
 
     csv_zip_path = sys.argv[1]
     shp_zip_path = sys.argv[2]
     aixm_zip_path = sys.argv[3]
     dof_zip_path = sys.argv[4]
-    db_path = sys.argv[5]
+    adiz_path = sys.argv[5]
+    db_path = sys.argv[6]
 
-    for path in (csv_zip_path, shp_zip_path, aixm_zip_path, dof_zip_path):
+    for path in (csv_zip_path, shp_zip_path, aixm_zip_path, dof_zip_path, adiz_path):
         if not os.path.isfile(path):
             print(f"Error: {path} not found")
             sys.exit(1)
@@ -1478,6 +1554,9 @@ def main():
     with zipfile.ZipFile(dof_zip_path) as dof_zf:
         build_obstacles(conn, dof_zf)
 
+    print("Importing ADIZ boundaries...")
+    build_adiz(conn, adiz_path)
+
     conn.commit()
 
     # Print summary
@@ -1485,7 +1564,8 @@ def main():
     tables = ["APT_BASE", "CLS_ARSP", "NAV_BASE", "FIX_BASE", "FIX_CHRT",
               "AWY_SEG", "MTR_SEG", "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
               "RWY_SEG", "CLS_ARSP_BASE", "CLS_ARSP_SHP",
-              "SUA_BASE", "SUA_SHP", "ARTCC_BASE", "ARTCC_SHP", "OBS_BASE"]
+              "SUA_BASE", "SUA_SHP", "ARTCC_BASE", "ARTCC_SHP", "OBS_BASE",
+              "ADIZ_BASE", "ADIZ_SHP"]
     for table in tables:
         count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         print(f"  {table}: {count} rows")

@@ -21,7 +21,7 @@ env/bin/python3 tools/download_nasr_data.py nasr_data
 
 # 5. Build the NASR database (use the command printed by the download script)
 
-# 5. Run (requires pre-built XYZ tile directory)
+# 6. Run (requires pre-built XYZ tile directory)
 ./build/nasrbrowse <tile_path> nasr.db
 ```
 
@@ -104,10 +104,12 @@ The download script fetches data from the FAA NASR subscription page, the Digita
 | NAV_BASE | 1,649 navaids (VOR, NDB, DME, etc.) |
 | FIX_BASE | 69,983 fixes/intersections |
 | AWY_SEG | 17,616 airway segments with resolved coordinates |
+| MTR_SEG | 5,366 military training route segments |
 | MAA_BASE/SHP | 174 MOA/SUA records with polygon shapes |
 | APT_RWY/RWY_END | 23,431 runways with endpoint coordinates |
 | CLS_ARSP_BASE/SHP | 5,608 class airspace polygons (B/C/D/E) |
 | SUA_BASE/SHP | 1,234 special use airspace polygons (MOA/RA/WA/AA/PA/NSA) |
+| ADIZ_BASE/SHP | 19 Air Defense Identification Zone boundaries |
 | OBS_BASE | ~628,000 obstacles (towers, poles, buildings) with AGL/AMSL heights |
 
 All spatial tables have R-tree indexes for efficient bounding-box queries.
@@ -132,9 +134,9 @@ tiles/
 | W/A/S/D | Pan (keyboard) |
 | R/F | Zoom in/out (keyboard) |
 
-Layer visibility (basemap, airports, runways, navaids, fixes, airways,
-airspace, SUA, obstacles) is controlled via checkbox panel in the top-right
-corner.
+Layer visibility (basemap, airports, runways, navaids, fixes, airways, MTRs,
+airspace, SUA, ADIZ, ARTCC, obstacles) is controlled via checkbox panel in the
+top-right corner.
 
 ## Project Structure
 
@@ -153,7 +155,8 @@ sdl/                    SDL3 GPU API wrapper library
 shaders/                HLSL shaders (cross-compiled to Metal/SPIR-V)
 thirdparty/             Vendored dependencies (GLM, Dear ImGui)
 tools/
-  build_nasr_db.py      NASR database builder (reads FAA ZIP files)
+  download_nasr_data.py FAA data downloader (NASR, DOF, ADIZ)
+  build_nasr_db.py      Database builder (reads downloaded data files)
   test_nasr_queries.py  Database query correctness and performance tests
 ```
 

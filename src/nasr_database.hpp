@@ -101,6 +101,13 @@ namespace nasrbrowse
         std::vector<sua_ring> parts;
     };
 
+    struct adiz
+    {
+        int adiz_id;
+        std::string name;
+        std::vector<std::vector<airspace_point>> parts;
+    };
+
     struct obstacle
     {
         double lat;
@@ -165,6 +172,8 @@ namespace nasrbrowse
                                                       double lon_max, double lat_max);
         const std::vector<artcc>& query_artcc(double lon_min, double lat_min,
                                                double lon_max, double lat_max);
+        const std::vector<adiz>& query_adiz(double lon_min, double lat_min,
+                                             double lon_max, double lat_max);
     };
 
 } // namespace nasrbrowse

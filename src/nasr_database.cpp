@@ -36,6 +36,8 @@ namespace nasrbrowse
         sqlite3_stmt* stmt_obstacles;
         sqlite3_stmt* stmt_artcc;
         sqlite3_stmt* stmt_artcc_shape;
+        sqlite3_stmt* stmt_adiz;
+        sqlite3_stmt* stmt_adiz_shape;
 
         std::vector<airport> airports;
         std::vector<navaid> navaids;
@@ -48,6 +50,7 @@ namespace nasrbrowse
         std::vector<sua> suas;
         std::vector<obstacle> obstacles;
         std::vector<artcc> artccs;
+        std::vector<adiz> adizs;
 
         impl(const char* db_path)
             : db(nullptr)
@@ -66,6 +69,8 @@ namespace nasrbrowse
             , stmt_obstacles(nullptr)
             , stmt_artcc(nullptr)
             , stmt_artcc_shape(nullptr)
+            , stmt_adiz(nullptr)
+            , stmt_adiz_shape(nullptr)
         {
             int rc = sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, nullptr);
             if(rc != SQLITE_OK)
@@ -96,6 +101,8 @@ namespace nasrbrowse
             sqlite3_finalize(stmt_obstacles);
             sqlite3_finalize(stmt_artcc);
             sqlite3_finalize(stmt_artcc_shape);
+            sqlite3_finalize(stmt_adiz);
+            sqlite3_finalize(stmt_adiz_shape);
             sqlite3_close(db);
         }
 
@@ -261,6 +268,23 @@ namespace nasrbrowse
                 FROM ARTCC_SHP
                 WHERE ARTCC_ID = ?1
                 ORDER BY POINT_SEQ
+            )");
+
+            prepare(&stmt_adiz, R"(
+                SELECT ADIZ_ID, NAME
+                FROM ADIZ_BASE
+                WHERE ADIZ_ID IN (
+                    SELECT id FROM ADIZ_BASE_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+            )");
+
+            prepare(&stmt_adiz_shape, R"(
+                SELECT PART_NUM, LON_DECIMAL, LAT_DECIMAL
+                FROM ADIZ_SHP
+                WHERE ADIZ_ID = ?1
+                ORDER BY PART_NUM, POINT_SEQ
             )");
         }
 
@@ -502,6 +526,34 @@ namespace nasrbrowse
             {
                 a.points.push_back({col_double(d.stmt_artcc_shape, 1),
                                     col_double(d.stmt_artcc_shape, 0)});
+            }
+            return a;
+        });
+    }
+
+    const std::vector<adiz>& nasr_database::query_adiz(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        return d.query_bbox(d.adizs, d.stmt_adiz,
+            lon_min, lat_min, lon_max, lat_max, [&](sqlite3_stmt* s)
+        {
+            adiz a{sqlite3_column_int(s, 0), col_text(s, 1), {}};
+
+            sqlite3_reset(d.stmt_adiz_shape);
+            sqlite3_bind_int(d.stmt_adiz_shape, 1, a.adiz_id);
+            int current_part = -1;
+            while(sqlite3_step(d.stmt_adiz_shape) == SQLITE_ROW)
+            {
+                int part_num = sqlite3_column_int(d.stmt_adiz_shape, 0);
+                if(part_num != current_part)
+                {
+                    a.parts.push_back({});
+                    current_part = part_num;
+                }
+                a.parts.back().push_back(
+                    {col_double(d.stmt_adiz_shape, 2),
+                     col_double(d.stmt_adiz_shape, 1)});
             }
             return a;
         });

@@ -232,6 +232,7 @@ namespace nasrbrowse
             build_airway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_mtr_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_sua_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_adiz_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_artcc_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_obstacle_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_fix_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
@@ -861,6 +862,23 @@ namespace nasrbrowse
                 for(const auto& ring : s.parts)
                 {
                     append_polygon_ring(poly[layer_sua], ring.points, ls);
+                }
+            }
+        }
+
+        void build_adiz_polylines(double lon_min, double lat_min,
+                                   double lon_max, double lat_max, double z)
+        {
+            if(!styles.visible("adiz", z)) return;
+
+            const auto& adizs = db.query_adiz(lon_min, lat_min, lon_max, lat_max);
+            auto ls = to_line_style(styles.get("adiz"));
+
+            for(const auto& a : adizs)
+            {
+                for(const auto& part : a.parts)
+                {
+                    append_polygon_ring(poly[layer_adiz], part, ls);
                 }
             }
         }

@@ -10,6 +10,7 @@ namespace nasrbrowse
     enum layer
     {
         // SDF polyline layers (render order: first = back, last = front)
+        layer_adiz,
         layer_artcc,
         layer_sua,
         layer_airspace,
@@ -54,6 +55,7 @@ namespace nasrbrowse
         {"MTRs",         layer_mtrs},
         {"Airspace",     layer_airspace},
         {"SUA",          layer_sua},
+        {"ADIZ",         layer_adiz},
         {"ARTCC",        layer_artcc},
         {"Obstacles",    layer_obstacles},
     };
