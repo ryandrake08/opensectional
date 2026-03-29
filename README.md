@@ -16,8 +16,10 @@ cmake --build build -j
 python3 -m venv env
 env/bin/pip install -r requirements.txt
 
-# 4. Build the NASR database from FAA ZIP files
-env/bin/python3 tools/build_nasr_db.py 19_Feb_2026_CSV.zip class_airspace_shape_files.zip aixm5.0.zip DOF_260215.zip nasr.db
+# 4. Download FAA data (prints build command when done)
+env/bin/python3 tools/download_nasr_data.py nasr_data
+
+# 5. Build the NASR database (use the command printed by the download script)
 
 # 5. Run (requires pre-built XYZ tile directory)
 ./build/nasrbrowse <tile_path> nasr.db
@@ -82,22 +84,19 @@ NASRBrowse requires two data sources prepared offline:
 
 ### 1. NASR Database
 
-Download the following ZIP files from the [FAA NASR subscription](https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/):
-
-- **28-Day Subscription (CSV)** - e.g., `19_Feb_2026_CSV.zip`
-- **Class Airspace Shapefiles** - `class_airspace_shape_files.zip`
-- **AIXM 5.0 Special Use Airspace** - `aixm5.0.zip`
-- **Digital Obstacle File (DOF)** - e.g., `DOF_260215.zip`
-
-Set up the Python environment and build the database:
+Set up the Python environment, download FAA data, and build the database:
 
 ```bash
 python3 -m venv env
 env/bin/pip install -r requirements.txt
-env/bin/python3 tools/build_nasr_db.py <csv.zip> <shapefile.zip> <aixm.zip> <dof.zip> <output.db>
+
+# Download all FAA data (prints build command when done)
+env/bin/python3 tools/download_nasr_data.py nasr_data
 ```
 
-All inputs are mandatory. The output file is always the last argument. This reads directly from the downloaded ZIP files (no manual extraction needed) and produces a SQLite database containing:
+The download script fetches data from the FAA NASR subscription page, the Digital Obstacle File page, and ADIZ boundaries from the FAA ArcGIS service. Use `--preview` for the next cycle's data instead of the current one.
+
+`build_nasr_db.py` reads the downloaded ZIP files (no manual extraction needed) and produces a SQLite database containing:
 
 | Table | Contents |
 |-------|----------|
