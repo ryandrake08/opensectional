@@ -43,12 +43,20 @@ struct layer_map::impl
     {
     }
 
+    double aspect_ratio() const
+    {
+        return static_cast<double>(viewport_width) / viewport_height;
+    }
+
+    double view_x_min() const { return view.center_x - view.half_extent_y * aspect_ratio(); }
+    double view_x_max() const { return view.center_x + view.half_extent_y * aspect_ratio(); }
+
     void rebuild_grid()
     {
         grid_vertices.clear();
 
-        double vx_min = view.view_x_min();
-        double vx_max = view.view_x_max();
+        double vx_min = view_x_min();
+        double vx_max = view_x_max();
         double vy_min = view.view_y_min();
         double vy_max = view.view_y_max();
         double range_x = vx_max - vx_min;
@@ -57,7 +65,7 @@ struct layer_map::impl
         // Normalize coordinates to -0.5..0.5 for rendering
         auto to_ndc_x = [&](double mx) -> float
         {
-            return static_cast<float>((mx - vx_min) / range_x - 0.5) * view.aspect_ratio;
+            return static_cast<float>((mx - vx_min) / range_x - 0.5) * aspect_ratio();
         };
         auto to_ndc_y = [&](double my) -> float
         {
@@ -132,13 +140,13 @@ struct layer_map::impl
 
     void update_tiles()
     {
-        tiles.update(view.view_x_min(), view.view_y_min(),
-                     view.view_x_max(), view.view_y_max(),
-                     viewport_height, view.aspect_ratio);
-        features.update(view.view_x_min(), view.view_y_min(),
-                        view.view_x_max(), view.view_y_max(),
+        tiles.update(view_x_min(), view.view_y_min(),
+                     view_x_max(), view.view_y_max(),
+                     viewport_height, aspect_ratio());
+        features.update(view_x_min(), view.view_y_min(),
+                        view_x_max(), view.view_y_max(),
                         view.half_extent_y, viewport_height,
-                        view.aspect_ratio);
+                        aspect_ratio());
     }
 };
 
@@ -171,27 +179,27 @@ void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, s
         {
         case 'w':
         case 'W':
-            pimpl->view.pan(0.0, 0.1);
+            pimpl->view.pan(0.0, 0.1, pimpl->aspect_ratio());
             pimpl->rebuild_grid();
-        pimpl->update_tiles();
+            pimpl->update_tiles();
             break;
         case 's':
         case 'S':
-            pimpl->view.pan(0.0, -0.1);
+            pimpl->view.pan(0.0, -0.1, pimpl->aspect_ratio());
             pimpl->rebuild_grid();
-        pimpl->update_tiles();
+            pimpl->update_tiles();
             break;
         case 'a':
         case 'A':
-            pimpl->view.pan(-0.1, 0.0);
+            pimpl->view.pan(-0.1, 0.0, pimpl->aspect_ratio());
             pimpl->rebuild_grid();
-        pimpl->update_tiles();
+            pimpl->update_tiles();
             break;
         case 'd':
         case 'D':
-            pimpl->view.pan(0.1, 0.0);
+            pimpl->view.pan(0.1, 0.0, pimpl->aspect_ratio());
             pimpl->rebuild_grid();
-        pimpl->update_tiles();
+            pimpl->update_tiles();
             break;
         case 'r':
         case 'R':
@@ -228,7 +236,7 @@ void layer_map::on_drag_input(const std::vector<sdl::input_button_t>&, double xd
 void layer_map::on_scroll(double, double yoffset)
 {
     double factor = (yoffset > 0) ? 0.9 : 1.0 / 0.9;
-    pimpl->view.zoom(factor);
+    pimpl->view.zoom(factor, pimpl->viewport_height);
     pimpl->rebuild_grid();
     pimpl->update_tiles();
 }
@@ -237,7 +245,6 @@ void layer_map::on_resize(float normalized_viewport_width, int viewport_height_p
 {
     pimpl->viewport_width = static_cast<int>(normalized_viewport_width * viewport_height_pixels);
     pimpl->viewport_height = viewport_height_pixels;
-    pimpl->view.set_aspect_ratio(static_cast<double>(normalized_viewport_width));
     pimpl->rebuild_grid();
     pimpl->update_tiles();
 }
