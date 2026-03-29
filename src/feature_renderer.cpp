@@ -121,7 +121,7 @@ namespace nasrbrowse
     }
 
     // Symbol base radii as fraction of view half-extent
-    constexpr double SYMBOL_RADIUS_AIRPORT  = 0.024;
+    constexpr double SYMBOL_RADIUS_AIRPORT  = 0.012;
     constexpr double SYMBOL_RADIUS_FIX      = 0.012;
     constexpr double SYMBOL_RADIUS_OBSTACLE = 0.003;
 
@@ -342,10 +342,10 @@ namespace nasrbrowse
             const auto& airports = db.query_airports(lon_min, lat_min, lon_max, lat_max);
             // Airport symbol geometry sizing
             constexpr float APT_OUTER_SCALE = 1.2F;     // outer radius relative to base
-            constexpr float APT_RING_WIDTH_PX = 2.0F;    // ring stroke width in pixels
+            constexpr float APT_RING_WIDTH_PX = 1.0F;    // ring stroke width in pixels
             constexpr float APT_LETTER_HEIGHT = 0.385F;  // letter height relative to ring radius (0.55 * 0.7)
             constexpr float APT_LETTER_ASPECT = 0.7F;    // letter width/height ratio
-            constexpr float APT_LETTER_WIDTH_PX = 4.0F;  // letter stroke width in pixels
+            constexpr float APT_LETTER_WIDTH_PX = 2.0F;  // letter stroke width in pixels
             constexpr float APT_FILL_RADIUS = 0.5F;      // filled circle radius relative to symbol_r
 
             float r = static_cast<float>(half_extent_y * SYMBOL_RADIUS_AIRPORT);
