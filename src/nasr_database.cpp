@@ -248,7 +248,7 @@ namespace nasrbrowse
             )");
 
             prepare(&stmt_obstacles, R"(
-                SELECT LAT_DECIMAL, LON_DECIMAL, AGL_HT
+                SELECT LAT_DECIMAL, LON_DECIMAL, AGL_HT, LIGHTING
                 FROM OBS_BASE
                 WHERE rowid IN (
                     SELECT id FROM OBS_BASE_RTREE
@@ -524,7 +524,7 @@ namespace nasrbrowse
             lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
         {
             return obstacle{col_double(s, 0), col_double(s, 1),
-                            sqlite3_column_int(s, 2)};
+                            sqlite3_column_int(s, 2), col_text(s, 3)};
         });
     }
 

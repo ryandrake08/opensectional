@@ -123,6 +123,7 @@ namespace nasrbrowse
         double lat;
         double lon;
         int agl_ht;
+        std::string lighting;  // "R","D","H","M","S","F","C","W","L","N","U"
     };
 
     // ARTCC (Air Route Traffic Control Center) boundary

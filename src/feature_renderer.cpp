@@ -31,12 +31,6 @@ namespace nasrbrowse
         }
     };
 
-    // Convert feature_style color to uint8 for point features
-    static uint8_t to_u8(float v)
-    {
-        return static_cast<uint8_t>(v * 255.0F + 0.5F);
-    }
-
     // Convert feature_style to line_style for SDF line features
     static line_style to_line_style(const feature_style& fs)
     {
@@ -47,7 +41,7 @@ namespace nasrbrowse
     // Symbol base radii as fraction of view half-extent
     constexpr double SYMBOL_RADIUS_AIRPORT  = 0.012;
     constexpr double SYMBOL_RADIUS_FIX      = 0.012;
-    constexpr double SYMBOL_RADIUS_OBSTACLE = 0.003;
+    constexpr double SYMBOL_RADIUS_OBSTACLE = 0.012;
 
     // Vector letter sizing (shared by airport and PJA icons)
     constexpr float LETTER_HEIGHT    = 0.385F;  // height relative to symbol radius
@@ -76,10 +70,6 @@ namespace nasrbrowse
         double query_lon_min, query_lat_min, query_lon_max, query_lat_max;
         double last_zoom;
         bool has_cached_query;
-
-        // Point feature vertex buffers (rendered as line_list)
-        std::vector<sdl::vertex_t2f_c4ub_v3f> obstacle_vertices;
-        std::unique_ptr<sdl::buffer> obstacle_buffer;
 
         // Navaid positions for airway clearance (populated during build_navaid_polylines)
         std::vector<glm::vec2> navaid_positions;
@@ -157,7 +147,6 @@ namespace nasrbrowse
             has_cached_query = true;
 
             for(auto& p : poly) p.clear();
-            obstacle_vertices.clear();
 
             build_airport_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_navaid_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
@@ -168,7 +157,7 @@ namespace nasrbrowse
             build_maa_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_adiz_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_artcc_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
-            build_obstacle_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_obstacle_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_fix_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_runway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_airspace_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
@@ -177,20 +166,63 @@ namespace nasrbrowse
             dirty = true;
         }
 
-        void add_triangle(std::vector<sdl::vertex_t2f_c4ub_v3f>& verts,
-                          double mx, double my, float radius,
-                          uint8_t r, uint8_t g, uint8_t b, uint8_t a)
+        // Obstacle symbol as SDF polylines: upside-down V (apex at top, legs
+        // extending down) with a dot between the legs. The dot is centered at (cx, cy).
+        // Tall obstacles (>= 1000ft AGL) add a vertical mast line above the apex.
+        // Lighted obstacles get five short rays emanating from the top of the symbol.
+        void add_obstacle_polylines(polyline_data& pd, float cx, float cy,
+                                     float radius, bool tall, bool lighted,
+                                     const line_style& ls)
         {
-            float x = static_cast<float>(mx);
-            float y = static_cast<float>(my);
-            constexpr float SQRT3_2 = 0.866F;
-            float h = radius * SQRT3_2;
-            verts.push_back({0, 0, r, g, b, a, x, y + radius, 0});
-            verts.push_back({0, 0, r, g, b, a, x + h, y - radius * 0.5F, 0});
-            verts.push_back({0, 0, r, g, b, a, x + h, y - radius * 0.5F, 0});
-            verts.push_back({0, 0, r, g, b, a, x - h, y - radius * 0.5F, 0});
-            verts.push_back({0, 0, r, g, b, a, x - h, y - radius * 0.5F, 0});
-            verts.push_back({0, 0, r, g, b, a, x, y + radius, 0});
+            float dot_r = radius * 0.2F;
+            float half_w = radius * 0.7F;
+            float leg_y = cy - dot_r;
+            float apex_y = leg_y + radius * 1.6F;
+            float mast_top = tall ? apex_y + radius * 0.8F : apex_y;
+
+            if(tall)
+            {
+                pd.polylines.push_back({
+                    glm::vec2(cx - half_w, leg_y),
+                    glm::vec2(cx, apex_y),
+                    glm::vec2(cx, mast_top),
+                    glm::vec2(cx, apex_y),
+                    glm::vec2(cx + half_w, leg_y),
+                });
+            }
+            else
+            {
+                pd.polylines.push_back({
+                    glm::vec2(cx - half_w, leg_y),
+                    glm::vec2(cx, apex_y),
+                    glm::vec2(cx + half_w, leg_y),
+                });
+            }
+            pd.styles.push_back(ls);
+
+            // Dot at center
+            add_circle_to(pd, cx, cy, dot_r, ls, 8);
+
+            // Lighting indicator: five rays from the top of the symbol
+            if(lighted)
+            {
+                float gap = radius * 0.4F;
+                float ray_len = radius * 0.15F;
+                constexpr float DEG_TO_RAD = static_cast<float>(M_PI) / 180.0F;
+                float angles[] = {-120, -60, 0, 60, 120};
+                for(float deg : angles)
+                {
+                    // 0 degrees = straight up (+y), angles increase clockwise
+                    float rad = (90.0F - deg) * DEG_TO_RAD;
+                    float dx = std::cos(rad);
+                    float dy = std::sin(rad);
+                    float x0 = cx + dx * gap;
+                    float y0 = mast_top + dy * gap;
+                    float x1 = cx + dx * (gap + ray_len);
+                    float y1 = mast_top + dy * (gap + ray_len);
+                    add_seg_to(pd, x0, y0, x1, y1, ls);
+                }
+            }
         }
 
         // Add a circle polyline to a polyline_data
@@ -951,8 +983,8 @@ namespace nasrbrowse
             }
         }
 
-        void build_obstacle_vertices(double lon_min, double lat_min,
-                                      double lon_max, double lat_max, double z)
+        void build_obstacle_polylines(double lon_min, double lat_min,
+                                       double lon_max, double lat_max, double z)
         {
             const auto& obstacles = db.query_obstacles(lon_min, lat_min, lon_max, lat_max);
             float radius = static_cast<float>(half_extent_y * SYMBOL_RADIUS_OBSTACLE);
@@ -964,11 +996,12 @@ namespace nasrbrowse
                     continue;
                 }
 
-                const auto& cs = styles.obstacle_style(obs.agl_ht);
-                double mx = lon_to_mx(obs.lon);
-                double my = lat_to_my(obs.lat);
-                add_triangle(obstacle_vertices, mx, my, -radius,
-                             to_u8(cs.r), to_u8(cs.g), to_u8(cs.b), to_u8(cs.a));
+                auto ls = to_line_style(styles.obstacle_style(obs.agl_ht));
+                float cx = static_cast<float>(lon_to_mx(obs.lon));
+                float cy = static_cast<float>(lat_to_my(obs.lat));
+                bool lighted = obs.lighting != "N";
+                add_obstacle_polylines(poly[layer_obstacles], cx, cy, radius,
+                                       obs.agl_ht >= 1000, lighted, ls);
             }
         }
 
@@ -1046,18 +1079,6 @@ namespace nasrbrowse
     {
         if(pimpl->dirty)
         {
-            auto upload = [&](auto& verts, auto& buffer)
-            {
-                buffer.reset();
-                if(!verts.empty())
-                {
-                    auto buf = pass.create_and_upload_buffer(
-                        pimpl->dev, sdl::buffer_usage::vertex, verts);
-                    buffer = std::make_unique<sdl::buffer>(std::move(buf));
-                }
-            };
-
-            upload(pimpl->obstacle_vertices, pimpl->obstacle_buffer);
             pimpl->dirty = false;
         }
 
@@ -1077,26 +1098,7 @@ namespace nasrbrowse
         glm::mat4 view_matrix = glm::scale(glm::mat4(1.0F), glm::vec3(s, s, 1.0F)) *
                                  glm::translate(glm::mat4(1.0F), glm::vec3(-cx, -cy, 0.0F));
 
-        if(ctx.current_pass == render_pass_id::trianglelist_0)
-        {
-            sdl::uniform_buffer uniforms;
-            uniforms.projection_matrix = ctx.projection_matrix;
-            uniforms.view_matrix = view_matrix;
-
-            auto draw = [&](const auto& buffer)
-            {
-                if(buffer && buffer->count() > 0)
-                {
-                    pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
-                    pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
-                    pass.bind_vertex_buffer(*buffer);
-                    pass.draw(buffer->count());
-                }
-            };
-
-            if(pimpl->vis[layer_obstacles]) draw(pimpl->obstacle_buffer);
-        }
-        else if(ctx.current_pass == render_pass_id::line_sdf_0)
+        if(ctx.current_pass == render_pass_id::line_sdf_0)
         {
             int vw = static_cast<int>(pimpl->aspect_ratio * pimpl->viewport_height);
             pimpl->sdf_lines.render(pass, ctx.projection_matrix, view_matrix,

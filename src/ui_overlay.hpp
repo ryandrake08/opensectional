@@ -5,8 +5,7 @@
 namespace nasrbrowse
 {
 
-    // Layer identifiers. The SDF layers (artcc through balloonports) are ordered
-    // back-to-front for rendering. Basemap and obstacles are non-SDF layers.
+    // Layer identifiers. The SDF layers are ordered back-to-front for rendering.
     enum layer
     {
         // SDF polyline layers (render order: first = back, last = front)
@@ -19,6 +18,7 @@ namespace nasrbrowse
         layer_runways,
         layer_airways,
         layer_mtrs,
+        layer_obstacles,
         layer_fixes,
         layer_navaids,
         layer_airports,
@@ -31,7 +31,6 @@ namespace nasrbrowse
 
         // Non-SDF layers
         layer_basemap = layer_sdf_count,
-        layer_obstacles,
         layer_count
     };
 
