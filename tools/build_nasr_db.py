@@ -467,9 +467,20 @@ def build_mtr(conn, csv_zf):
 
 
 def build_maa(conn, csv_zf):
-    """Import MOA/SUA data with polygon shapes."""
-    import_csv(conn, "MAA_BASE", csv_zf, "MAA_BASE.csv", [
-        "MAA_ID", "MAA_TYPE_NAME", "MAA_NAME", "MAX_ALT", "MIN_ALT",
+    """Import miscellaneous activity areas.
+
+    Three kinds:
+    - Shape-defined: areas with polygon boundary in MAA_SHP (aerobatic practice)
+    - Point+radius: center point with radius in NM (some aerobatic practice)
+    - Point-only: center point, no radius (glider, hang glider, ultralight, space launch)
+
+    MAA_BASE stores all areas with type, name, center coords, and radius.
+    MAA_SHP stores polygon points for shape-defined areas.
+    """
+    import_csv(conn, "MAA_RAW", csv_zf, "MAA_BASE.csv", [
+        "MAA_ID", "MAA_TYPE_NAME", "MAA_NAME",
+        "LATITUDE", "LONGITUDE", "MAA_RADIUS",
+        "MAX_ALT", "MIN_ALT",
     ])
 
     # Import shape points and convert DMS to decimal
@@ -477,7 +488,6 @@ def build_maa(conn, csv_zf):
         "MAA_ID", "POINT_SEQ", "LATITUDE", "LONGITUDE",
     ])
 
-    # Parse DMS coordinates
     conn.execute("""
         CREATE TABLE MAA_SHP AS
         SELECT MAA_ID,
@@ -490,7 +500,6 @@ def build_maa(conn, csv_zf):
     """)
     conn.execute("DROP TABLE MAA_SHP_RAW")
 
-    # Update with parsed decimal coordinates
     cursor = conn.execute("SELECT rowid, LAT_DMS, LON_DMS FROM MAA_SHP")
     updates = []
     for row in cursor:
@@ -500,15 +509,89 @@ def build_maa(conn, csv_zf):
             updates.append((lat, lon, row[0]))
     conn.executemany(
         "UPDATE MAA_SHP SET LAT_DECIMAL = ?, LON_DECIMAL = ? WHERE rowid = ?",
-        updates,
-    )
+        updates)
     print(f"  MAA_SHP: {len(updates)} shape points converted")
 
-    # R-tree for MAA_BASE using bounding box of shape points
+    # Reorder shape points into convex hull winding order.
+    # FAA data stores quad vertices in arbitrary order (often as opposite
+    # corner pairs), causing bowtie rendering artifacts.
+    rows = conn.execute(
+        "SELECT MAA_ID, POINT_SEQ, LAT_DECIMAL, LON_DECIMAL FROM MAA_SHP "
+        "WHERE LAT_DECIMAL != 0.0 ORDER BY MAA_ID, POINT_SEQ").fetchall()
+
+    by_id = {}
+    for maa_id, seq, lat, lon in rows:
+        by_id.setdefault(maa_id, []).append((seq, lat, lon))
+
+    reorder_updates = []
+    for maa_id, pts in by_id.items():
+        if len(pts) < 3:
+            continue
+        clat = sum(p[1] for p in pts) / len(pts)
+        clon = sum(p[2] for p in pts) / len(pts)
+        sorted_pts = sorted(pts, key=lambda p: math.atan2(p[1] - clat, p[2] - clon))
+        for new_seq, (old_seq, lat, lon) in enumerate(sorted_pts, 1):
+            if new_seq != old_seq:
+                reorder_updates.append((new_seq, maa_id, old_seq))
+
+    if reorder_updates:
+        conn.executemany(
+            "UPDATE MAA_SHP SET POINT_SEQ = -?1 WHERE MAA_ID = ?2 AND POINT_SEQ = ?3",
+            reorder_updates)
+        conn.execute("UPDATE MAA_SHP SET POINT_SEQ = -POINT_SEQ WHERE POINT_SEQ < 0")
+        print(f"  MAA_SHP: reordered {len(reorder_updates)} points into convex hull order")
+
+    conn.execute("CREATE INDEX idx_maa_shp ON MAA_SHP(MAA_ID)")
+
+    # Build MAA_BASE with parsed coordinates
+    conn.execute("""
+        CREATE TABLE MAA_BASE AS
+        SELECT
+            MAA_ID,
+            MAA_TYPE_NAME AS TYPE,
+            MAA_NAME AS NAME,
+            LATITUDE AS LAT_DMS,
+            LONGITUDE AS LON_DMS,
+            0.0 AS LAT,
+            0.0 AS LON,
+            CASE WHEN MAA_RADIUS IS NOT NULL AND TRIM(MAA_RADIUS) != ''
+                 THEN CAST(MAA_RADIUS AS REAL) ELSE 0.0 END AS RADIUS_NM,
+            MAX_ALT, MIN_ALT
+        FROM MAA_RAW
+    """)
+    conn.execute("DROP TABLE MAA_RAW")
+
+    cursor = conn.execute(
+        "SELECT rowid, LAT_DMS, LON_DMS FROM MAA_BASE WHERE TRIM(LAT_DMS) != ''")
+    updates = []
+    for row in cursor:
+        lat = parse_dms(row[1])
+        lon = parse_dms(row[2])
+        if lat is not None and lon is not None:
+            updates.append((lat, lon, row[0]))
+    conn.executemany(
+        "UPDATE MAA_BASE SET LAT = ?, LON = ? WHERE rowid = ?", updates)
+
+    # Drop DMS columns
+    conn.execute("ALTER TABLE MAA_BASE DROP COLUMN LAT_DMS")
+    conn.execute("ALTER TABLE MAA_BASE DROP COLUMN LON_DMS")
+
+    total = conn.execute("SELECT COUNT(*) FROM MAA_BASE").fetchone()[0]
+    pts = conn.execute("SELECT COUNT(*) FROM MAA_BASE WHERE LAT != 0.0").fetchone()[0]
+    shps = total - pts
+    print(f"  MAA_BASE: {total} areas ({pts} point/radius, {shps} shape-defined)")
+
+    # R-tree: point-based use their coordinates, shape-based use MAA_SHP bbox
     conn.execute("""
         CREATE VIRTUAL TABLE MAA_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
         )
+    """)
+    conn.execute("""
+        INSERT INTO MAA_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT rowid, LON, LON, LAT, LAT
+        FROM MAA_BASE
+        WHERE LAT != 0.0
     """)
     conn.execute("""
         INSERT INTO MAA_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat)
@@ -517,11 +600,9 @@ def build_maa(conn, csv_zf):
                MIN(s.LAT_DECIMAL), MAX(s.LAT_DECIMAL)
         FROM MAA_BASE b
         JOIN MAA_SHP s ON s.MAA_ID = b.MAA_ID
-        WHERE s.LAT_DECIMAL != 0.0
+        WHERE b.LAT = 0.0 AND s.LAT_DECIMAL != 0.0
         GROUP BY b.rowid
     """)
-
-    conn.execute("CREATE INDEX idx_maa_shp ON MAA_SHP(MAA_ID)")
 
 
 def build_apt_rwy(conn, csv_zf):

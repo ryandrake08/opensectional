@@ -26,8 +26,8 @@ namespace nasrbrowse
         sqlite3_stmt* stmt_fixes;
         sqlite3_stmt* stmt_airways;
         sqlite3_stmt* stmt_mtrs;
-        sqlite3_stmt* stmt_airspaces;
-        sqlite3_stmt* stmt_airspace_shape;
+        sqlite3_stmt* stmt_maas;
+        sqlite3_stmt* stmt_maa_shape;
         sqlite3_stmt* stmt_cls_arsp;
         sqlite3_stmt* stmt_cls_arsp_shape;
         sqlite3_stmt* stmt_runways;
@@ -45,7 +45,7 @@ namespace nasrbrowse
         std::vector<fix> fixes;
         std::vector<airway_segment> airways;
         std::vector<airway_segment> mtrs;
-        std::vector<airspace> airspaces;
+        std::vector<maa> maas;
         std::vector<class_airspace> class_airspaces;
         std::vector<runway> runways;
         std::vector<sua> suas;
@@ -61,8 +61,8 @@ namespace nasrbrowse
             , stmt_fixes(nullptr)
             , stmt_airways(nullptr)
             , stmt_mtrs(nullptr)
-            , stmt_airspaces(nullptr)
-            , stmt_airspace_shape(nullptr)
+            , stmt_maas(nullptr)
+            , stmt_maa_shape(nullptr)
             , stmt_cls_arsp(nullptr)
             , stmt_cls_arsp_shape(nullptr)
             , stmt_runways(nullptr)
@@ -94,8 +94,8 @@ namespace nasrbrowse
             sqlite3_finalize(stmt_fixes);
             sqlite3_finalize(stmt_airways);
             sqlite3_finalize(stmt_mtrs);
-            sqlite3_finalize(stmt_airspaces);
-            sqlite3_finalize(stmt_airspace_shape);
+            sqlite3_finalize(stmt_maas);
+            sqlite3_finalize(stmt_maa_shape);
             sqlite3_finalize(stmt_cls_arsp);
             sqlite3_finalize(stmt_cls_arsp_shape);
             sqlite3_finalize(stmt_runways);
@@ -180,9 +180,9 @@ namespace nasrbrowse
                 )
             )");
 
-            // Airspace: query base records whose bounding box overlaps
-            prepare(&stmt_airspaces, R"(
-                SELECT MAA_ID, MAA_TYPE_NAME, MAA_NAME, MAX_ALT, MIN_ALT
+            // Miscellaneous activity areas
+            prepare(&stmt_maas, R"(
+                SELECT MAA_ID, TYPE, NAME, LAT, LON, RADIUS_NM
                 FROM MAA_BASE
                 WHERE rowid IN (
                     SELECT id FROM MAA_BASE_RTREE
@@ -191,9 +191,9 @@ namespace nasrbrowse
                 )
             )");
 
-            // Shape points for a specific airspace
-            prepare(&stmt_airspace_shape, R"(
-                SELECT LAT_DECIMAL, LON_DECIMAL
+            // Shape points for a shape-defined MAA
+            prepare(&stmt_maa_shape, R"(
+                SELECT LON_DECIMAL, LAT_DECIMAL
                 FROM MAA_SHP
                 WHERE MAA_ID = ?1
                 ORDER BY POINT_SEQ
@@ -415,24 +415,28 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<airspace>& nasr_database::query_airspaces(
+    const std::vector<maa>& nasr_database::query_maas(
         double lon_min, double lat_min, double lon_max, double lat_max)
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.airspaces, d.stmt_airspaces,
+        return d.query_bbox(d.maas, d.stmt_maas,
             lon_min, lat_min, lon_max, lat_max, [&](sqlite3_stmt* s)
         {
-            airspace a{col_text(s, 0), col_text(s, 1), col_text(s, 2),
-                       col_text(s, 3), col_text(s, 4), {}};
+            maa m{col_text(s, 0), col_text(s, 1), col_text(s, 2),
+                  col_double(s, 3), col_double(s, 4), col_double(s, 5), {}};
 
-            sqlite3_reset(d.stmt_airspace_shape);
-            sqlite3_bind_text(d.stmt_airspace_shape, 1, a.maa_id.c_str(), -1, SQLITE_TRANSIENT);
-            while(sqlite3_step(d.stmt_airspace_shape) == SQLITE_ROW)
+            // Load shape polygon for shape-defined entries
+            if(m.lat == 0.0)
             {
-                a.points.push_back({col_double(d.stmt_airspace_shape, 0),
-                                    col_double(d.stmt_airspace_shape, 1)});
+                sqlite3_reset(d.stmt_maa_shape);
+                sqlite3_bind_text(d.stmt_maa_shape, 1, m.maa_id.c_str(), -1, SQLITE_TRANSIENT);
+                while(sqlite3_step(d.stmt_maa_shape) == SQLITE_ROW)
+                {
+                    m.shape.push_back({col_double(d.stmt_maa_shape, 1),
+                                       col_double(d.stmt_maa_shape, 0)});
+                }
             }
-            return a;
+            return m;
         });
     }
 

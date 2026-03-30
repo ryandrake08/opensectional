@@ -241,6 +241,7 @@ namespace nasrbrowse
             build_mtr_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_sua_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_pja_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_maa_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_adiz_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_artcc_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_obstacle_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
@@ -310,6 +311,8 @@ namespace nasrbrowse
         static constexpr float segs_M[] = {-1,-1, -1,1,  -1,1, 0,.1f,  0,.1f, 1,1,  1,1, 1,-1};
         static constexpr float segs_R[] = {-1,-1, -1,1,  -1,1, 1,1,  1,1, 1,.1f,  1,.1f, -1,.1f,  0,.1f, 1,-1};
         static constexpr float segs_P[] = {-1,-1, -1,1,  -1,1, 1,1,  1,1, 1,.1f,  1,.1f, -1,.1f};
+        static constexpr float segs_A[] = {-1,-1, 0,1,  0,1, 1,-1,  -0.5f,.1f, 0.5f,.1f};
+        static constexpr float segs_U[] = {-1,1, -1,-1,  -1,-1, 1,-1,  1,-1, 1,1};
         // clang-format on
 
         static constexpr letter_def letter_H = {segs_H, 3};
@@ -321,6 +324,8 @@ namespace nasrbrowse
         static constexpr letter_def letter_M = {segs_M, 4};
         static constexpr letter_def letter_R = {segs_R, 5};
         static constexpr letter_def letter_P = {segs_P, 4};
+        static constexpr letter_def letter_A = {segs_A, 3};
+        static constexpr letter_def letter_U = {segs_U, 3};
 
         void draw_letter(polyline_data& pd, const letter_def& ld,
                          float cx, float cy, float w, float h,
@@ -931,6 +936,82 @@ namespace nasrbrowse
                     float lw = lh * LETTER_ASPECT;
                     line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
                     draw_letter(poly[layer_pja], letter_P, cx, cy, lw, lh, white_ls);
+                }
+            }
+        }
+
+        static const letter_def* maa_letter(const std::string& type)
+        {
+            if(type == "AEROBATIC PRACTICE") return &letter_A;
+            if(type == "GLIDER")             return &letter_G;
+            if(type == "HANG GLIDER")        return &letter_H;
+            if(type == "ULTRALIGHT")         return &letter_U;
+            if(type == "SPACE LAUNCH")       return &letter_S;
+            return nullptr;
+        }
+
+        void build_maa_polylines(double lon_min, double lat_min,
+                                  double lon_max, double lat_max, double z)
+        {
+            bool area_vis = styles.visible("maa_area", z);
+            bool point_vis = styles.visible("maa_point", z);
+            if(!area_vis && !point_vis) return;
+
+            constexpr int CIRCLE_SEGS = 24;
+            constexpr double PI = 3.14159265358979;
+            constexpr double NM_TO_DEG_LAT = 1.0 / 60.0;
+
+            const auto& maas = db.query_maas(lon_min, lat_min, lon_max, lat_max);
+
+            for(const auto& m : maas)
+            {
+                if(!m.shape.empty() && area_vis)
+                {
+                    // Shape-defined: render as dashed polygon
+                    auto ls = to_line_style(styles.get("maa_area"));
+                    append_polygon_ring(poly[layer_maa], m.shape, ls);
+                }
+                else if(m.radius_nm > 0.0 && area_vis)
+                {
+                    // Point+radius: render as dashed circle
+                    double dlat = m.radius_nm * NM_TO_DEG_LAT;
+                    double dlon = dlat / std::cos(m.lat * PI / 180.0);
+
+                    std::vector<airspace_point> circle;
+                    for(int i = 0; i <= CIRCLE_SEGS; i++)
+                    {
+                        double angle = 2.0 * PI * i / CIRCLE_SEGS;
+                        circle.push_back({
+                            m.lat + dlat * std::sin(angle),
+                            m.lon + dlon * std::cos(angle)});
+                    }
+
+                    auto ls = to_line_style(styles.get("maa_area"));
+                    append_polygon_ring(poly[layer_maa], circle, ls);
+                }
+                else if(m.lat != 0.0 && point_vis)
+                {
+                    // Point-only: diamond with filled interior + letter
+                    float cx = static_cast<float>(lon_to_mx(m.lon));
+                    float cy = static_cast<float>(lat_to_my(m.lat));
+                    float r = static_cast<float>(half_extent_y * SYMBOL_RADIUS_AIRPORT);
+
+                    auto ls = to_line_style(styles.get("maa_point"));
+                    ls.fill_width = SYMBOL_FILL_PX;
+                    poly[layer_maa].polylines.push_back({
+                        {cx + r, cy}, {cx, cy + r}, {cx - r, cy},
+                        {cx, cy - r}, {cx + r, cy},
+                    });
+                    poly[layer_maa].styles.push_back(ls);
+
+                    const letter_def* ld = maa_letter(m.type);
+                    if(ld)
+                    {
+                        float lh = r * LETTER_HEIGHT;
+                        float lw = lh * LETTER_ASPECT;
+                        line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
+                        draw_letter(poly[layer_maa], *ld, cx, cy, lw, lh, white_ls);
+                    }
                 }
             }
         }

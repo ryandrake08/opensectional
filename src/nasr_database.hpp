@@ -63,15 +63,16 @@ namespace nasrbrowse
         bool is_hole;
     };
 
-    // MOA/SUA airspace (from MAA tables)
-    struct airspace
+    // Miscellaneous activity area (aerobatic, glider, hang glider, etc.)
+    struct maa
     {
         std::string maa_id;
-        std::string maa_type;
-        std::string maa_name;
-        std::string max_alt;
-        std::string min_alt;
-        std::vector<airspace_point> points;
+        std::string type;   // "AEROBATIC PRACTICE", "GLIDER", etc.
+        std::string name;
+        double lat;         // 0 if shape-defined
+        double lon;
+        double radius_nm;   // 0 if point-only or shape-defined
+        std::vector<airspace_point> shape;  // empty if point/radius
     };
 
     struct runway
@@ -169,8 +170,8 @@ namespace nasrbrowse
                                                          double lon_max, double lat_max);
         const std::vector<airway_segment>& query_mtrs(double lon_min, double lat_min,
                                                        double lon_max, double lat_max);
-        const std::vector<airspace>& query_airspaces(double lon_min, double lat_min,
-                                                     double lon_max, double lat_max);
+        const std::vector<maa>& query_maas(double lon_min, double lat_min,
+                                            double lon_max, double lat_max);
         const std::vector<class_airspace>& query_class_airspace(double lon_min, double lat_min,
                                                                 double lon_max, double lat_max);
         const std::vector<runway>& query_runways(double lon_min, double lat_min,
