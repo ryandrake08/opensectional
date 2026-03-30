@@ -41,7 +41,7 @@ namespace nasrbrowse
     static line_style to_line_style(const feature_style& fs)
     {
         return {fs.line_width, fs.border_width, fs.dash_length, fs.gap_length,
-                fs.r, fs.g, fs.b, fs.a};
+                fs.r, fs.g, fs.b, fs.a, 0};
     }
 
     // Extract airway style key from airway ID
@@ -124,6 +124,14 @@ namespace nasrbrowse
     constexpr double SYMBOL_RADIUS_AIRPORT  = 0.012;
     constexpr double SYMBOL_RADIUS_FIX      = 0.012;
     constexpr double SYMBOL_RADIUS_OBSTACLE = 0.003;
+
+    // Vector letter sizing (shared by airport and PJA icons)
+    constexpr float LETTER_HEIGHT    = 0.385F;  // height relative to symbol radius
+    constexpr float LETTER_ASPECT    = 0.7F;    // width/height ratio
+    constexpr float LETTER_WIDTH_PX  = 2.0F;    // stroke width in pixels
+
+    // Interior fill for outlined+filled symbols (airports, PJA diamonds)
+    constexpr float SYMBOL_FILL_PX   = 50.0F;   // fill_width in pixels, large enough to fill any symbol
 
     // Query cache tuning
     constexpr double REQUERY_ZOOM_THRESHOLD = 0.5;
@@ -232,6 +240,7 @@ namespace nasrbrowse
             build_airway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_mtr_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_sua_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_pja_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_adiz_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_artcc_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_obstacle_vertices(qlon_min, qlat_min, qlon_max, qlat_max, z);
@@ -300,6 +309,7 @@ namespace nasrbrowse
         static constexpr float segs_X[] = {-1,-1, 1,1,  -1,1, 1,-1};
         static constexpr float segs_M[] = {-1,-1, -1,1,  -1,1, 0,.1f,  0,.1f, 1,1,  1,1, 1,-1};
         static constexpr float segs_R[] = {-1,-1, -1,1,  -1,1, 1,1,  1,1, 1,.1f,  1,.1f, -1,.1f,  0,.1f, 1,-1};
+        static constexpr float segs_P[] = {-1,-1, -1,1,  -1,1, 1,1,  1,1, 1,.1f,  1,.1f, -1,.1f};
         // clang-format on
 
         static constexpr letter_def letter_H = {segs_H, 3};
@@ -310,6 +320,7 @@ namespace nasrbrowse
         static constexpr letter_def letter_X = {segs_X, 2};
         static constexpr letter_def letter_M = {segs_M, 4};
         static constexpr letter_def letter_R = {segs_R, 5};
+        static constexpr letter_def letter_P = {segs_P, 4};
 
         void draw_letter(polyline_data& pd, const letter_def& ld,
                          float cx, float cy, float w, float h,
@@ -345,9 +356,6 @@ namespace nasrbrowse
             // Airport symbol geometry sizing
             constexpr float APT_OUTER_SCALE = 1.2F;     // outer radius relative to base
             constexpr float APT_RING_WIDTH_PX = 1.0F;    // ring stroke width in pixels
-            constexpr float APT_LETTER_HEIGHT = 0.385F;  // letter height relative to ring radius (0.55 * 0.7)
-            constexpr float APT_LETTER_ASPECT = 0.7F;    // letter width/height ratio
-            constexpr float APT_LETTER_WIDTH_PX = 2.0F;  // letter stroke width in pixels
             constexpr float APT_FILL_RADIUS = 0.5F;      // filled circle radius relative to symbol_r
 
             float r = static_cast<float>(half_extent_y * SYMBOL_RADIUS_AIRPORT);
@@ -377,14 +385,14 @@ namespace nasrbrowse
 
                 float symbol_r = r * APT_OUTER_SCALE;
                 float ring_geom_r = symbol_r - (APT_RING_WIDTH_PX * 0.5F) / pixels_per_world;
-                line_style ring_ls = {APT_RING_WIDTH_PX, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a};
+                line_style ring_ls = {APT_RING_WIDTH_PX, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
 
                 bool closed = apt.arpt_status == "CI" || apt.arpt_status == "CP";
                 bool pvt = apt.facility_use_code == "PR";
                 bool mil = is_military(apt);
-                float h = ring_geom_r * APT_LETTER_HEIGHT;
-                line_style white_ls = {APT_LETTER_WIDTH_PX, 0, 0, 0, 1.0F, 1.0F, 1.0F, 1.0F};
-                float w = h * APT_LETTER_ASPECT;
+                float h = ring_geom_r * LETTER_HEIGHT;
+                line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1.0F, 1.0F, 1.0F, 1.0F, 0};
+                float w = h * LETTER_ASPECT;
 
                 const letter_def* letter = nullptr;
                 if(closed)                          letter = &letter_X;
@@ -400,18 +408,15 @@ namespace nasrbrowse
                 {
                     float geom_r = symbol_r * APT_FILL_RADIUS;
                     float fill_px = symbol_r * pixels_per_world;
-                    line_style fill_ls = {fill_px, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a};
+                    line_style fill_ls = {fill_px, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
                     add_circle_to(pd, cx, cy, geom_r, fill_ls);
                     if(letter) draw_letter(pd, *letter, cx, cy, w, h, white_ls);
                 }
                 else if(letter)
                 {
-                    add_circle_to(pd, cx, cy, ring_geom_r, ring_ls);
-                    float inner_r = ring_geom_r - (APT_RING_WIDTH_PX * 0.5F) / pixels_per_world;
-                    float fill_geom_r = inner_r * APT_FILL_RADIUS;
-                    float inner_fill_px = inner_r * pixels_per_world;
-                    line_style black_fill = {inner_fill_px, 0, 0, 0, 0.0F, 0.0F, 0.0F, 1.0F};
-                    add_circle_to(pd, cx, cy, fill_geom_r, black_fill);
+                    line_style filled_ring = ring_ls;
+                    filled_ring.fill_width = SYMBOL_FILL_PX;
+                    add_circle_to(pd, cx, cy, ring_geom_r, filled_ring);
                     draw_letter(pd, *letter, cx, cy, w, h, white_ls);
                 }
                 else
@@ -544,6 +549,8 @@ namespace nasrbrowse
 
                 const auto& fs = styles.get(key);
                 line_style ls = to_line_style(fs);
+                line_style filled_ls = ls;
+                filled_ls.fill_width = SYMBOL_FILL_PX;
 
                 float cx = static_cast<float>(lon_to_mx(nav.lon));
                 float cy = static_cast<float>(lat_to_my(nav.lat));
@@ -552,33 +559,33 @@ namespace nasrbrowse
 
                 if(nav.nav_type == "NDB")
                 {
-                    add_circle(cx, cy, r * NAV_NDB_CIRCLE, ls);
+                    add_circle(cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
                 }
                 else if(nav.nav_type == "NDB/DME")
                 {
-                    add_circle(cx, cy, r * NAV_NDB_CIRCLE, ls);
+                    add_circle(cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
                     add_rect(cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, ls);
                 }
                 else if(nav.nav_type == "DME")
                 {
-                    add_rect(cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, ls);
+                    add_rect(cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, filled_ls);
                 }
                 else if(std::strcmp(nav.nav_type.c_str(), "VOR/DME") == 0)
                 {
-                    add_hexagon(cx, cy, r, ls);
+                    add_hexagon(cx, cy, r, filled_ls);
                     add_center_dot(cx, cy, r, ls);
                     add_rect(cx, cy, r * NAV_VORDME_WIDTH, r * NAV_DME_RECT, ls);
                 }
                 else if(nav.nav_type == "VORTAC" || nav.nav_type == "TACAN")
                 {
-                    add_hexagon(cx, cy, r, ls);
+                    add_hexagon(cx, cy, r, filled_ls);
                     add_center_dot(cx, cy, r, ls);
                     add_caltrop(cx, cy, r, ls);
                 }
                 else
                 {
                     // VOR (plain)
-                    add_hexagon(cx, cy, r, ls);
+                    add_hexagon(cx, cy, r, filled_ls);
                     add_center_dot(cx, cy, r, ls);
                 }
             }
@@ -592,8 +599,8 @@ namespace nasrbrowse
             float h = r * SQRT3_2;
             pd.polylines.push_back({
                 {cx, cy + r},
-                {cx + h, cy - r * 0.5F},
                 {cx - h, cy - r * 0.5F},
+                {cx + h, cy - r * 0.5F},
                 {cx, cy + r},
             });
             pd.styles.push_back(ls);
@@ -688,13 +695,16 @@ namespace nasrbrowse
                 float cx = static_cast<float>(lon_to_mx(fix.lon));
                 float cy = static_cast<float>(lat_to_my(fix.lat));
 
+                line_style filled_ls = ls;
+                filled_ls.fill_width = SYMBOL_FILL_PX;
+
                 if(fix.use_code == "RP" || fix.use_code == "MR")
                 {
-                    add_triangle_polyline(poly[layer_fixes], cx, cy, radius, ls);
+                    add_triangle_polyline(poly[layer_fixes], cx, cy, radius, filled_ls);
                 }
                 else
                 {
-                    add_waypoint_star_polyline(poly[layer_fixes], cx, cy, radius, ls);
+                    add_waypoint_star_polyline(poly[layer_fixes], cx, cy, radius, filled_ls);
                 }
             }
         }
@@ -862,6 +872,65 @@ namespace nasrbrowse
                 for(const auto& ring : s.parts)
                 {
                     append_polygon_ring(poly[layer_sua], ring.points, ls);
+                }
+            }
+        }
+
+        void build_pja_polylines(double lon_min, double lat_min,
+                                  double lon_max, double lat_max, double z)
+        {
+            bool area_vis = styles.visible("pja_area", z);
+            bool point_vis = styles.visible("pja_point", z);
+            if(!area_vis && !point_vis) return;
+
+            constexpr int CIRCLE_SEGS = 24;
+            constexpr double PI = 3.14159265358979;
+            constexpr double NM_TO_DEG_LAT = 1.0 / 60.0;
+            constexpr double SYMBOL_RADIUS_PJA = SYMBOL_RADIUS_AIRPORT;
+
+            const auto& pjas = db.query_pjas(lon_min, lat_min, lon_max, lat_max);
+
+            for(const auto& p : pjas)
+            {
+                if(p.radius_nm > 0.0 && area_vis)
+                {
+                    // Generate circle polygon in geographic coordinates
+                    double dlat = p.radius_nm * NM_TO_DEG_LAT;
+                    double dlon = dlat / std::cos(p.lat * PI / 180.0);
+
+                    std::vector<airspace_point> circle;
+                    for(int i = 0; i <= CIRCLE_SEGS; i++)
+                    {
+                        double angle = 2.0 * PI * i / CIRCLE_SEGS;
+                        circle.push_back({
+                            p.lat + dlat * std::sin(angle),
+                            p.lon + dlon * std::cos(angle)});
+                    }
+
+                    auto ls = to_line_style(styles.get("pja_area"));
+                    append_polygon_ring(poly[layer_pja], circle, ls);
+                }
+                else if(p.radius_nm <= 0.0 && point_vis)
+                {
+                    float cx = static_cast<float>(lon_to_mx(p.lon));
+                    float cy = static_cast<float>(lat_to_my(p.lat));
+                    float r = static_cast<float>(half_extent_y * SYMBOL_RADIUS_PJA);
+
+                    // Diamond with tan outline and black filled interior
+                    // using fill_width to extend the inside border
+                    auto ls = to_line_style(styles.get("pja_point"));
+                    ls.fill_width = SYMBOL_FILL_PX;
+                    poly[layer_pja].polylines.push_back({
+                        {cx + r, cy}, {cx, cy + r}, {cx - r, cy},
+                        {cx, cy - r}, {cx + r, cy},
+                    });
+                    poly[layer_pja].styles.push_back(ls);
+
+                    // White "P" letter
+                    float lh = r * LETTER_HEIGHT;
+                    float lw = lh * LETTER_ASPECT;
+                    line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
+                    draw_letter(poly[layer_pja], letter_P, cx, cy, lw, lh, white_ls);
                 }
             }
         }

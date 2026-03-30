@@ -371,6 +371,45 @@ def build_awy(conn, csv_zf):
     """)
 
 
+def build_pja(conn, csv_zf):
+    """Import parachute jump areas (point + radius)."""
+    import_csv(conn, "PJA_RAW", csv_zf, "PJA_BASE.csv", [
+        "PJA_ID", "DROP_ZONE_NAME", "LAT_DECIMAL", "LONG_DECIMAL",
+        "PJA_RADIUS", "MAX_ALTITUDE",
+    ])
+
+    conn.execute("DROP TABLE IF EXISTS PJA_BASE")
+    conn.execute("""
+        CREATE TABLE PJA_BASE AS
+        SELECT
+            PJA_ID,
+            DROP_ZONE_NAME AS NAME,
+            CAST(LAT_DECIMAL AS REAL) AS LAT,
+            CAST(LONG_DECIMAL AS REAL) AS LON,
+            CASE WHEN PJA_RADIUS IS NOT NULL AND TRIM(PJA_RADIUS) != ''
+                 THEN CAST(PJA_RADIUS AS REAL) ELSE 0.0 END AS RADIUS_NM,
+            MAX_ALTITUDE
+        FROM PJA_RAW
+        WHERE LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != ''
+          AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''
+    """)
+    conn.execute("DROP TABLE PJA_RAW")
+
+    count = conn.execute("SELECT COUNT(*) FROM PJA_BASE").fetchone()[0]
+    print(f"  PJA_BASE: {count} parachute jump areas")
+
+    conn.execute("""
+        CREATE VIRTUAL TABLE PJA_BASE_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO PJA_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT rowid, LON, LON, LAT, LAT
+        FROM PJA_BASE
+    """)
+
+
 def build_mtr(conn, csv_zf):
     """Import military training routes and build segment table.
 
@@ -1530,6 +1569,9 @@ def main():
         print("Importing airways...")
         build_awy(conn, csv_zf)
 
+        print("Importing parachute jump areas...")
+        build_pja(conn, csv_zf)
+
         print("Importing military training routes...")
         build_mtr(conn, csv_zf)
 
@@ -1562,7 +1604,7 @@ def main():
     # Print summary
     print("\nDatabase summary:")
     tables = ["APT_BASE", "CLS_ARSP", "NAV_BASE", "FIX_BASE", "FIX_CHRT",
-              "AWY_SEG", "MTR_SEG", "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
+              "AWY_SEG", "PJA_BASE", "MTR_SEG", "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
               "RWY_SEG", "CLS_ARSP_BASE", "CLS_ARSP_SHP",
               "SUA_BASE", "SUA_SHP", "ARTCC_BASE", "ARTCC_SHP", "OBS_BASE",
               "ADIZ_BASE", "ADIZ_SHP"]

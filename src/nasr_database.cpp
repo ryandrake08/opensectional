@@ -36,6 +36,7 @@ namespace nasrbrowse
         sqlite3_stmt* stmt_obstacles;
         sqlite3_stmt* stmt_artcc;
         sqlite3_stmt* stmt_artcc_shape;
+        sqlite3_stmt* stmt_pjas;
         sqlite3_stmt* stmt_adiz;
         sqlite3_stmt* stmt_adiz_shape;
 
@@ -50,6 +51,7 @@ namespace nasrbrowse
         std::vector<sua> suas;
         std::vector<obstacle> obstacles;
         std::vector<artcc> artccs;
+        std::vector<pja> pjas;
         std::vector<adiz> adizs;
 
         impl(const char* db_path)
@@ -69,6 +71,7 @@ namespace nasrbrowse
             , stmt_obstacles(nullptr)
             , stmt_artcc(nullptr)
             , stmt_artcc_shape(nullptr)
+            , stmt_pjas(nullptr)
             , stmt_adiz(nullptr)
             , stmt_adiz_shape(nullptr)
         {
@@ -101,6 +104,7 @@ namespace nasrbrowse
             sqlite3_finalize(stmt_obstacles);
             sqlite3_finalize(stmt_artcc);
             sqlite3_finalize(stmt_artcc_shape);
+            sqlite3_finalize(stmt_pjas);
             sqlite3_finalize(stmt_adiz);
             sqlite3_finalize(stmt_adiz_shape);
             sqlite3_close(db);
@@ -268,6 +272,16 @@ namespace nasrbrowse
                 FROM ARTCC_SHP
                 WHERE ARTCC_ID = ?1
                 ORDER BY POINT_SEQ
+            )");
+
+            prepare(&stmt_pjas, R"(
+                SELECT PJA_ID, NAME, LAT, LON, RADIUS_NM
+                FROM PJA_BASE
+                WHERE rowid IN (
+                    SELECT id FROM PJA_BASE_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
             )");
 
             prepare(&stmt_adiz, R"(
@@ -528,6 +542,18 @@ namespace nasrbrowse
                                     col_double(d.stmt_artcc_shape, 0)});
             }
             return a;
+        });
+    }
+
+    const std::vector<pja>& nasr_database::query_pjas(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        return d.query_bbox(d.pjas, d.stmt_pjas,
+            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+        {
+            return pja{col_text(s, 0), col_text(s, 1),
+                       col_double(s, 2), col_double(s, 3), col_double(s, 4)};
         });
     }
 

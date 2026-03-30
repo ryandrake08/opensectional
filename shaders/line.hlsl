@@ -18,11 +18,11 @@ cbuffer LineUniforms : register(b0, space3)
     float2 world_to_screen_scale;  // pixels per world unit (y is negative for Y flip)
     float2 world_to_screen_offset; // screen-space position of world origin
     float line_half_width;         // pixels
-    float border_width;            // pixels
+    float border_width;            // pixels (outside of path direction)
     float dash_length;             // pixels (0 = solid line)
     float gap_length;              // pixels
+    float fill_width;              // pixels (inside/left of path direction)
     uint segment_count;
-    uint _pad;
 };
 
 struct PSInput
@@ -61,10 +61,15 @@ float4 fragment_main(PSInput input) : SV_Target
 {
     float2 screen_pos = input.world_pos * world_to_screen_scale + world_to_screen_offset;
 
-    // Find nearest segment and compute distance along path
+    // Find nearest segment and compute distance along path.
+    // Also test if fragment is inside a convex polygon by checking
+    // the cross product against every segment (not just the nearest).
+    // The winding factor accounts for the Y-flip in screen coordinates.
+    float winding = sign(world_to_screen_scale.x * world_to_screen_scale.y);
     float min_dist = 1e10;
     float path_dist = 0;
     float cumulative = 0;
+    bool inside = true;
 
     for(uint i = 0; i < segment_count; i++)
     {
@@ -83,11 +88,16 @@ float4 fragment_main(PSInput input) : SV_Target
             path_dist = cumulative + t * seg_len;
         }
 
+        float cross_val = ab.x * (screen_pos.y - a.y) - ab.y * (screen_pos.x - a.x);
+        if(cross_val * winding < 0) inside = false;
+
         cumulative += seg_len;
     }
 
+    // For convex CCW polygons with fill_width set, use fill_width on the inside
+    float effective_border = inside ? fill_width : border_width;
+
     // SDF for perpendicular distance from line center
-    float total_half_width = line_half_width + border_width;
     float perp_sdf = min_dist - line_half_width;
 
     // SDF for dash pattern (negative = inside dash, positive = in gap)
@@ -111,7 +121,7 @@ float4 fragment_main(PSInput input) : SV_Target
     float combined = max(perp_sdf, dash_sdf);
 
     // Discard fragments outside border
-    if(combined > border_width)
+    if(combined > effective_border)
     {
         discard;
     }
@@ -120,7 +130,7 @@ float4 fragment_main(PSInput input) : SV_Target
     float4 color = (combined > 0) ? border_color : line_color;
 
     // Anti-aliasing at outer edge
-    float aa = 1.0 - smoothstep(border_width - 1.0, border_width, combined);
+    float aa = 1.0 - smoothstep(effective_border - 1.0, effective_border, combined);
     color.a *= aa;
 
     return color;

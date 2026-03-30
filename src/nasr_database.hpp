@@ -101,6 +101,15 @@ namespace nasrbrowse
         std::vector<sua_ring> parts;
     };
 
+    struct pja
+    {
+        std::string pja_id;
+        std::string name;
+        double lat;
+        double lon;
+        double radius_nm;
+    };
+
     struct adiz
     {
         int adiz_id;
@@ -172,6 +181,8 @@ namespace nasrbrowse
                                                       double lon_max, double lat_max);
         const std::vector<artcc>& query_artcc(double lon_min, double lat_min,
                                                double lon_max, double lat_max);
+        const std::vector<pja>& query_pjas(double lon_min, double lat_min,
+                                            double lon_max, double lat_max);
         const std::vector<adiz>& query_adiz(double lon_min, double lat_min,
                                              double lon_max, double lat_max);
     };

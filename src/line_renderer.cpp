@@ -22,8 +22,9 @@ namespace nasrbrowse
         float border_width;             // 4 bytes, offset 204
         float dash_length;              // 4 bytes, offset 208
         float gap_length;               // 4 bytes, offset 212
-        uint32_t segment_count;         // 4 bytes, offset 216
-        uint32_t _pad;                  // 4 bytes, offset 220
+        float fill_width;               // 4 bytes, offset 216
+        uint32_t segment_count;         // 4 bytes, offset 220
+        // total 224 bytes (14 * 16), no pad needed
     };
 
     struct polyline_gpu
@@ -188,7 +189,8 @@ namespace nasrbrowse
 
         for(const auto& gpu : pimpl->gpu_polylines)
         {
-            float margin_pixels = gpu.style.line_width * 0.5F + gpu.style.border_width;
+            float effective_fill = gpu.style.fill_width > 0 ? gpu.style.fill_width : gpu.style.border_width;
+            float margin_pixels = gpu.style.line_width * 0.5F + std::max(gpu.style.border_width, effective_fill);
             float margin_x = margin_pixels / std::abs(w2s_scale.x);
             float margin_y = margin_pixels / std::abs(w2s_scale.y);
 
@@ -217,8 +219,8 @@ namespace nasrbrowse
             uniforms.border_width = gpu.style.border_width;
             uniforms.dash_length = gpu.style.dash_length;
             uniforms.gap_length = gpu.style.gap_length;
+            uniforms.fill_width = effective_fill;
             uniforms.segment_count = gpu.segment_count;
-            uniforms._pad = 0;
 
             pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
             pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));

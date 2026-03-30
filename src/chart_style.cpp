@@ -61,6 +61,7 @@ namespace nasrbrowse
         "airspace_e2", "airspace_e3", "airspace_e4",
         "airspace_e5", "airspace_e6", "airspace_e7",
         "artcc_low", "artcc_high", "artcc_oceanic",
+        "pja_area", "pja_point",
         "adiz",
         "sua_prohibited", "sua_restricted", "sua_warning",
         "sua_alert", "sua_moa", "sua_nsa",
