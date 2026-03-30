@@ -194,6 +194,7 @@ int main(int argc, char** argv)
         float last_render_ms = 0.0F;
         while(true)
         {
+            map_layer->set_imgui_wants_mouse(imgui_ctx.wants_mouse());
             if(event_mgr.wait_and_dispatch())
             {
                 break;

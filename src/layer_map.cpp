@@ -1,16 +1,64 @@
 #include "layer_map.hpp"
 #include "feature_renderer.hpp"
 #include "map_view.hpp"
+#include "nasr_database.hpp"
+#include "pick_result.hpp"
 #include "render_context.hpp"
 #include "tile_renderer.hpp"
 #include "ui_overlay.hpp"
 #include "chart_style.hpp"
+#include <cmath>
+#include <iostream>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
 #include <sdl/render_pass.hpp>
 #include <sdl/types.hpp>
 #include <vector>
+
+// Pick box size in pixels (width and height of the pick region for point features)
+constexpr int PICK_BOX_SIZE_PIXELS = 20;
+
+// SDL left mouse button value
+constexpr uint8_t BUTTON_LEFT = 1;
+
+// Ray-casting point-in-polygon test
+static bool point_in_ring(double px, double py,
+                          const std::vector<nasrbrowse::airspace_point>& ring)
+{
+    bool inside = false;
+    for(size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++)
+    {
+        double yi = ring[i].lat, yj = ring[j].lat;
+        double xi = ring[i].lon, xj = ring[j].lon;
+        if(((yi > py) != (yj > py)) &&
+           (px < (xj - xi) * (py - yi) / (yj - yi) + xi))
+        {
+            inside = !inside;
+        }
+    }
+    return inside;
+}
+
+// Equirectangular distance check for circle features (PJA, MAA)
+static bool point_in_circle_nm(double px, double py,
+                                double cx, double cy, double radius_nm)
+{
+    double dlat = (py - cy) * 60.0;
+    double dlon = (px - cx) * 60.0 * std::cos(cy * M_PI / 180.0);
+    return (dlat * dlat + dlon * dlon) <= (radius_nm * radius_nm);
+}
+
+// Map airport site_type_code to the corresponding layer index
+static int airport_layer_for_type(const std::string& site_type_code)
+{
+    if(site_type_code == "H") return nasrbrowse::layer_heliports;
+    if(site_type_code == "C") return nasrbrowse::layer_seaplane;
+    if(site_type_code == "U") return nasrbrowse::layer_ultralight;
+    if(site_type_code == "G") return nasrbrowse::layer_gliderports;
+    if(site_type_code == "B") return nasrbrowse::layer_balloonports;
+    return nasrbrowse::layer_airports;
+}
 
 struct layer_map::impl
 {
@@ -31,6 +79,15 @@ struct layer_map::impl
     std::vector<sdl::vertex_t2f_c4ub_v3f> grid_vertices;
     std::unique_ptr<sdl::buffer> grid_buffer;
 
+    // Pick state
+    nasrbrowse::nasr_database pick_db;
+    nasrbrowse::chart_style styles;
+    nasrbrowse::layer_visibility vis;
+    double cursor_ndc_x;
+    double cursor_ndc_y;
+    bool dragged;
+    bool imgui_wants_mouse;
+
     impl(sdl::device& dev, const char* tile_path, const char* db_path,
          const nasrbrowse::chart_style& cs)
         : dev(dev)
@@ -40,6 +97,12 @@ struct layer_map::impl
         , show_tiles(true)
         , tiles(dev, tile_path)
         , features(dev, db_path, cs)
+        , pick_db(db_path)
+        , styles(cs)
+        , cursor_ndc_x(0)
+        , cursor_ndc_y(0)
+        , dragged(false)
+        , imgui_wants_mouse(false)
     {
     }
 
@@ -148,6 +211,200 @@ struct layer_map::impl
                         view.half_extent_y, viewport_height,
                         aspect_ratio());
     }
+
+    nasrbrowse::pick_result pick_at(double ndc_x, double ndc_y)
+    {
+        using namespace nasrbrowse;
+
+        double z = view.zoom_level(viewport_height);
+
+        // NDC to Web Mercator meters
+        double world_x = ndc_x * 2.0 * view.half_extent_y + view.center_x;
+        double world_y = ndc_y * 2.0 * view.half_extent_y + view.center_y;
+        double click_lon = mx_to_lon(world_x);
+        double click_lat = my_to_lat(world_y);
+
+        // Point-feature pick box: convert pixel half-size to world coords
+        double pick_half_ndc = (PICK_BOX_SIZE_PIXELS * 0.5) / viewport_height;
+        double box_world_half = pick_half_ndc * 2.0 * view.half_extent_y;
+        double box_lon_min = mx_to_lon(world_x - box_world_half);
+        double box_lon_max = mx_to_lon(world_x + box_world_half);
+        double box_lat_min = my_to_lat(world_y - box_world_half);
+        double box_lat_max = my_to_lat(world_y + box_world_half);
+
+        pick_result result;
+        result.lon = click_lon;
+        result.lat = click_lat;
+
+        // Point features: query with pick box, all results are hits
+        {
+            const auto& airports = pick_db.query_airports(
+                box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+            for(const auto& apt : airports)
+            {
+                if(vis[airport_layer_for_type(apt.site_type_code)] &&
+                   styles.airport_visible(apt, z))
+                    result.features.push_back(apt);
+            }
+        }
+
+        if(vis[layer_navaids])
+        {
+            const auto& navaids = pick_db.query_navaids(
+                box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+            for(const auto& nav : navaids)
+            {
+                if(styles.navaid_visible(nav.nav_type, z))
+                    result.features.push_back(nav);
+            }
+        }
+
+        if(vis[layer_fixes])
+        {
+            const auto& fixes = pick_db.query_fixes(
+                box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+            for(const auto& f : fixes)
+            {
+                // Naive: pick if visible under either airway or non-airway zoom key
+                if(styles.fix_visible(true, z) || styles.fix_visible(false, z))
+                    result.features.push_back(f);
+            }
+        }
+
+        if(vis[layer_obstacles])
+        {
+            const auto& obstacles = pick_db.query_obstacles(
+                box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+            for(const auto& obs : obstacles)
+            {
+                if(styles.obstacle_visible(obs.agl_ht, z))
+                    result.features.push_back(obs);
+            }
+        }
+
+        // Area features: query with click point as degenerate bbox, then test containment
+        if(vis[layer_airspace])
+        {
+            const auto& airspaces = pick_db.query_class_airspace(
+                click_lon, click_lat, click_lon, click_lat);
+            for(const auto& a : airspaces)
+            {
+                if(!styles.airspace_visible(a.airspace_class, a.local_type, z))
+                    continue;
+                bool inside = false;
+                for(const auto& ring : a.parts)
+                {
+                    if(point_in_ring(click_lon, click_lat, ring.points))
+                    {
+                        if(ring.is_hole)
+                        {
+                            inside = false;
+                            break;
+                        }
+                        inside = true;
+                    }
+                }
+                if(inside)
+                    result.features.push_back(a);
+            }
+        }
+
+        if(vis[layer_sua])
+        {
+            const auto& suas = pick_db.query_sua(
+                click_lon, click_lat, click_lon, click_lat);
+            for(const auto& s : suas)
+            {
+                if(!styles.sua_visible(s.sua_type, z))
+                    continue;
+                for(const auto& ring : s.parts)
+                {
+                    if(point_in_ring(click_lon, click_lat, ring.points))
+                    {
+                        result.features.push_back(s);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if(vis[layer_artcc])
+        {
+            const auto& artccs = pick_db.query_artcc(
+                click_lon, click_lat, click_lon, click_lat);
+            for(const auto& a : artccs)
+            {
+                if(!styles.artcc_visible(a.altitude, z))
+                    continue;
+                if(point_in_ring(click_lon, click_lat, a.points))
+                    result.features.push_back(a);
+            }
+        }
+
+        if(vis[layer_adiz])
+        {
+            if(styles.adiz_visible(z))
+            {
+                const auto& adizs = pick_db.query_adiz(
+                    click_lon, click_lat, click_lon, click_lat);
+                for(const auto& a : adizs)
+                {
+                    for(const auto& part : a.parts)
+                    {
+                        if(point_in_ring(click_lon, click_lat, part))
+                        {
+                            result.features.push_back(a);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if(vis[layer_pja])
+        {
+            if(styles.pja_area_visible(z))
+            {
+                const auto& pjas = pick_db.query_pjas(
+                    click_lon, click_lat, click_lon, click_lat);
+                for(const auto& p : pjas)
+                {
+                    if(point_in_circle_nm(click_lon, click_lat, p.lon, p.lat, p.radius_nm))
+                        result.features.push_back(p);
+                }
+            }
+        }
+
+        if(vis[layer_maa])
+        {
+            bool maa_area_vis = styles.maa_area_visible(z);
+            bool maa_point_vis = styles.maa_point_visible(z);
+            if(maa_area_vis || maa_point_vis)
+            {
+                const auto& maas = pick_db.query_maas(
+                    click_lon, click_lat, click_lon, click_lat);
+                for(const auto& m : maas)
+                {
+                    if(!m.shape.empty() && maa_area_vis)
+                    {
+                        if(point_in_ring(click_lon, click_lat, m.shape))
+                            result.features.push_back(m);
+                    }
+                    else if(m.radius_nm > 0)
+                    {
+                        bool is_area = (m.radius_nm > 0 && m.shape.empty());
+                        if(is_area ? maa_area_vis : maa_point_vis)
+                        {
+                            if(point_in_circle_nm(click_lon, click_lat, m.lon, m.lat, m.radius_nm))
+                                result.features.push_back(m);
+                        }
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
 };
 
 layer_map::layer_map(sdl::device& dev, const char* tile_path, const char* db_path,
@@ -162,13 +419,72 @@ layer_map::~layer_map() = default;
 void layer_map::set_visibility(const nasrbrowse::layer_visibility& vis)
 {
     pimpl->show_tiles = vis[nasrbrowse::layer_basemap];
+    pimpl->vis = vis;
     pimpl->features.set_visibility(vis);
     pimpl->needs_update = true;
+}
+
+void layer_map::set_imgui_wants_mouse(bool wants)
+{
+    pimpl->imgui_wants_mouse = wants;
 }
 
 double layer_map::zoom_level() const
 {
     return pimpl->view.zoom_level(pimpl->viewport_height);
+}
+
+void layer_map::on_button_input(sdl::input_button_t button, sdl::input_action_t action, sdl::input_mod_t)
+{
+    if(static_cast<uint8_t>(button) != BUTTON_LEFT)
+        return;
+
+    if(static_cast<int>(action) != 0) // press
+    {
+        pimpl->dragged = false;
+    }
+    else // release
+    {
+        if(!pimpl->dragged && !pimpl->imgui_wants_mouse)
+        {
+            auto result = pimpl->pick_at(pimpl->cursor_ndc_x, pimpl->cursor_ndc_y);
+            std::cerr << "Pick at " << result.lon << ", " << result.lat
+                      << ": " << result.features.size() << " feature(s)" << std::endl;
+            for(const auto& f : result.features)
+            {
+                std::visit([](const auto& feature)
+                {
+                    using T = std::decay_t<decltype(feature)>;
+                    if constexpr(std::is_same_v<T, nasrbrowse::airport>)
+                        std::cerr << "  Airport: " << feature.arpt_id << " " << feature.arpt_name << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::navaid>)
+                        std::cerr << "  Navaid: " << feature.nav_id << " " << feature.name << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::fix>)
+                        std::cerr << "  Fix: " << feature.fix_id << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::obstacle>)
+                        std::cerr << "  Obstacle: " << feature.agl_ht << "ft AGL" << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::class_airspace>)
+                        std::cerr << "  Airspace: Class " << feature.airspace_class << " " << feature.name << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::sua>)
+                        std::cerr << "  SUA: " << feature.sua_type << " " << feature.name << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::artcc>)
+                        std::cerr << "  ARTCC: " << feature.location_id << " " << feature.name << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::adiz>)
+                        std::cerr << "  ADIZ: " << feature.name << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::maa>)
+                        std::cerr << "  MAA: " << feature.name << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::pja>)
+                        std::cerr << "  PJA: " << feature.name << std::endl;
+                }, f);
+            }
+        }
+    }
+}
+
+void layer_map::on_cursor_position(double xpos, double ypos)
+{
+    pimpl->cursor_ndc_x = xpos;
+    pimpl->cursor_ndc_y = ypos;
 }
 
 void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t)
@@ -225,6 +541,7 @@ void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, s
 
 void layer_map::on_drag_input(const std::vector<sdl::input_button_t>&, double xdelta, double ydelta)
 {
+    pimpl->dragged = true;
     // Convert NDC delta to meters
     double dx_meters = -xdelta * pimpl->view.half_extent_y * 2.0;
     double dy_meters = -ydelta * pimpl->view.half_extent_y * 2.0;

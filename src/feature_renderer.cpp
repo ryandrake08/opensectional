@@ -44,82 +44,6 @@ namespace nasrbrowse
                 fs.r, fs.g, fs.b, fs.a, 0};
     }
 
-    // Extract airway style key from airway ID
-    static std::string airway_key(const std::string& id)
-    {
-        if(id.size() >= 3 && id[0] == 'R' && id[1] == 'T' && id[2] == 'E')
-            return "airway_rte";
-        if(id.size() >= 2)
-        {
-            if(id[0] == 'B' && id[1] == 'R') return "airway_br";
-            if(id[0] == 'T' && id[1] == 'K') return "airway_tk";
-            if(id[0] == 'A' && id[1] == 'R') return "airway_ar";
-        }
-        if(!id.empty())
-        {
-            char c = id[0];
-            std::string key = "airway_";
-            key += static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
-            return key;
-        }
-        return "airway_v";
-    }
-
-    // Map SUA type code to style key
-    static const char* sua_key(const std::string& sua_type)
-    {
-        if(sua_type == "RA") return "sua_restricted";
-        if(sua_type == "PA") return "sua_prohibited";
-        if(sua_type == "WA") return "sua_warning";
-        if(sua_type == "AA") return "sua_alert";
-        if(sua_type == "NSA") return "sua_nsa";
-        return "sua_moa";
-    }
-
-    // Map class airspace to style key, using local_type for Class E subtypes
-    static const char* airspace_key(const std::string& cls, const std::string& local_type)
-    {
-        if(cls == "B") return "airspace_b";
-        if(cls == "C") return "airspace_c";
-        if(cls == "D") return "airspace_d";
-        if(local_type == "CLASS_E2") return "airspace_e2";
-        if(local_type == "CLASS_E3") return "airspace_e3";
-        if(local_type == "CLASS_E4") return "airspace_e4";
-        if(local_type == "CLASS_E5") return "airspace_e5";
-        if(local_type == "CLASS_E6") return "airspace_e6";
-        if(local_type == "CLASS_E7") return "airspace_e7";
-        return "airspace_e2";
-    }
-
-    // Classification thresholds
-    constexpr int OBSTACLE_HIGH_AGL_FT = 1000;
-    constexpr int OBSTACLE_MED_AGL_FT = 200;
-
-    // Airport zoom key based on airspace class
-    static const char* airport_zoom_key(const airport& apt)
-    {
-        if(apt.airspace_class == "B") return "airport_class_b";
-        if(apt.airspace_class == "C") return "airport_class_c";
-        if(apt.airspace_class == "D") return "airport_class_d";
-        if(apt.airspace_class == "E") return "airport_class_e";
-        return "airport_other";
-    }
-
-    // Airport color key based on tower type
-    static const char* airport_color_key(const airport& apt)
-    {
-        if(apt.twr_type_code != "NON-ATCT") return "airport_towered";
-        return "airport_untowered";
-    }
-
-    // Obstacle style key based on AGL height
-    static const char* obstacle_key(int agl_ht)
-    {
-        if(agl_ht >= OBSTACLE_HIGH_AGL_FT) return "obstacle_1000ft";
-        if(agl_ht >= OBSTACLE_MED_AGL_FT) return "obstacle_200ft";
-        return "obstacle_low";
-    }
-
     // Symbol base radii as fraction of view half-extent
     constexpr double SYMBOL_RADIUS_AIRPORT  = 0.012;
     constexpr double SYMBOL_RADIUS_FIX      = 0.012;
@@ -368,7 +292,7 @@ namespace nasrbrowse
 
             for(const auto& apt : airports)
             {
-                if(!styles.visible(airport_zoom_key(apt), z))
+                if(!styles.airport_visible(apt, z))
                 {
                     continue;
                 }
@@ -384,7 +308,7 @@ namespace nasrbrowse
                     return poly[layer_airports];
                 }();
 
-                const auto& cs = styles.get(airport_color_key(apt));
+                const auto& cs = styles.airport_style(apt);
                 float cx = static_cast<float>(lon_to_mx(apt.lon));
                 float cy = static_cast<float>(lat_to_my(apt.lat));
 
@@ -544,15 +468,12 @@ namespace nasrbrowse
                     continue;
                 }
 
-                const char* key = (nav.nav_type == "NDB" || nav.nav_type == "NDB/DME")
-                    ? "navaid_ndb" : "navaid_vor";
-
-                if(!styles.visible(key, z))
+                if(!styles.navaid_visible(nav.nav_type, z))
                 {
                     continue;
                 }
 
-                const auto& fs = styles.get(key);
+                const auto& fs = styles.navaid_style(nav.nav_type);
                 line_style ls = to_line_style(fs);
                 line_style filled_ls = ls;
                 filled_ls.fill_width = SYMBOL_FILL_PX;
@@ -663,22 +584,9 @@ namespace nasrbrowse
             pd.styles.push_back(ls);
         }
 
-        static const char* fix_color_key(const std::string& use_code)
+        bool fix_on_airway(const std::string& fix_id) const
         {
-            if(use_code == "RP") return "fix_rp";
-            if(use_code == "VFR") return "fix_vfr";
-            if(use_code == "CN") return "fix_cn";
-            if(use_code == "MR") return "fix_mr";
-            if(use_code == "MW") return "fix_mw";
-            if(use_code == "NRS") return "fix_nrs";
-            return "fix_wp";
-        }
-
-        const char* fix_zoom_key(const std::string& fix_id) const
-        {
-            if(airway_waypoints.find(fix_id) != airway_waypoints.end())
-                return "fix_airway";
-            return "fix_noairway";
+            return airway_waypoints.find(fix_id) != airway_waypoints.end();
         }
 
         void build_fix_polylines(double lon_min, double lat_min,
@@ -689,12 +597,12 @@ namespace nasrbrowse
 
             for(const auto& fix : fixes)
             {
-                if(!styles.visible(fix_zoom_key(fix.fix_id), z))
+                if(!styles.fix_visible(fix_on_airway(fix.fix_id), z))
                 {
                     continue;
                 }
 
-                const auto& fs = styles.get(fix_color_key(fix.use_code));
+                const auto& fs = styles.fix_style(fix.use_code);
                 line_style ls = to_line_style(fs);
 
                 float cx = static_cast<float>(lon_to_mx(fix.lon));
@@ -740,9 +648,7 @@ namespace nasrbrowse
 
             for(const auto& seg : airways)
             {
-                std::string key = airway_key(seg.awy_id);
-
-                if(!styles.visible(key, z))
+                if(!styles.airway_visible(seg.awy_id, z))
                 {
                     continue;
                 }
@@ -750,7 +656,7 @@ namespace nasrbrowse
                 airway_waypoints.insert(seg.from_point);
                 airway_waypoints.insert(seg.to_point);
 
-                const auto& fs = styles.get(key);
+                const auto& fs = styles.airway_style(seg.awy_id);
 
                 float x0 = static_cast<float>(lon_to_mx(seg.from_lon));
                 float y0 = static_cast<float>(lat_to_my(seg.from_lat));
@@ -792,14 +698,13 @@ namespace nasrbrowse
         void build_mtr_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max, double z)
         {
-            const char* key = "mtr";
-            if(!styles.visible(key, z))
+            if(!styles.mtr_visible(z))
             {
                 return;
             }
 
             const auto& mtrs = db.query_mtrs(lon_min, lat_min, lon_max, lat_max);
-            const auto& fs = styles.get(key);
+            const auto& fs = styles.mtr_style();
 
             for(const auto& seg : mtrs)
             {
@@ -816,13 +721,13 @@ namespace nasrbrowse
         void build_runway_polylines(double lon_min, double lat_min,
                                      double lon_max, double lat_max, double z)
         {
-            if(!styles.visible("runway", z))
+            if(!styles.runway_visible(z))
             {
                 return;
             }
 
             const auto& runways = db.query_runways(lon_min, lat_min, lon_max, lat_max);
-            const auto& fs = styles.get("runway");
+            const auto& fs = styles.runway_style();
 
             for(const auto& rwy : runways)
             {
@@ -870,9 +775,8 @@ namespace nasrbrowse
 
             for(const auto& s : suas)
             {
-                const char* key = sua_key(s.sua_type);
-                if(!styles.visible(key, z)) continue;
-                auto ls = to_line_style(styles.get(key));
+                if(!styles.sua_visible(s.sua_type, z)) continue;
+                auto ls = to_line_style(styles.sua_style(s.sua_type));
 
                 for(const auto& ring : s.parts)
                 {
@@ -884,8 +788,8 @@ namespace nasrbrowse
         void build_pja_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max, double z)
         {
-            bool area_vis = styles.visible("pja_area", z);
-            bool point_vis = styles.visible("pja_point", z);
+            bool area_vis = styles.pja_area_visible(z);
+            bool point_vis = styles.pja_point_visible(z);
             if(!area_vis && !point_vis) return;
 
             constexpr int CIRCLE_SEGS = 24;
@@ -912,7 +816,7 @@ namespace nasrbrowse
                             p.lon + dlon * std::cos(angle)});
                     }
 
-                    auto ls = to_line_style(styles.get("pja_area"));
+                    auto ls = to_line_style(styles.pja_area_style());
                     append_polygon_ring(poly[layer_pja], circle, ls);
                 }
                 else if(p.radius_nm <= 0.0 && point_vis)
@@ -923,7 +827,7 @@ namespace nasrbrowse
 
                     // Diamond with tan outline and black filled interior
                     // using fill_width to extend the inside border
-                    auto ls = to_line_style(styles.get("pja_point"));
+                    auto ls = to_line_style(styles.pja_point_style());
                     ls.fill_width = SYMBOL_FILL_PX;
                     poly[layer_pja].polylines.push_back({
                         {cx + r, cy}, {cx, cy + r}, {cx - r, cy},
@@ -953,8 +857,8 @@ namespace nasrbrowse
         void build_maa_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max, double z)
         {
-            bool area_vis = styles.visible("maa_area", z);
-            bool point_vis = styles.visible("maa_point", z);
+            bool area_vis = styles.maa_area_visible(z);
+            bool point_vis = styles.maa_point_visible(z);
             if(!area_vis && !point_vis) return;
 
             constexpr int CIRCLE_SEGS = 24;
@@ -968,7 +872,7 @@ namespace nasrbrowse
                 if(!m.shape.empty() && area_vis)
                 {
                     // Shape-defined: render as dashed polygon
-                    auto ls = to_line_style(styles.get("maa_area"));
+                    auto ls = to_line_style(styles.maa_area_style());
                     append_polygon_ring(poly[layer_maa], m.shape, ls);
                 }
                 else if(m.radius_nm > 0.0 && area_vis)
@@ -986,7 +890,7 @@ namespace nasrbrowse
                             m.lon + dlon * std::cos(angle)});
                     }
 
-                    auto ls = to_line_style(styles.get("maa_area"));
+                    auto ls = to_line_style(styles.maa_area_style());
                     append_polygon_ring(poly[layer_maa], circle, ls);
                 }
                 else if(m.lat != 0.0 && point_vis)
@@ -996,7 +900,7 @@ namespace nasrbrowse
                     float cy = static_cast<float>(lat_to_my(m.lat));
                     float r = static_cast<float>(half_extent_y * SYMBOL_RADIUS_AIRPORT);
 
-                    auto ls = to_line_style(styles.get("maa_point"));
+                    auto ls = to_line_style(styles.maa_point_style());
                     ls.fill_width = SYMBOL_FILL_PX;
                     poly[layer_maa].polylines.push_back({
                         {cx + r, cy}, {cx, cy + r}, {cx - r, cy},
@@ -1019,10 +923,10 @@ namespace nasrbrowse
         void build_adiz_polylines(double lon_min, double lat_min,
                                    double lon_max, double lat_max, double z)
         {
-            if(!styles.visible("adiz", z)) return;
+            if(!styles.adiz_visible(z)) return;
 
             const auto& adizs = db.query_adiz(lon_min, lat_min, lon_max, lat_max);
-            auto ls = to_line_style(styles.get("adiz"));
+            auto ls = to_line_style(styles.adiz_style());
 
             for(const auto& a : adizs)
             {
@@ -1040,12 +944,8 @@ namespace nasrbrowse
 
             for(const auto& a : artccs)
             {
-                const char* key = "artcc_low";
-                if(a.altitude == "HIGH") key = "artcc_high";
-                else if(a.altitude == "UNLIMITED") key = "artcc_oceanic";
-
-                if(!styles.visible(key, z)) continue;
-                auto ls = to_line_style(styles.get(key));
+                if(!styles.artcc_visible(a.altitude, z)) continue;
+                auto ls = to_line_style(styles.artcc_style(a.altitude));
 
                 append_polygon_ring(poly[layer_artcc], a.points, ls);
             }
@@ -1059,14 +959,12 @@ namespace nasrbrowse
 
             for(const auto& obs : obstacles)
             {
-                const char* key = obstacle_key(obs.agl_ht);
-
-                if(!styles.visible(key, z))
+                if(!styles.obstacle_visible(obs.agl_ht, z))
                 {
                     continue;
                 }
 
-                const auto& cs = styles.get(key);
+                const auto& cs = styles.obstacle_style(obs.agl_ht);
                 double mx = lon_to_mx(obs.lon);
                 double my = lat_to_my(obs.lat);
                 add_triangle(obstacle_vertices, mx, my, -radius,
@@ -1081,9 +979,8 @@ namespace nasrbrowse
 
             for(const auto& arsp : airspaces)
             {
-                const char* key = airspace_key(arsp.airspace_class, arsp.local_type);
-                if(!styles.visible(key, z)) continue;
-                auto ls = to_line_style(styles.get(key));
+                if(!styles.airspace_visible(arsp.airspace_class, arsp.local_type, z)) continue;
+                auto ls = to_line_style(styles.airspace_style(arsp.airspace_class, arsp.local_type));
 
                 for(const auto& ring : arsp.parts)
                 {
