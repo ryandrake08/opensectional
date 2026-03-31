@@ -700,6 +700,98 @@ def build_apt_rwy(conn, csv_zf):
     """)
 
 
+def build_apt_att(conn, csv_zf):
+    """Import airport attendance schedules."""
+    import_csv(conn, "APT_ATT", csv_zf, "APT_ATT.csv", [
+        "SITE_NO", "SKED_SEQ_NO", "MONTH", "DAY", "HOUR",
+    ])
+    conn.execute("CREATE INDEX idx_apt_att_site ON APT_ATT(SITE_NO)")
+
+
+def build_apt_rmk(conn, csv_zf):
+    """Import airport remarks."""
+    import_csv(conn, "APT_RMK", csv_zf, "APT_RMK.csv", [
+        "SITE_NO", "TAB_NAME", "REF_COL_NAME", "ELEMENT",
+        "REF_COL_SEQ_NO", "REMARK",
+    ])
+    conn.execute("CREATE INDEX idx_apt_rmk_site ON APT_RMK(SITE_NO)")
+
+
+def build_ils(conn, csv_zf):
+    """Import instrument landing system data."""
+    import_csv(conn, "ILS_BASE", csv_zf, "ILS_BASE.csv", [
+        "SITE_NO", "ARPT_ID", "RWY_END_ID", "ILS_LOC_ID",
+        "SYSTEM_TYPE_CODE", "CATEGORY",
+        "LAT_DECIMAL", "LONG_DECIMAL", "SITE_ELEVATION",
+        "LOC_FREQ", "APCH_BEAR",
+        "COMPONENT_STATUS", "BK_COURSE_STATUS_CODE",
+    ])
+    conn.execute("CREATE INDEX idx_ils_base_site ON ILS_BASE(SITE_NO)")
+
+    import_csv(conn, "ILS_GS", csv_zf, "ILS_GS.csv", [
+        "SITE_NO", "RWY_END_ID", "ILS_LOC_ID",
+        "LAT_DECIMAL", "LONG_DECIMAL", "SITE_ELEVATION",
+        "G_S_TYPE_CODE", "G_S_ANGLE", "G_S_FREQ",
+        "COMPONENT_STATUS",
+    ])
+    conn.execute("CREATE INDEX idx_ils_gs_site ON ILS_GS(SITE_NO)")
+
+    import_csv(conn, "ILS_DME", csv_zf, "ILS_DME.csv", [
+        "SITE_NO", "RWY_END_ID", "ILS_LOC_ID",
+        "LAT_DECIMAL", "LONG_DECIMAL", "SITE_ELEVATION",
+        "CHANNEL", "COMPONENT_STATUS",
+    ])
+    conn.execute("CREATE INDEX idx_ils_dme_site ON ILS_DME(SITE_NO)")
+
+    import_csv(conn, "ILS_MKR", csv_zf, "ILS_MKR.csv", [
+        "SITE_NO", "RWY_END_ID", "ILS_LOC_ID",
+        "ILS_COMP_TYPE_CODE", "COMPONENT_STATUS",
+        "LAT_DECIMAL", "LONG_DECIMAL", "SITE_ELEVATION",
+        "MKR_FAC_TYPE_CODE", "MARKER_ID_BEACON",
+        "COMPASS_LOCATOR_NAME", "FREQ",
+        "NAV_ID", "NAV_TYPE", "LOW_POWERED_NDB_STATUS",
+    ])
+    conn.execute("CREATE INDEX idx_ils_mkr_site ON ILS_MKR(SITE_NO)")
+
+    import_csv(conn, "ILS_RMK", csv_zf, "ILS_RMK.csv", [
+        "SITE_NO", "RWY_END_ID", "ILS_LOC_ID",
+        "ILS_COMP_TYPE_CODE", "TAB_NAME", "REF_COL_NAME",
+        "REF_COL_SEQ_NO", "REMARK",
+    ])
+    conn.execute("CREATE INDEX idx_ils_rmk_site ON ILS_RMK(SITE_NO)")
+
+
+def build_atc(conn, csv_zf):
+    """Import ATC facility data."""
+    import_csv(conn, "ATC_BASE", csv_zf, "ATC_BASE.csv", [
+        "SITE_NO", "FACILITY_TYPE", "FACILITY_ID",
+        "CITY", "STATE_CODE", "COUNTRY_CODE",
+        "ICAO_ID", "FACILITY_NAME",
+        "TWR_OPERATOR_CODE", "TWR_CALL", "TWR_HRS",
+        "PRIMARY_APCH_RADIO_CALL", "SECONDARY_APCH_RADIO_CALL",
+        "PRIMARY_DEP_RADIO_CALL", "SECONDARY_DEP_RADIO_CALL",
+    ])
+    conn.execute("CREATE INDEX idx_atc_base_site ON ATC_BASE(SITE_NO)")
+    conn.execute("CREATE INDEX idx_atc_base_fac ON ATC_BASE(FACILITY_ID, FACILITY_TYPE)")
+
+    import_csv(conn, "ATC_ATIS", csv_zf, "ATC_ATIS.csv", [
+        "FACILITY_ID", "FACILITY_TYPE",
+        "ATIS_NO", "DESCRIPTION", "ATIS_HRS", "ATIS_PHONE_NO",
+    ])
+    conn.execute("CREATE INDEX idx_atc_atis_fac ON ATC_ATIS(FACILITY_ID, FACILITY_TYPE)")
+
+    import_csv(conn, "ATC_RMK", csv_zf, "ATC_RMK.csv", [
+        "FACILITY_ID", "FACILITY_TYPE",
+        "TAB_NAME", "REF_COL_NAME", "REMARK_NO", "REMARK",
+    ])
+    conn.execute("CREATE INDEX idx_atc_rmk_fac ON ATC_RMK(FACILITY_ID, FACILITY_TYPE)")
+
+    import_csv(conn, "ATC_SVC", csv_zf, "ATC_SVC.csv", [
+        "FACILITY_ID", "FACILITY_TYPE", "CTL_SVC",
+    ])
+    conn.execute("CREATE INDEX idx_atc_svc_fac ON ATC_SVC(FACILITY_ID, FACILITY_TYPE)")
+
+
 def simplify_ring(points, epsilon):
     """Simplify a polygon ring using Ramer-Douglas-Peucker algorithm.
 
@@ -1784,6 +1876,18 @@ def main():
         print("Importing runway data...")
         build_apt_rwy(conn, csv_zf)
 
+        print("Importing airport attendance...")
+        build_apt_att(conn, csv_zf)
+
+        print("Importing airport remarks...")
+        build_apt_rmk(conn, csv_zf)
+
+        print("Importing ILS data...")
+        build_ils(conn, csv_zf)
+
+        print("Importing ATC facilities...")
+        build_atc(conn, csv_zf)
+
         print("Importing frequencies...")
         build_frq(conn, csv_zf)
 
@@ -1817,7 +1921,10 @@ def main():
     print("\nDatabase summary:")
     tables = ["APT_BASE", "CLS_ARSP", "NAV_BASE", "FIX_BASE", "FIX_CHRT",
               "AWY_SEG", "PJA_BASE", "MTR_SEG", "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
-              "RWY_SEG", "FRQ", "COM", "FSS_BASE", "FSS_RMK", "AWOS",
+              "RWY_SEG", "APT_ATT", "APT_RMK",
+              "ILS_BASE", "ILS_GS", "ILS_DME", "ILS_MKR", "ILS_RMK",
+              "ATC_BASE", "ATC_ATIS", "ATC_RMK", "ATC_SVC",
+              "FRQ", "COM", "FSS_BASE", "FSS_RMK", "AWOS",
               "CLS_ARSP_BASE", "CLS_ARSP_SHP",
               "SUA_BASE", "SUA_SHP", "ARTCC_BASE", "ARTCC_SHP", "OBS_BASE",
               "ADIZ_BASE", "ADIZ_SHP"]
