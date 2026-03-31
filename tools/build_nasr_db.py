@@ -206,8 +206,12 @@ def build_nav(conn, csv_zf):
     """Import navaids with decimal coordinates."""
     import_csv(conn, "NAV_BASE", csv_zf, "NAV_BASE.csv", [
         "NAV_ID", "NAV_TYPE", "STATE_CODE", "CITY", "COUNTRY_CODE",
-        "NAV_STATUS", "NAME", "LAT_DECIMAL", "LONG_DECIMAL",
-        "ELEV", "FREQ", "CHAN",
+        "NAV_STATUS", "NAME",
+        "OPER_HOURS", "HIGH_ALT_ARTCC_ID", "LOW_ALT_ARTCC_ID",
+        "LAT_DECIMAL", "LONG_DECIMAL", "ELEV",
+        "MAG_VARN", "MAG_VARN_HEMIS",
+        "FREQ", "CHAN", "PWR_OUTPUT",
+        "SIMUL_VOICE_FLAG", "VOICE_CALL", "RESTRICTION_FLAG",
     ])
 
     conn.execute("""
@@ -229,8 +233,9 @@ def build_nav(conn, csv_zf):
 def build_fix(conn, csv_zf):
     """Import fixes with decimal coordinates."""
     import_csv(conn, "FIX_BASE", csv_zf, "FIX_BASE.csv", [
-        "FIX_ID", "STATE_CODE", "COUNTRY_CODE", "LAT_DECIMAL",
-        "LONG_DECIMAL", "FIX_USE_CODE",
+        "FIX_ID", "STATE_CODE", "COUNTRY_CODE",
+        "ICAO_REGION_CODE", "LAT_DECIMAL", "LONG_DECIMAL",
+        "FIX_USE_CODE", "ARTCC_ID_HIGH", "ARTCC_ID_LOW",
     ])
 
     conn.execute("""
@@ -309,7 +314,8 @@ def build_awy(conn, csv_zf):
             wt.LAT AS TO_LAT,
             wt.LON AS TO_LON,
             s.AWY_SEG_GAP_FLAG,
-            s.MIN_ENROUTE_ALT
+            s.MIN_ENROUTE_ALT,
+            s.MAG_COURSE_DIST
         FROM AWY_SEG_ALT s
         LEFT JOIN WP_LOOKUP wf ON wf.WP_ID = s.FROM_POINT
         LEFT JOIN WP_LOOKUP wt ON wt.WP_ID = s.TO_POINT
@@ -324,7 +330,7 @@ def build_awy(conn, csv_zf):
         CREATE TABLE AWY_SEG_DEDUP AS
         SELECT AWY_ID, AWY_LOCATION, POINT_SEQ, FROM_POINT, TO_POINT,
                FROM_LAT, FROM_LON, TO_LAT, TO_LON,
-               AWY_SEG_GAP_FLAG, MIN_ENROUTE_ALT
+               AWY_SEG_GAP_FLAG, MIN_ENROUTE_ALT, MAG_COURSE_DIST
         FROM AWY_SEG
         GROUP BY AWY_ID, AWY_LOCATION, POINT_SEQ
     """)
@@ -335,7 +341,7 @@ def build_awy(conn, csv_zf):
     crossing = conn.execute("""
         SELECT AWY_ID, AWY_LOCATION, POINT_SEQ, FROM_POINT, TO_POINT,
                FROM_LAT, FROM_LON, TO_LAT, TO_LON,
-               AWY_SEG_GAP_FLAG, MIN_ENROUTE_ALT
+               AWY_SEG_GAP_FLAG, MIN_ENROUTE_ALT, MAG_COURSE_DIST
         FROM AWY_SEG
         WHERE ABS(FROM_LON - TO_LON) > 180
     """).fetchall()
@@ -349,10 +355,10 @@ def build_awy(conn, csv_zf):
             west = row[:6] + (from_lon - 360, row[7], to_lon) + row[9:]
             east = row[:6] + (from_lon, row[7], to_lon + 360) + row[9:]
         conn.execute("""
-            INSERT INTO AWY_SEG VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            INSERT INTO AWY_SEG VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         """, west)
         conn.execute("""
-            INSERT INTO AWY_SEG VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            INSERT INTO AWY_SEG VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         """, east)
     # Remove the original crossing segments
     conn.execute("DELETE FROM AWY_SEG WHERE ABS(FROM_LON - TO_LON) > 180")
@@ -1454,6 +1460,185 @@ def build_obstacles(conn, dof_zf):
     """)
 
 
+def build_nav_detail(conn, csv_zf):
+    """Import navaid remarks and checkpoints."""
+    import_csv(conn, "NAV_RMK", csv_zf, "NAV_RMK.csv", [
+        "NAV_ID", "NAV_TYPE", "TAB_NAME", "REF_COL_NAME",
+        "REF_COL_SEQ_NO", "REMARK",
+    ])
+    conn.execute("CREATE INDEX idx_nav_rmk ON NAV_RMK(NAV_ID, NAV_TYPE)")
+
+    import_csv(conn, "NAV_CKPT", csv_zf, "NAV_CKPT.csv", [
+        "NAV_ID", "NAV_TYPE", "ALTITUDE", "BRG",
+        "AIR_GND_CODE", "CHK_DESC", "ARPT_ID",
+    ])
+    conn.execute("CREATE INDEX idx_nav_ckpt ON NAV_CKPT(NAV_ID, NAV_TYPE)")
+
+
+def build_fix_detail(conn, csv_zf):
+    """Import fix-to-navaid relationships."""
+    import_csv(conn, "FIX_NAV", csv_zf, "FIX_NAV.csv", [
+        "FIX_ID", "ICAO_REGION_CODE", "STATE_CODE",
+        "NAV_ID", "NAV_TYPE", "BEARING", "DISTANCE",
+    ])
+    conn.execute("CREATE INDEX idx_fix_nav ON FIX_NAV(FIX_ID)")
+
+
+def build_awy_base(conn, csv_zf):
+    """Import airway metadata."""
+    import_csv(conn, "AWY_BASE", csv_zf, "AWY_BASE.csv", [
+        "AWY_DESIGNATION", "AWY_LOCATION", "AWY_ID",
+        "REMARK", "AIRWAY_STRING",
+    ])
+    conn.execute("CREATE INDEX idx_awy_base ON AWY_BASE(AWY_ID)")
+
+
+def build_hpf(conn, csv_zf):
+    """Import holding pattern data."""
+    import_csv(conn, "HPF_BASE", csv_zf, "HPF_BASE.csv", [
+        "HP_NAME", "HP_NO", "STATE_CODE", "COUNTRY_CODE",
+        "FIX_ID", "ICAO_REGION_CODE",
+        "NAV_ID", "NAV_TYPE",
+        "HOLD_DIRECTION", "COURSE_INBOUND_DEG",
+        "TURN_DIRECTION", "LEG_LENGTH_DIST",
+    ])
+    conn.execute("CREATE INDEX idx_hpf_base ON HPF_BASE(FIX_ID)")
+
+    import_csv(conn, "HPF_SPD_ALT", csv_zf, "HPF_SPD_ALT.csv", [
+        "HP_NAME", "HP_NO", "SPEED_RANGE", "ALTITUDE",
+    ])
+    conn.execute("CREATE INDEX idx_hpf_spd ON HPF_SPD_ALT(HP_NAME, HP_NO)")
+
+    import_csv(conn, "HPF_CHRT", csv_zf, "HPF_CHRT.csv", [
+        "HP_NAME", "HP_NO", "CHARTING_TYPE_DESC",
+    ])
+    conn.execute("CREATE INDEX idx_hpf_chrt ON HPF_CHRT(HP_NAME, HP_NO)")
+
+    import_csv(conn, "HPF_RMK", csv_zf, "HPF_RMK.csv", [
+        "HP_NAME", "HP_NO", "TAB_NAME", "REF_COL_NAME",
+        "REF_COL_SEQ_NO", "REMARK",
+    ])
+    conn.execute("CREATE INDEX idx_hpf_rmk ON HPF_RMK(HP_NAME, HP_NO)")
+
+
+def build_maa_rmk(conn, csv_zf):
+    """Import MAA remarks."""
+    import_csv(conn, "MAA_RMK", csv_zf, "MAA_RMK.csv", [
+        "MAA_ID", "TAB_NAME", "REF_COL_NAME",
+        "REF_COL_SEQ_NO", "REMARK",
+    ])
+    conn.execute("CREATE INDEX idx_maa_rmk ON MAA_RMK(MAA_ID)")
+
+
+def build_mtr_base(conn, csv_zf):
+    """Import MTR metadata."""
+    import_csv(conn, "MTR_BASE", csv_zf, "MTR_BASE.csv", [
+        "ROUTE_TYPE_CODE", "ROUTE_ID", "ARTCC", "FSS", "TIME_OF_USE",
+    ])
+    conn.execute("CREATE INDEX idx_mtr_base ON MTR_BASE(ROUTE_TYPE_CODE, ROUTE_ID)")
+
+
+def build_dp(conn, csv_zf):
+    """Import departure procedures (SIDs)."""
+    import_csv(conn, "DP_BASE", csv_zf, "DP_BASE.csv", [
+        "DP_NAME", "AMENDMENT_NO", "ARTCC", "DP_AMEND_EFF_DATE",
+        "RNAV_FLAG", "DP_COMPUTER_CODE", "GRAPHICAL_DP_TYPE", "SERVED_ARPT",
+    ])
+    conn.execute("CREATE INDEX idx_dp_base ON DP_BASE(DP_COMPUTER_CODE)")
+
+    import_csv(conn, "DP_APT", csv_zf, "DP_APT.csv", [
+        "DP_NAME", "DP_COMPUTER_CODE", "BODY_NAME", "BODY_SEQ",
+        "ARPT_ID", "RWY_END_ID",
+    ])
+    conn.execute("CREATE INDEX idx_dp_apt ON DP_APT(ARPT_ID)")
+    conn.execute("CREATE INDEX idx_dp_apt_code ON DP_APT(DP_COMPUTER_CODE)")
+
+    import_csv(conn, "DP_RTE", csv_zf, "DP_RTE.csv", [
+        "DP_COMPUTER_CODE", "ROUTE_PORTION_TYPE", "ROUTE_NAME",
+        "BODY_SEQ", "TRANSITION_COMPUTER_CODE", "POINT_SEQ",
+        "POINT", "ICAO_REGION_CODE", "POINT_TYPE",
+        "NEXT_POINT", "ARPT_RWY_ASSOC",
+    ])
+    conn.execute("CREATE INDEX idx_dp_rte ON DP_RTE(DP_COMPUTER_CODE)")
+
+
+def build_star(conn, csv_zf):
+    """Import standard terminal arrivals (STARs)."""
+    import_csv(conn, "STAR_BASE", csv_zf, "STAR_BASE.csv", [
+        "ARRIVAL_NAME", "AMENDMENT_NO", "ARTCC", "STAR_AMEND_EFF_DATE",
+        "RNAV_FLAG", "STAR_COMPUTER_CODE", "SERVED_ARPT",
+    ])
+    conn.execute("CREATE INDEX idx_star_base ON STAR_BASE(STAR_COMPUTER_CODE)")
+
+    import_csv(conn, "STAR_APT", csv_zf, "STAR_APT.csv", [
+        "STAR_COMPUTER_CODE", "BODY_NAME", "BODY_SEQ",
+        "ARPT_ID", "RWY_END_ID",
+    ])
+    conn.execute("CREATE INDEX idx_star_apt ON STAR_APT(ARPT_ID)")
+    conn.execute("CREATE INDEX idx_star_apt_code ON STAR_APT(STAR_COMPUTER_CODE)")
+
+    import_csv(conn, "STAR_RTE", csv_zf, "STAR_RTE.csv", [
+        "STAR_COMPUTER_CODE", "ROUTE_PORTION_TYPE", "ROUTE_NAME",
+        "BODY_SEQ", "TRANSITION_COMPUTER_CODE", "POINT_SEQ",
+        "POINT", "ICAO_REGION_CODE", "POINT_TYPE",
+        "NEXT_POINT", "ARPT_RWY_ASSOC",
+    ])
+    conn.execute("CREATE INDEX idx_star_rte ON STAR_RTE(STAR_COMPUTER_CODE)")
+
+
+def build_pfr(conn, csv_zf):
+    """Import preferred flight routes and coded departure routes."""
+    import_csv(conn, "PFR_BASE", csv_zf, "PFR_BASE.csv", [
+        "ORIGIN_ID", "DSTN_ID", "PFR_TYPE_CODE", "ROUTE_NO",
+        "SPECIAL_AREA_DESCRIP", "ALT_DESCRIP", "AIRCRAFT", "HOURS",
+        "ROUTE_DIR_DESCRIP", "ROUTE_STRING",
+    ])
+    conn.execute("CREATE INDEX idx_pfr_base ON PFR_BASE(ORIGIN_ID, DSTN_ID)")
+
+    import_csv(conn, "PFR_SEG", csv_zf, "PFR_SEG.csv", [
+        "ORIGIN_ID", "DSTN_ID", "PFR_TYPE_CODE", "ROUTE_NO",
+        "SEGMENT_SEQ", "SEG_VALUE", "SEG_TYPE",
+        "STATE_CODE", "ICAO_REGION_CODE", "NAV_TYPE",
+    ])
+    conn.execute("CREATE INDEX idx_pfr_seg ON PFR_SEG(ORIGIN_ID, DSTN_ID, ROUTE_NO)")
+
+    import_csv(conn, "CDR", csv_zf, "CDR.csv", [
+        "RCode", "Orig", "Dest", "DepFix", "Route String",
+        "DCNTR", "ACNTR", "TCNTRs",
+    ])
+    conn.execute("CREATE INDEX idx_cdr ON CDR(Orig, Dest)")
+
+
+def build_wxl(conn, csv_zf):
+    """Import weather reporting locations."""
+    import_csv(conn, "WXL_BASE", csv_zf, "WXL_BASE.csv", [
+        "WEA_ID", "CITY", "STATE_CODE", "COUNTRY_CODE",
+        "LAT_DECIMAL", "LONG_DECIMAL", "ELEV",
+    ])
+    conn.execute("CREATE INDEX idx_wxl_base ON WXL_BASE(WEA_ID)")
+
+    # R-tree for spatial queries
+    conn.execute("""
+        CREATE VIRTUAL TABLE WXL_BASE_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO WXL_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT rowid,
+               CAST(LONG_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
+               CAST(LAT_DECIMAL AS REAL), CAST(LAT_DECIMAL AS REAL)
+        FROM WXL_BASE
+        WHERE LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != ''
+            AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''
+    """)
+
+    import_csv(conn, "WXL_SVC", csv_zf, "WXL_SVC.csv", [
+        "WEA_ID", "WEA_SVC_TYPE_CODE", "WEA_AFFECT_AREA",
+    ])
+    conn.execute("CREATE INDEX idx_wxl_svc ON WXL_SVC(WEA_ID)")
+
+
 def build_frq(conn, csv_zf):
     """Import frequency data for all facility types."""
     import_csv(conn, "FRQ", csv_zf, "FRQ.csv", [
@@ -1658,10 +1843,14 @@ def build_cls_arsp(conn, shp_zf):
             NAME TEXT,
             CLASS TEXT,
             LOCAL_TYPE TEXT,
+            IDENT TEXT,
+            SECTOR TEXT,
             UPPER_DESC TEXT,
             UPPER_VAL TEXT,
             LOWER_DESC TEXT,
-            LOWER_VAL TEXT
+            LOWER_VAL TEXT,
+            WKHR_CODE TEXT,
+            WKHR_RMK TEXT
         )
     """)
 
@@ -1691,10 +1880,14 @@ def build_cls_arsp(conn, shp_zf):
             rec.get("NAME", ""),
             rec.get("CLASS", ""),
             rec.get("LOCAL_TYPE", ""),
+            rec.get("IDENT", ""),
+            rec.get("SECTOR", ""),
             rec.get("UPPER_DESC", ""),
             rec.get("UPPER_VAL", ""),
             rec.get("LOWER_DESC", ""),
             rec.get("LOWER_VAL", ""),
+            rec.get("WKHR_CODE", ""),
+            rec.get("WKHR_RMK", ""),
         ))
         part_num = 0
         for ring, is_hole in parts:
@@ -1711,7 +1904,7 @@ def build_cls_arsp(conn, shp_zf):
           f"({100 * total_after / total_before:.1f}%)")
 
     conn.executemany(
-        "INSERT INTO CLS_ARSP_BASE VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO CLS_ARSP_BASE VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         base_rows,
     )
     conn.executemany(
@@ -1876,6 +2069,36 @@ def main():
         print("Importing runway data...")
         build_apt_rwy(conn, csv_zf)
 
+        print("Importing navaid details...")
+        build_nav_detail(conn, csv_zf)
+
+        print("Importing fix details...")
+        build_fix_detail(conn, csv_zf)
+
+        print("Importing airway metadata...")
+        build_awy_base(conn, csv_zf)
+
+        print("Importing holding patterns...")
+        build_hpf(conn, csv_zf)
+
+        print("Importing MAA remarks...")
+        build_maa_rmk(conn, csv_zf)
+
+        print("Importing MTR metadata...")
+        build_mtr_base(conn, csv_zf)
+
+        print("Importing departure procedures...")
+        build_dp(conn, csv_zf)
+
+        print("Importing STARs...")
+        build_star(conn, csv_zf)
+
+        print("Importing preferred routes...")
+        build_pfr(conn, csv_zf)
+
+        print("Importing weather locations...")
+        build_wxl(conn, csv_zf)
+
         print("Importing airport attendance...")
         build_apt_att(conn, csv_zf)
 
@@ -1919,9 +2142,17 @@ def main():
 
     # Print summary
     print("\nDatabase summary:")
-    tables = ["APT_BASE", "CLS_ARSP", "NAV_BASE", "FIX_BASE", "FIX_CHRT",
-              "AWY_SEG", "PJA_BASE", "MTR_SEG", "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
-              "RWY_SEG", "APT_ATT", "APT_RMK",
+    tables = ["APT_BASE", "CLS_ARSP", "NAV_BASE", "NAV_RMK", "NAV_CKPT",
+              "FIX_BASE", "FIX_CHRT", "FIX_NAV",
+              "AWY_BASE", "AWY_SEG",
+              "HPF_BASE", "HPF_SPD_ALT", "HPF_CHRT", "HPF_RMK",
+              "PJA_BASE", "MTR_BASE", "MTR_SEG",
+              "MAA_BASE", "MAA_SHP", "MAA_RMK",
+              "DP_BASE", "DP_APT", "DP_RTE",
+              "STAR_BASE", "STAR_APT", "STAR_RTE",
+              "PFR_BASE", "PFR_SEG", "CDR",
+              "WXL_BASE", "WXL_SVC",
+              "APT_RWY", "APT_RWY_END", "RWY_SEG", "APT_ATT", "APT_RMK",
               "ILS_BASE", "ILS_GS", "ILS_DME", "ILS_MKR", "ILS_RMK",
               "ATC_BASE", "ATC_ATIS", "ATC_RMK", "ATC_SVC",
               "FRQ", "COM", "FSS_BASE", "FSS_RMK", "AWOS",

@@ -96,23 +96,47 @@ env/bin/python3 tools/download_nasr_data.py nasr_data
 
 The download script fetches data from the FAA NASR subscription page, the Digital Obstacle File page, and ADIZ boundaries from the FAA ArcGIS service. Use `--preview` for the next cycle's data instead of the current one.
 
-`build_nasr_db.py` reads the downloaded ZIP files (no manual extraction needed) and produces a SQLite database containing:
+`build_nasr_db.py` reads the downloaded ZIP files (no manual extraction needed) and produces a SQLite database (~171 MB) containing 57 tables. All spatial tables have R-tree indexes for efficient bounding-box queries. Column names match FAA NASR naming conventions.
 
-| Table | Contents |
-|-------|----------|
-| APT_BASE | 19,606 airports with coordinates |
-| NAV_BASE | 1,649 navaids (VOR, NDB, DME, etc.) |
-| FIX_BASE | 69,983 fixes/intersections |
-| AWY_SEG | 17,616 airway segments with resolved coordinates |
-| MTR_SEG | 5,366 military training route segments |
-| MAA_BASE/SHP | 174 MOA/SUA records with polygon shapes |
-| APT_RWY/RWY_END | 23,431 runways with endpoint coordinates |
-| CLS_ARSP_BASE/SHP | 5,608 class airspace polygons (B/C/D/E) |
-| SUA_BASE/SHP | 1,234 special use airspace polygons (MOA/RA/WA/AA/PA/NSA) |
-| ADIZ_BASE/SHP | 19 Air Defense Identification Zone boundaries |
-| OBS_BASE | ~628,000 obstacles (towers, poles, buildings) with AGL/AMSL heights |
+**Airports & Runways**
+- `APT_BASE` — 19,606 airports with coordinates, elevation, ownership, facility use
+- `APT_RWY` / `APT_RWY_END` / `RWY_SEG` — 23,431 runways with endpoint coordinates and rendering segments
+- `APT_ATT` — airport attendance schedules
+- `APT_RMK` — airport remarks
+- `CLS_ARSP` — airport airspace classification flags (B/C/D/E)
 
-All spatial tables have R-tree indexes for efficient bounding-box queries.
+**Navigation**
+- `NAV_BASE` / `NAV_RMK` / `NAV_CKPT` — 1,649 navaids (VOR, NDB, DME) with remarks and checkpoints
+- `FIX_BASE` / `FIX_NAV` / `FIX_CHRT` — 69,983 fixes with navaid relationships and chart references
+- `AWY_BASE` / `AWY_SEG` — 17,616 airway segments with resolved coordinates
+
+**Procedures & Routes**
+- `DP_BASE` / `DP_APT` / `DP_RTE` — departure procedures (SIDs)
+- `STAR_BASE` / `STAR_APT` / `STAR_RTE` — standard terminal arrivals
+- `PFR_BASE` / `PFR_SEG` — preferred flight routes
+- `CDR` — coded departure routes
+- `HPF_BASE` / `HPF_SPD_ALT` / `HPF_CHRT` / `HPF_RMK` — holding patterns
+- `MTR_BASE` / `MTR_SEG` — 5,366 military training route segments
+
+**Airspace**
+- `CLS_ARSP_BASE` / `CLS_ARSP_SHP` — 5,608 class airspace polygons (B/C/D/E)
+- `SUA_BASE` / `SUA_SHP` — 1,234 special use airspace polygons (MOA/RA/WA/AA/PA/NSA)
+- `ARTCC_BASE` / `ARTCC_SHP` — ARTCC boundary polygons
+- `ADIZ_BASE` / `ADIZ_SHP` — 19 Air Defense Identification Zone boundaries
+- `MAA_BASE` / `MAA_SHP` / `MAA_RMK` — 174 miscellaneous activity areas
+- `PJA_BASE` — parachute jump areas
+
+**Communications & ATC**
+- `ATC_BASE` / `ATC_ATIS` / `ATC_RMK` / `ATC_SVC` — ATC facilities and services
+- `FRQ` — frequencies
+- `COM` — communication outlet locations (RCO/RCAG)
+- `FSS_BASE` / `FSS_RMK` — flight service stations
+- `ILS_BASE` / `ILS_GS` / `ILS_DME` / `ILS_MKR` / `ILS_RMK` — instrument landing systems
+
+**Weather & Obstacles**
+- `AWOS` — automated weather stations
+- `WXL_BASE` / `WXL_SVC` — weather reporting locations and services
+- `OBS_BASE` — ~628,000 obstacles (towers, poles, buildings) with AGL/AMSL heights
 
 ### 2. Raster Chart Tiles
 
