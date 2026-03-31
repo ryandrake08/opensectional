@@ -1123,10 +1123,16 @@ def parse_ring_points(ring_elem):
     return points
 
 
+def _text(parent, tag):
+    """Get text content of a child element, or empty string."""
+    elem = parent.find(f".//{tag}")
+    return elem.text.strip() if elem is not None and elem.text else ""
+
+
 def _parse_one_airspace(airspace):
     """Parse a single AIXM Airspace element.
 
-    Returns a dict with designator, name, sua_type, upper_limit, lower_limit,
+    Returns a dict with designator, name, sua_type, metadata fields,
     and parts, or None if the element has no usable geometry.
     """
     ts = airspace.find(f".//{{{AIXM}}}AirspaceTimeSlice")
@@ -1143,6 +1149,30 @@ def _parse_one_airspace(airspace):
     for ext in ts.iter(f"{{{SUA_NS}}}suaType"):
         sua_type = ext.text or ""
         break
+
+    # SAA extension metadata (administrativeArea, city, legalDefinitionType)
+    admin_area = _text(ts, f"{{{SAA}}}administrativeArea")
+    saa_city = _text(ts, f"{{{SAA}}}city")
+
+    # AIXM metadata from AirspaceActivation and related elements
+    activity = _text(ts, f"{{{AIXM}}}activity")
+    status = _text(ts, f"{{{AIXM}}}statusActivation")
+    working_hours = _text(ts, f"{{{AIXM}}}workingHours")
+    military = _text(ts, f"{{{AIXM}}}military")
+    compliant_icao = _text(ts, f"{{{AIXM}}}compliantICAO")
+
+    # Legal definition note (annotation where propertyName=legalDefinitionType)
+    legal_note = ""
+    for annotation in ts.findall(f"{{{AIXM}}}annotation"):
+        note_elem = annotation.find(f".//{{{AIXM}}}Note")
+        if note_elem is None:
+            continue
+        prop = note_elem.find(f"{{{AIXM}}}propertyName")
+        if prop is not None and prop.text == "legalDefinitionType":
+            ln = note_elem.find(f".//{{{AIXM}}}note")
+            if ln is not None and ln.text:
+                legal_note = ln.text.strip()
+                break
 
     # Collect geometry from all components, ordered by sequence
     upper_limit = ""
@@ -1257,6 +1287,14 @@ def _parse_one_airspace(airspace):
         "sua_type": sua_type,
         "upper_limit": upper_limit,
         "lower_limit": lower_limit,
+        "admin_area": admin_area,
+        "city": saa_city,
+        "military": military,
+        "activity": activity,
+        "status": status,
+        "working_hours": working_hours,
+        "compliant_icao": compliant_icao,
+        "legal_note": legal_note,
         "parts": parts,
     }
 
@@ -1267,12 +1305,53 @@ def parse_aixm_sua(xml_data):
     xml_data is bytes or a file-like object. A single file may contain
     multiple Airspace elements.
     Returns a list of parsed airspace dicts (may be empty).
+
+    The AIXM document has sibling hasMember elements at the root level:
+    OrganisationAuthority, Airspace, Unit (controlling/ARTCC), AirspaceUsage.
     """
     root = ET.fromstring(xml_data)
+
+    # Extract controlling authority from OrganisationAuthority elements
+    controlling_auth = ""
+    for oa_ts in root.iter(f"{{{AIXM}}}OrganisationAuthorityTimeSlice"):
+        oa_name = _text(oa_ts, f"{{{AIXM}}}name")
+        oa_type = _text(oa_ts, f"{{{AIXM}}}type")
+        if oa_type == "NTL_AUTH" and oa_name:
+            controlling_auth = oa_name
+            break
+
+    # Extract metadata from Unit elements (military status, ICAO compliance)
+    military = ""
+    compliant_icao = ""
+    for unit_ts in root.iter(f"{{{AIXM}}}UnitTimeSlice"):
+        unit_type = _text(unit_ts, f"{{{AIXM}}}type")
+        if unit_type == "MILOPS":
+            military = _text(unit_ts, f"{{{AIXM}}}military")
+        elif unit_type == "ARTCC":
+            compliant_icao = _text(unit_ts, f"{{{AIXM}}}compliantICAO")
+
+    # Extract metadata from AirspaceUsage (activity, status, working hours)
+    activity = ""
+    status = ""
+    working_hours = ""
+    for usage_ts in root.iter(f"{{{AIXM}}}AirspaceUsageTimeSlice"):
+        if not activity:
+            activity = _text(usage_ts, f"{{{AIXM}}}activity")
+        if not status:
+            status = _text(usage_ts, f"{{{AIXM}}}statusActivation")
+        if not working_hours:
+            working_hours = _text(usage_ts, f"{{{AIXM}}}workingHours")
+
     results = []
     for airspace in root.iter(f"{{{AIXM}}}Airspace"):
         result = _parse_one_airspace(airspace)
         if result is not None:
+            result["controlling_authority"] = controlling_auth
+            result["military"] = result["military"] or military
+            result["compliant_icao"] = result["compliant_icao"] or compliant_icao
+            result["activity"] = result["activity"] or activity
+            result["status"] = result["status"] or status
+            result["working_hours"] = result["working_hours"] or working_hours
             results.append(result)
     return results
 
@@ -1302,7 +1381,16 @@ def build_sua(conn, aixm_zf):
             NAME TEXT,
             SUA_TYPE TEXT,
             UPPER_LIMIT TEXT,
-            LOWER_LIMIT TEXT
+            LOWER_LIMIT TEXT,
+            CONTROLLING_AUTHORITY TEXT,
+            ADMIN_AREA TEXT,
+            CITY TEXT,
+            MILITARY TEXT,
+            ACTIVITY TEXT,
+            STATUS TEXT,
+            WORKING_HOURS TEXT,
+            ICAO_COMPLIANT TEXT,
+            LEGAL_NOTE TEXT
         )
     """)
 
@@ -1341,6 +1429,15 @@ def build_sua(conn, aixm_zf):
                 result["sua_type"],
                 result["upper_limit"],
                 result["lower_limit"],
+                result["controlling_authority"],
+                result["admin_area"],
+                result["city"],
+                result["military"],
+                result["activity"],
+                result["status"],
+                result["working_hours"],
+                result["compliant_icao"],
+                result["legal_note"],
             ))
 
             part_num = 0
@@ -1355,7 +1452,7 @@ def build_sua(conn, aixm_zf):
                     part_num += 1
 
     conn.executemany(
-        "INSERT INTO SUA_BASE VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_BASE VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         base_rows,
     )
     conn.executemany(
@@ -1397,13 +1494,24 @@ def build_obstacles(conn, dof_zf):
     conn.execute("DROP TABLE IF EXISTS OBS_BASE")
     conn.execute("""
         CREATE TABLE OBS_BASE (
-            OAS_NUM TEXT,
+            OAS_NUM TEXT PRIMARY KEY,
+            VERIFY_STATUS TEXT,
+            COUNTRY TEXT,
+            STATE TEXT,
+            CITY TEXT,
             LAT_DECIMAL REAL,
             LON_DECIMAL REAL,
             OBSTACLE_TYPE TEXT,
+            QUANTITY INTEGER,
             AGL_HT INTEGER,
             AMSL_HT INTEGER,
-            LIGHTING TEXT
+            LIGHTING TEXT,
+            HORIZ_ACC TEXT,
+            VERT_ACC TEXT,
+            MARKING TEXT,
+            FAA_STUDY TEXT,
+            ACTION TEXT,
+            JDATE TEXT
         )
     """)
 
@@ -1419,9 +1527,14 @@ def build_obstacles(conn, dof_zf):
                 if len(line) < 96:
                     continue
                 oas_num = line[0:10].strip()
+                verify_status = line[10:12].strip()
+                country = line[12:14].strip()
+                state = line[14:17].strip()
+                city = line[17:35].strip()
                 lat_str = line[35:48]
                 lon_str = line[48:62]
                 obs_type = line[62:81].strip()
+                qty_str = line[81:82].strip()
                 agl_str = line[82:88].strip()
                 amsl_str = line[88:94].strip()
                 lighting = line[95:96].strip()
@@ -1432,6 +1545,10 @@ def build_obstacles(conn, dof_zf):
                     continue
 
                 try:
+                    quantity = int(qty_str)
+                except ValueError:
+                    quantity = 1
+                try:
                     agl_ht = int(agl_str)
                 except ValueError:
                     agl_ht = 0
@@ -1440,9 +1557,23 @@ def build_obstacles(conn, dof_zf):
                 except ValueError:
                     amsl_ht = 0
 
-                rows.append((oas_num, lat, lon, obs_type, agl_ht, amsl_ht, lighting))
+                # Fields after LIGHTING (may not exist in short records)
+                horiz_acc = line[96:98].strip() if len(line) > 98 else ""
+                vert_acc = line[98:100].strip() if len(line) > 100 else ""
+                marking = line[100:102].strip() if len(line) > 102 else ""
+                faa_study = line[102:118].strip() if len(line) > 118 else ""
+                action = line[118:120].strip() if len(line) > 120 else ""
+                jdate = line[120:128].strip() if len(line) > 128 else ""
 
-    conn.executemany("INSERT INTO OBS_BASE VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+                rows.append((oas_num, verify_status, country, state, city,
+                             lat, lon, obs_type, quantity, agl_ht, amsl_ht,
+                             lighting, horiz_acc, vert_acc, marking,
+                             faa_study, action, jdate))
+
+    conn.executemany(
+        "INSERT OR IGNORE INTO OBS_BASE VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
     print(f"  OBS_BASE: {len(rows)} obstacles")
 
     conn.execute("""
@@ -1458,6 +1589,7 @@ def build_obstacles(conn, dof_zf):
         FROM OBS_BASE
         WHERE LAT_DECIMAL IS NOT NULL AND LON_DECIMAL IS NOT NULL
     """)
+    conn.execute("CREATE INDEX idx_obs_state ON OBS_BASE(STATE)")
 
 
 def build_nav_detail(conn, csv_zf):
@@ -1754,7 +1886,10 @@ def build_adiz(conn, geojson_path):
     conn.execute("""
         CREATE TABLE ADIZ_BASE (
             ADIZ_ID INTEGER PRIMARY KEY,
-            NAME TEXT
+            NAME TEXT,
+            LOCATION TEXT,
+            WORKING_HOURS TEXT,
+            MILITARY TEXT
         )
     """)
 
@@ -1785,8 +1920,13 @@ def build_adiz(conn, geojson_path):
         else:
             continue
 
+        location = props.get("LOCATIONIND_TXT", "")
+        wkhr = props.get("WORKHR_CODE", "")
+        mil = props.get("MIL_CODE", "")
+
         adiz_id += 1
-        conn.execute("INSERT INTO ADIZ_BASE VALUES (?, ?)", (adiz_id, name))
+        conn.execute("INSERT INTO ADIZ_BASE VALUES (?, ?, ?, ?, ?)",
+                     (adiz_id, name, location, wkhr, mil))
 
         part_num = 0
         for polygon in polygons:
