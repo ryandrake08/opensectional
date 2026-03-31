@@ -14,7 +14,6 @@ pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 # Main executable
 add_executable(nasrbrowse
     # Application sources
-    src/color.cpp
     src/ini_config.cpp
     src/layer.cpp
     src/layer_map.cpp

@@ -21,7 +21,7 @@ namespace nasrbrowse
         float g = 1.0F;
         float b = 1.0F;
         float a = 1.0F;
-        float line_width = 2.0F;
+        float line_width = 1.0F;
         float border_width = 1.0F;
         float dash_length = 0.0F;
         float gap_length = 0.0F;
@@ -30,7 +30,6 @@ namespace nasrbrowse
     class chart_style
     {
         std::unordered_map<std::string, feature_style> styles;
-        feature_style fallback;
 
         const feature_style& get(const std::string& key) const;
         bool visible(const std::string& key, double zoom) const;

@@ -54,32 +54,36 @@ ini_config::cache_type ini_config::parse(std::istream&& stream)
     ini_config::cache_type model;
     std::string line;
     std::string last_section;
+    int line_number = 0;
 
     while(std::getline(stream, line))
     {
-        auto start(line.find('['));
+        ++line_number;
+        auto trimmed = trim(line);
+        if(trimmed.empty()) continue;
+
+        auto start(trimmed.find('['));
         if(start != std::string::npos)
         {
-            auto end(line.find(']'));
-            last_section = line.substr(start + 1, end - 1);
+            auto end(trimmed.find(']'));
+            last_section = trimmed.substr(start + 1, end - 1);
         }
         else if(!last_section.empty())
         {
-            auto equals(line.find('='));
-            if(equals != std::string::npos)
+            auto parts(split(trimmed, '='));
+            if(parts.size() == 2)
             {
-                auto parts(split(line, '='));
-                if(parts.size() > 2)
-                {
-                    throw std::runtime_error("invalid ini file");
-                }
-
                 auto key(trim(parts[0]));
                 auto value(trim(parts[1]));
                 std::string full_key = last_section;
                 full_key += '.';
                 full_key += key;
                 model[full_key].value = value;
+            }
+            else if(parts.size() > 2)
+            {
+                throw std::runtime_error("ini line " + std::to_string(line_number)
+                    + ": multiple '=' in: " + line);
             }
         }
     }
