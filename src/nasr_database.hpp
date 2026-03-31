@@ -19,7 +19,17 @@ namespace nasrbrowse
         double lat;
         double lon;
         double elev;
-        std::string airspace_class;  // "B", "C", "D", "E", or "" (none)
+        std::string airspace_class;    // "B", "C", "D", "E", or "" (none)
+        std::string mag_varn;
+        std::string mag_hemis;
+        std::string tpa;               // traffic pattern altitude (feet AGL)
+        std::string resp_artcc_id;
+        std::string fss_id;
+        std::string notam_id;
+        std::string activation_date;
+        std::string fuel_types;
+        std::string lgt_sked;
+        std::string bcn_lgt_sked;
     };
 
     struct navaid
@@ -120,10 +130,47 @@ namespace nasrbrowse
 
     struct obstacle
     {
+        std::string oas_num;
         double lat;
         double lon;
         int agl_ht;
         std::string lighting;  // "R","D","H","M","S","F","C","W","L","N","U"
+    };
+
+    struct fss
+    {
+        std::string fss_id;
+        std::string name;
+        std::string voice_call;
+        std::string city;
+        std::string state_code;
+        double lat;
+        double lon;
+        std::string opr_hours;
+        std::string fac_status;
+    };
+
+    struct awos
+    {
+        std::string id;
+        std::string type;       // AWOS-1, AWOS-2, AWOS-3, ASOS, etc.
+        std::string city;
+        std::string state_code;
+        double lat;
+        double lon;
+        double elev;
+        std::string phone_no;
+        std::string site_no;    // links to airport
+    };
+
+    struct comm_outlet
+    {
+        std::string comm_type;      // RCO, RCAG, RCO1
+        std::string outlet_name;
+        std::string facility_id;    // operating FSS or ARTCC
+        std::string facility_name;
+        double lat;
+        double lon;
     };
 
     // ARTCC (Air Route Traffic Control Center) boundary
@@ -187,6 +234,12 @@ namespace nasrbrowse
                                             double lon_max, double lat_max);
         const std::vector<adiz>& query_adiz(double lon_min, double lat_min,
                                              double lon_max, double lat_max);
+        const std::vector<fss>& query_fss(double lon_min, double lat_min,
+                                           double lon_max, double lat_max);
+        const std::vector<awos>& query_awos(double lon_min, double lat_min,
+                                             double lon_max, double lat_max);
+        const std::vector<comm_outlet>& query_comm_outlets(double lon_min, double lat_min,
+                                                            double lon_max, double lat_max);
     };
 
 } // namespace nasrbrowse

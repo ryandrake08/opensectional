@@ -282,6 +282,28 @@ struct layer_map::impl
             }
         }
 
+        if(vis[layer_rco])
+        {
+            if(styles.rco_visible(z))
+            {
+                const auto& outlets = pick_db.query_comm_outlets(
+                    box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+                for(const auto& c : outlets)
+                    result.features.push_back(c);
+            }
+        }
+
+        if(vis[layer_awos])
+        {
+            if(styles.awos_visible(z))
+            {
+                const auto& stations = pick_db.query_awos(
+                    box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+                for(const auto& a : stations)
+                    result.features.push_back(a);
+            }
+        }
+
         // Area features: query with click point as degenerate bbox, then test containment
         if(vis[layer_airspace])
         {
@@ -462,7 +484,7 @@ void layer_map::on_button_input(sdl::input_button_t button, sdl::input_action_t 
                     else if constexpr(std::is_same_v<T, nasrbrowse::fix>)
                         std::cerr << "  Fix: " << feature.fix_id << std::endl;
                     else if constexpr(std::is_same_v<T, nasrbrowse::obstacle>)
-                        std::cerr << "  Obstacle: " << feature.agl_ht << "ft AGL" << std::endl;
+                        std::cerr << "  Obstacle: " << feature.oas_num << " " << feature.agl_ht << "ft AGL" << std::endl;
                     else if constexpr(std::is_same_v<T, nasrbrowse::class_airspace>)
                         std::cerr << "  Airspace: Class " << feature.airspace_class << " " << feature.name << std::endl;
                     else if constexpr(std::is_same_v<T, nasrbrowse::sua>)
@@ -475,6 +497,10 @@ void layer_map::on_button_input(sdl::input_button_t button, sdl::input_action_t 
                         std::cerr << "  MAA: " << feature.name << std::endl;
                     else if constexpr(std::is_same_v<T, nasrbrowse::pja>)
                         std::cerr << "  PJA: " << feature.name << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::awos>)
+                        std::cerr << "  AWOS: " << feature.id << " " << feature.type << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::comm_outlet>)
+                        std::cerr << "  " << feature.comm_type << ": " << feature.outlet_name << " (" << feature.facility_name << ")" << std::endl;
                 }, f);
             }
         }

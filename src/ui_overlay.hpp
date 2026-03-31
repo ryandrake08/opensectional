@@ -19,6 +19,8 @@ namespace nasrbrowse
         layer_airways,
         layer_mtrs,
         layer_obstacles,
+        layer_rco,
+        layer_awos,
         layer_fixes,
         layer_navaids,
         layer_airports,
@@ -61,6 +63,8 @@ namespace nasrbrowse
         {"ADIZ",         layer_adiz},
         {"ARTCC",        layer_artcc},
         {"Obstacles",    layer_obstacles},
+        {"RCO",          layer_rco},
+        {"AWOS",         layer_awos},
     };
 
     struct layer_visibility

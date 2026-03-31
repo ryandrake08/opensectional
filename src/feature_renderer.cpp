@@ -42,6 +42,7 @@ namespace nasrbrowse
     constexpr double SYMBOL_RADIUS_AIRPORT  = 0.012;
     constexpr double SYMBOL_RADIUS_FIX      = 0.012;
     constexpr double SYMBOL_RADIUS_OBSTACLE = 0.012;
+    constexpr double SYMBOL_RADIUS_COMM     = 0.012;
 
     // Vector letter sizing (shared by airport and PJA icons)
     constexpr float LETTER_HEIGHT    = 0.385F;  // height relative to symbol radius
@@ -158,6 +159,8 @@ namespace nasrbrowse
             build_adiz_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_artcc_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_obstacle_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_rco_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
+            build_awos_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_fix_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_runway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
             build_airspace_polylines(qlon_min, qlat_min, qlon_max, qlat_max, z);
@@ -1020,6 +1023,44 @@ namespace nasrbrowse
                     append_polygon_ring(poly[layer_airspace], ring.points, ls);
                 }
             }
+        }
+
+        // Circle with center dot symbol for RCO and AWOS
+        void add_comm_symbol(polyline_data& pd, float cx, float cy,
+                              float radius, const line_style& ls)
+        {
+            add_circle_to(pd, cx, cy, radius, ls);
+            float dot_r = radius * 0.2F;
+            add_circle_to(pd, cx, cy, dot_r, ls, 8);
+        }
+
+        template<typename T>
+        void build_comm_polylines(const std::vector<T>& features,
+                                   int layer_id, const line_style& ls)
+        {
+            float radius = static_cast<float>(half_extent_y * SYMBOL_RADIUS_COMM);
+            for(const auto& f : features)
+            {
+                float cx = static_cast<float>(lon_to_mx(f.lon));
+                float cy = static_cast<float>(lat_to_my(f.lat));
+                add_comm_symbol(poly[layer_id], cx, cy, radius*0.75F, ls);
+            }
+        }
+
+        void build_rco_polylines(double lon_min, double lat_min,
+                                  double lon_max, double lat_max, double z)
+        {
+            if(!styles.rco_visible(z)) return;
+            build_comm_polylines(db.query_comm_outlets(lon_min, lat_min, lon_max, lat_max),
+                                 layer_rco, to_line_style(styles.rco_style()));
+        }
+
+        void build_awos_polylines(double lon_min, double lat_min,
+                                   double lon_max, double lat_max, double z)
+        {
+            if(!styles.awos_visible(z)) return;
+            build_comm_polylines(db.query_awos(lon_min, lat_min, lon_max, lat_max),
+                                 layer_awos, to_line_style(styles.awos_style()));
         }
 
         void rebuild_sdf_lines()

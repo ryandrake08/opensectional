@@ -39,6 +39,9 @@ namespace nasrbrowse
         sqlite3_stmt* stmt_pjas;
         sqlite3_stmt* stmt_adiz;
         sqlite3_stmt* stmt_adiz_shape;
+        sqlite3_stmt* stmt_fss;
+        sqlite3_stmt* stmt_awos;
+        sqlite3_stmt* stmt_comm_outlets;
 
         std::vector<airport> airports;
         std::vector<navaid> navaids;
@@ -53,6 +56,9 @@ namespace nasrbrowse
         std::vector<artcc> artccs;
         std::vector<pja> pjas;
         std::vector<adiz> adizs;
+        std::vector<fss> fsss;
+        std::vector<awos> awoss;
+        std::vector<comm_outlet> comm_outlets;
 
         impl(const char* db_path)
             : db(nullptr)
@@ -74,6 +80,9 @@ namespace nasrbrowse
             , stmt_pjas(nullptr)
             , stmt_adiz(nullptr)
             , stmt_adiz_shape(nullptr)
+            , stmt_fss(nullptr)
+            , stmt_awos(nullptr)
+            , stmt_comm_outlets(nullptr)
         {
             int rc = sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, nullptr);
             if(rc != SQLITE_OK)
@@ -107,6 +116,9 @@ namespace nasrbrowse
             sqlite3_finalize(stmt_pjas);
             sqlite3_finalize(stmt_adiz);
             sqlite3_finalize(stmt_adiz_shape);
+            sqlite3_finalize(stmt_fss);
+            sqlite3_finalize(stmt_awos);
+            sqlite3_finalize(stmt_comm_outlets);
             sqlite3_close(db);
         }
 
@@ -125,7 +137,11 @@ namespace nasrbrowse
                            WHEN c.CLASS_D_AIRSPACE = 'Y' THEN 'D'
                            WHEN c.CLASS_E_AIRSPACE = 'Y' THEN 'E'
                            ELSE ''
-                       END
+                       END,
+                       a.MAG_VARN, a.MAG_HEMIS, a.TPA,
+                       a.RESP_ARTCC_ID, a.FSS_ID, a.NOTAM_ID,
+                       a.ACTIVATION_DATE, a.FUEL_TYPES,
+                       a.LGT_SKED, a.BCN_LGT_SKED
                 FROM APT_BASE a
                 LEFT JOIN CLS_ARSP c ON c.SITE_NO = a.SITE_NO
                 WHERE a.rowid IN (
@@ -248,7 +264,7 @@ namespace nasrbrowse
             )");
 
             prepare(&stmt_obstacles, R"(
-                SELECT LAT_DECIMAL, LON_DECIMAL, AGL_HT, LIGHTING
+                SELECT OAS_NUM, LAT_DECIMAL, LON_DECIMAL, AGL_HT, LIGHTING
                 FROM OBS_BASE
                 WHERE rowid IN (
                     SELECT id FROM OBS_BASE_RTREE
@@ -299,6 +315,42 @@ namespace nasrbrowse
                 FROM ADIZ_SHP
                 WHERE ADIZ_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
+            )");
+
+            prepare(&stmt_fss, R"(
+                SELECT FSS_ID, NAME, VOICE_CALL, CITY, STATE_CODE,
+                       CAST(LAT_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
+                       OPR_HOURS, FAC_STATUS
+                FROM FSS_BASE
+                WHERE rowid IN (
+                    SELECT id FROM FSS_BASE_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+            )");
+
+            prepare(&stmt_awos, R"(
+                SELECT ASOS_AWOS_ID, ASOS_AWOS_TYPE, CITY, STATE_CODE,
+                       CAST(LAT_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
+                       CAST(ELEV AS REAL), PHONE_NO, SITE_NO
+                FROM AWOS
+                WHERE rowid IN (
+                    SELECT id FROM AWOS_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+            )");
+
+            prepare(&stmt_comm_outlets, R"(
+                SELECT COMM_TYPE, COMM_OUTLET_NAME, FACILITY_ID, FACILITY_NAME,
+                       CAST(LAT_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL)
+                FROM COM
+                WHERE COMM_TYPE IN ('RCO', 'RCO1', 'RCAG')
+                  AND rowid IN (
+                    SELECT id FROM COM_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
             )");
         }
 
@@ -359,7 +411,11 @@ namespace nasrbrowse
                 col_text(s, 4), col_text(s, 5), col_text(s, 6), col_text(s, 7),
                 sqlite3_column_int(s, 8) != 0,
                 col_double(s, 9), col_double(s, 10), col_double(s, 11),
-                col_text(s, 12)};
+                col_text(s, 12),
+                col_text(s, 13), col_text(s, 14), col_text(s, 15),
+                col_text(s, 16), col_text(s, 17), col_text(s, 18),
+                col_text(s, 19), col_text(s, 20),
+                col_text(s, 21), col_text(s, 22)};
         });
     }
 
@@ -523,8 +579,8 @@ namespace nasrbrowse
         return d.query_bbox(d.obstacles, d.stmt_obstacles,
             lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
         {
-            return obstacle{col_double(s, 0), col_double(s, 1),
-                            sqlite3_column_int(s, 2), col_text(s, 3)};
+            return obstacle{col_text(s, 0), col_double(s, 1), col_double(s, 2),
+                            sqlite3_column_int(s, 3), col_text(s, 4)};
         });
     }
 
@@ -586,6 +642,47 @@ namespace nasrbrowse
                      col_double(d.stmt_adiz_shape, 1)});
             }
             return a;
+        });
+    }
+
+    const std::vector<fss>& nasr_database::query_fss(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        return d.query_bbox(d.fsss, d.stmt_fss,
+            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+        {
+            return fss{col_text(s, 0), col_text(s, 1), col_text(s, 2),
+                        col_text(s, 3), col_text(s, 4),
+                        col_double(s, 5), col_double(s, 6),
+                        col_text(s, 7), col_text(s, 8)};
+        });
+    }
+
+    const std::vector<awos>& nasr_database::query_awos(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        return d.query_bbox(d.awoss, d.stmt_awos,
+            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+        {
+            return awos{col_text(s, 0), col_text(s, 1),
+                         col_text(s, 2), col_text(s, 3),
+                         col_double(s, 4), col_double(s, 5),
+                         col_double(s, 6), col_text(s, 7), col_text(s, 8)};
+        });
+    }
+
+    const std::vector<comm_outlet>& nasr_database::query_comm_outlets(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        return d.query_bbox(d.comm_outlets, d.stmt_comm_outlets,
+            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+        {
+            return comm_outlet{col_text(s, 0), col_text(s, 1),
+                                col_text(s, 2), col_text(s, 3),
+                                col_double(s, 4), col_double(s, 5)};
         });
     }
 

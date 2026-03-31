@@ -68,6 +68,7 @@ namespace nasrbrowse
         "sua_prohibited", "sua_restricted", "sua_warning",
         "sua_alert", "sua_moa", "sua_nsa",
         "runway",
+        "rco", "awos",
     };
 
     chart_style::chart_style(const std::string& ini_path, chart_mode mode)
@@ -290,5 +291,17 @@ namespace nasrbrowse
     { return get("maa_area"); }
     const feature_style& chart_style::maa_point_style() const
     { return get("maa_point"); }
+
+    // RCO
+    bool chart_style::rco_visible(double zoom) const
+    { return visible("rco", zoom); }
+    const feature_style& chart_style::rco_style() const
+    { return get("rco"); }
+
+    // AWOS
+    bool chart_style::awos_visible(double zoom) const
+    { return visible("awos", zoom); }
+    const feature_style& chart_style::awos_style() const
+    { return get("awos"); }
 
 } // namespace nasrbrowse

@@ -169,7 +169,11 @@ def build_apt(conn, csv_zf):
         "SITE_NO", "SITE_TYPE_CODE", "STATE_CODE", "ARPT_ID", "CITY",
         "COUNTRY_CODE", "ARPT_NAME", "OWNERSHIP_TYPE_CODE",
         "FACILITY_USE_CODE", "LAT_DECIMAL", "LONG_DECIMAL", "ELEV",
-        "TWR_TYPE_CODE", "ICAO_ID", "ARPT_STATUS",
+        "MAG_VARN", "MAG_HEMIS", "TPA",
+        "RESP_ARTCC_ID", "FSS_ID", "NOTAM_ID",
+        "ACTIVATION_DATE", "ARPT_STATUS",
+        "FUEL_TYPES", "LGT_SKED", "BCN_LGT_SKED",
+        "TWR_TYPE_CODE", "ICAO_ID",
     ])
 
     # R-tree index on lat/lon
@@ -609,11 +613,18 @@ def build_apt_rwy(conn, csv_zf):
     """Import runway data for high-zoom rendering."""
     import_csv(conn, "APT_RWY", csv_zf, "APT_RWY.csv", [
         "SITE_NO", "RWY_ID", "RWY_LEN", "RWY_WIDTH", "SURFACE_TYPE_CODE",
+        "COND", "RWY_LGT_CODE",
     ])
 
     import_csv(conn, "APT_RWY_END", csv_zf, "APT_RWY_END.csv", [
         "SITE_NO", "RWY_ID", "RWY_END_ID", "LAT_DECIMAL", "LONG_DECIMAL",
         "RWY_END_ELEV", "TRUE_ALIGNMENT",
+        "ILS_TYPE", "RIGHT_HAND_TRAFFIC_PAT_FLAG",
+        "RWY_MARKING_TYPE_CODE", "RWY_MARKING_COND",
+        "VGSI_CODE", "APCH_LGT_SYSTEM_CODE",
+        "RWY_END_LGTS_FLAG", "CNTRLN_LGTS_AVBL_FLAG", "TDZ_LGT_AVBL_FLAG",
+        "DISPLACED_THR_LEN", "LAT_DISPLACED_THR_DECIMAL", "LONG_DISPLACED_THR_DECIMAL",
+        "TKOF_RUN_AVBL", "TKOF_DIST_AVBL", "ACLT_STOP_DIST_AVBL", "LNDG_DIST_AVBL",
     ])
 
     conn.execute("CREATE INDEX idx_apt_rwy_end_site ON APT_RWY_END(SITE_NO, RWY_ID)")
@@ -1288,6 +1299,7 @@ def build_obstacles(conn, dof_zf):
     conn.execute("DROP TABLE IF EXISTS OBS_BASE")
     conn.execute("""
         CREATE TABLE OBS_BASE (
+            OAS_NUM TEXT,
             LAT_DECIMAL REAL,
             LON_DECIMAL REAL,
             OBSTACLE_TYPE TEXT,
@@ -1308,6 +1320,7 @@ def build_obstacles(conn, dof_zf):
             for line in lines:
                 if len(line) < 96:
                     continue
+                oas_num = line[0:10].strip()
                 lat_str = line[35:48]
                 lon_str = line[48:62]
                 obs_type = line[62:81].strip()
@@ -1329,9 +1342,9 @@ def build_obstacles(conn, dof_zf):
                 except ValueError:
                     amsl_ht = 0
 
-                rows.append((lat, lon, obs_type, agl_ht, amsl_ht, lighting))
+                rows.append((oas_num, lat, lon, obs_type, agl_ht, amsl_ht, lighting))
 
-    conn.executemany("INSERT INTO OBS_BASE VALUES (?, ?, ?, ?, ?, ?)", rows)
+    conn.executemany("INSERT INTO OBS_BASE VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
     print(f"  OBS_BASE: {len(rows)} obstacles")
 
     conn.execute("""
@@ -1346,6 +1359,112 @@ def build_obstacles(conn, dof_zf):
                LAT_DECIMAL, LAT_DECIMAL
         FROM OBS_BASE
         WHERE LAT_DECIMAL IS NOT NULL AND LON_DECIMAL IS NOT NULL
+    """)
+
+
+def build_frq(conn, csv_zf):
+    """Import frequency data for all facility types."""
+    import_csv(conn, "FRQ", csv_zf, "FRQ.csv", [
+        "FACILITY", "FAC_NAME", "FACILITY_TYPE",
+        "ARTCC_OR_FSS_ID",
+        "SERVICED_FACILITY", "SERVICED_FAC_NAME", "SERVICED_SITE_TYPE",
+        "LAT_DECIMAL", "LONG_DECIMAL",
+        "SERVICED_CITY", "SERVICED_STATE", "SERVICED_COUNTRY",
+        "TOWER_OR_COMM_CALL", "PRIMARY_APPROACH_RADIO_CALL",
+        "FREQ", "SECTORIZATION", "FREQ_USE", "REMARK",
+    ])
+    conn.execute("CREATE INDEX idx_frq_serviced ON FRQ(SERVICED_FACILITY)")
+    conn.execute("CREATE INDEX idx_frq_facility_type ON FRQ(FACILITY_TYPE)")
+
+
+def build_com(conn, csv_zf):
+    """Import communication outlet locations (RCO, RCAG physical sites)."""
+    import_csv(conn, "COM", csv_zf, "COM.csv", [
+        "COMM_LOC_ID", "COMM_TYPE", "NAV_ID", "NAV_TYPE",
+        "CITY", "STATE_CODE", "COUNTRY_CODE",
+        "COMM_OUTLET_NAME", "LAT_DECIMAL", "LONG_DECIMAL",
+        "FACILITY_ID", "FACILITY_NAME",
+        "OPR_HRS", "COMM_STATUS_CODE", "REMARK",
+    ])
+    conn.execute("CREATE INDEX idx_com_type ON COM(COMM_TYPE)")
+
+    # R-tree for spatial queries (rendering RCO/RCAG sites on map)
+    conn.execute("""
+        CREATE VIRTUAL TABLE COM_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO COM_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT rowid,
+               CAST(LONG_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
+               CAST(LAT_DECIMAL AS REAL), CAST(LAT_DECIMAL AS REAL)
+        FROM COM
+        WHERE LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != ''
+            AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''
+    """)
+
+
+def build_fss(conn, csv_zf):
+    """Import Flight Service Stations (renderable map layer)."""
+    import_csv(conn, "FSS_BASE", csv_zf, "FSS_BASE.csv", [
+        "FSS_ID", "NAME", "FSS_FAC_TYPE", "VOICE_CALL",
+        "CITY", "STATE_CODE", "COUNTRY_CODE",
+        "LAT_DECIMAL", "LONG_DECIMAL",
+        "OPR_HOURS", "FAC_STATUS",
+        "PHONE_NO", "TOLL_FREE_NO",
+    ])
+    conn.execute("CREATE INDEX idx_fss_base_id ON FSS_BASE(FSS_ID)")
+
+    # R-tree spatial index for viewport queries
+    conn.execute("""
+        CREATE VIRTUAL TABLE FSS_BASE_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO FSS_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT rowid,
+               CAST(LONG_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
+               CAST(LAT_DECIMAL AS REAL), CAST(LAT_DECIMAL AS REAL)
+        FROM FSS_BASE
+        WHERE LAT_DECIMAL IS NOT NULL AND LONG_DECIMAL IS NOT NULL
+            AND LAT_DECIMAL != '' AND LONG_DECIMAL != ''
+    """)
+
+    import_csv(conn, "FSS_RMK", csv_zf, "FSS_RMK.csv", [
+        "FSS_ID", "NAME", "CITY", "STATE_CODE", "COUNTRY_CODE",
+        "REF_COL_NAME", "REF_COL_SEQ_NO", "REMARK",
+    ])
+    conn.execute("CREATE INDEX idx_fss_rmk_id ON FSS_RMK(FSS_ID)")
+
+
+def build_awos(conn, csv_zf):
+    """Import automated weather stations (renderable map layer)."""
+    import_csv(conn, "AWOS", csv_zf, "AWOS.csv", [
+        "ASOS_AWOS_ID", "ASOS_AWOS_TYPE",
+        "STATE_CODE", "CITY", "COUNTRY_CODE",
+        "COMMISSIONED_DATE", "NAVAID_FLAG",
+        "LAT_DECIMAL", "LONG_DECIMAL", "ELEV",
+        "PHONE_NO", "SECOND_PHONE_NO",
+        "SITE_NO", "SITE_TYPE_CODE", "REMARK",
+    ])
+    conn.execute("CREATE INDEX idx_awos_site_no ON AWOS(SITE_NO)")
+
+    # R-tree spatial index for viewport queries
+    conn.execute("""
+        CREATE VIRTUAL TABLE AWOS_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO AWOS_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT rowid,
+               CAST(LONG_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
+               CAST(LAT_DECIMAL AS REAL), CAST(LAT_DECIMAL AS REAL)
+        FROM AWOS
+        WHERE LAT_DECIMAL IS NOT NULL AND LONG_DECIMAL IS NOT NULL
+            AND LAT_DECIMAL != '' AND LONG_DECIMAL != ''
     """)
 
 
@@ -1665,6 +1784,18 @@ def main():
         print("Importing runway data...")
         build_apt_rwy(conn, csv_zf)
 
+        print("Importing frequencies...")
+        build_frq(conn, csv_zf)
+
+        print("Importing communication outlets...")
+        build_com(conn, csv_zf)
+
+        print("Importing flight service stations...")
+        build_fss(conn, csv_zf)
+
+        print("Importing weather stations...")
+        build_awos(conn, csv_zf)
+
     print("Importing class airspace...")
     with zipfile.ZipFile(shp_zip_path) as shp_zf:
         build_cls_arsp(conn, shp_zf)
@@ -1686,7 +1817,8 @@ def main():
     print("\nDatabase summary:")
     tables = ["APT_BASE", "CLS_ARSP", "NAV_BASE", "FIX_BASE", "FIX_CHRT",
               "AWY_SEG", "PJA_BASE", "MTR_SEG", "MAA_BASE", "MAA_SHP", "APT_RWY", "APT_RWY_END",
-              "RWY_SEG", "CLS_ARSP_BASE", "CLS_ARSP_SHP",
+              "RWY_SEG", "FRQ", "COM", "FSS_BASE", "FSS_RMK", "AWOS",
+              "CLS_ARSP_BASE", "CLS_ARSP_SHP",
               "SUA_BASE", "SUA_SHP", "ARTCC_BASE", "ARTCC_SHP", "OBS_BASE",
               "ADIZ_BASE", "ADIZ_SHP"]
     for table in tables:

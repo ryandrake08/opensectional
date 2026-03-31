@@ -97,6 +97,14 @@ namespace nasrbrowse
         bool maa_point_visible(double zoom) const;
         const feature_style& maa_area_style() const;
         const feature_style& maa_point_style() const;
+
+        // RCO visibility and style
+        bool rco_visible(double zoom) const;
+        const feature_style& rco_style() const;
+
+        // AWOS visibility and style
+        bool awos_visible(double zoom) const;
+        const feature_style& awos_style() const;
     };
 
 } // namespace nasrbrowse

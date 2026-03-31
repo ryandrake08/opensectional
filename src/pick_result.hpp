@@ -16,7 +16,9 @@ namespace nasrbrowse
         artcc,
         adiz,
         maa,
-        pja
+        pja,
+        awos,
+        comm_outlet
     >;
 
     struct pick_result
