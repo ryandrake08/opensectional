@@ -32,15 +32,13 @@ def parse_dof_dms(dms_str):
     Examples: "32 31 54.66N" -> 32.531850
               " 117 11 11.20W" -> -117.186444
     """
-    m = re.match(r"\s*(\d+)\s+(\d+)\s+([\d.]+)([NSEW])", dms_str)
-    if not m:
+    parts = dms_str.split()
+    if len(parts) != 3:
         return None
-    deg = int(m.group(1))
-    mins = int(m.group(2))
-    secs = float(m.group(3))
-    hem = m.group(4)
-    decimal = deg + mins / 60.0 + secs / 3600.0
-    if hem in ("S", "W"):
+    sec_hem = parts[2]
+    hem = sec_hem[-1]
+    decimal = int(parts[0]) + int(parts[1]) / 60.0 + float(sec_hem[:-1]) / 3600.0
+    if hem == "S" or hem == "W":
         decimal = -decimal
     return decimal
 
@@ -116,16 +114,19 @@ def import_csv(conn, table_name, zf, csv_name, columns=None):
     """
     with zf.open(csv_name) as raw:
         f = io.TextIOWrapper(raw, encoding="latin-1")
-        reader = csv.DictReader(f)
-        all_cols = reader.fieldnames or []
+        reader = csv.reader(f)
+        all_cols = next(reader)
+
         if columns is None:
             columns = list(all_cols)
 
-        # Verify all requested columns exist
+        # Build index map: requested column -> position in CSV row
+        col_index = {c: i for i, c in enumerate(all_cols)}
         for col in columns:
-            if col not in all_cols:
+            if col not in col_index:
                 print(f"  Warning: column '{col}' not found in {csv_name}")
-        columns = [c for c in columns if c in all_cols]
+        columns = [c for c in columns if c in col_index]
+        indices = [col_index[c] for c in columns]
 
         col_defs = ", ".join(f'"{c}" TEXT' for c in columns)
         conn.execute(f"DROP TABLE IF EXISTS {table_name}")
@@ -136,8 +137,7 @@ def import_csv(conn, table_name, zf, csv_name, columns=None):
 
         rows = []
         for row in reader:
-            values = [row.get(c, "").strip() for c in columns]
-            rows.append(values)
+            rows.append([row[i].strip() for i in indices])
 
         conn.executemany(insert_sql, rows)
         print(f"  {table_name}: {len(rows)} rows")
@@ -799,40 +799,15 @@ def build_atc(conn, csv_zf):
 
 
 def simplify_ring(points, epsilon):
-    """Simplify a polygon ring using Ramer-Douglas-Peucker algorithm.
+    """Simplify a polygon ring using Shapely's GEOS-backed RDP.
 
     Points are (lon, lat) tuples. Epsilon is in degrees.
     """
     if len(points) <= 3:
         return points
-
-    # Find the point farthest from the line between start and end
-    start = points[0]
-    end = points[-1]
-    max_dist = 0.0
-    max_idx = 0
-    dx = end[0] - start[0]
-    dy = end[1] - start[1]
-    line_len_sq = dx * dx + dy * dy
-
-    for i in range(1, len(points) - 1):
-        px = points[i][0] - start[0]
-        py = points[i][1] - start[1]
-        if line_len_sq > 0:
-            # Perpendicular distance from point to line
-            dist = abs(px * dy - py * dx) / math.sqrt(line_len_sq)
-        else:
-            dist = math.sqrt(px * px + py * py)
-        if dist > max_dist:
-            max_dist = dist
-            max_idx = i
-
-    if max_dist > epsilon:
-        left = simplify_ring(points[:max_idx + 1], epsilon)
-        right = simplify_ring(points[max_idx:], epsilon)
-        return left[:-1] + right
-    else:
-        return [start, end]
+    from shapely.geometry import LineString
+    simplified = LineString(points).simplify(epsilon, preserve_topology=False)
+    return list(simplified.coords)
 
 
 def read_dbf(f):
@@ -934,8 +909,9 @@ def read_shp_polygons(f):
         for i in range(num_parts):
             start = part_indices[i]
             end = part_indices[i + 1]
-            ring = [(all_points[j * 2], all_points[j * 2 + 1])
-                    for j in range(start, end)]
+            # Slice the flat doubles array: [x0,y0,x1,y1,...] -> [(x0,y0),...]
+            flat = all_points[start * 2:end * 2]
+            ring = list(zip(flat[0::2], flat[1::2]))
             is_hole = signed_ring_area(ring) > 0
             parts.append((ring, is_hole))
 
@@ -2177,8 +2153,9 @@ def main():
         os.remove(db_path)
 
     conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA journal_mode=OFF")
+    conn.execute("PRAGMA synchronous=OFF")
+    conn.execute("PRAGMA cache_size=-200000")  # 200 MB cache
 
     print("Building NASR database...")
     with zipfile.ZipFile(csv_zip_path) as csv_zf:
