@@ -24,11 +24,6 @@ namespace nasrbrowse
         layer_fixes,
         layer_navaids,
         layer_airports,
-        layer_heliports,
-        layer_seaplane,
-        layer_ultralight,
-        layer_gliderports,
-        layer_balloonports,
         layer_sdf_count,
 
         // Non-SDF layers
@@ -46,11 +41,6 @@ namespace nasrbrowse
     inline constexpr layer_info layer_entries[] = {
         {"Basemap",      layer_basemap},
         {"Airports",     layer_airports},
-        {"Heliports",    layer_heliports},
-        {"Seaplane",     layer_seaplane},
-        {"Ultralight",   layer_ultralight},
-        {"Gliderports",  layer_gliderports},
-        {"Balloonports", layer_balloonports},
         {"Runways",      layer_runways},
         {"Navaids",      layer_navaids},
         {"Fixes",        layer_fixes},

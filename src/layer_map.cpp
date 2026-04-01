@@ -49,16 +49,6 @@ static bool point_in_circle_nm(double px, double py,
     return (dlat * dlat + dlon * dlon) <= (radius_nm * radius_nm);
 }
 
-// Map airport site_type_code to the corresponding layer index
-static int airport_layer_for_type(const std::string& site_type_code)
-{
-    if(site_type_code == "H") return nasrbrowse::layer_heliports;
-    if(site_type_code == "C") return nasrbrowse::layer_seaplane;
-    if(site_type_code == "U") return nasrbrowse::layer_ultralight;
-    if(site_type_code == "G") return nasrbrowse::layer_gliderports;
-    if(site_type_code == "B") return nasrbrowse::layer_balloonports;
-    return nasrbrowse::layer_airports;
-}
 
 struct layer_map::impl
 {
@@ -237,13 +227,13 @@ struct layer_map::impl
         result.lat = click_lat;
 
         // Point features: query with pick box, all results are hits
+        if(vis[layer_airports])
         {
             const auto& airports = pick_db.query_airports(
                 box_lon_min, box_lat_min, box_lon_max, box_lat_max);
             for(const auto& apt : airports)
             {
-                if(vis[airport_layer_for_type(apt.site_type_code)] &&
-                   styles.airport_visible(apt, z))
+                if(styles.airport_visible(apt, z))
                     result.features.push_back(apt);
             }
         }

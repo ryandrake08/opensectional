@@ -484,15 +484,7 @@ namespace nasrbrowse
                     continue;
                 }
 
-                auto& pd = [&]() -> polyline_data&
-                {
-                    if(apt.site_type_code == "H") return poly[layer_heliports];
-                    if(apt.site_type_code == "C") return poly[layer_seaplane];
-                    if(apt.site_type_code == "U") return poly[layer_ultralight];
-                    if(apt.site_type_code == "G") return poly[layer_gliderports];
-                    if(apt.site_type_code == "B") return poly[layer_balloonports];
-                    return poly[layer_airports];
-                }();
+                auto& pd = poly[layer_airports];
 
                 const auto& cs = styles.airport_style(apt);
                 float cx = static_cast<float>(lon_to_mx(apt.lon));
