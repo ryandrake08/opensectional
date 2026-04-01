@@ -292,7 +292,7 @@ namespace nasrbrowse
 
         // --- Navaid symbol geometry builders ---
 
-        void add_hexagon(float cx, float cy, float r, const line_style& ls)
+        void add_hexagon(polyline_data& pd, float cx, float cy, float r, const line_style& ls)
         {
             std::vector<glm::vec2> pts;
             for(int i = 0; i < 6; i++)
@@ -301,29 +301,29 @@ namespace nasrbrowse
                 pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
             }
             pts.push_back(pts.front());
-            poly[layer_navaids].polylines.push_back(std::move(pts));
-            poly[layer_navaids].styles.push_back(ls);
+            pd.polylines.push_back(std::move(pts));
+            pd.styles.push_back(ls);
         }
 
-        void add_center_dot(float cx, float cy, float r, const line_style& ls)
+        void add_center_dot(polyline_data& pd, float cx, float cy, float r, const line_style& ls)
         {
             float d = r * 0.15F;
-            poly[layer_navaids].polylines.push_back({
+            pd.polylines.push_back({
                 {cx - d, cy}, {cx, cy + d}, {cx + d, cy}, {cx, cy - d}, {cx - d, cy}
             });
-            poly[layer_navaids].styles.push_back(ls);
+            pd.styles.push_back(ls);
         }
 
-        void add_rect(float cx, float cy, float hw, float hh, const line_style& ls)
+        void add_rect(polyline_data& pd, float cx, float cy, float hw, float hh, const line_style& ls)
         {
-            poly[layer_navaids].polylines.push_back({
+            pd.polylines.push_back({
                 {cx - hw, cy - hh}, {cx + hw, cy - hh},
                 {cx + hw, cy + hh}, {cx - hw, cy + hh}, {cx - hw, cy - hh}
             });
-            poly[layer_navaids].styles.push_back(ls);
+            pd.styles.push_back(ls);
         }
 
-        void add_caltrop(float cx, float cy, float hex_r, const line_style& ls)
+        void add_caltrop(polyline_data& pd, float cx, float cy, float hex_r, const line_style& ls)
         {
             float vx[6], vy[6];
             for(int i = 0; i < 6; i++)
@@ -344,18 +344,18 @@ namespace nasrbrowse
                 float nx = std::cos(na) * h;
                 float ny = std::sin(na) * h;
 
-                poly[layer_navaids].polylines.push_back({
+                pd.polylines.push_back({
                     {vx[a], vy[a]},
                     {vx[b], vy[b]},
                     {vx[b] + nx, vy[b] + ny},
                     {vx[a] + nx, vy[a] + ny},
                     {vx[a], vy[a]},
                 });
-                poly[layer_navaids].styles.push_back(ls);
+                pd.styles.push_back(ls);
             }
         }
 
-        void add_circle(float cx, float cy, float r, const line_style& ls)
+        void add_circle(polyline_data& pd, float cx, float cy, float r, const line_style& ls)
         {
             const int n = 16;
             std::vector<glm::vec2> pts;
@@ -365,8 +365,8 @@ namespace nasrbrowse
                 pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
             }
             pts.push_back(pts.front());
-            poly[layer_navaids].polylines.push_back(std::move(pts));
-            poly[layer_navaids].styles.push_back(ls);
+            pd.polylines.push_back(std::move(pts));
+            pd.styles.push_back(ls);
         }
 
         void add_triangle_polyline(polyline_data& pd,
@@ -571,35 +571,37 @@ namespace nasrbrowse
 
                 navaid_positions.emplace_back(cx, cy);
 
+                auto& pd = poly[layer_navaids];
+
                 if(nav.nav_type == "NDB")
                 {
-                    add_circle(cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
+                    add_circle(pd, cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
                 }
                 else if(nav.nav_type == "NDB/DME")
                 {
-                    add_circle(cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
-                    add_rect(cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, ls);
+                    add_circle(pd, cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
+                    add_rect(pd, cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, ls);
                 }
                 else if(nav.nav_type == "DME")
                 {
-                    add_rect(cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, filled_ls);
+                    add_rect(pd, cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, filled_ls);
                 }
                 else if(std::strcmp(nav.nav_type.c_str(), "VOR/DME") == 0)
                 {
-                    add_hexagon(cx, cy, r, filled_ls);
-                    add_center_dot(cx, cy, r, ls);
-                    add_rect(cx, cy, r * NAV_VORDME_WIDTH, r * NAV_DME_RECT, ls);
+                    add_hexagon(pd, cx, cy, r, filled_ls);
+                    add_center_dot(pd, cx, cy, r, ls);
+                    add_rect(pd, cx, cy, r * NAV_VORDME_WIDTH, r * NAV_DME_RECT, ls);
                 }
                 else if(nav.nav_type == "VORTAC" || nav.nav_type == "TACAN")
                 {
-                    add_hexagon(cx, cy, r, filled_ls);
-                    add_center_dot(cx, cy, r, ls);
-                    add_caltrop(cx, cy, r, ls);
+                    add_hexagon(pd, cx, cy, r, filled_ls);
+                    add_center_dot(pd, cx, cy, r, ls);
+                    add_caltrop(pd, cx, cy, r, ls);
                 }
                 else
                 {
-                    add_hexagon(cx, cy, r, filled_ls);
-                    add_center_dot(cx, cy, r, ls);
+                    add_hexagon(pd, cx, cy, r, filled_ls);
+                    add_center_dot(pd, cx, cy, r, ls);
                 }
             }
         }
