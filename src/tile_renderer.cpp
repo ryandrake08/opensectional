@@ -234,13 +234,17 @@ namespace nasrbrowse
         }
     }
 
-    bool tile_renderer::needs_upload()
+    void tile_renderer::drain()
     {
         auto results = pimpl->loader.drain_results();
         for(auto& result : results)
         {
             pimpl->pending_results.push_back(std::move(result));
         }
+    }
+
+    bool tile_renderer::needs_upload() const
+    {
         return !pimpl->pending_results.empty();
     }
 

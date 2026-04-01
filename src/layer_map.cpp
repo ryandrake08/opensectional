@@ -584,11 +584,9 @@ void layer_map::on_resize(float normalized_viewport_width, int viewport_height_p
 
 bool layer_map::on_update()
 {
-    // Evaluate each needs_upload() unconditionally so drain_results()
-    // always runs — || short-circuit would skip calls with side effects
-    bool tiles_upload = pimpl->tiles.needs_upload();
-    bool features_upload = pimpl->features.needs_upload();
-    bool result = pimpl->needs_update || tiles_upload || features_upload;
+    pimpl->tiles.drain();
+    pimpl->features.drain();
+    bool result = pimpl->needs_update || pimpl->tiles.needs_upload() || pimpl->features.needs_upload();
 
     if(result)
     {

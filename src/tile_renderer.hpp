@@ -27,8 +27,11 @@ namespace nasrbrowse
                     double view_x_max, double view_y_max,
                     int viewport_height, double aspect_ratio);
 
-        // Drain background loader and check if tiles need upload
-        bool needs_upload();
+        // Drain background loader into staging buffer
+        void drain();
+
+        // Check if tiles need upload
+        bool needs_upload() const;
 
         // Upload tile data to GPU
         void copy(sdl::copy_pass& pass);

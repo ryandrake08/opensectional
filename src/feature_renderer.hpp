@@ -31,8 +31,11 @@ namespace nasrbrowse
                     double half_extent_y, int viewport_height,
                     double aspect_ratio);
 
+        // Drain background builder results and rebuild SDF lines
+        void drain();
+
         // Check if features need upload
-        bool needs_upload();
+        bool needs_upload() const;
 
         // Upload feature data to GPU
         void copy(sdl::copy_pass& pass);

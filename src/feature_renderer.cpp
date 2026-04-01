@@ -147,7 +147,7 @@ namespace nasrbrowse
         }
     }
 
-    bool feature_renderer::needs_upload()
+    void feature_renderer::drain()
     {
         auto result = pimpl->builder.drain_result();
         if(result)
@@ -155,7 +155,10 @@ namespace nasrbrowse
             pimpl->poly = std::move(result->poly);
             pimpl->rebuild_sdf_lines();
         }
+    }
 
+    bool feature_renderer::needs_upload() const
+    {
         return pimpl->sdf_lines.needs_upload();
     }
 
