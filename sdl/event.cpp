@@ -106,9 +106,13 @@ namespace sdl
     bool event_manager::dispatch_events()
     {
         SDL_Event event;
-        if(!SDL_WaitEvent(&event))
+
+        // Use a timeout so the loop wakes periodically to pick up
+        // background work (e.g. tiles loaded on a worker thread)
+        // even when no input events are arriving.
+        if(!SDL_WaitEventTimeout(&event, 100))
         {
-            throw error("SDL_WaitEvent failed");
+            return false;
         }
 
         if(pimpl->dispatch(event))

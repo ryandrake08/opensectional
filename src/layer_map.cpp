@@ -594,8 +594,11 @@ void layer_map::on_resize(float normalized_viewport_width, int viewport_height_p
 
 bool layer_map::on_update()
 {
-    bool result = pimpl->needs_update || pimpl->tiles.needs_upload() ||
-                  pimpl->features.needs_upload();
+    // Evaluate each needs_upload() unconditionally so drain_results()
+    // always runs — || short-circuit would skip calls with side effects
+    bool tiles_upload = pimpl->tiles.needs_upload();
+    bool features_upload = pimpl->features.needs_upload();
+    bool result = pimpl->needs_update || tiles_upload || features_upload;
 
     if(result)
     {
@@ -624,7 +627,6 @@ void layer_map::on_render(sdl::render_pass& pass, const nasrbrowse::render_conte
         pimpl->tiles.render(pass, ctx);
     }
 
-    // Render vector features (line pass)
     pimpl->features.render(pass, ctx);
 
     // Render grid (line pass)

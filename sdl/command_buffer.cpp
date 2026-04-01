@@ -69,8 +69,8 @@ namespace sdl
             throw error("Failed to acquire swapchain texture");
         }
 
-        // Note: swapchain can be null when window is minimized, occluded, or not ready
-        // This is normal - caller should check and skip the frame
+        // swapchain is null when no texture is available yet (vsync pacing),
+        // or when the window is minimized/occluded — caller skips the frame
         if(swapchain)
         {
             width = static_cast<unsigned>(swapchain_texture_width);

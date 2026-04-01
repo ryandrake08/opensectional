@@ -2,7 +2,6 @@
 #include <condition_variable>
 #include <deque>
 #include <mutex>
-#include <sdl/event.hpp>
 #include <sdl/surface.hpp>
 #include <thread>
 #include <unordered_set>
@@ -59,8 +58,6 @@ namespace nasrbrowse
                     std::lock_guard<std::mutex> lock(mutex);
                     result_queue.push_back({ req.key, std::move(surf) });
                 }
-
-                sdl::event_manager::push_user_event();
             }
         }
     };

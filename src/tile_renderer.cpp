@@ -112,7 +112,7 @@ namespace nasrbrowse
             , center_x(0)
             , center_y(0)
             , half_extent_y(HALF_CIRCUMFERENCE)
-            , cache(256)
+            , cache(1024)
         {
         }
 
