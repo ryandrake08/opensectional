@@ -40,13 +40,9 @@ namespace sdl
         // The void* points to an SDL_Event.
         void set_raw_event_hook(std::function<void(const void*)> hook);
 
-        // Poll SDL events and dispatch to listeners
-        // Returns true if quit event was received
-        bool poll_and_dispatch();
-
-        // Block until an event arrives, then dispatch all pending events
-        // Returns true if quit event was received
-        bool wait_and_dispatch();
+        // Block until at least one event arrives, then drain all pending
+        // events before returning. Returns true if quit was requested.
+        bool dispatch_events();
 
         // Push a user event to wake SDL_WaitEvent
         static void push_user_event();

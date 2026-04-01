@@ -194,8 +194,15 @@ int main(int argc, char** argv)
         float last_render_ms = 0.0F;
         while(true)
         {
+            // Let ImGui claim the mouse before dispatching input events
             map_layer->set_imgui_wants_mouse(imgui_ctx.wants_mouse());
-            if(event_mgr.wait_and_dispatch())
+
+            // Sleep until at least one event arrives (avoids busy-spinning),
+            // then drain all remaining queued events before rendering. Without
+            // draining, each event gets its own render frame — during fast
+            // panning, tile-load user events interleave with motion events and
+            // each burns a frame without advancing the view position.
+            if(event_mgr.dispatch_events())
             {
                 break;
             }
