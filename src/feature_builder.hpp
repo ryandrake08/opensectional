@@ -1,0 +1,64 @@
+#pragma once
+
+#include "line_renderer.hpp"
+#include "ui_overlay.hpp"
+#include <array>
+#include <glm/glm.hpp>
+#include <memory>
+#include <optional>
+#include <vector>
+
+namespace nasrbrowse
+{
+    class chart_style;
+
+    // Polyline data for a single feature layer
+    struct polyline_data
+    {
+        std::vector<std::vector<glm::vec2>> polylines;
+        std::vector<line_style> styles;
+
+        void clear()
+        {
+            polylines.clear();
+            styles.clear();
+        }
+    };
+
+    // Parameters the worker needs to build feature geometry
+    struct feature_build_request
+    {
+        double lon_min, lat_min, lon_max, lat_max;
+        double half_extent_y;
+        int viewport_height;
+        double zoom;
+    };
+
+    // Completed feature geometry from the worker
+    struct feature_build_result
+    {
+        std::array<polyline_data, layer_sdf_count> poly;
+    };
+
+    // Background worker that builds feature polylines from the NASR database.
+    // Owns its own database connection and worker thread.
+    class feature_builder
+    {
+        struct impl;
+        std::unique_ptr<impl> pimpl;
+
+    public:
+        feature_builder(const char* db_path, const chart_style& cs);
+        ~feature_builder();
+
+        feature_builder(const feature_builder&) = delete;
+        feature_builder& operator=(const feature_builder&) = delete;
+
+        // Submit a build request. Replaces any pending (not yet started) request.
+        void request(const feature_build_request& req);
+
+        // Return the completed result, if any.
+        std::optional<feature_build_result> drain_result();
+    };
+
+} // namespace nasrbrowse
