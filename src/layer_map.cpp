@@ -571,7 +571,9 @@ void layer_map::on_drag_input(const std::vector<sdl::input_button_t>&, double xd
 void layer_map::on_scroll(double, double yoffset)
 {
     double factor = (yoffset > 0) ? 0.9 : 1.0 / 0.9;
-    pimpl->view.zoom(factor, pimpl->viewport_height);
+    double wx = pimpl->cursor_ndc_x * 2.0 * pimpl->view.half_extent_y + pimpl->view.center_x;
+    double wy = pimpl->cursor_ndc_y * 2.0 * pimpl->view.half_extent_y + pimpl->view.center_y;
+    pimpl->view.zoom_at(factor, wx, wy, pimpl->viewport_height);
     pimpl->rebuild_grid();
     pimpl->update_tiles();
 }
