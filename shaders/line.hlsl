@@ -68,7 +68,6 @@ float4 fragment_main(PSInput input) : SV_Target
     float winding = sign(world_to_screen_scale.x * world_to_screen_scale.y);
     float min_dist = 1e10;
     float path_dist = 0;
-    float cumulative = 0;
     bool inside = true;
 
     for(uint i = 0; i < segment_count; i++)
@@ -80,18 +79,24 @@ float4 fragment_main(PSInput input) : SV_Target
         float len_sq = dot(ab, ab);
         float t = (len_sq > 1e-8) ? saturate(dot(screen_pos - a, ab) / len_sq) : 0;
         float dist = length(screen_pos - (a + t * ab));
-        float seg_len = sqrt(len_sq);
 
         if(dist < min_dist)
         {
             min_dist = dist;
-            path_dist = cumulative + t * seg_len;
+            // Dash phase from world position projected onto segment direction,
+            // scaled to screen pixels. Colinear segments from different
+            // polylines produce the same phase at the same world point.
+            // Recover world_ab from screen ab without re-reading the buffer.
+            float2 world_ab = ab / world_to_screen_scale;
+            float world_len_sq = dot(world_ab, world_ab);
+            float2 world_dir = (world_len_sq > 1e-8) ? world_ab * rsqrt(world_len_sq) : float2(1, 0);
+            // Canonicalize so opposite-traversal colinear segments match
+            if(world_dir.x < 0 || (world_dir.x == 0 && world_dir.y < 0)) world_dir = -world_dir;
+            path_dist = dot(input.world_pos, world_dir) * length(world_to_screen_scale * world_dir);
         }
 
         float cross_val = ab.x * (screen_pos.y - a.y) - ab.y * (screen_pos.x - a.x);
         if(cross_val * winding < 0) inside = false;
-
-        cumulative += seg_len;
     }
 
     // For convex CCW polygons with fill_width set, use fill_width on the inside
@@ -106,6 +111,7 @@ float4 fragment_main(PSInput input) : SV_Target
     {
         float cycle = dash_length + gap_length;
         float pos_in_cycle = fmod(path_dist, cycle);
+        if(pos_in_cycle < 0) pos_in_cycle += cycle;
 
         if(pos_in_cycle < dash_length)
         {
