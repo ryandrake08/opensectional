@@ -159,8 +159,8 @@ int main(int argc, char** argv)
             sdl::primitive_type::triangle_list);
 
         sdl::pipeline line_program(dev,
-            load_shader(dev, shader_id::LINE, sdl::shader_stage::vertex),
-            load_shader(dev, shader_id::LINE, sdl::shader_stage::fragment, 0, 1),
+            load_shader(dev, shader_id::LINE, sdl::shader_stage::vertex, 0, 1),
+            load_shader(dev, shader_id::LINE, sdl::shader_stage::fragment, 0, 2),
             sdl::primitive_type::triangle_list,
             sdl::texture_format_t(0), false);
 

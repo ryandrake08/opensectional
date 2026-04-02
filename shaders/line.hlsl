@@ -1,38 +1,71 @@
-// SDF line shader
+// SDF line shader — instanced rendering
 // Renders thick polylines with dashes and borders using signed distance fields.
-// Quad vertices are generated from SV_VertexID (no vertex buffer).
-// Polyline vertex data is read from a fragment storage buffer.
+// One instance per polyline chunk. Quad vertices generated from SV_VertexID.
+// Per-instance data (bounds, style, point offset) read from metadata buffer.
+// All polyline points packed into a single storage buffer.
 
+// Shared uniforms (same for all instances)
 #ifdef VERTEX_SHADER
-cbuffer LineUniforms : register(b0, space1)
+cbuffer SharedUniforms : register(b0, space1)
 #else
-cbuffer LineUniforms : register(b0, space3)
+cbuffer SharedUniforms : register(b0, space3)
 #endif
 {
     float4x4 projection_matrix;
     float4x4 view_matrix;
-    float4 bounds_min_max;         // xy = world min, zw = world max (expanded by margin)
-    float4 line_color;             // RGBA
-    float4 border_color;           // RGBA
-    float2 viewport_size;          // pixels
-    float2 world_to_screen_scale;  // pixels per world unit (y is negative for Y flip)
-    float2 world_to_screen_offset; // screen-space position of world origin
-    float line_half_width;         // pixels
-    float border_width;            // pixels (outside of path direction)
-    float dash_length;             // pixels (0 = solid line)
-    float gap_length;              // pixels
-    float fill_width;              // pixels (inside/left of path direction)
-    uint segment_count;
+    float2 viewport_size;
+    float2 world_to_screen_scale;
+    float2 world_to_screen_offset;
+    float2 _pad0;
 };
+
+// Per-instance metadata (must match polyline_metadata_gpu layout)
+struct PolylineMetadata
+{
+    float4 bounds_min_max;     // xy = world min, zw = world max (no margin)
+    float4 line_color;         // RGBA
+    float4 border_color;       // RGBA
+    float line_half_width;     // pixels
+    float border_width;        // pixels (outside of path direction)
+    float dash_length;         // pixels (0 = solid line)
+    float gap_length;          // pixels
+    float fill_width;          // pixels (inside/left of path direction)
+    uint segment_count;
+    uint point_offset;
+    uint _pad;
+};
+
+// Vertex stage: metadata at vertex storage slot 0
+// Fragment stage: packed points at slot 0, metadata at slot 1
+#ifdef VERTEX_SHADER
+StructuredBuffer<PolylineMetadata> metadata : register(t0, space0);
+StructuredBuffer<float4> polyline : register(t1, space0);
+#else
+StructuredBuffer<float4> polyline : register(t0, space2);
+StructuredBuffer<PolylineMetadata> metadata : register(t1, space2);
+#endif
 
 struct PSInput
 {
     float4 position : SV_Position;
     float2 world_pos : TEXCOORD0;
+    nointerpolation uint instance_id : TEXCOORD1;
 };
 
-PSInput vertex_main(uint vertex_id : SV_VertexID)
+PSInput vertex_main(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
 {
+    PolylineMetadata meta = metadata[instance_id];
+
+    // Expand bounds by line margin in world space
+    float effective_fill = (meta.fill_width > 0) ? meta.fill_width : meta.border_width;
+    float margin_pixels = meta.line_half_width + max(meta.border_width, effective_fill);
+    float margin_x = margin_pixels / abs(world_to_screen_scale.x);
+    float margin_y = margin_pixels / abs(world_to_screen_scale.y);
+
+    float4 bounds = meta.bounds_min_max;
+    bounds.xy -= float2(margin_x, margin_y);
+    bounds.zw += float2(margin_x, margin_y);
+
     // Two triangles forming a quad
     float2 uv;
     switch(vertex_id)
@@ -46,19 +79,20 @@ PSInput vertex_main(uint vertex_id : SV_VertexID)
     default: uv = float2(0, 0); break;
     }
 
-    float2 world_pos = lerp(bounds_min_max.xy, bounds_min_max.zw, uv);
+    float2 world_pos = lerp(bounds.xy, bounds.zw, uv);
 
     PSInput output;
     output.position = mul(projection_matrix, mul(view_matrix, float4(world_pos, 0, 1)));
     output.world_pos = world_pos;
+    output.instance_id = instance_id;
     return output;
 }
 
-// Polyline vertices: xy = world position, zw = unused
-StructuredBuffer<float4> polyline : register(t0, space2);
-
 float4 fragment_main(PSInput input) : SV_Target
 {
+    PolylineMetadata meta = metadata[input.instance_id];
+    uint base = meta.point_offset;
+
     float2 screen_pos = input.world_pos * world_to_screen_scale + world_to_screen_offset;
 
     // Find nearest segment and compute distance along path.
@@ -70,10 +104,10 @@ float4 fragment_main(PSInput input) : SV_Target
     float path_dist = 0;
     bool inside = true;
 
-    for(uint i = 0; i < segment_count; i++)
+    for(uint i = 0; i < meta.segment_count; i++)
     {
-        float2 a = polyline[i].xy * world_to_screen_scale + world_to_screen_offset;
-        float2 b = polyline[i + 1].xy * world_to_screen_scale + world_to_screen_offset;
+        float2 a = polyline[base + i].xy * world_to_screen_scale + world_to_screen_offset;
+        float2 b = polyline[base + i + 1].xy * world_to_screen_scale + world_to_screen_offset;
 
         float2 ab = b - a;
         float len_sq = dot(ab, ab);
@@ -100,26 +134,26 @@ float4 fragment_main(PSInput input) : SV_Target
     }
 
     // For convex CCW polygons with fill_width set, use fill_width on the inside
-    float effective_border = inside ? fill_width : border_width;
+    float effective_border = inside ? meta.fill_width : meta.border_width;
 
     // SDF for perpendicular distance from line center
-    float perp_sdf = min_dist - line_half_width;
+    float perp_sdf = min_dist - meta.line_half_width;
 
     // SDF for dash pattern (negative = inside dash, positive = in gap)
     float dash_sdf = -1e10;
-    if(dash_length > 0)
+    if(meta.dash_length > 0)
     {
-        float cycle = dash_length + gap_length;
+        float cycle = meta.dash_length + meta.gap_length;
         float pos_in_cycle = fmod(path_dist, cycle);
         if(pos_in_cycle < 0) pos_in_cycle += cycle;
 
-        if(pos_in_cycle < dash_length)
+        if(pos_in_cycle < meta.dash_length)
         {
-            dash_sdf = -min(pos_in_cycle, dash_length - pos_in_cycle);
+            dash_sdf = -min(pos_in_cycle, meta.dash_length - pos_in_cycle);
         }
         else
         {
-            dash_sdf = min(pos_in_cycle - dash_length, cycle - pos_in_cycle);
+            dash_sdf = min(pos_in_cycle - meta.dash_length, cycle - pos_in_cycle);
         }
     }
 
@@ -133,7 +167,7 @@ float4 fragment_main(PSInput input) : SV_Target
     }
 
     // Border vs line interior
-    float4 color = (combined > 0) ? border_color : line_color;
+    float4 color = (combined > 0) ? meta.border_color : meta.line_color;
 
     // Anti-aliasing at outer edge
     float aa = 1.0 - smoothstep(effective_border - 1.0, effective_border, combined);

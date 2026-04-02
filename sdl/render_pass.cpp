@@ -142,6 +142,12 @@ namespace sdl
         SDL_PushGPUFragmentUniformData(pimpl->cmd_buffer, slot, data, size);
     }
 
+    void render_pass::bind_vertex_storage_buffer(uint32_t slot, const buffer& buf)
+    {
+        SDL_GPUBuffer* buffer_ptr = buf.get();
+        SDL_BindGPUVertexStorageBuffers(pimpl->handle, slot, &buffer_ptr, 1);
+    }
+
     void render_pass::bind_fragment_storage_buffer(uint32_t slot, const buffer& buf)
     {
         SDL_GPUBuffer* buffer_ptr = buf.get();

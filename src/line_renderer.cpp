@@ -7,33 +7,33 @@
 
 namespace nasrbrowse
 {
-    // Uniform buffer layout matching line.hlsl cbuffer
-    struct line_uniform_buffer
+    // Shared uniform buffer (same for all instances)
+    struct shared_uniform_buffer
     {
-        glm::mat4 projection_matrix;    // 64 bytes, offset 0
-        glm::mat4 view_matrix;          // 64 bytes, offset 64
-        glm::vec4 bounds_min_max;       // 16 bytes, offset 128 (xy=min, zw=max)
-        glm::vec4 line_color;           // 16 bytes, offset 144
-        glm::vec4 border_color;         // 16 bytes, offset 160
-        glm::vec2 viewport_size;        // 8 bytes, offset 176
-        glm::vec2 world_to_screen_scale;  // 8 bytes, offset 184
-        glm::vec2 world_to_screen_offset; // 8 bytes, offset 192
-        float line_half_width;          // 4 bytes, offset 200
-        float border_width;             // 4 bytes, offset 204
-        float dash_length;              // 4 bytes, offset 208
-        float gap_length;               // 4 bytes, offset 212
-        float fill_width;               // 4 bytes, offset 216
-        uint32_t segment_count;         // 4 bytes, offset 220
-        // total 224 bytes (14 * 16), no pad needed
+        glm::mat4 projection_matrix;      // 64 bytes, offset 0
+        glm::mat4 view_matrix;            // 64 bytes, offset 64
+        glm::vec2 viewport_size;           // 8 bytes, offset 128
+        glm::vec2 world_to_screen_scale;   // 8 bytes, offset 136
+        glm::vec2 world_to_screen_offset;  // 8 bytes, offset 144
+        glm::vec2 _pad0;                   // 8 bytes, offset 152
+        // total 160 bytes (10 * 16)
     };
 
-    struct polyline_gpu
+    // Per-instance metadata (must match PolylineMetadata in line.hlsl)
+    struct polyline_metadata_gpu
     {
-        std::unique_ptr<sdl::buffer> storage;
-        glm::vec2 bounds_min;
-        glm::vec2 bounds_max;
+        glm::vec4 bounds_min_max;     // xy=min, zw=max (no margin)
+        glm::vec4 line_color;
+        glm::vec4 border_color;
+        float line_half_width;
+        float border_width;
+        float dash_length;
+        float gap_length;
+        float fill_width;
         uint32_t segment_count;
-        line_style style;
+        uint32_t point_offset;
+        uint32_t _pad;
+        // total 80 bytes (5 * 16)
     };
 
     struct line_renderer::impl
@@ -44,7 +44,9 @@ namespace nasrbrowse
         bool dirty = false;
 
         // GPU-side data
-        std::vector<polyline_gpu> gpu_polylines;
+        std::unique_ptr<sdl::buffer> packed_points;
+        std::unique_ptr<sdl::buffer> metadata_buf;
+        uint32_t instance_count = 0;
     };
 
     line_renderer::line_renderer() : pimpl(new impl()) {}
@@ -62,7 +64,9 @@ namespace nasrbrowse
     {
         pimpl->polylines.clear();
         pimpl->styles.clear();
-        pimpl->gpu_polylines.clear();
+        pimpl->packed_points.reset();
+        pimpl->metadata_buf.reset();
+        pimpl->instance_count = 0;
         pimpl->dirty = false;
     }
 
@@ -75,43 +79,6 @@ namespace nasrbrowse
     // Each chunk overlaps by one point so segments connect continuously.
     static constexpr size_t max_chunk_points = 128;
 
-    static void upload_chunk(sdl::copy_pass& pass, const sdl::device& dev,
-                             const glm::vec2* points, size_t count,
-                             const line_style& style,
-                             std::vector<polyline_gpu>& out)
-    {
-        if(count < 2)
-        {
-            return;
-        }
-
-        glm::vec2 bmin = points[0];
-        glm::vec2 bmax = points[0];
-        for(size_t j = 1; j < count; j++)
-        {
-            bmin = glm::min(bmin, points[j]);
-            bmax = glm::max(bmax, points[j]);
-        }
-
-        std::vector<glm::vec4> buffer_data;
-        buffer_data.reserve(count);
-        for(size_t j = 0; j < count; j++)
-        {
-            buffer_data.emplace_back(points[j].x, points[j].y, 0.0F, 0.0F);
-        }
-
-        auto storage = pass.create_and_upload_buffer(
-            dev, sdl::buffer_usage::graphics_storage_read, buffer_data);
-
-        polyline_gpu gpu;
-        gpu.storage = std::make_unique<sdl::buffer>(std::move(storage));
-        gpu.bounds_min = bmin;
-        gpu.bounds_max = bmax;
-        gpu.segment_count = static_cast<uint32_t>(count - 1);
-        gpu.style = style;
-        out.push_back(std::move(gpu));
-    }
-
     void line_renderer::copy(sdl::copy_pass& pass, const sdl::device& dev)
     {
         if(!pimpl->dirty)
@@ -119,7 +86,8 @@ namespace nasrbrowse
             return;
         }
 
-        pimpl->gpu_polylines.clear();
+        std::vector<glm::vec4> all_points;
+        std::vector<polyline_metadata_gpu> all_metadata;
 
         for(size_t i = 0; i < pimpl->polylines.size(); i++)
         {
@@ -129,23 +97,69 @@ namespace nasrbrowse
                 continue;
             }
 
-            if(positions.size() <= max_chunk_points)
+            const line_style& style = pimpl->styles[i];
+
+            // Process chunks of this polyline
+            size_t offset = 0;
+            while(offset < positions.size() - 1)
             {
-                upload_chunk(pass, dev, positions.data(), positions.size(),
-                             pimpl->styles[i], pimpl->gpu_polylines);
-            }
-            else
-            {
-                // Split into overlapping chunks of max_chunk_points
-                size_t offset = 0;
-                while(offset < positions.size() - 1)
+                size_t end = std::min(offset + max_chunk_points, positions.size());
+                size_t count = end - offset;
+
+                // Compute bounds for this chunk
+                glm::vec2 bmin = positions[offset];
+                glm::vec2 bmax = positions[offset];
+                for(size_t j = offset + 1; j < end; j++)
                 {
-                    size_t end = std::min(offset + max_chunk_points, positions.size());
-                    upload_chunk(pass, dev, positions.data() + offset, end - offset,
-                                 pimpl->styles[i], pimpl->gpu_polylines);
-                    offset = end - 1; // overlap by one point for segment continuity
+                    bmin = glm::min(bmin, positions[j]);
+                    bmax = glm::max(bmax, positions[j]);
                 }
+
+                // Record point offset before appending
+                uint32_t point_offset = static_cast<uint32_t>(all_points.size());
+
+                // Append points to packed buffer
+                for(size_t j = offset; j < end; j++)
+                {
+                    all_points.emplace_back(positions[j].x, positions[j].y, 0.0F, 0.0F);
+                }
+
+                // Build metadata entry
+                float effective_fill = style.fill_width > 0 ? style.fill_width : style.border_width;
+                polyline_metadata_gpu meta {};
+                meta.bounds_min_max = glm::vec4(bmin.x, bmin.y, bmax.x, bmax.y);
+                meta.line_color = glm::vec4(style.r, style.g, style.b, style.a);
+                meta.border_color = glm::vec4(0.0F, 0.0F, 0.0F, style.a);
+                meta.line_half_width = style.line_width * 0.5F;
+                meta.border_width = style.border_width;
+                meta.dash_length = style.dash_length;
+                meta.gap_length = style.gap_length;
+                meta.fill_width = effective_fill;
+                meta.segment_count = static_cast<uint32_t>(count - 1);
+                meta.point_offset = point_offset;
+                meta._pad = 0;
+                all_metadata.push_back(meta);
+
+                offset = end - 1; // overlap by one point
             }
+        }
+
+        pimpl->instance_count = static_cast<uint32_t>(all_metadata.size());
+
+        if(pimpl->instance_count > 0)
+        {
+            auto pts = pass.create_and_upload_buffer(
+                dev, sdl::buffer_usage::graphics_storage_read, all_points);
+            pimpl->packed_points = std::make_unique<sdl::buffer>(std::move(pts));
+
+            auto meta = pass.create_and_upload_buffer(
+                dev, sdl::buffer_usage::graphics_storage_read, all_metadata);
+            pimpl->metadata_buf = std::make_unique<sdl::buffer>(std::move(meta));
+        }
+        else
+        {
+            pimpl->packed_points.reset();
+            pimpl->metadata_buf.reset();
         }
 
         pimpl->dirty = false;
@@ -157,76 +171,33 @@ namespace nasrbrowse
                                int viewport_width,
                                int viewport_height) const
     {
-        if(pimpl->gpu_polylines.empty())
+        if(pimpl->instance_count == 0)
         {
             return;
         }
 
-        // Compute world-to-screen transform from proj*view matrices
-        // For ortho 2D: screen.x = (ndc.x + 1) * 0.5 * vw
-        //               screen.y = (1 - ndc.y) * 0.5 * vh
         glm::mat4 pv = projection * view;
         float vw = static_cast<float>(viewport_width);
         float vh = static_cast<float>(viewport_height);
 
-        // Extract 2D affine transform components from the combined matrix
-        // ndc.x = pv[0][0] * wx + pv[3][0]  (assuming pv[1][0]=0, pv[2][0]=0)
-        // ndc.y = pv[1][1] * wy + pv[3][1]  (assuming pv[0][1]=0, pv[2][1]=0)
         glm::vec2 w2s_scale(pv[0][0] * 0.5F * vw,
                             -pv[1][1] * 0.5F * vh);
         glm::vec2 w2s_offset((pv[3][0] + 1.0F) * 0.5F * vw,
                              (1.0F - pv[3][1]) * 0.5F * vh);
 
-        // Compute viewport bounds in world space for culling.
-        // screen = world * w2s_scale + w2s_offset, so:
-        // world = (screen - w2s_offset) / w2s_scale
-        float world_x0 = -w2s_offset.x / w2s_scale.x;
-        float world_x1 = (vw - w2s_offset.x) / w2s_scale.x;
-        float world_y0 = -w2s_offset.y / w2s_scale.y;
-        float world_y1 = (vh - w2s_offset.y) / w2s_scale.y;
-        if(world_x0 > world_x1) std::swap(world_x0, world_x1);
-        if(world_y0 > world_y1) std::swap(world_y0, world_y1);
+        shared_uniform_buffer uniforms {};
+        uniforms.projection_matrix = projection;
+        uniforms.view_matrix = view;
+        uniforms.viewport_size = glm::vec2(vw, vh);
+        uniforms.world_to_screen_scale = w2s_scale;
+        uniforms.world_to_screen_offset = w2s_offset;
 
-        for(const auto& gpu : pimpl->gpu_polylines)
-        {
-            float effective_fill = gpu.style.fill_width > 0 ? gpu.style.fill_width : gpu.style.border_width;
-            float margin_pixels = gpu.style.line_width * 0.5F + std::max(gpu.style.border_width, effective_fill);
-            float margin_x = margin_pixels / std::abs(w2s_scale.x);
-            float margin_y = margin_pixels / std::abs(w2s_scale.y);
-
-            // Skip polylines entirely outside the viewport
-            if(gpu.bounds_max.x + margin_x < world_x0 ||
-               gpu.bounds_min.x - margin_x > world_x1 ||
-               gpu.bounds_max.y + margin_y < world_y0 ||
-               gpu.bounds_min.y - margin_y > world_y1)
-            {
-                continue;
-            }
-
-            line_uniform_buffer uniforms;
-            uniforms.projection_matrix = projection;
-            uniforms.view_matrix = view;
-            uniforms.bounds_min_max = glm::vec4(
-                gpu.bounds_min.x - margin_x, gpu.bounds_min.y - margin_y,
-                gpu.bounds_max.x + margin_x, gpu.bounds_max.y + margin_y);
-            uniforms.line_color = glm::vec4(
-                gpu.style.r, gpu.style.g, gpu.style.b, gpu.style.a);
-            uniforms.border_color = glm::vec4(0.0F, 0.0F, 0.0F, gpu.style.a);
-            uniforms.viewport_size = glm::vec2(vw, vh);
-            uniforms.world_to_screen_scale = w2s_scale;
-            uniforms.world_to_screen_offset = w2s_offset;
-            uniforms.line_half_width = gpu.style.line_width * 0.5F;
-            uniforms.border_width = gpu.style.border_width;
-            uniforms.dash_length = gpu.style.dash_length;
-            uniforms.gap_length = gpu.style.gap_length;
-            uniforms.fill_width = effective_fill;
-            uniforms.segment_count = gpu.segment_count;
-
-            pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
-            pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
-            pass.bind_fragment_storage_buffer(0, *gpu.storage);
-            pass.draw(6);
-        }
+        pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
+        pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
+        pass.bind_vertex_storage_buffer(0, *pimpl->metadata_buf);
+        pass.bind_fragment_storage_buffer(0, *pimpl->packed_points);
+        pass.bind_fragment_storage_buffer(1, *pimpl->metadata_buf);
+        pass.draw(6, pimpl->instance_count);
     }
 
 } // namespace nasrbrowse

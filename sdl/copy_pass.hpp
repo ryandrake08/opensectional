@@ -1,5 +1,6 @@
 #pragma once
 
+#include "buffer.hpp"
 #include "types.hpp"
 #include <memory>
 #include <vector>
@@ -8,7 +9,6 @@ namespace sdl
 {
     class command_buffer;
     class device;
-    class buffer;
     class surface;
     class texture;
 
@@ -56,16 +56,17 @@ namespace sdl
         /**
          * Create GPU buffer and upload data from vector.
          *
-         * Creates a buffer and uploads data via an internally managed transfer buffer.
-         *
          * @param dev GPU device
-         * @param usage Buffer usage flags (e.g., SDL_GPU_BUFFERUSAGE_VERTEX, SDL_GPU_BUFFERUSAGE_INDEX)
+         * @param usage Buffer usage flags
          * @param data Vector of data to upload (must not be empty)
          * @return Created and populated buffer
-         * @throws std::runtime_error if data is empty
          */
         template<typename T>
-        buffer create_and_upload_buffer(const device& dev, buffer_usage_t usage, const std::vector<T>& data);
+        buffer create_and_upload_buffer(const device& dev, buffer_usage_t usage, const std::vector<T>& data)
+        {
+            return create_and_upload_buffer_raw(dev, usage, data.data(),
+                static_cast<uint32_t>(data.size()), static_cast<uint32_t>(sizeof(T)));
+        }
 
         /**
          * Create GPU texture and upload surface data.
@@ -77,6 +78,10 @@ namespace sdl
          * @return Created and populated texture
          */
         texture create_and_upload_texture(const device& dev, const surface& surf);
+
+    private:
+        buffer create_and_upload_buffer_raw(const device& dev, buffer_usage_t usage,
+                                            const void* data, uint32_t count, uint32_t element_size);
     };
 
 } // namespace sdl

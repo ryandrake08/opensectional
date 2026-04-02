@@ -129,6 +129,14 @@ namespace sdl
         void push_fragment_uniforms(uint32_t slot, const void* data, uint32_t size);
 
         /**
+         * Bind storage buffer to vertex shader.
+         *
+         * @param slot Binding slot
+         * @param buf Storage buffer (must be created with graphics_storage_read usage)
+         */
+        void bind_vertex_storage_buffer(uint32_t slot, const buffer& buf);
+
+        /**
          * Bind storage buffer to fragment shader.
          *
          * @param slot Binding slot

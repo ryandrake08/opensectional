@@ -87,19 +87,19 @@ namespace sdl
         return tex;
     }
 
-    template<typename T>
-    buffer copy_pass::create_and_upload_buffer(const device& dev, buffer_usage_t usage, const std::vector<T>& data)
+    buffer copy_pass::create_and_upload_buffer_raw(const device& dev, buffer_usage_t usage,
+                                                   const void* data, uint32_t count, uint32_t element_size)
     {
-        if(data.empty())
+        if(count == 0)
         {
             throw error("Cannot create buffer from empty data");
         }
 
-        buffer buf(dev, usage, static_cast<uint32_t>(data.size()), sizeof(T));
+        buffer buf(dev, usage, count, element_size);
 
-        uint32_t byte_size = static_cast<uint32_t>(data.size() * sizeof(T));
+        uint32_t byte_size = count * element_size;
         transfer_buffer& transfer = pimpl->alloc(dev, byte_size);
-        uint32_t offset = transfer.append(data.data(), byte_size);
+        uint32_t offset = transfer.append(data, byte_size);
 
         SDL_GPUTransferBufferLocation source = {};
         source.transfer_buffer = transfer.get();
@@ -115,8 +115,4 @@ namespace sdl
         return buf;
     }
 
-    // Explicit template instantiations for the types we use
-    template buffer copy_pass::create_and_upload_buffer<vertex_t2f_c4ub_v3f>(const device&, buffer_usage_t, const std::vector<vertex_t2f_c4ub_v3f>&);
-    template buffer copy_pass::create_and_upload_buffer<int>(const device&, buffer_usage_t, const std::vector<int>&);
-    template buffer copy_pass::create_and_upload_buffer<glm::vec4>(const device&, buffer_usage_t, const std::vector<glm::vec4>&);
 } // namespace sdl
