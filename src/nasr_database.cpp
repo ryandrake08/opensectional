@@ -33,6 +33,7 @@ namespace nasrbrowse
         sqlite3_stmt* stmt_runways;
         sqlite3_stmt* stmt_sua;
         sqlite3_stmt* stmt_sua_shape;
+        sqlite3_stmt* stmt_sua_circle;
         sqlite3_stmt* stmt_obstacles;
         sqlite3_stmt* stmt_artcc;
         sqlite3_stmt* stmt_artcc_shape;
@@ -74,6 +75,7 @@ namespace nasrbrowse
             , stmt_runways(nullptr)
             , stmt_sua(nullptr)
             , stmt_sua_shape(nullptr)
+            , stmt_sua_circle(nullptr)
             , stmt_obstacles(nullptr)
             , stmt_artcc(nullptr)
             , stmt_artcc_shape(nullptr)
@@ -110,6 +112,7 @@ namespace nasrbrowse
             sqlite3_finalize(stmt_runways);
             sqlite3_finalize(stmt_sua);
             sqlite3_finalize(stmt_sua_shape);
+            sqlite3_finalize(stmt_sua_circle);
             sqlite3_finalize(stmt_obstacles);
             sqlite3_finalize(stmt_artcc);
             sqlite3_finalize(stmt_artcc_shape);
@@ -263,6 +266,12 @@ namespace nasrbrowse
                 ORDER BY PART_NUM, POINT_SEQ
             )");
 
+            prepare(&stmt_sua_circle, R"(
+                SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM
+                FROM SUA_CIRCLE
+                WHERE SUA_ID = ?1
+            )");
+
             prepare(&stmt_obstacles, R"(
                 SELECT OAS_NUM, LAT_DECIMAL, LON_DECIMAL, AGL_HT, LIGHTING
                 FROM OBS_BASE
@@ -364,6 +373,7 @@ namespace nasrbrowse
                 throw std::runtime_error(msg);
             }
         }
+
 
         void bind_bbox(sqlite3_stmt* stmt, double lon_min, double lat_min,
                        double lon_max, double lat_max)
@@ -550,6 +560,19 @@ namespace nasrbrowse
             sua su{sqlite3_column_int(s, 0), col_text(s, 1),
                    col_text(s, 2), col_text(s, 3), {}};
 
+            // Load circle metadata if this SUA is a pure circle
+            int circle_part = -1;
+            double circle_lon = 0, circle_lat = 0, circle_radius_nm = 0;
+            sqlite3_reset(d.stmt_sua_circle);
+            sqlite3_bind_int(d.stmt_sua_circle, 1, su.sua_id);
+            if(sqlite3_step(d.stmt_sua_circle) == SQLITE_ROW)
+            {
+                circle_part = sqlite3_column_int(d.stmt_sua_circle, 0);
+                circle_lon = col_double(d.stmt_sua_circle, 1);
+                circle_lat = col_double(d.stmt_sua_circle, 2);
+                circle_radius_nm = col_double(d.stmt_sua_circle, 3);
+            }
+
             sqlite3_reset(d.stmt_sua_shape);
             sqlite3_bind_int(d.stmt_sua_shape, 1, su.sua_id);
             int current_part = -1;
@@ -561,6 +584,13 @@ namespace nasrbrowse
                     sua_ring ring;
                     ring.upper_limit = col_text(d.stmt_sua_shape, 1);
                     ring.lower_limit = col_text(d.stmt_sua_shape, 2);
+                    if(part_num == circle_part)
+                    {
+                        ring.is_circle = true;
+                        ring.circle_lon = circle_lon;
+                        ring.circle_lat = circle_lat;
+                        ring.circle_radius_nm = circle_radius_nm;
+                    }
                     su.parts.push_back(std::move(ring));
                     current_part = part_num;
                 }

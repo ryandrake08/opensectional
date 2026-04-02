@@ -1,8 +1,12 @@
 // SDF line shader — instanced rendering
-// Renders thick polylines with dashes and borders using signed distance fields.
-// One instance per polyline chunk. Quad vertices generated from SV_VertexID.
-// Per-instance data (bounds, style, point offset) read from metadata buffer.
-// All polyline points packed into a single storage buffer.
+// Renders thick polylines and circles using signed distance fields.
+// One instance per primitive. Quad vertices generated from SV_VertexID.
+// Per-instance data (bounds, style, primitive type) read from metadata buffer.
+// Polyline points packed into a single storage buffer.
+
+// Primitive types
+#define PRIMITIVE_POLYLINE 0
+#define PRIMITIVE_CIRCLE   1
 
 // Shared uniforms (same for all instances)
 #ifdef VERTEX_SHADER
@@ -32,7 +36,10 @@ struct PolylineMetadata
     float fill_width;          // pixels (inside/left of path direction)
     uint segment_count;
     uint point_offset;
-    uint _pad;
+    uint primitive_type;       // 0 = polyline, 1 = circle
+    float2 circle_center;     // world-space Mercator (for circles)
+    float circle_radius;       // world-space Mercator (for circles)
+    float _pad2;
 };
 
 // Vertex stage: metadata at vertex storage slot 0
@@ -91,46 +98,53 @@ PSInput vertex_main(uint vertex_id : SV_VertexID, uint instance_id : SV_Instance
 float4 fragment_main(PSInput input) : SV_Target
 {
     PolylineMetadata meta = metadata[input.instance_id];
-    uint base = meta.point_offset;
 
     float2 screen_pos = input.world_pos * world_to_screen_scale + world_to_screen_offset;
 
-    // Find nearest segment and compute distance along path.
-    // Also test if fragment is inside a convex polygon by checking
-    // the cross product against every segment (not just the nearest).
-    // The winding factor accounts for the Y-flip in screen coordinates.
-    float winding = sign(world_to_screen_scale.x * world_to_screen_scale.y);
     float min_dist = 1e10;
     float path_dist = 0;
     bool inside = true;
 
-    for(uint i = 0; i < meta.segment_count; i++)
+    if(meta.primitive_type == PRIMITIVE_CIRCLE)
     {
-        float2 a = polyline[base + i].xy * world_to_screen_scale + world_to_screen_offset;
-        float2 b = polyline[base + i + 1].xy * world_to_screen_scale + world_to_screen_offset;
+        // Analytical circle SDF — O(1) per fragment
+        float2 center_s = meta.circle_center * world_to_screen_scale + world_to_screen_offset;
+        float radius_s = meta.circle_radius * abs(world_to_screen_scale.x);
+        float d = length(screen_pos - center_s);
+        min_dist = abs(d - radius_s);
+        inside = (d < radius_s);
+        path_dist = atan2(screen_pos.y - center_s.y, screen_pos.x - center_s.x) * radius_s;
+    }
+    else
+    {
+        // Polyline SDF — loop over segments
+        uint base = meta.point_offset;
+        float winding = sign(world_to_screen_scale.x * world_to_screen_scale.y);
 
-        float2 ab = b - a;
-        float len_sq = dot(ab, ab);
-        float t = (len_sq > 1e-8) ? saturate(dot(screen_pos - a, ab) / len_sq) : 0;
-        float dist = length(screen_pos - (a + t * ab));
-
-        if(dist < min_dist)
+        for(uint i = 0; i < meta.segment_count; i++)
         {
-            min_dist = dist;
-            // Dash phase from world position projected onto segment direction,
-            // scaled to screen pixels. Colinear segments from different
-            // polylines produce the same phase at the same world point.
-            // Recover world_ab from screen ab without re-reading the buffer.
-            float2 world_ab = ab / world_to_screen_scale;
-            float world_len_sq = dot(world_ab, world_ab);
-            float2 world_dir = (world_len_sq > 1e-8) ? world_ab * rsqrt(world_len_sq) : float2(1, 0);
-            // Canonicalize so opposite-traversal colinear segments match
-            if(world_dir.x < 0 || (world_dir.x == 0 && world_dir.y < 0)) world_dir = -world_dir;
-            path_dist = dot(input.world_pos, world_dir) * length(world_to_screen_scale * world_dir);
-        }
+            float2 a = polyline[base + i].xy * world_to_screen_scale + world_to_screen_offset;
+            float2 b = polyline[base + i + 1].xy * world_to_screen_scale + world_to_screen_offset;
 
-        float cross_val = ab.x * (screen_pos.y - a.y) - ab.y * (screen_pos.x - a.x);
-        if(cross_val * winding < 0) inside = false;
+            float2 ab = b - a;
+            float len_sq = dot(ab, ab);
+            float t = (len_sq > 1e-8) ? saturate(dot(screen_pos - a, ab) / len_sq) : 0;
+            float dist = length(screen_pos - (a + t * ab));
+
+            if(dist < min_dist)
+            {
+                min_dist = dist;
+                // Dash phase from world position projected onto segment direction
+                float2 world_ab = ab / world_to_screen_scale;
+                float world_len_sq = dot(world_ab, world_ab);
+                float2 world_dir = (world_len_sq > 1e-8) ? world_ab * rsqrt(world_len_sq) : float2(1, 0);
+                if(world_dir.x < 0 || (world_dir.x == 0 && world_dir.y < 0)) world_dir = -world_dir;
+                path_dist = dot(input.world_pos, world_dir) * length(world_to_screen_scale * world_dir);
+            }
+
+            float cross_val = ab.x * (screen_pos.y - a.y) - ab.y * (screen_pos.x - a.x);
+            if(cross_val * winding < 0) inside = false;
+        }
     }
 
     // For convex CCW polygons with fill_width set, use fill_width on the inside

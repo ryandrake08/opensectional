@@ -1079,10 +1079,15 @@ def parse_ring_points(ring_elem):
                 rad = seg.find(f"{{{GML}}}radius")
                 if pos is not None and rad is not None:
                     lon, lat = pos.text.strip().split()
-                    return generate_circle(
-                        float(lon), float(lat),
-                        float(rad.text), rad.get("uom", "NM"),
-                    )
+                    clon, clat = float(lon), float(lat)
+                    radius_val = float(rad.text)
+                    uom = rad.get("uom", "NM")
+                    circle_pts = generate_circle(clon, clat, radius_val, uom)
+                    circle_meta = {
+                        "lon": clon, "lat": clat,
+                        "radius": radius_val, "uom": uom,
+                    }
+                    return circle_pts, circle_meta
             elif tag == "ArcByCenterPoint":
                 pos = seg.find(f".//{{{GML}}}pos")
                 rad = seg.find(f"{{{GML}}}radius")
@@ -1096,7 +1101,7 @@ def parse_ring_points(ring_elem):
                         float(start_angle.text), float(end_angle.text),
                     )
                     points.extend(arc_pts)
-    return points
+    return points, None
 
 
 def _text(parent, tag):
@@ -1191,9 +1196,10 @@ def _parse_one_airspace(airspace):
         shape = []
         hp = vol.find(f".//{{{AIXM}}}horizontalProjection") if vol is not None else None
         if hp is not None:
+            circle_info = None
             ring = hp.find(f".//{{{GML}}}Ring")
             if ring is not None:
-                shape = parse_ring_points(ring)
+                shape, circle_info = parse_ring_points(ring)
             else:
                 linear_ring = hp.find(f".//{{{GML}}}LinearRing")
                 if linear_ring is not None:
@@ -1206,13 +1212,18 @@ def _parse_one_airspace(airspace):
             if op.text == "SUBTR":
                 subtractive.append((seq_num, shape, comp_upper, comp_lower))
             else:
-                additive.append((seq_num, shape))
+                additive.append((seq_num, shape, circle_info))
 
     if not additive:
         return None
 
     additive.sort(key=lambda c: c[0])
-    outer_parts = merge_shared_edges([shape for _, shape in additive])
+    outer_parts = merge_shared_edges([shape for _, shape, _ in additive])
+
+    # Preserve circle_info if exactly one additive part is a pure circle
+    result_circle_info = None
+    if len(additive) == 1 and additive[0][2] is not None and len(outer_parts) == 1:
+        result_circle_info = additive[0][2]
 
     # parts: list of (shape, upper_limit, lower_limit)
     # Outer rings use the BASE altitude limits
@@ -1272,6 +1283,7 @@ def _parse_one_airspace(airspace):
         "compliant_icao": compliant_icao,
         "legal_note": legal_note,
         "parts": parts,
+        "circle_info": result_circle_info,
     }
 
 
@@ -1383,11 +1395,23 @@ def build_sua(conn, aixm_zf):
         )
     """)
 
+    conn.execute("DROP TABLE IF EXISTS SUA_CIRCLE")
+    conn.execute("""
+        CREATE TABLE SUA_CIRCLE (
+            SUA_ID INTEGER,
+            PART_NUM INTEGER,
+            CENTER_LON REAL,
+            CENTER_LAT REAL,
+            RADIUS_NM REAL
+        )
+    """)
+
     epsilon = 0.0001
     total_before = 0
     total_after = 0
     base_rows = []
     shp_rows = []
+    circle_rows = []
     skipped = 0
 
     for xml_name in xml_files:
@@ -1416,6 +1440,19 @@ def build_sua(conn, aixm_zf):
                 result["legal_note"],
             ))
 
+            # Store circle metadata if this SUA is a pure circle
+            ci = result.get("circle_info")
+            if ci is not None:
+                r = ci["radius"]
+                uom = ci["uom"]
+                if uom == "KM":
+                    r /= 1.852
+                elif uom == "M":
+                    r /= 1852.0
+                elif uom != "NM":
+                    r /= 1.852  # assume KM if unknown
+                circle_rows.append((sua_id, 0, ci["lon"], ci["lat"], r))
+
             part_num = 0
             for part, part_upper, part_lower in result["parts"]:
                 for copy in handle_antimeridian(part):
@@ -1435,10 +1472,15 @@ def build_sua(conn, aixm_zf):
         "INSERT INTO SUA_SHP VALUES (?, ?, ?, ?, ?, ?, ?)",
         shp_rows,
     )
+    conn.executemany(
+        "INSERT INTO SUA_CIRCLE VALUES (?, ?, ?, ?, ?)",
+        circle_rows,
+    )
 
     print(f"  Parsed {len(xml_files)} files, {skipped} skipped")
     print(f"  SUA_BASE: {len(base_rows)} airspaces")
     print(f"  SUA_SHP: {len(shp_rows)} shape points")
+    print(f"  SUA_CIRCLE: {len(circle_rows)} circle airspaces")
     if total_before > 0:
         print(f"  Simplified: {total_before} -> {total_after} points "
               f"({100 * total_after / total_before:.1f}%)")

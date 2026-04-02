@@ -81,6 +81,7 @@ namespace nasrbrowse
         {
             std::vector<std::vector<glm::vec2>> all_polylines;
             std::vector<line_style> all_styles;
+            std::vector<circle_data> all_circles;
 
             for(int i = 0; i < layer_sdf_count; i++)
             {
@@ -89,9 +90,12 @@ namespace nasrbrowse
                     poly[i].polylines.begin(), poly[i].polylines.end());
                 all_styles.insert(all_styles.end(),
                     poly[i].styles.begin(), poly[i].styles.end());
+                all_circles.insert(all_circles.end(),
+                    poly[i].circles.begin(), poly[i].circles.end());
             }
 
-            sdf_lines.set_polylines(std::move(all_polylines), std::move(all_styles));
+            sdf_lines.set_data(std::move(all_polylines), std::move(all_styles),
+                               std::move(all_circles));
         }
     };
 

@@ -19,6 +19,10 @@ namespace nasrbrowse
         // total 160 bytes (10 * 16)
     };
 
+    // Primitive types for instanced rendering
+    constexpr uint32_t PRIMITIVE_POLYLINE = 0;
+    constexpr uint32_t PRIMITIVE_CIRCLE = 1;
+
     // Per-instance metadata (must match PolylineMetadata in line.hlsl)
     struct polyline_metadata_gpu
     {
@@ -32,8 +36,12 @@ namespace nasrbrowse
         float fill_width;
         uint32_t segment_count;
         uint32_t point_offset;
-        uint32_t _pad;
-        // total 80 bytes (5 * 16)
+        uint32_t primitive_type;      // 0=polyline, 1=circle
+        float circle_center_x;       // world-space Mercator
+        float circle_center_y;
+        float circle_radius;          // world-space Mercator
+        float _pad2;
+        // total 96 bytes (6 * 16)
     };
 
     struct line_renderer::impl
@@ -41,6 +49,7 @@ namespace nasrbrowse
         // CPU-side data (pending upload)
         std::vector<std::vector<glm::vec2>> polylines;
         std::vector<line_style> styles;
+        std::vector<circle_data> circles;
         bool dirty = false;
 
         // GPU-side data
@@ -52,11 +61,13 @@ namespace nasrbrowse
     line_renderer::line_renderer() : pimpl(new impl()) {}
     line_renderer::~line_renderer() = default;
 
-    void line_renderer::set_polylines(std::vector<std::vector<glm::vec2>> polylines,
-                                      std::vector<line_style> styles)
+    void line_renderer::set_data(std::vector<std::vector<glm::vec2>> polylines,
+                                  std::vector<line_style> styles,
+                                  std::vector<circle_data> circles)
     {
         pimpl->polylines = std::move(polylines);
         pimpl->styles = std::move(styles);
+        pimpl->circles = std::move(circles);
         pimpl->dirty = true;
     }
 
@@ -64,6 +75,7 @@ namespace nasrbrowse
     {
         pimpl->polylines.clear();
         pimpl->styles.clear();
+        pimpl->circles.clear();
         pimpl->packed_points.reset();
         pimpl->metadata_buf.reset();
         pimpl->instance_count = 0;
@@ -137,17 +149,47 @@ namespace nasrbrowse
                 meta.fill_width = effective_fill;
                 meta.segment_count = static_cast<uint32_t>(count - 1);
                 meta.point_offset = point_offset;
-                meta._pad = 0;
+                meta.primitive_type = PRIMITIVE_POLYLINE;
                 all_metadata.push_back(meta);
 
                 offset = end - 1; // overlap by one point
             }
         }
 
+        // Add circle instances
+        for(const auto& c : pimpl->circles)
+        {
+            float effective_fill = c.style.fill_width > 0 ? c.style.fill_width : c.style.border_width;
+            polyline_metadata_gpu meta {};
+            meta.bounds_min_max = glm::vec4(
+                c.center.x - c.radius, c.center.y - c.radius,
+                c.center.x + c.radius, c.center.y + c.radius);
+            meta.line_color = glm::vec4(c.style.r, c.style.g, c.style.b, c.style.a);
+            meta.border_color = glm::vec4(0.0F, 0.0F, 0.0F, c.style.a);
+            meta.line_half_width = c.style.line_width * 0.5F;
+            meta.border_width = c.style.border_width;
+            meta.dash_length = c.style.dash_length;
+            meta.gap_length = c.style.gap_length;
+            meta.fill_width = effective_fill;
+            meta.segment_count = 0;
+            meta.point_offset = 0;
+            meta.primitive_type = PRIMITIVE_CIRCLE;
+            meta.circle_center_x = c.center.x;
+            meta.circle_center_y = c.center.y;
+            meta.circle_radius = c.radius;
+            all_metadata.push_back(meta);
+        }
+
         pimpl->instance_count = static_cast<uint32_t>(all_metadata.size());
 
         if(pimpl->instance_count > 0)
         {
+            // Ensure points buffer is non-empty (circles don't use it but it must be bound)
+            if(all_points.empty())
+            {
+                all_points.emplace_back(0.0F, 0.0F, 0.0F, 0.0F);
+            }
+
             auto pts = pass.create_and_upload_buffer(
                 dev, sdl::buffer_usage::graphics_storage_read, all_points);
             pimpl->packed_points = std::make_unique<sdl::buffer>(std::move(pts));

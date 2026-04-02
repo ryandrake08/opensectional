@@ -99,6 +99,10 @@ namespace nasrbrowse
         std::vector<airspace_point> points;
         std::string upper_limit;
         std::string lower_limit;
+        bool is_circle = false;
+        double circle_lon = 0;
+        double circle_lat = 0;
+        double circle_radius_nm = 0;
     };
 
     // Special use airspace (MOA, Restricted, Warning, Alert, etc. from AIXM)

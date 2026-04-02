@@ -12,16 +12,18 @@ namespace nasrbrowse
 {
     class chart_style;
 
-    // Polyline data for a single feature layer
+    // Geometry data for a single feature layer
     struct polyline_data
     {
         std::vector<std::vector<glm::vec2>> polylines;
         std::vector<line_style> styles;
+        std::vector<circle_data> circles;
 
         void clear()
         {
             polylines.clear();
             styles.clear();
+            circles.clear();
         }
     };
 

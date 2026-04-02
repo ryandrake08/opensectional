@@ -755,7 +755,18 @@ namespace nasrbrowse
 
                 for(const auto& ring : s.parts)
                 {
-                    append_polygon_ring(poly[layer_sua], ring.points, ls);
+                    if(ring.is_circle)
+                    {
+                        double lat_rad = ring.circle_lat * M_PI / 180.0;
+                        float cx = static_cast<float>(lon_to_mx(ring.circle_lon));
+                        float cy = static_cast<float>(lat_to_my(ring.circle_lat));
+                        float r = static_cast<float>(ring.circle_radius_nm * 1852.0 / std::cos(lat_rad));
+                        poly[layer_sua].circles.push_back({{cx, cy}, r, ls});
+                    }
+                    else
+                    {
+                        append_polygon_ring(poly[layer_sua], ring.points, ls);
+                    }
                 }
             }
         }
@@ -768,9 +779,7 @@ namespace nasrbrowse
             bool point_vis = styles.pja_point_visible(req.zoom);
             if(!area_vis && !point_vis) return;
 
-            constexpr int CIRCLE_SEGS = 24;
-            constexpr double PI = 3.14159265358979;
-            constexpr double NM_TO_DEG_LAT = 1.0 / 60.0;
+            constexpr double NM_TO_METERS = 1852.0;
             constexpr double SYMBOL_RADIUS_PJA = SYMBOL_RADIUS_AIRPORT;
 
             const auto& pjas = db.query_pjas(lon_min, lat_min, lon_max, lat_max);
@@ -779,20 +788,13 @@ namespace nasrbrowse
             {
                 if(p.radius_nm > 0.0 && area_vis)
                 {
-                    double dlat = p.radius_nm * NM_TO_DEG_LAT;
-                    double dlon = dlat / std::cos(p.lat * PI / 180.0);
-
-                    std::vector<airspace_point> circle;
-                    for(int i = 0; i <= CIRCLE_SEGS; i++)
-                    {
-                        double angle = 2.0 * PI * i / CIRCLE_SEGS;
-                        circle.push_back({
-                            p.lat + dlat * std::sin(angle),
-                            p.lon + dlon * std::cos(angle)});
-                    }
+                    double lat_rad = p.lat * M_PI / 180.0;
+                    float cx = static_cast<float>(lon_to_mx(p.lon));
+                    float cy = static_cast<float>(lat_to_my(p.lat));
+                    float r = static_cast<float>(p.radius_nm * NM_TO_METERS / std::cos(lat_rad));
 
                     auto ls = to_line_style(styles.pja_area_style());
-                    append_polygon_ring(poly[layer_pja], circle, ls);
+                    poly[layer_pja].circles.push_back({{cx, cy}, r, ls});
                 }
                 else if(p.radius_nm <= 0.0 && point_vis)
                 {
@@ -824,9 +826,7 @@ namespace nasrbrowse
             bool point_vis = styles.maa_point_visible(req.zoom);
             if(!area_vis && !point_vis) return;
 
-            constexpr int CIRCLE_SEGS = 24;
-            constexpr double PI = 3.14159265358979;
-            constexpr double NM_TO_DEG_LAT = 1.0 / 60.0;
+            constexpr double NM_TO_METERS = 1852.0;
 
             const auto& maas = db.query_maas(lon_min, lat_min, lon_max, lat_max);
 
@@ -839,20 +839,13 @@ namespace nasrbrowse
                 }
                 else if(m.radius_nm > 0.0 && area_vis)
                 {
-                    double dlat = m.radius_nm * NM_TO_DEG_LAT;
-                    double dlon = dlat / std::cos(m.lat * PI / 180.0);
-
-                    std::vector<airspace_point> circle;
-                    for(int i = 0; i <= CIRCLE_SEGS; i++)
-                    {
-                        double angle = 2.0 * PI * i / CIRCLE_SEGS;
-                        circle.push_back({
-                            m.lat + dlat * std::sin(angle),
-                            m.lon + dlon * std::cos(angle)});
-                    }
+                    double lat_rad = m.lat * M_PI / 180.0;
+                    float cx = static_cast<float>(lon_to_mx(m.lon));
+                    float cy = static_cast<float>(lat_to_my(m.lat));
+                    float r = static_cast<float>(m.radius_nm * NM_TO_METERS / std::cos(lat_rad));
 
                     auto ls = to_line_style(styles.maa_area_style());
-                    append_polygon_ring(poly[layer_maa], circle, ls);
+                    poly[layer_maa].circles.push_back({{cx, cy}, r, ls});
                 }
                 else if(m.lat != 0.0 && point_vis)
                 {

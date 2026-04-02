@@ -24,6 +24,14 @@ namespace nasrbrowse
         float fill_width;   // border width on inside of path (0 = same as border_width)
     };
 
+    // Circle primitive (center + radius in world-space Mercator meters)
+    struct circle_data
+    {
+        glm::vec2 center;
+        float radius;
+        line_style style;
+    };
+
     class line_renderer
     {
         struct impl;
@@ -36,9 +44,10 @@ namespace nasrbrowse
         line_renderer(const line_renderer&) = delete;
         line_renderer& operator=(const line_renderer&) = delete;
 
-        // Set polyline data. Each polyline is a vector of world-space positions.
-        void set_polylines(std::vector<std::vector<glm::vec2>> polylines,
-                           std::vector<line_style> styles);
+        // Set geometry data: polylines and/or circles in world-space.
+        void set_data(std::vector<std::vector<glm::vec2>> polylines,
+                      std::vector<line_style> styles,
+                      std::vector<circle_data> circles);
 
         // Clear all polyline data.
         void clear();
