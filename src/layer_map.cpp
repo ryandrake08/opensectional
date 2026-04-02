@@ -8,6 +8,7 @@
 #include "ui_overlay.hpp"
 #include "chart_style.hpp"
 #include <cmath>
+#include <glm/ext/matrix_transform.hpp>
 #include <iostream>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
@@ -195,7 +196,8 @@ struct layer_map::impl
     {
         tiles.update(view_x_min(), view.view_y_min(),
                      view_x_max(), view.view_y_max(),
-                     viewport_height, aspect_ratio());
+                     view.half_extent_y, viewport_height,
+                     aspect_ratio());
         features.update(view_x_min(), view.view_y_min(),
                         view_x_max(), view.view_y_max(),
                         view.half_extent_y, viewport_height,
@@ -609,13 +611,19 @@ void layer_map::on_copy(sdl::copy_pass& pass)
 
 void layer_map::on_render(sdl::render_pass& pass, const nasrbrowse::render_context& ctx) const
 {
+    float s = static_cast<float>(1.0 / (2.0 * pimpl->view.half_extent_y));
+    float cx = static_cast<float>(pimpl->view.center_x);
+    float cy = static_cast<float>(pimpl->view.center_y);
+    glm::mat4 view_matrix = glm::scale(glm::mat4(1.0F), glm::vec3(s, s, 1.0F)) *
+                             glm::translate(glm::mat4(1.0F), glm::vec3(-cx, -cy, 0.0F));
+
     // Render tiles (textured pass)
     if(pimpl->show_tiles)
     {
-        pimpl->tiles.render(pass, ctx);
+        pimpl->tiles.render(pass, ctx, view_matrix);
     }
 
-    pimpl->features.render(pass, ctx);
+    pimpl->features.render(pass, ctx, view_matrix);
 
     // Render grid (line pass)
     if(ctx.current_pass == nasrbrowse::render_pass_id::trianglelist_0)

@@ -5,7 +5,6 @@
 #include "render_context.hpp"
 #include "ui_overlay.hpp"
 #include <cmath>
-#include <glm/ext/matrix_transform.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
 #include <sdl/render_pass.hpp>
@@ -25,7 +24,7 @@ namespace nasrbrowse
         feature_builder builder;
 
         // Current view state
-        double center_x, center_y, half_extent_y;
+        double half_extent_y;
         double aspect_ratio;
         int viewport_height;
 
@@ -43,8 +42,6 @@ namespace nasrbrowse
         impl(sdl::device& dev, const char* db_path, const chart_style& styles)
             : dev(dev)
             , builder(db_path, styles)
-            , center_x(0)
-            , center_y(0)
             , half_extent_y(HALF_CIRCUMFERENCE)
             , aspect_ratio(1.0)
             , viewport_height(0)
@@ -111,8 +108,6 @@ namespace nasrbrowse
                                    double half_extent_y, int viewport_height,
                                    double aspect_ratio)
     {
-        pimpl->center_x = (vx_min + vx_max) * 0.5;
-        pimpl->center_y = (vy_min + vy_max) * 0.5;
         pimpl->half_extent_y = half_extent_y;
         pimpl->viewport_height = viewport_height;
         pimpl->aspect_ratio = aspect_ratio;
@@ -171,15 +166,9 @@ namespace nasrbrowse
     }
 
     void feature_renderer::render(sdl::render_pass& pass,
-                                   const render_context& ctx) const
+                                   const render_context& ctx,
+                                   const glm::mat4& view_matrix) const
     {
-        float s = static_cast<float>(1.0 / (2.0 * pimpl->half_extent_y));
-        float cx = static_cast<float>(pimpl->center_x);
-        float cy = static_cast<float>(pimpl->center_y);
-
-        glm::mat4 view_matrix = glm::scale(glm::mat4(1.0F), glm::vec3(s, s, 1.0F)) *
-                                 glm::translate(glm::mat4(1.0F), glm::vec3(-cx, -cy, 0.0F));
-
         if(ctx.current_pass == render_pass_id::line_sdf_0)
         {
             int vw = static_cast<int>(pimpl->aspect_ratio * pimpl->viewport_height);

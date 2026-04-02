@@ -6,7 +6,6 @@
 #include "tile_loader.hpp"
 #include <algorithm>
 #include <cmath>
-#include <glm/ext/matrix_transform.hpp>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
@@ -89,8 +88,9 @@ namespace nasrbrowse
         std::vector<tile_key> visible_tiles;
         int current_zoom;
 
-        // Current view state (for view matrix computation)
-        double center_x, center_y, half_extent_y;
+        // Cached tile range to avoid redundant cancel+re-request
+        int cached_zoom, cached_tx_min, cached_tx_max, cached_ty_min, cached_ty_max;
+        bool has_cached_range;
 
         // Cache: tile_key -> weak_ptr to GPU resources
         std::unordered_map<tile_key, std::weak_ptr<tile_gpu>> tile_map;
@@ -109,9 +109,12 @@ namespace nasrbrowse
             , tile_path(tile_path)
             , max_zoom(15)
             , current_zoom(0)
-            , center_x(0)
-            , center_y(0)
-            , half_extent_y(HALF_CIRCUMFERENCE)
+            , cached_zoom(-1)
+            , cached_tx_min(0)
+            , cached_tx_max(0)
+            , cached_ty_min(0)
+            , cached_ty_max(0)
+            , has_cached_range(false)
             , cache(1024)
         {
         }
@@ -141,12 +144,9 @@ namespace nasrbrowse
 
     void tile_renderer::update(double vx_min, double vy_min,
                                double vx_max, double vy_max,
-                               int viewport_height, double)
+                               double, int viewport_height,
+                               double)
     {
-        pimpl->center_x = (vx_min + vx_max) * 0.5;
-        pimpl->center_y = (vy_min + vy_max) * 0.5;
-        pimpl->half_extent_y = (vy_max - vy_min) * 0.5;
-
         // Compute ideal zoom level
         double meters_per_pixel = (vy_max - vy_min) / viewport_height;
         double world_size = 2.0 * HALF_CIRCUMFERENCE;
@@ -167,18 +167,38 @@ namespace nasrbrowse
         ty_min = std::max(0, ty_min);
         ty_max = std::min(n - 1, ty_max);
 
+        // Always rebuild visible_tiles (render needs it)
         pimpl->visible_tiles.clear();
-        pimpl->loader.cancel();
-
-        // Request visible tiles (highest priority — enqueued first, notify on load)
         for(int ty = ty_min; ty <= ty_max; ty++)
         {
             for(int tx = tx_min; tx <= tx_max; tx++)
             {
-                tile_key key { zoom, tx, ty };
-                pimpl->visible_tiles.push_back(key);
-                pimpl->request_tile(key);
+                pimpl->visible_tiles.push_back({ zoom, tx, ty });
             }
+        }
+
+        // Skip cancel+re-request if tile range hasn't changed
+        if(pimpl->has_cached_range &&
+           zoom == pimpl->cached_zoom &&
+           tx_min == pimpl->cached_tx_min && tx_max == pimpl->cached_tx_max &&
+           ty_min == pimpl->cached_ty_min && ty_max == pimpl->cached_ty_max)
+        {
+            return;
+        }
+
+        pimpl->cached_zoom = zoom;
+        pimpl->cached_tx_min = tx_min;
+        pimpl->cached_tx_max = tx_max;
+        pimpl->cached_ty_min = ty_min;
+        pimpl->cached_ty_max = ty_max;
+        pimpl->has_cached_range = true;
+
+        pimpl->loader.cancel();
+
+        // Request visible tiles (highest priority — enqueued first)
+        for(const auto& key : pimpl->visible_tiles)
+        {
+            pimpl->request_tile(key);
         }
 
         // Prefetch: 1-tile border around visible area at current zoom
@@ -250,6 +270,11 @@ namespace nasrbrowse
 
     void tile_renderer::copy(sdl::copy_pass& pass)
     {
+        if(pimpl->pending_results.empty())
+        {
+            return;
+        }
+
         for(auto& result : pimpl->pending_results)
         {
             std::vector<sdl::vertex_t2f_c4ub_v3f> vertices(6);
@@ -270,22 +295,12 @@ namespace nasrbrowse
         pimpl->pending_results.clear();
     }
 
-    void tile_renderer::render(sdl::render_pass& pass, const render_context& ctx) const
+    void tile_renderer::render(sdl::render_pass& pass, const render_context& ctx, const glm::mat4& view_matrix) const
     {
         if(ctx.current_pass != render_pass_id::textured_trianglelist_0)
         {
             return;
         }
-
-        // View matrix: transform from meters to NDC
-        // NDC range: x in [-aspect*0.5, aspect*0.5], y in [-0.5, 0.5]
-        // Scale: 1 / (2 * half_extent_y) maps the viewport height to [-0.5, 0.5]
-        float s = static_cast<float>(1.0 / (2.0 * pimpl->half_extent_y));
-        float cx = static_cast<float>(pimpl->center_x);
-        float cy = static_cast<float>(pimpl->center_y);
-
-        glm::mat4 view_matrix = glm::scale(glm::mat4(1.0F), glm::vec3(s, s, 1.0F)) *
-                                 glm::translate(glm::mat4(1.0F), glm::vec3(-cx, -cy, 0.0F));
 
         sdl::uniform_buffer uniforms;
         uniforms.projection_matrix = ctx.projection_matrix;

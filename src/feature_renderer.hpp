@@ -1,5 +1,6 @@
 #pragma once
 
+#include <glm/glm.hpp>
 #include <memory>
 
 namespace sdl
@@ -41,7 +42,7 @@ namespace nasrbrowse
         void copy(sdl::copy_pass& pass);
 
         // Render visible features
-        void render(sdl::render_pass& pass, const render_context& ctx) const;
+        void render(sdl::render_pass& pass, const render_context& ctx, const glm::mat4& view_matrix) const;
 
         // Set which feature layers are visible
         void set_visibility(const layer_visibility& vis);
