@@ -121,8 +121,11 @@ namespace nasrbrowse
 
         std::string tile_file_path(const tile_key& key) const
         {
+            // Wrap x into [0, n-1] for file path (tiles repeat horizontally)
+            int n = 1 << key.z;
+            int wx = ((key.x % n) + n) % n;
             return tile_path + "/" + std::to_string(key.z) + "/" +
-                   std::to_string(key.x) + "/" + std::to_string(key.y) + ".png";
+                   std::to_string(wx) + "/" + std::to_string(key.y) + ".png";
         }
 
         void request_tile(const tile_key& key)
@@ -162,8 +165,7 @@ namespace nasrbrowse
         int ty_min = static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tile_size));
         int ty_max = static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tile_size));
 
-        tx_min = std::max(0, tx_min);
-        tx_max = std::min(n - 1, tx_max);
+        // tx is unbounded (wraps around the antimeridian); ty clamps to valid range
         ty_min = std::max(0, ty_min);
         ty_max = std::min(n - 1, ty_max);
 
@@ -202,8 +204,8 @@ namespace nasrbrowse
         }
 
         // Prefetch: 1-tile border around visible area at current zoom
-        int border_tx_min = std::max(0, tx_min - 1);
-        int border_tx_max = std::min(n - 1, tx_max + 1);
+        int border_tx_min = tx_min - 1;
+        int border_tx_max = tx_max + 1;
         int border_ty_min = std::max(0, ty_min - 1);
         int border_ty_max = std::min(n - 1, ty_max + 1);
 
@@ -220,8 +222,8 @@ namespace nasrbrowse
         {
             int nz = 1 << (zoom + 1);
             double tsz = world_size / nz;
-            int ztx_min = std::max(0, static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tsz)));
-            int ztx_max = std::min(nz - 1, static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tsz)));
+            int ztx_min = static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tsz));
+            int ztx_max = static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tsz));
             int zty_min = std::max(0, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tsz)));
             int zty_max = std::min(nz - 1, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tsz)));
 
@@ -239,8 +241,8 @@ namespace nasrbrowse
         {
             int nz = 1 << (zoom - 1);
             double tsz = world_size / nz;
-            int ztx_min = std::max(0, static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tsz)));
-            int ztx_max = std::min(nz - 1, static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tsz)));
+            int ztx_min = static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tsz));
+            int ztx_max = static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tsz));
             int zty_min = std::max(0, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tsz)));
             int zty_max = std::min(nz - 1, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tsz)));
 

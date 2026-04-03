@@ -216,11 +216,17 @@ struct layer_map::impl
         double click_lon = mx_to_lon(world_x);
         double click_lat = my_to_lat(world_y);
 
+        // Wrap longitude into [-180, 180] for database queries
+        click_lon = std::fmod(click_lon + 180.0, 360.0);
+        if(click_lon < 0) click_lon += 360.0;
+        click_lon -= 180.0;
+
         // Point-feature pick box: convert pixel half-size to world coords
         double pick_half_ndc = (PICK_BOX_SIZE_PIXELS * 0.5) / viewport_height;
         double box_world_half = pick_half_ndc * 2.0 * view.half_extent_y;
-        double box_lon_min = mx_to_lon(world_x - box_world_half);
-        double box_lon_max = mx_to_lon(world_x + box_world_half);
+        double box_lon_half = mx_to_lon(box_world_half);
+        double box_lon_min = click_lon - box_lon_half;
+        double box_lon_max = click_lon + box_lon_half;
         double box_lat_min = my_to_lat(world_y - box_world_half);
         double box_lat_max = my_to_lat(world_y + box_world_half);
 

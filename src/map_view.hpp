@@ -163,10 +163,13 @@ namespace nasrbrowse
     private:
         void clamp_center()
         {
-            if(center_x < -HALF_CIRCUMFERENCE)
-                center_x = -HALF_CIRCUMFERENCE;
-            if(center_x > HALF_CIRCUMFERENCE)
-                center_x = HALF_CIRCUMFERENCE;
+            // X wraps around the antimeridian
+            constexpr double W = 2.0 * HALF_CIRCUMFERENCE;
+            center_x = std::fmod(center_x + HALF_CIRCUMFERENCE, W);
+            if(center_x < 0) center_x += W;
+            center_x -= HALF_CIRCUMFERENCE;
+
+            // Y clamps (latitude doesn't wrap)
             if(center_y < -HALF_CIRCUMFERENCE)
                 center_y = -HALF_CIRCUMFERENCE;
             if(center_y > HALF_CIRCUMFERENCE)

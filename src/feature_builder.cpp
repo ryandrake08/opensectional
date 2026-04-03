@@ -92,8 +92,32 @@ namespace nasrbrowse
             }
         }
 
+        void build_all_features(double qlon_min, double qlat_min,
+                                 double qlon_max, double qlat_max,
+                                 const feature_build_request& req,
+                                 double mx_offset)
+        {
+            build_airport_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_navaid_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_airway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_mtr_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_sua_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_pja_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_maa_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_adiz_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_artcc_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_obstacle_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_rco_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_awos_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_fix_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_runway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_airspace_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+        }
+
         void build_vertices(const feature_build_request& req)
         {
+            constexpr double WORLD_SIZE = 2.0 * HALF_CIRCUMFERENCE;
+
             double lon_pad = (req.lon_max - req.lon_min) * QUERY_BBOX_PADDING;
             double lat_pad = (req.lat_max - req.lat_min) * QUERY_BBOX_PADDING;
             double qlon_min = req.lon_min - lon_pad;
@@ -103,21 +127,23 @@ namespace nasrbrowse
 
             for(auto& p : poly) p.clear();
 
-            build_airport_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_navaid_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_airway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_mtr_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_sua_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_pja_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_maa_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_adiz_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_artcc_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_obstacle_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_rco_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_awos_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_fix_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_runway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
-            build_airspace_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req);
+            // Normal query (includes handle_antimeridian copies at extended coords)
+            build_all_features(qlon_min, qlat_min, qlon_max, qlat_max, req, 0.0);
+
+            // If viewport extends past +180°, also query the [-180, 180] features
+            // that appear on the right side, shifted by +world_size in Mercator
+            if(qlon_max > 180.0)
+            {
+                build_all_features(qlon_min - 360.0, qlat_min,
+                                   qlon_max - 360.0, qlat_max, req, WORLD_SIZE);
+            }
+
+            // If viewport extends past -180°, query features shifted by -world_size
+            if(qlon_min < -180.0)
+            {
+                build_all_features(qlon_min + 360.0, qlat_min,
+                                   qlon_max + 360.0, qlat_max, req, -WORLD_SIZE);
+            }
         }
 
         // --- Geometry helpers ---
@@ -439,7 +465,8 @@ namespace nasrbrowse
 
         void append_polygon_ring(polyline_data& output,
                                  const std::vector<airspace_point>& points,
-                                 const line_style& ls)
+                                 const line_style& ls,
+                                 double mx_offset)
         {
             if(points.size() < 2)
             {
@@ -451,7 +478,7 @@ namespace nasrbrowse
             for(const auto& pt : points)
             {
                 polyline.emplace_back(
-                    static_cast<float>(lon_to_mx(pt.lon)),
+                    static_cast<float>(lon_to_mx(pt.lon) + mx_offset),
                     static_cast<float>(lat_to_my(pt.lat)));
             }
             if(polyline.size() > 2 && polyline.front() != polyline.back())
@@ -465,7 +492,8 @@ namespace nasrbrowse
 
         void append_polyline(polyline_data& output,
                               const std::vector<airspace_point>& points,
-                              const line_style& ls)
+                              const line_style& ls,
+                              double mx_offset)
         {
             if(points.size() < 2)
             {
@@ -477,7 +505,7 @@ namespace nasrbrowse
             for(const auto& pt : points)
             {
                 polyline.emplace_back(
-                    static_cast<float>(lon_to_mx(pt.lon)),
+                    static_cast<float>(lon_to_mx(pt.lon) + mx_offset),
                     static_cast<float>(lat_to_my(pt.lat)));
             }
 
@@ -489,7 +517,8 @@ namespace nasrbrowse
 
         void build_airport_polylines(double lon_min, double lat_min,
                                       double lon_max, double lat_max,
-                                      const feature_build_request& req)
+                                      const feature_build_request& req,
+                                      double mx_offset)
         {
             const auto& airports = db.query_airports(lon_min, lat_min, lon_max, lat_max);
             constexpr float APT_OUTER_SCALE = 1.2F;
@@ -509,7 +538,7 @@ namespace nasrbrowse
                 auto& pd = poly[layer_airports];
 
                 const auto& cs = styles.airport_style(apt);
-                float cx = static_cast<float>(lon_to_mx(apt.lon));
+                float cx = static_cast<float>(lon_to_mx(apt.lon) + mx_offset);
                 float cy = static_cast<float>(lat_to_my(apt.lat));
 
                 float symbol_r = r * APT_OUTER_SCALE;
@@ -557,7 +586,8 @@ namespace nasrbrowse
 
         void build_navaid_polylines(double lon_min, double lat_min,
                                      double lon_max, double lat_max,
-                                     const feature_build_request& req)
+                                     const feature_build_request& req,
+                                     double mx_offset)
         {
             constexpr float NAV_NDB_CIRCLE = 0.4F;
             constexpr float NAV_DME_RECT = 0.85F;
@@ -588,7 +618,7 @@ namespace nasrbrowse
                 line_style filled_ls = ls;
                 filled_ls.fill_width = SYMBOL_FILL_PX;
 
-                float cx = static_cast<float>(lon_to_mx(nav.lon));
+                float cx = static_cast<float>(lon_to_mx(nav.lon) + mx_offset);
                 float cy = static_cast<float>(lat_to_my(nav.lat));
 
                 navaid_positions.emplace_back(cx, cy);
@@ -630,7 +660,8 @@ namespace nasrbrowse
 
         void build_airway_polylines(double lon_min, double lat_min,
                                      double lon_max, double lat_max,
-                                     const feature_build_request& req)
+                                     const feature_build_request& req,
+                                     double mx_offset)
         {
             airway_waypoints.clear();
             const auto& airways = db.query_airways(lon_min, lat_min, lon_max, lat_max);
@@ -647,9 +678,9 @@ namespace nasrbrowse
 
                 const auto& fs = styles.airway_style(seg.awy_id);
 
-                float x0 = static_cast<float>(lon_to_mx(seg.from_lon));
+                float x0 = static_cast<float>(lon_to_mx(seg.from_lon) + mx_offset);
                 float y0 = static_cast<float>(lat_to_my(seg.from_lat));
-                float x1 = static_cast<float>(lon_to_mx(seg.to_lon));
+                float x1 = static_cast<float>(lon_to_mx(seg.to_lon) + mx_offset);
                 float y1 = static_cast<float>(lat_to_my(seg.to_lat));
 
                 float dx = x1 - x0;
@@ -684,7 +715,8 @@ namespace nasrbrowse
 
         void build_fix_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max,
-                                  const feature_build_request& req)
+                                  const feature_build_request& req,
+                                  double mx_offset)
         {
             const auto& fixes = db.query_fixes(lon_min, lat_min, lon_max, lat_max);
             float radius = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_FIX);
@@ -699,7 +731,7 @@ namespace nasrbrowse
                 const auto& fs = styles.fix_style(fix.use_code);
                 line_style ls = to_line_style(fs);
 
-                float cx = static_cast<float>(lon_to_mx(fix.lon));
+                float cx = static_cast<float>(lon_to_mx(fix.lon) + mx_offset);
                 float cy = static_cast<float>(lat_to_my(fix.lat));
 
                 line_style filled_ls = ls;
@@ -718,7 +750,8 @@ namespace nasrbrowse
 
         void build_mtr_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max,
-                                  const feature_build_request& req)
+                                  const feature_build_request& req,
+                                  double mx_offset)
         {
             if(!styles.mtr_visible(req.zoom))
             {
@@ -730,9 +763,9 @@ namespace nasrbrowse
 
             for(const auto& seg : mtrs)
             {
-                float x0 = static_cast<float>(lon_to_mx(seg.from_lon));
+                float x0 = static_cast<float>(lon_to_mx(seg.from_lon) + mx_offset);
                 float y0 = static_cast<float>(lat_to_my(seg.from_lat));
-                float x1 = static_cast<float>(lon_to_mx(seg.to_lon));
+                float x1 = static_cast<float>(lon_to_mx(seg.to_lon) + mx_offset);
                 float y1 = static_cast<float>(lat_to_my(seg.to_lat));
 
                 poly[layer_mtrs].polylines.push_back({glm::vec2(x0, y0), glm::vec2(x1, y1)});
@@ -742,7 +775,8 @@ namespace nasrbrowse
 
         void build_runway_polylines(double lon_min, double lat_min,
                                      double lon_max, double lat_max,
-                                     const feature_build_request& req)
+                                     const feature_build_request& req,
+                                     double mx_offset)
         {
             if(!styles.runway_visible(req.zoom))
             {
@@ -754,9 +788,9 @@ namespace nasrbrowse
 
             for(const auto& rwy : runways)
             {
-                float x0 = static_cast<float>(lon_to_mx(rwy.end1_lon));
+                float x0 = static_cast<float>(lon_to_mx(rwy.end1_lon) + mx_offset);
                 float y0 = static_cast<float>(lat_to_my(rwy.end1_lat));
-                float x1 = static_cast<float>(lon_to_mx(rwy.end2_lon));
+                float x1 = static_cast<float>(lon_to_mx(rwy.end2_lon) + mx_offset);
                 float y1 = static_cast<float>(lat_to_my(rwy.end2_lat));
 
                 poly[layer_runways].polylines.push_back({glm::vec2(x0, y0), glm::vec2(x1, y1)});
@@ -766,7 +800,8 @@ namespace nasrbrowse
 
         void build_sua_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max,
-                                  const feature_build_request& req)
+                                  const feature_build_request& req,
+                                  double mx_offset)
         {
             // Polygon rings from subdivided segments
             const auto& segs = db.query_sua_segments(
@@ -777,7 +812,7 @@ namespace nasrbrowse
                 if(!styles.sua_visible(seg.sua_type, req.zoom)) continue;
                 auto ls = to_line_style(styles.sua_style(seg.sua_type));
 
-                append_polyline(poly[layer_sua], seg.points, ls);
+                append_polyline(poly[layer_sua], seg.points, ls, mx_offset);
             }
 
             // Circles use the full feature query
@@ -793,7 +828,7 @@ namespace nasrbrowse
                     if(ring.is_circle)
                     {
                         double lat_rad = ring.circle_lat * M_PI / 180.0;
-                        float cx = static_cast<float>(lon_to_mx(ring.circle_lon));
+                        float cx = static_cast<float>(lon_to_mx(ring.circle_lon) + mx_offset);
                         float cy = static_cast<float>(lat_to_my(ring.circle_lat));
                         float r = static_cast<float>(ring.circle_radius_nm * 1852.0 / std::cos(lat_rad));
                         poly[layer_sua].circles.push_back({{cx, cy}, r, ls});
@@ -804,7 +839,8 @@ namespace nasrbrowse
 
         void build_pja_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max,
-                                  const feature_build_request& req)
+                                  const feature_build_request& req,
+                                  double mx_offset)
         {
             bool area_vis = styles.pja_area_visible(req.zoom);
             bool point_vis = styles.pja_point_visible(req.zoom);
@@ -820,7 +856,7 @@ namespace nasrbrowse
                 if(p.radius_nm > 0.0 && area_vis)
                 {
                     double lat_rad = p.lat * M_PI / 180.0;
-                    float cx = static_cast<float>(lon_to_mx(p.lon));
+                    float cx = static_cast<float>(lon_to_mx(p.lon) + mx_offset);
                     float cy = static_cast<float>(lat_to_my(p.lat));
                     float r = static_cast<float>(p.radius_nm * NM_TO_METERS / std::cos(lat_rad));
 
@@ -829,7 +865,7 @@ namespace nasrbrowse
                 }
                 else if(p.radius_nm <= 0.0 && point_vis)
                 {
-                    float cx = static_cast<float>(lon_to_mx(p.lon));
+                    float cx = static_cast<float>(lon_to_mx(p.lon) + mx_offset);
                     float cy = static_cast<float>(lat_to_my(p.lat));
                     float r = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_PJA);
 
@@ -851,7 +887,8 @@ namespace nasrbrowse
 
         void build_maa_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max,
-                                  const feature_build_request& req)
+                                  const feature_build_request& req,
+                                  double mx_offset)
         {
             bool area_vis = styles.maa_area_visible(req.zoom);
             bool point_vis = styles.maa_point_visible(req.zoom);
@@ -866,12 +903,12 @@ namespace nasrbrowse
                 if(!m.shape.empty() && area_vis)
                 {
                     auto ls = to_line_style(styles.maa_area_style());
-                    append_polygon_ring(poly[layer_maa], m.shape, ls);
+                    append_polygon_ring(poly[layer_maa], m.shape, ls, mx_offset);
                 }
                 else if(m.radius_nm > 0.0 && area_vis)
                 {
                     double lat_rad = m.lat * M_PI / 180.0;
-                    float cx = static_cast<float>(lon_to_mx(m.lon));
+                    float cx = static_cast<float>(lon_to_mx(m.lon) + mx_offset);
                     float cy = static_cast<float>(lat_to_my(m.lat));
                     float r = static_cast<float>(m.radius_nm * NM_TO_METERS / std::cos(lat_rad));
 
@@ -880,7 +917,7 @@ namespace nasrbrowse
                 }
                 else if(m.lat != 0.0 && point_vis)
                 {
-                    float cx = static_cast<float>(lon_to_mx(m.lon));
+                    float cx = static_cast<float>(lon_to_mx(m.lon) + mx_offset);
                     float cy = static_cast<float>(lat_to_my(m.lat));
                     float r = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
 
@@ -906,7 +943,8 @@ namespace nasrbrowse
 
         void build_adiz_polylines(double lon_min, double lat_min,
                                    double lon_max, double lat_max,
-                                   const feature_build_request& req)
+                                   const feature_build_request& req,
+                                   double mx_offset)
         {
             if(!styles.adiz_visible(req.zoom)) return;
 
@@ -916,13 +954,14 @@ namespace nasrbrowse
 
             for(const auto& seg : segs)
             {
-                append_polyline(poly[layer_adiz], seg.points, ls);
+                append_polyline(poly[layer_adiz], seg.points, ls, mx_offset);
             }
         }
 
         void build_artcc_polylines(double lon_min, double lat_min,
                                     double lon_max, double lat_max,
-                                    const feature_build_request& req)
+                                    const feature_build_request& req,
+                                    double mx_offset)
         {
             const auto& segs = db.query_artcc_segments(
                 lon_min, lat_min, lon_max, lat_max);
@@ -932,13 +971,14 @@ namespace nasrbrowse
                 if(!styles.artcc_visible(seg.altitude, req.zoom)) continue;
                 auto ls = to_line_style(styles.artcc_style(seg.altitude));
 
-                append_polyline(poly[layer_artcc], seg.points, ls);
+                append_polyline(poly[layer_artcc], seg.points, ls, mx_offset);
             }
         }
 
         void build_obstacle_polylines(double lon_min, double lat_min,
                                        double lon_max, double lat_max,
-                                       const feature_build_request& req)
+                                       const feature_build_request& req,
+                                       double mx_offset)
         {
             const auto& obstacles = db.query_obstacles(lon_min, lat_min, lon_max, lat_max);
             float radius = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_OBSTACLE);
@@ -951,7 +991,7 @@ namespace nasrbrowse
                 }
 
                 auto ls = to_line_style(styles.obstacle_style(obs.agl_ht));
-                float cx = static_cast<float>(lon_to_mx(obs.lon));
+                float cx = static_cast<float>(lon_to_mx(obs.lon) + mx_offset);
                 float cy = static_cast<float>(lat_to_my(obs.lat));
                 bool lighted = obs.lighting != "N";
                 add_obstacle_polylines(poly[layer_obstacles], cx, cy, radius,
@@ -961,7 +1001,8 @@ namespace nasrbrowse
 
         void build_airspace_polylines(double lon_min, double lat_min,
                                        double lon_max, double lat_max,
-                                       const feature_build_request& req)
+                                       const feature_build_request& req,
+                                       double mx_offset)
         {
             const auto& segs = db.query_class_airspace_segments(
                 lon_min, lat_min, lon_max, lat_max);
@@ -971,19 +1012,20 @@ namespace nasrbrowse
                 if(!styles.airspace_visible(seg.airspace_class, seg.local_type, req.zoom)) continue;
                 auto ls = to_line_style(styles.airspace_style(seg.airspace_class, seg.local_type));
 
-                append_polyline(poly[layer_airspace], seg.points, ls);
+                append_polyline(poly[layer_airspace], seg.points, ls, mx_offset);
             }
         }
 
         template<typename T>
         void build_comm_polylines(const std::vector<T>& features,
                                    int layer_id, const line_style& ls,
-                                   const feature_build_request& req)
+                                   const feature_build_request& req,
+                                   double mx_offset)
         {
             float radius = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_COMM);
             for(const auto& f : features)
             {
-                float cx = static_cast<float>(lon_to_mx(f.lon));
+                float cx = static_cast<float>(lon_to_mx(f.lon) + mx_offset);
                 float cy = static_cast<float>(lat_to_my(f.lat));
                 add_comm_symbol(poly[layer_id], cx, cy, radius*0.75F, ls);
             }
@@ -991,20 +1033,22 @@ namespace nasrbrowse
 
         void build_rco_polylines(double lon_min, double lat_min,
                                   double lon_max, double lat_max,
-                                  const feature_build_request& req)
+                                  const feature_build_request& req,
+                                  double mx_offset)
         {
             if(!styles.rco_visible(req.zoom)) return;
             build_comm_polylines(db.query_comm_outlets(lon_min, lat_min, lon_max, lat_max),
-                                 layer_rco, to_line_style(styles.rco_style()), req);
+                                 layer_rco, to_line_style(styles.rco_style()), req, mx_offset);
         }
 
         void build_awos_polylines(double lon_min, double lat_min,
                                    double lon_max, double lat_max,
-                                   const feature_build_request& req)
+                                   const feature_build_request& req,
+                                   double mx_offset)
         {
             if(!styles.awos_visible(req.zoom)) return;
             build_comm_polylines(db.query_awos(lon_min, lat_min, lon_max, lat_max),
-                                 layer_awos, to_line_style(styles.awos_style()), req);
+                                 layer_awos, to_line_style(styles.awos_style()), req, mx_offset);
         }
     };
 
