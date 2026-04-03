@@ -11,6 +11,9 @@ find_package(SDL3_ttf REQUIRED CONFIG)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 
+# Third-party libraries
+add_subdirectory(thirdparty/imgui)
+
 # Main executable
 add_executable(nasrbrowse
     # Application sources
@@ -28,10 +31,10 @@ add_executable(nasrbrowse
     src/tile_renderer.cpp
     src/ui_overlay.cpp
 
-    # ImGui wrapper sources
-    imgui/context.cpp
+)
 
-    # SDL wrapper sources
+# SDL C++ wrapper library
+add_library(sdl_wrapper STATIC
     sdl/buffer.cpp
     sdl/command_buffer.cpp
     sdl/copy_pass.cpp
@@ -54,12 +57,34 @@ add_executable(nasrbrowse
     sdl/types.cpp
     sdl/window.cpp
 )
+target_compile_features(sdl_wrapper PRIVATE cxx_std_11)
+target_include_directories(sdl_wrapper PUBLIC
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/thirdparty/glm-1.0.1
+)
+target_link_libraries(sdl_wrapper PUBLIC SDL3::SDL3 SDL3_image::SDL3_image SDL3_ttf::SDL3_ttf)
+target_compile_options(sdl_wrapper PRIVATE -Wall -Wextra)
+target_compile_options(sdl_wrapper PRIVATE
+    $<$<CONFIG:Debug>:-O0 -ggdb -fsanitize=address>
+    $<$<CONFIG:Release>:-O3>
+    $<$<CONFIG:RelWithDebInfo>:-O2 -g -pg>
+)
+
+# ImGui C++ wrapper library
+add_library(imgui_wrapper STATIC imgui/context.cpp)
+target_compile_features(imgui_wrapper PRIVATE cxx_std_11)
+target_include_directories(imgui_wrapper PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(imgui_wrapper PUBLIC sdl_wrapper imgui)
+target_compile_options(imgui_wrapper PRIVATE -Wall -Wextra)
+target_compile_options(imgui_wrapper PRIVATE
+    $<$<CONFIG:Debug>:-O0 -ggdb -fsanitize=address>
+    $<$<CONFIG:Release>:-O3>
+    $<$<CONFIG:RelWithDebInfo>:-O2 -g -pg>
+)
 
 # Include directories
 target_include_directories(nasrbrowse PRIVATE
-    ${CMAKE_SOURCE_DIR}        # For #include <sdl/...>
     ${CMAKE_SOURCE_DIR}/src    # For #include "layer.hpp" etc.
-    thirdparty/glm-1.0.1
 )
 
 # C++ standard
@@ -88,16 +113,10 @@ target_link_options(nasrbrowse PRIVATE
 
 # Link libraries
 target_link_libraries(nasrbrowse PRIVATE
-    SDL3::SDL3
-    SDL3_image::SDL3_image
-    SDL3_ttf::SDL3_ttf
+    imgui_wrapper
     ${SQLITE3_LIBRARIES}
-    imgui
 )
 target_include_directories(nasrbrowse PRIVATE ${SQLITE3_INCLUDE_DIRS})
-
-# Third-party libraries
-add_subdirectory(thirdparty/imgui)
 
 # Shader compilation (Metal, SPIRV)
 add_subdirectory(shaders)
