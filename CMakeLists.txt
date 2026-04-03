@@ -35,31 +35,31 @@ add_executable(nasrbrowse
 
 # SDL C++ wrapper library
 add_library(sdl_wrapper STATIC
-    sdl/buffer.cpp
-    sdl/command_buffer.cpp
-    sdl/copy_pass.cpp
-    sdl/depth_buffer.cpp
-    sdl/device.cpp
-    sdl/error.cpp
-    sdl/event.cpp
-    sdl/font.cpp
-    sdl/instance.cpp
-    sdl/pipeline.cpp
-    sdl/render_pass.cpp
-    sdl/sampler.cpp
-    sdl/shader.cpp
-    sdl/surface.cpp
-    sdl/text.cpp
-    sdl/text_engine.cpp
-    sdl/texture.cpp
-    sdl/timer.cpp
-    sdl/transfer_buffer.cpp
-    sdl/types.cpp
-    sdl/window.cpp
+    lib/sdl/buffer.cpp
+    lib/sdl/command_buffer.cpp
+    lib/sdl/copy_pass.cpp
+    lib/sdl/depth_buffer.cpp
+    lib/sdl/device.cpp
+    lib/sdl/error.cpp
+    lib/sdl/event.cpp
+    lib/sdl/font.cpp
+    lib/sdl/instance.cpp
+    lib/sdl/pipeline.cpp
+    lib/sdl/render_pass.cpp
+    lib/sdl/sampler.cpp
+    lib/sdl/shader.cpp
+    lib/sdl/surface.cpp
+    lib/sdl/text.cpp
+    lib/sdl/text_engine.cpp
+    lib/sdl/texture.cpp
+    lib/sdl/timer.cpp
+    lib/sdl/transfer_buffer.cpp
+    lib/sdl/types.cpp
+    lib/sdl/window.cpp
 )
 target_compile_features(sdl_wrapper PRIVATE cxx_std_11)
 target_include_directories(sdl_wrapper PUBLIC
-    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/lib
     ${CMAKE_SOURCE_DIR}/thirdparty/glm-1.0.1
 )
 target_link_libraries(sdl_wrapper PUBLIC SDL3::SDL3 SDL3_image::SDL3_image SDL3_ttf::SDL3_ttf)
@@ -71,9 +71,9 @@ target_compile_options(sdl_wrapper PRIVATE
 )
 
 # ImGui C++ wrapper library
-add_library(imgui_wrapper STATIC imgui/context.cpp)
+add_library(imgui_wrapper STATIC lib/imgui/context.cpp)
 target_compile_features(imgui_wrapper PRIVATE cxx_std_11)
-target_include_directories(imgui_wrapper PRIVATE ${CMAKE_SOURCE_DIR})
+target_include_directories(imgui_wrapper PRIVATE ${CMAKE_SOURCE_DIR}/lib)
 target_link_libraries(imgui_wrapper PUBLIC sdl_wrapper imgui)
 target_compile_options(imgui_wrapper PRIVATE -Wall -Wextra)
 target_compile_options(imgui_wrapper PRIVATE
@@ -84,11 +84,11 @@ target_compile_options(imgui_wrapper PRIVATE
 
 # SQLite C++ wrapper library
 add_library(sqlite_wrapper STATIC
-    sqlite/database.cpp
-    sqlite/statement.cpp
+    lib/sqlite/database.cpp
+    lib/sqlite/statement.cpp
 )
 target_compile_features(sqlite_wrapper PRIVATE cxx_std_11)
-target_include_directories(sqlite_wrapper PUBLIC ${CMAKE_SOURCE_DIR})
+target_include_directories(sqlite_wrapper PUBLIC ${CMAKE_SOURCE_DIR}/lib)
 target_link_libraries(sqlite_wrapper PUBLIC ${SQLITE3_LIBRARIES})
 target_include_directories(sqlite_wrapper PUBLIC ${SQLITE3_INCLUDE_DIRS})
 target_compile_options(sqlite_wrapper PRIVATE -Wall -Wextra)

@@ -309,8 +309,7 @@ namespace nasrbrowse
         }
     };
 
-    nasr_database::nasr_database(const char* db_path)
-        : pimpl(new impl(db_path))
+    nasr_database::nasr_database(const char* db_path) : pimpl(new impl(db_path))
     {
     }
 
