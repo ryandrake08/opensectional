@@ -13,11 +13,10 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 
 # 3. Set up Python venv for data build tools
-python3 -m venv env
-env/bin/pip install -r requirements.txt
+cd tools && python3 -m venv env && env/bin/pip install -r requirements.txt && cd ..
 
 # 4. Download FAA data (prints build command when done)
-env/bin/python3 tools/download_nasr_data.py nasr_data
+tools/env/bin/python3 tools/download_nasr_data.py nasr_data
 
 # 5. Build the NASR database (use the command printed by the download script)
 
@@ -87,11 +86,10 @@ NASRBrowse requires two data sources prepared offline:
 Set up the Python environment, download FAA data, and build the database:
 
 ```bash
-python3 -m venv env
-env/bin/pip install -r requirements.txt
+cd tools && python3 -m venv env && env/bin/pip install -r requirements.txt && cd ..
 
 # Download all FAA data (prints build command when done)
-env/bin/python3 tools/download_nasr_data.py nasr_data
+tools/env/bin/python3 tools/download_nasr_data.py nasr_data
 ```
 
 The download script fetches data from the FAA NASR subscription page, the Digital Obstacle File page, and ADIZ boundaries from the FAA ArcGIS service. Use `--preview` for the next cycle's data instead of the current one.
@@ -174,8 +172,9 @@ src/                    Application sources
   map_view.hpp          Web Mercator viewport, pan/zoom state
   render_context.cpp    Render state (projection matrix, sampler)
   ui_overlay.cpp        ImGui UI (FPS display + layer visibility checkboxes)
-imgui/                  ImGui RAII wrapper library
-sdl/                    SDL3 GPU API wrapper library
+lib/imgui/              ImGui RAII wrapper library
+lib/sdl/                SDL3 GPU API wrapper library
+lib/sqlite/             SQLite RAII wrapper library
 shaders/                HLSL shaders (cross-compiled to Metal/SPIR-V)
 thirdparty/             Vendored dependencies (GLM, Dear ImGui)
 tools/
@@ -188,5 +187,5 @@ tools/
 
 ```bash
 # Run database query tests (requires a built nasr.db)
-env/bin/python3 tools/test_nasr_queries.py nasr.db
+tools/env/bin/python3 tools/test_nasr_queries.py nasr.db
 ```
