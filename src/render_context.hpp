@@ -14,7 +14,8 @@ namespace nasrbrowse
     {
         trianglelist_0,
         textured_trianglelist_0,
-        line_sdf_0
+        line_sdf_0,
+        text_labels_0
     };
 
     struct render_context

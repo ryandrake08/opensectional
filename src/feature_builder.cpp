@@ -55,6 +55,15 @@ namespace nasrbrowse
         float navaid_clearance = 0;
         std::unordered_set<std::string> airway_waypoints;
 
+        // Label candidates collected during build (world-space Mercator coords)
+        struct world_label
+        {
+            std::string text;
+            double mx, my;      // Mercator meters
+            int priority;
+        };
+        std::vector<world_label> world_labels;
+
         // Temporary poly array built by worker (moved to result when done)
         std::array<polyline_data, layer_sdf_count> poly;
 
@@ -84,6 +93,14 @@ namespace nasrbrowse
 
                 feature_build_result result;
                 result.poly = std::move(poly);
+
+                // Move raw world labels; overlap elimination happens on main thread
+                result.labels.reserve(world_labels.size());
+                for(auto& wl : world_labels)
+                {
+                    result.labels.push_back(
+                        {std::move(wl.text), wl.mx, wl.my, wl.priority});
+                }
 
                 {
                     std::lock_guard<std::mutex> lock(mutex);
@@ -126,6 +143,7 @@ namespace nasrbrowse
             double qlat_max = req.lat_max + lat_pad;
 
             for(auto& p : poly) p.clear();
+            world_labels.clear();
 
             // Normal query (includes handle_antimeridian copies at extended coords)
             build_all_features(qlon_min, qlat_min, qlon_max, qlat_max, req, 0.0);
@@ -581,6 +599,13 @@ namespace nasrbrowse
                 {
                     add_circle_to(pd, cx, cy, ring_geom_r, ring_ls);
                 }
+
+                // Label: prefer ICAO ID, fall back to FAA ID
+                const auto& id = apt.icao_id.empty() ? apt.arpt_id : apt.icao_id;
+                bool towered = apt.twr_type_code.find("ATCT") != std::string::npos;
+                world_labels.push_back({id,
+                    lon_to_mx(apt.lon) + mx_offset, lat_to_my(apt.lat),
+                    towered ? 100 : 80});
             }
         }
 
@@ -655,6 +680,13 @@ namespace nasrbrowse
                     add_hexagon(pd, cx, cy, r, filled_ls);
                     add_center_dot(pd, cx, cy, r, ls);
                 }
+
+                // Label: navaid ID
+                bool is_vor = nav.nav_type.find("VOR") != std::string::npos
+                    || nav.nav_type == "TACAN" || nav.nav_type == "VORTAC";
+                world_labels.push_back({nav.nav_id,
+                    lon_to_mx(nav.lon) + mx_offset, lat_to_my(nav.lat),
+                    is_vor ? 60 : 40});
             }
         }
 
@@ -745,6 +777,12 @@ namespace nasrbrowse
                 {
                     add_waypoint_star_polyline(poly[layer_fixes], cx, cy, radius, filled_ls);
                 }
+
+                // Label: fix ID
+                bool on_airway = fix_on_airway(fix.fix_id);
+                world_labels.push_back({fix.fix_id,
+                    lon_to_mx(fix.lon) + mx_offset, lat_to_my(fix.lat),
+                    on_airway ? 30 : 20});
             }
         }
 

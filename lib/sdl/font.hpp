@@ -56,5 +56,12 @@ namespace sdl
          * @return Raw font pointer (non-owning)
          */
         TTF_Font* get() const;
+
+        /**
+         * Set font outline size in pixels.
+         *
+         * @param outline Outline size (0 = no outline)
+         */
+        void set_outline(int outline);
     };
 } // namespace sdl

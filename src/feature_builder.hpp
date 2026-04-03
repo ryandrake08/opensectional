@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace nasrbrowse
@@ -36,10 +37,19 @@ namespace nasrbrowse
         double zoom;
     };
 
+    // A label candidate from the feature build pass (world-space)
+    struct label_candidate
+    {
+        std::string text;
+        double mx, my;              // World-space Mercator meters
+        int priority;               // Higher = placed first
+    };
+
     // Completed feature geometry from the worker
     struct feature_build_result
     {
         std::array<polyline_data, layer_sdf_count> poly;
+        std::vector<label_candidate> labels;
     };
 
     // Background worker that builds feature polylines from the NASR database.

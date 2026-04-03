@@ -37,6 +37,9 @@ namespace nasrbrowse
         std::array<polyline_data, layer_sdf_count> poly;
         line_renderer sdf_lines;
 
+        // Labels from most recent build
+        std::vector<label_candidate> current_labels;
+
         layer_visibility vis;
 
         impl(sdl::device& dev, const char* db_path, const chart_style& styles)
@@ -146,14 +149,22 @@ namespace nasrbrowse
         }
     }
 
-    void feature_renderer::drain()
+    bool feature_renderer::drain()
     {
         auto result = pimpl->builder.drain_result();
         if(result)
         {
             pimpl->poly = std::move(result->poly);
+            pimpl->current_labels = std::move(result->labels);
             pimpl->rebuild_sdf_lines();
+            return true;
         }
+        return false;
+    }
+
+    const std::vector<label_candidate>& feature_renderer::labels() const
+    {
+        return pimpl->current_labels;
     }
 
     bool feature_renderer::needs_upload() const

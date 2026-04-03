@@ -12,10 +12,13 @@
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
 #include <sdl/event.hpp>
+#include <sdl/font.hpp>
 #include <sdl/instance.hpp>
 #include <sdl/pipeline.hpp>
 #include <sdl/render_pass.hpp>
+#include <sdl/sampler.hpp>
 #include <sdl/shader.hpp>
+#include <sdl/text_engine.hpp>
 #include <sdl/texture.hpp>
 #include <sdl/timer.hpp>
 #include <sdl/window.hpp>
@@ -176,11 +179,21 @@ int main(int argc, char** argv)
             imgui_ctx.process_event(event);
         });
 
+        // Text rendering
+        sdl::text_engine text_engine(dev);
+        sdl::font label_font(text_engine, "thirdparty/fonts/NotoSans-Regular.ttf", 13);
+        sdl::font outline_font(text_engine, "thirdparty/fonts/NotoSans-Regular.ttf", 13);
+        outline_font.set_outline(1);
+        sdl::sampler text_sampler(dev, sdl::filter::nearest, sdl::filter::nearest,
+                                  sdl::sampler_address_mode::clamp_to_edge);
+
         // Load chart style (hardcoded VFR defaults, overridden by INI if present)
         nasrbrowse::chart_style chart_styles("nasrbrowse.ini", nasrbrowse::chart_mode::vfr);
 
         // Create map layer
-        auto map_layer = std::make_shared<layer_map>(dev, argv[1], argv[2], chart_styles);
+        auto map_layer = std::make_shared<layer_map>(
+            dev, argv[1], argv[2], chart_styles,
+            text_engine, label_font, outline_font, text_sampler);
         event_mgr.add_listener(map_layer);
 
         // Send initial resize
@@ -265,6 +278,11 @@ int main(int argc, char** argv)
                         // SDF lines
                         pass.bind_pipeline(line_program);
                         render_ctx.current_pass = nasrbrowse::render_pass_id::line_sdf_0;
+                        map_layer->render(pass, render_ctx);
+
+                        // Text labels (reuse textured pipeline with screen-space projection)
+                        pass.bind_pipeline(textured_trianglelist_program);
+                        render_ctx.current_pass = nasrbrowse::render_pass_id::text_labels_0;
                         map_layer->render(pass, render_ctx);
                     }
 

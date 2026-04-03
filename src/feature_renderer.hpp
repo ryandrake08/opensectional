@@ -1,7 +1,9 @@
 #pragma once
 
+#include "feature_builder.hpp"
 #include <glm/glm.hpp>
 #include <memory>
+#include <vector>
 
 namespace sdl
 {
@@ -32,8 +34,12 @@ namespace nasrbrowse
                     double half_extent_y, int viewport_height,
                     double aspect_ratio);
 
-        // Drain background builder results and rebuild SDF lines
-        void drain();
+        // Drain background builder results and rebuild SDF lines.
+        // Returns true if new results were available.
+        bool drain();
+
+        // Get labels from the most recent drain (screen-space, overlap-eliminated)
+        const std::vector<label_candidate>& labels() const;
 
         // Check if features need upload
         bool needs_upload() const;

@@ -58,4 +58,9 @@ namespace sdl
     {
         return pimpl->handle;
     }
+
+    void font::set_outline(int outline)
+    {
+        TTF_SetFontOutline(pimpl->handle, outline);
+    }
 } // namespace sdl

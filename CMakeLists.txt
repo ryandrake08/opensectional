@@ -22,6 +22,7 @@ add_executable(nasrbrowse
     src/layer_map.cpp
     src/feature_builder.cpp
     src/feature_renderer.cpp
+    src/label_renderer.cpp
     src/line_renderer.cpp
     src/main.cpp
     src/nasr_database.cpp

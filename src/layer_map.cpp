@@ -1,5 +1,6 @@
 #include "layer_map.hpp"
 #include "feature_renderer.hpp"
+#include "label_renderer.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
 #include "pick_result.hpp"
@@ -70,6 +71,10 @@ struct layer_map::impl
     std::vector<sdl::vertex_t2f_c4ub_v3f> grid_vertices;
     std::unique_ptr<sdl::buffer> grid_buffer;
 
+    // Label renderer
+    nasrbrowse::label_renderer labels;
+    const sdl::sampler& text_sampler;
+
     // Pick state
     nasrbrowse::nasr_database pick_db;
     nasrbrowse::chart_style styles;
@@ -80,7 +85,9 @@ struct layer_map::impl
     bool imgui_wants_mouse;
 
     impl(sdl::device& dev, const char* tile_path, const char* db_path,
-         const nasrbrowse::chart_style& cs)
+         const nasrbrowse::chart_style& cs,
+         sdl::text_engine& text_engine, sdl::font& font,
+         sdl::font& outline_font, const sdl::sampler& text_sampler)
         : dev(dev)
         , viewport_width(0)
         , viewport_height(0)
@@ -88,6 +95,8 @@ struct layer_map::impl
         , show_tiles(true)
         , tiles(dev, tile_path)
         , features(dev, db_path, cs)
+        , labels(dev, text_engine, font, outline_font)
+        , text_sampler(text_sampler)
         , pick_db(db_path)
         , styles(cs)
         , cursor_ndc_x(0)
@@ -428,9 +437,11 @@ struct layer_map::impl
 };
 
 layer_map::layer_map(sdl::device& dev, const char* tile_path, const char* db_path,
-                     const nasrbrowse::chart_style& cs)
+                     const nasrbrowse::chart_style& cs,
+                     sdl::text_engine& text_engine, sdl::font& font,
+                     sdl::font& outline_font, const sdl::sampler& text_sampler)
     : layer()
-    , pimpl(new impl(dev, tile_path, db_path, cs))
+    , pimpl(new impl(dev, tile_path, db_path, cs, text_engine, font, outline_font, text_sampler))
 {
 }
 
@@ -596,7 +607,18 @@ bool layer_map::on_update()
 {
     pimpl->tiles.drain();
     pimpl->features.drain();
-    bool result = pimpl->needs_update || pimpl->tiles.needs_upload() || pimpl->features.needs_upload();
+
+    // Reproject labels every frame using the current viewport
+    if(!pimpl->features.labels().empty())
+    {
+        pimpl->labels.set_labels(pimpl->features.labels(),
+                                  pimpl->view.center_x, pimpl->view.center_y,
+                                  pimpl->view.half_extent_y,
+                                  pimpl->viewport_width, pimpl->viewport_height);
+    }
+
+    bool result = pimpl->needs_update || pimpl->tiles.needs_upload()
+        || pimpl->features.needs_upload() || pimpl->labels.needs_upload();
 
     if(result)
     {
@@ -615,6 +637,7 @@ void layer_map::on_copy(sdl::copy_pass& pass)
     }
     pimpl->tiles.copy(pass);
     pimpl->features.copy(pass);
+    pimpl->labels.copy(pass, pimpl->dev);
 }
 
 void layer_map::on_render(sdl::render_pass& pass, const nasrbrowse::render_context& ctx) const
@@ -632,6 +655,10 @@ void layer_map::on_render(sdl::render_pass& pass, const nasrbrowse::render_conte
     }
 
     pimpl->features.render(pass, ctx, view_matrix);
+
+    // Render labels (text pass)
+    pimpl->labels.render(pass, ctx, pimpl->text_sampler,
+                         pimpl->viewport_width, pimpl->viewport_height);
 
     // Render grid (line pass)
     if(ctx.current_pass == nasrbrowse::render_pass_id::trianglelist_0)
