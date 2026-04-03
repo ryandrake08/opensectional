@@ -34,6 +34,7 @@ namespace nasrbrowse
         sqlite::statement stmt_artcc_seg;
         sqlite::statement stmt_adiz_seg;
         sqlite::statement stmt_cls_arsp_seg;
+        sqlite::statement stmt_sua_seg;
 
         std::vector<airport> airports;
         std::vector<navaid> navaids;
@@ -54,6 +55,7 @@ namespace nasrbrowse
         std::vector<boundary_segment> artcc_segs;
         std::vector<boundary_segment> adiz_segs;
         std::vector<airspace_segment> cls_arsp_segs;
+        std::vector<sua_segment> sua_segs;
 
         impl(const char* db_path)
             : db(db_path)
@@ -313,6 +315,17 @@ namespace nasrbrowse
                 FROM CLS_ARSP_SEG
                 WHERE SEG_ID IN (
                     SELECT id FROM CLS_ARSP_SEG_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+                ORDER BY SEG_ID, POINT_SEQ
+            )"))
+
+            , stmt_sua_seg(db.prepare(R"(
+                SELECT SEG_ID, SUA_TYPE, LON_DECIMAL, LAT_DECIMAL
+                FROM SUA_SEG
+                WHERE SEG_ID IN (
+                    SELECT id FROM SUA_SEG_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
@@ -727,6 +740,28 @@ namespace nasrbrowse
                  d.stmt_cls_arsp_seg.column_double(3)});
         }
         return d.cls_arsp_segs;
+    }
+
+    const std::vector<sua_segment>& nasr_database::query_sua_segments(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        d.sua_segs.clear();
+        d.bind_bbox(d.stmt_sua_seg, lon_min, lat_min, lon_max, lat_max);
+        int current_seg = -1;
+        while (d.stmt_sua_seg.step())
+        {
+            int seg_id = d.stmt_sua_seg.column_int(0);
+            if (seg_id != current_seg)
+            {
+                d.sua_segs.push_back({d.stmt_sua_seg.column_text(1), {}});
+                current_seg = seg_id;
+            }
+            d.sua_segs.back().points.push_back(
+                {d.stmt_sua_seg.column_double(3),
+                 d.stmt_sua_seg.column_double(2)});
+        }
+        return d.sua_segs;
     }
 
 } // namespace nasrbrowse

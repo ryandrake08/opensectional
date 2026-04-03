@@ -87,10 +87,6 @@ namespace nasrbrowse
         return pimpl->dirty;
     }
 
-    // Split large polylines into chunks to limit per-fragment shader work.
-    // Each chunk overlaps by one point so segments connect continuously.
-    static constexpr size_t max_chunk_points = 128;
-
     void line_renderer::copy(sdl::copy_pass& pass, const sdl::device& dev)
     {
         if(!pimpl->dirty)
@@ -111,49 +107,36 @@ namespace nasrbrowse
 
             const line_style& style = pimpl->styles[i];
 
-            // Process chunks of this polyline
-            size_t offset = 0;
-            while(offset < positions.size() - 1)
+            // Compute bounds
+            glm::vec2 bmin = positions[0];
+            glm::vec2 bmax = positions[0];
+            for(size_t j = 1; j < positions.size(); j++)
             {
-                size_t end = std::min(offset + max_chunk_points, positions.size());
-                size_t count = end - offset;
-
-                // Compute bounds for this chunk
-                glm::vec2 bmin = positions[offset];
-                glm::vec2 bmax = positions[offset];
-                for(size_t j = offset + 1; j < end; j++)
-                {
-                    bmin = glm::min(bmin, positions[j]);
-                    bmax = glm::max(bmax, positions[j]);
-                }
-
-                // Record point offset before appending
-                uint32_t point_offset = static_cast<uint32_t>(all_points.size());
-
-                // Append points to packed buffer
-                for(size_t j = offset; j < end; j++)
-                {
-                    all_points.emplace_back(positions[j].x, positions[j].y, 0.0F, 0.0F);
-                }
-
-                // Build metadata entry
-                float effective_fill = style.fill_width > 0 ? style.fill_width : style.border_width;
-                polyline_metadata_gpu meta {};
-                meta.bounds_min_max = glm::vec4(bmin.x, bmin.y, bmax.x, bmax.y);
-                meta.line_color = glm::vec4(style.r, style.g, style.b, style.a);
-                meta.border_color = glm::vec4(0.0F, 0.0F, 0.0F, style.a);
-                meta.line_half_width = style.line_width * 0.5F;
-                meta.border_width = style.border_width;
-                meta.dash_length = style.dash_length;
-                meta.gap_length = style.gap_length;
-                meta.fill_width = effective_fill;
-                meta.segment_count = static_cast<uint32_t>(count - 1);
-                meta.point_offset = point_offset;
-                meta.primitive_type = PRIMITIVE_POLYLINE;
-                all_metadata.push_back(meta);
-
-                offset = end - 1; // overlap by one point
+                bmin = glm::min(bmin, positions[j]);
+                bmax = glm::max(bmax, positions[j]);
             }
+
+            uint32_t point_offset = static_cast<uint32_t>(all_points.size());
+
+            for(const auto& p : positions)
+            {
+                all_points.emplace_back(p.x, p.y, 0.0F, 0.0F);
+            }
+
+            float effective_fill = style.fill_width > 0 ? style.fill_width : style.border_width;
+            polyline_metadata_gpu meta {};
+            meta.bounds_min_max = glm::vec4(bmin.x, bmin.y, bmax.x, bmax.y);
+            meta.line_color = glm::vec4(style.r, style.g, style.b, style.a);
+            meta.border_color = glm::vec4(0.0F, 0.0F, 0.0F, style.a);
+            meta.line_half_width = style.line_width * 0.5F;
+            meta.border_width = style.border_width;
+            meta.dash_length = style.dash_length;
+            meta.gap_length = style.gap_length;
+            meta.fill_width = effective_fill;
+            meta.segment_count = static_cast<uint32_t>(positions.size() - 1);
+            meta.point_offset = point_offset;
+            meta.primitive_type = PRIMITIVE_POLYLINE;
+            all_metadata.push_back(meta);
         }
 
         // Add circle instances

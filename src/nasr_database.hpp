@@ -146,6 +146,12 @@ namespace nasrbrowse
         std::vector<airspace_point> points;
     };
 
+    struct sua_segment
+    {
+        std::string sua_type;  // "MOA", "RA", "WA", etc.
+        std::vector<airspace_point> points;
+    };
+
     struct obstacle
     {
         std::string oas_num;
@@ -265,6 +271,8 @@ namespace nasrbrowse
         const std::vector<boundary_segment>& query_adiz_segments(
             double lon_min, double lat_min, double lon_max, double lat_max);
         const std::vector<airspace_segment>& query_class_airspace_segments(
+            double lon_min, double lat_min, double lon_max, double lat_max);
+        const std::vector<sua_segment>& query_sua_segments(
             double lon_min, double lat_min, double lon_max, double lat_max);
     };
 

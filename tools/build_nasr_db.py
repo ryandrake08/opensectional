@@ -1535,6 +1535,67 @@ def build_sua(conn, aixm_zf):
 
     conn.execute("CREATE INDEX idx_sua_shp ON SUA_SHP(SUA_ID)")
 
+    # Subdivided segments for rendering (tighter R-tree bboxes)
+    # Circles are not subdivided — they use SUA_CIRCLE directly.
+    conn.execute("DROP TABLE IF EXISTS SUA_SEG")
+    conn.execute("""
+        CREATE TABLE SUA_SEG (
+            SEG_ID INTEGER,
+            SUA_ID INTEGER,
+            SUA_TYPE TEXT,
+            POINT_SEQ INTEGER,
+            LON_DECIMAL REAL,
+            LAT_DECIMAL REAL
+        )
+    """)
+
+    # Build lookup from (SUA_ID, PART_NUM) to ring points
+    sua_rings = {}
+    for row in conn.execute(
+            "SELECT SUA_ID, PART_NUM, LON_DECIMAL, LAT_DECIMAL "
+            "FROM SUA_SHP ORDER BY SUA_ID, PART_NUM, POINT_SEQ"):
+        sua_rings.setdefault((row[0], row[1]), []).append((row[2], row[3]))
+
+    # Build lookup from SUA_ID to SUA_TYPE
+    sua_types = {}
+    for sid, stype in conn.execute("SELECT SUA_ID, SUA_TYPE FROM SUA_BASE"):
+        sua_types[sid] = stype
+
+    # Skip circle parts (they render as GPU circles, not polylines)
+    circle_parts = set()
+    for row in conn.execute("SELECT SUA_ID, PART_NUM FROM SUA_CIRCLE"):
+        circle_parts.add((row[0], row[1]))
+
+    seg_data = []
+    seg_id = 0
+    for (sid, part_num), ring in sorted(sua_rings.items()):
+        if (sid, part_num) in circle_parts:
+            continue
+        stype = sua_types[sid]
+        for chunk in subdivide_ring(ring):
+            seg_id += 1
+            for point_seq, (lon, lat) in enumerate(chunk):
+                seg_data.append((seg_id, sid, stype, point_seq, lon, lat))
+
+    conn.executemany("INSERT INTO SUA_SEG VALUES (?, ?, ?, ?, ?, ?)", seg_data)
+    print(f"  SUA_SEG: {seg_id} segments, {len(seg_data)} points")
+
+    conn.execute("""
+        CREATE VIRTUAL TABLE SUA_SEG_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO SUA_SEG_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT SEG_ID,
+               MIN(LON_DECIMAL), MAX(LON_DECIMAL),
+               MIN(LAT_DECIMAL), MAX(LAT_DECIMAL)
+        FROM SUA_SEG
+        GROUP BY SEG_ID
+    """)
+
+    conn.execute("CREATE INDEX idx_sua_seg ON SUA_SEG(SEG_ID)")
+
 
 def build_obstacles(conn, dof_zf):
     """Import obstacles from FAA Digital Obstacle File (DOF).

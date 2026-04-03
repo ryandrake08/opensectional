@@ -768,6 +768,19 @@ namespace nasrbrowse
                                   double lon_max, double lat_max,
                                   const feature_build_request& req)
         {
+            // Polygon rings from subdivided segments
+            const auto& segs = db.query_sua_segments(
+                lon_min, lat_min, lon_max, lat_max);
+
+            for(const auto& seg : segs)
+            {
+                if(!styles.sua_visible(seg.sua_type, req.zoom)) continue;
+                auto ls = to_line_style(styles.sua_style(seg.sua_type));
+
+                append_polyline(poly[layer_sua], seg.points, ls);
+            }
+
+            // Circles use the full feature query
             const auto& suas = db.query_sua(lon_min, lat_min, lon_max, lat_max);
 
             for(const auto& s : suas)
@@ -784,10 +797,6 @@ namespace nasrbrowse
                         float cy = static_cast<float>(lat_to_my(ring.circle_lat));
                         float r = static_cast<float>(ring.circle_radius_nm * 1852.0 / std::cos(lat_rad));
                         poly[layer_sua].circles.push_back({{cx, cy}, r, ls});
-                    }
-                    else
-                    {
-                        append_polygon_ring(poly[layer_sua], ring.points, ls);
                     }
                 }
             }
