@@ -1,48 +1,36 @@
 #include "nasr_database.hpp"
-#include <sqlite3.h>
-#include <stdexcept>
+#include <sqlite/database.hpp>
+#include <sqlite/statement.hpp>
 #include <string>
 
 namespace nasrbrowse
 {
-    // Helper to extract a text column, returning empty string for NULL
-    static std::string col_text(sqlite3_stmt* stmt, int col)
-    {
-        const unsigned char* text = sqlite3_column_text(stmt, col);
-        return text ? std::string(reinterpret_cast<const char*>(text)) : std::string();
-    }
-
-    static double col_double(sqlite3_stmt* stmt, int col)
-    {
-        return sqlite3_column_double(stmt, col);
-    }
-
     struct nasr_database::impl
     {
-        sqlite3* db;
+        sqlite::database db;
 
-        sqlite3_stmt* stmt_airports;
-        sqlite3_stmt* stmt_navaids;
-        sqlite3_stmt* stmt_fixes;
-        sqlite3_stmt* stmt_airways;
-        sqlite3_stmt* stmt_mtrs;
-        sqlite3_stmt* stmt_maas;
-        sqlite3_stmt* stmt_maa_shape;
-        sqlite3_stmt* stmt_cls_arsp;
-        sqlite3_stmt* stmt_cls_arsp_shape;
-        sqlite3_stmt* stmt_runways;
-        sqlite3_stmt* stmt_sua;
-        sqlite3_stmt* stmt_sua_shape;
-        sqlite3_stmt* stmt_sua_circle;
-        sqlite3_stmt* stmt_obstacles;
-        sqlite3_stmt* stmt_artcc;
-        sqlite3_stmt* stmt_artcc_shape;
-        sqlite3_stmt* stmt_pjas;
-        sqlite3_stmt* stmt_adiz;
-        sqlite3_stmt* stmt_adiz_shape;
-        sqlite3_stmt* stmt_fss;
-        sqlite3_stmt* stmt_awos;
-        sqlite3_stmt* stmt_comm_outlets;
+        sqlite::statement stmt_airports;
+        sqlite::statement stmt_navaids;
+        sqlite::statement stmt_fixes;
+        sqlite::statement stmt_airways;
+        sqlite::statement stmt_mtrs;
+        sqlite::statement stmt_maas;
+        sqlite::statement stmt_maa_shape;
+        sqlite::statement stmt_cls_arsp;
+        sqlite::statement stmt_cls_arsp_shape;
+        sqlite::statement stmt_runways;
+        sqlite::statement stmt_sua;
+        sqlite::statement stmt_sua_shape;
+        sqlite::statement stmt_sua_circle;
+        sqlite::statement stmt_obstacles;
+        sqlite::statement stmt_artcc;
+        sqlite::statement stmt_artcc_shape;
+        sqlite::statement stmt_pjas;
+        sqlite::statement stmt_adiz;
+        sqlite::statement stmt_adiz_shape;
+        sqlite::statement stmt_fss;
+        sqlite::statement stmt_awos;
+        sqlite::statement stmt_comm_outlets;
 
         std::vector<airport> airports;
         std::vector<navaid> navaids;
@@ -62,74 +50,9 @@ namespace nasrbrowse
         std::vector<comm_outlet> comm_outlets;
 
         impl(const char* db_path)
-            : db(nullptr)
-            , stmt_airports(nullptr)
-            , stmt_navaids(nullptr)
-            , stmt_fixes(nullptr)
-            , stmt_airways(nullptr)
-            , stmt_mtrs(nullptr)
-            , stmt_maas(nullptr)
-            , stmt_maa_shape(nullptr)
-            , stmt_cls_arsp(nullptr)
-            , stmt_cls_arsp_shape(nullptr)
-            , stmt_runways(nullptr)
-            , stmt_sua(nullptr)
-            , stmt_sua_shape(nullptr)
-            , stmt_sua_circle(nullptr)
-            , stmt_obstacles(nullptr)
-            , stmt_artcc(nullptr)
-            , stmt_artcc_shape(nullptr)
-            , stmt_pjas(nullptr)
-            , stmt_adiz(nullptr)
-            , stmt_adiz_shape(nullptr)
-            , stmt_fss(nullptr)
-            , stmt_awos(nullptr)
-            , stmt_comm_outlets(nullptr)
-        {
-            int rc = sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, nullptr);
-            if(rc != SQLITE_OK)
-            {
-                std::string msg = "Failed to open NASR database: ";
-                msg += sqlite3_errmsg(db);
-                sqlite3_close(db);
-                throw std::runtime_error(msg);
-            }
+            : db(db_path)
 
-            prepare_statements();
-        }
-
-        ~impl()
-        {
-            sqlite3_finalize(stmt_airports);
-            sqlite3_finalize(stmt_navaids);
-            sqlite3_finalize(stmt_fixes);
-            sqlite3_finalize(stmt_airways);
-            sqlite3_finalize(stmt_mtrs);
-            sqlite3_finalize(stmt_maas);
-            sqlite3_finalize(stmt_maa_shape);
-            sqlite3_finalize(stmt_cls_arsp);
-            sqlite3_finalize(stmt_cls_arsp_shape);
-            sqlite3_finalize(stmt_runways);
-            sqlite3_finalize(stmt_sua);
-            sqlite3_finalize(stmt_sua_shape);
-            sqlite3_finalize(stmt_sua_circle);
-            sqlite3_finalize(stmt_obstacles);
-            sqlite3_finalize(stmt_artcc);
-            sqlite3_finalize(stmt_artcc_shape);
-            sqlite3_finalize(stmt_pjas);
-            sqlite3_finalize(stmt_adiz);
-            sqlite3_finalize(stmt_adiz_shape);
-            sqlite3_finalize(stmt_fss);
-            sqlite3_finalize(stmt_awos);
-            sqlite3_finalize(stmt_comm_outlets);
-            sqlite3_close(db);
-        }
-
-        void prepare_statements()
-        {
-            // R-tree overlap query: find points where the stored point
-            // (min=max) overlaps with the search box
-            prepare(&stmt_airports, R"(
+            , stmt_airports(db.prepare(R"(
                 SELECT a.ARPT_ID, a.ARPT_NAME, a.SITE_TYPE_CODE, a.TWR_TYPE_CODE,
                        a.OWNERSHIP_TYPE_CODE, a.FACILITY_USE_CODE, a.ARPT_STATUS,
                        a.ICAO_ID, a.HARD_SURFACE, a.LAT_DECIMAL, a.LONG_DECIMAL,
@@ -152,9 +75,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            prepare(&stmt_navaids, R"(
+            , stmt_navaids(db.prepare(R"(
                 SELECT NAV_ID, NAV_TYPE, NAME, FREQ, LAT_DECIMAL, LONG_DECIMAL
                 FROM NAV_BASE
                 WHERE NAV_STATUS != 'SHUTDOWN'
@@ -163,9 +86,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            prepare(&stmt_fixes, R"(
+            , stmt_fixes(db.prepare(R"(
                 SELECT FIX_ID, FIX_USE_CODE, LAT_DECIMAL, LONG_DECIMAL
                 FROM FIX_BASE
                 WHERE FIX_USE_CODE IN ('WP', 'RP', 'VFR', 'CN', 'MR', 'MW', 'NRS')
@@ -174,9 +97,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            prepare(&stmt_airways, R"(
+            , stmt_airways(db.prepare(R"(
                 SELECT AWY_ID, FROM_POINT, TO_POINT,
                        FROM_LAT, FROM_LON, TO_LAT, TO_LON
                 FROM AWY_SEG
@@ -186,9 +109,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            prepare(&stmt_mtrs, R"(
+            , stmt_mtrs(db.prepare(R"(
                 SELECT MTR_ID, FROM_POINT, TO_POINT,
                        FROM_LAT, FROM_LON, TO_LAT, TO_LON
                 FROM MTR_SEG
@@ -197,10 +120,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            // Miscellaneous activity areas
-            prepare(&stmt_maas, R"(
+            , stmt_maas(db.prepare(R"(
                 SELECT MAA_ID, TYPE, NAME, LAT, LON, RADIUS_NM
                 FROM MAA_BASE
                 WHERE rowid IN (
@@ -208,18 +130,16 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            // Shape points for a shape-defined MAA
-            prepare(&stmt_maa_shape, R"(
+            , stmt_maa_shape(db.prepare(R"(
                 SELECT LON_DECIMAL, LAT_DECIMAL
                 FROM MAA_SHP
                 WHERE MAA_ID = ?1
                 ORDER BY POINT_SEQ
-            )");
+            )"))
 
-            // Class airspace (B/C/D/E) from shapefile
-            prepare(&stmt_cls_arsp, R"(
+            , stmt_cls_arsp(db.prepare(R"(
                 SELECT ARSP_ID, NAME, CLASS, LOCAL_TYPE,
                        UPPER_DESC, UPPER_VAL, LOWER_DESC, LOWER_VAL
                 FROM CLS_ARSP_BASE
@@ -228,17 +148,16 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            prepare(&stmt_cls_arsp_shape, R"(
+            , stmt_cls_arsp_shape(db.prepare(R"(
                 SELECT PART_NUM, IS_HOLE, LON_DECIMAL, LAT_DECIMAL
                 FROM CLS_ARSP_SHP
                 WHERE ARSP_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
-            )");
+            )"))
 
-            // Runways: pre-built segments with direct R-tree query
-            prepare(&stmt_runways, R"(
+            , stmt_runways(db.prepare(R"(
                 SELECT END1_LAT, END1_LON, END2_LAT, END2_LON
                 FROM RWY_SEG
                 WHERE rowid IN (
@@ -246,10 +165,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            // SUA (MOA/Restricted/Warning/Alert/Prohibited) from AIXM
-            prepare(&stmt_sua, R"(
+            , stmt_sua(db.prepare(R"(
                 SELECT SUA_ID, DESIGNATOR, NAME, SUA_TYPE
                 FROM SUA_BASE
                 WHERE SUA_ID IN (
@@ -257,22 +175,22 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            prepare(&stmt_sua_shape, R"(
+            , stmt_sua_shape(db.prepare(R"(
                 SELECT PART_NUM, UPPER_LIMIT, LOWER_LIMIT, LON_DECIMAL, LAT_DECIMAL
                 FROM SUA_SHP
                 WHERE SUA_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
-            )");
+            )"))
 
-            prepare(&stmt_sua_circle, R"(
+            , stmt_sua_circle(db.prepare(R"(
                 SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM
                 FROM SUA_CIRCLE
                 WHERE SUA_ID = ?1
-            )");
+            )"))
 
-            prepare(&stmt_obstacles, R"(
+            , stmt_obstacles(db.prepare(R"(
                 SELECT OAS_NUM, LAT_DECIMAL, LON_DECIMAL, AGL_HT, LIGHTING
                 FROM OBS_BASE
                 WHERE rowid IN (
@@ -280,9 +198,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            prepare(&stmt_artcc, R"(
+            , stmt_artcc(db.prepare(R"(
                 SELECT ARTCC_ID, LOCATION_ID, LOCATION_NAME, ALTITUDE
                 FROM ARTCC_BASE
                 WHERE ARTCC_ID IN (
@@ -290,16 +208,16 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            prepare(&stmt_artcc_shape, R"(
+            , stmt_artcc_shape(db.prepare(R"(
                 SELECT LON_DECIMAL, LAT_DECIMAL
                 FROM ARTCC_SHP
                 WHERE ARTCC_ID = ?1
                 ORDER BY POINT_SEQ
-            )");
+            )"))
 
-            prepare(&stmt_pjas, R"(
+            , stmt_pjas(db.prepare(R"(
                 SELECT PJA_ID, NAME, LAT, LON, RADIUS_NM
                 FROM PJA_BASE
                 WHERE rowid IN (
@@ -307,9 +225,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            prepare(&stmt_adiz, R"(
+            , stmt_adiz(db.prepare(R"(
                 SELECT ADIZ_ID, NAME
                 FROM ADIZ_BASE
                 WHERE ADIZ_ID IN (
@@ -317,16 +235,16 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            prepare(&stmt_adiz_shape, R"(
+            , stmt_adiz_shape(db.prepare(R"(
                 SELECT PART_NUM, LON_DECIMAL, LAT_DECIMAL
                 FROM ADIZ_SHP
                 WHERE ADIZ_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
-            )");
+            )"))
 
-            prepare(&stmt_fss, R"(
+            , stmt_fss(db.prepare(R"(
                 SELECT FSS_ID, NAME, VOICE_CALL, CITY, STATE_CODE,
                        CAST(LAT_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
                        OPR_HOURS, FAC_STATUS
@@ -336,9 +254,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            prepare(&stmt_awos, R"(
+            , stmt_awos(db.prepare(R"(
                 SELECT ASOS_AWOS_ID, ASOS_AWOS_TYPE, CITY, STATE_CODE,
                        CAST(LAT_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
                        CAST(ELEV AS REAL), PHONE_NO, SITE_NO
@@ -348,9 +266,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
+            )"))
 
-            prepare(&stmt_comm_outlets, R"(
+            , stmt_comm_outlets(db.prepare(R"(
                 SELECT COMM_TYPE, COMM_OUTLET_NAME, FACILITY_ID, FACILITY_NAME,
                        CAST(LAT_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL)
                 FROM COM
@@ -360,41 +278,30 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )");
-        }
-
-        void prepare(sqlite3_stmt** stmt, const char* sql)
+            )"))
         {
-            int rc = sqlite3_prepare_v2(db, sql, -1, stmt, nullptr);
-            if(rc != SQLITE_OK)
-            {
-                std::string msg = "Failed to prepare statement: ";
-                msg += sqlite3_errmsg(db);
-                throw std::runtime_error(msg);
-            }
         }
 
-
-        void bind_bbox(sqlite3_stmt* stmt, double lon_min, double lat_min,
+        void bind_bbox(sqlite::statement& stmt, double lon_min, double lat_min,
                        double lon_max, double lat_max)
         {
-            sqlite3_reset(stmt);
-            sqlite3_bind_double(stmt, 1, lon_min);
-            sqlite3_bind_double(stmt, 2, lat_min);
-            sqlite3_bind_double(stmt, 3, lon_max);
-            sqlite3_bind_double(stmt, 4, lat_max);
+            stmt.reset();
+            stmt.bind(1, lon_min);
+            stmt.bind(2, lat_min);
+            stmt.bind(3, lon_max);
+            stmt.bind(4, lat_max);
         }
 
         template<typename T, typename RowMapper>
         const std::vector<T>& query_bbox(std::vector<T>& results,
-                                          sqlite3_stmt* stmt,
+                                          sqlite::statement& stmt,
                                           double lon_min, double lat_min,
                                           double lon_max, double lat_max,
                                           RowMapper&& map_row)
         {
             results.clear();
             bind_bbox(stmt, lon_min, lat_min, lon_max, lat_max);
-            while(sqlite3_step(stmt) == SQLITE_ROW)
+            while (stmt.step())
             {
                 results.push_back(map_row(stmt));
             }
@@ -414,18 +321,18 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.airports, d.stmt_airports,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
             return airport{
-                col_text(s, 0), col_text(s, 1), col_text(s, 2), col_text(s, 3),
-                col_text(s, 4), col_text(s, 5), col_text(s, 6), col_text(s, 7),
-                sqlite3_column_int(s, 8) != 0,
-                col_double(s, 9), col_double(s, 10), col_double(s, 11),
-                col_text(s, 12),
-                col_text(s, 13), col_text(s, 14), col_text(s, 15),
-                col_text(s, 16), col_text(s, 17), col_text(s, 18),
-                col_text(s, 19), col_text(s, 20),
-                col_text(s, 21), col_text(s, 22)};
+                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7),
+                s.column_int(8) != 0,
+                s.column_double(9), s.column_double(10), s.column_double(11),
+                s.column_text(12),
+                s.column_text(13), s.column_text(14), s.column_text(15),
+                s.column_text(16), s.column_text(17), s.column_text(18),
+                s.column_text(19), s.column_text(20),
+                s.column_text(21), s.column_text(22)};
         });
     }
 
@@ -434,10 +341,10 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.navaids, d.stmt_navaids,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return navaid{col_text(s, 0), col_text(s, 1), col_text(s, 2),
-                          col_text(s, 3), col_double(s, 4), col_double(s, 5)};
+            return navaid{s.column_text(0), s.column_text(1), s.column_text(2),
+                          s.column_text(3), s.column_double(4), s.column_double(5)};
         });
     }
 
@@ -446,10 +353,10 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.fixes, d.stmt_fixes,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return fix{col_text(s, 0), col_text(s, 1),
-                       col_double(s, 2), col_double(s, 3)};
+            return fix{s.column_text(0), s.column_text(1),
+                       s.column_double(2), s.column_double(3)};
         });
     }
 
@@ -458,12 +365,12 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.airways, d.stmt_airways,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
             return airway_segment{
-                col_text(s, 0), col_text(s, 1), col_text(s, 2),
-                col_double(s, 3), col_double(s, 4),
-                col_double(s, 5), col_double(s, 6)};
+                s.column_text(0), s.column_text(1), s.column_text(2),
+                s.column_double(3), s.column_double(4),
+                s.column_double(5), s.column_double(6)};
         });
     }
 
@@ -472,12 +379,12 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.mtrs, d.stmt_mtrs,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
             return airway_segment{
-                col_text(s, 0), col_text(s, 1), col_text(s, 2),
-                col_double(s, 3), col_double(s, 4),
-                col_double(s, 5), col_double(s, 6)};
+                s.column_text(0), s.column_text(1), s.column_text(2),
+                s.column_double(3), s.column_double(4),
+                s.column_double(5), s.column_double(6)};
         });
     }
 
@@ -486,20 +393,20 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.maas, d.stmt_maas,
-            lon_min, lat_min, lon_max, lat_max, [&](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
         {
-            maa m{col_text(s, 0), col_text(s, 1), col_text(s, 2),
-                  col_double(s, 3), col_double(s, 4), col_double(s, 5), {}};
+            maa m{s.column_text(0), s.column_text(1), s.column_text(2),
+                  s.column_double(3), s.column_double(4), s.column_double(5), {}};
 
             // Load shape polygon for shape-defined entries
-            if(m.lat == 0.0)
+            if (m.lat == 0.0)
             {
-                sqlite3_reset(d.stmt_maa_shape);
-                sqlite3_bind_text(d.stmt_maa_shape, 1, m.maa_id.c_str(), -1, SQLITE_TRANSIENT);
-                while(sqlite3_step(d.stmt_maa_shape) == SQLITE_ROW)
+                d.stmt_maa_shape.reset();
+                d.stmt_maa_shape.bind(1, m.maa_id);
+                while (d.stmt_maa_shape.step())
                 {
-                    m.shape.push_back({col_double(d.stmt_maa_shape, 1),
-                                       col_double(d.stmt_maa_shape, 0)});
+                    m.shape.push_back({d.stmt_maa_shape.column_double(1),
+                                       d.stmt_maa_shape.column_double(0)});
                 }
             }
             return m;
@@ -511,28 +418,28 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.class_airspaces, d.stmt_cls_arsp,
-            lon_min, lat_min, lon_max, lat_max, [&](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
         {
-            class_airspace a{sqlite3_column_int(s, 0),
-                col_text(s, 1), col_text(s, 2), col_text(s, 3),
-                col_text(s, 4), col_text(s, 5), col_text(s, 6), col_text(s, 7), {}};
+            class_airspace a{s.column_int(0),
+                s.column_text(1), s.column_text(2), s.column_text(3),
+                s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7), {}};
 
-            sqlite3_reset(d.stmt_cls_arsp_shape);
-            sqlite3_bind_int(d.stmt_cls_arsp_shape, 1, a.arsp_id);
+            d.stmt_cls_arsp_shape.reset();
+            d.stmt_cls_arsp_shape.bind(1, a.arsp_id);
             int current_part = -1;
-            while(sqlite3_step(d.stmt_cls_arsp_shape) == SQLITE_ROW)
+            while (d.stmt_cls_arsp_shape.step())
             {
-                int part_num = sqlite3_column_int(d.stmt_cls_arsp_shape, 0);
-                if(part_num != current_part)
+                int part_num = d.stmt_cls_arsp_shape.column_int(0);
+                if (part_num != current_part)
                 {
                     polygon_ring ring;
-                    ring.is_hole = sqlite3_column_int(d.stmt_cls_arsp_shape, 1) != 0;
+                    ring.is_hole = d.stmt_cls_arsp_shape.column_int(1) != 0;
                     a.parts.push_back(std::move(ring));
                     current_part = part_num;
                 }
                 a.parts.back().points.push_back(
-                    {col_double(d.stmt_cls_arsp_shape, 3),
-                     col_double(d.stmt_cls_arsp_shape, 2)});
+                    {d.stmt_cls_arsp_shape.column_double(3),
+                     d.stmt_cls_arsp_shape.column_double(2)});
             }
             return a;
         });
@@ -543,10 +450,10 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.runways, d.stmt_runways,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return runway{col_double(s, 0), col_double(s, 1),
-                          col_double(s, 2), col_double(s, 3)};
+            return runway{s.column_double(0), s.column_double(1),
+                          s.column_double(2), s.column_double(3)};
         });
     }
 
@@ -555,36 +462,36 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.suas, d.stmt_sua,
-            lon_min, lat_min, lon_max, lat_max, [&](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
         {
-            sua su{sqlite3_column_int(s, 0), col_text(s, 1),
-                   col_text(s, 2), col_text(s, 3), {}};
+            sua su{s.column_int(0), s.column_text(1),
+                   s.column_text(2), s.column_text(3), {}};
 
             // Load circle metadata if this SUA is a pure circle
             int circle_part = -1;
             double circle_lon = 0, circle_lat = 0, circle_radius_nm = 0;
-            sqlite3_reset(d.stmt_sua_circle);
-            sqlite3_bind_int(d.stmt_sua_circle, 1, su.sua_id);
-            if(sqlite3_step(d.stmt_sua_circle) == SQLITE_ROW)
+            d.stmt_sua_circle.reset();
+            d.stmt_sua_circle.bind(1, su.sua_id);
+            if (d.stmt_sua_circle.step())
             {
-                circle_part = sqlite3_column_int(d.stmt_sua_circle, 0);
-                circle_lon = col_double(d.stmt_sua_circle, 1);
-                circle_lat = col_double(d.stmt_sua_circle, 2);
-                circle_radius_nm = col_double(d.stmt_sua_circle, 3);
+                circle_part = d.stmt_sua_circle.column_int(0);
+                circle_lon = d.stmt_sua_circle.column_double(1);
+                circle_lat = d.stmt_sua_circle.column_double(2);
+                circle_radius_nm = d.stmt_sua_circle.column_double(3);
             }
 
-            sqlite3_reset(d.stmt_sua_shape);
-            sqlite3_bind_int(d.stmt_sua_shape, 1, su.sua_id);
+            d.stmt_sua_shape.reset();
+            d.stmt_sua_shape.bind(1, su.sua_id);
             int current_part = -1;
-            while(sqlite3_step(d.stmt_sua_shape) == SQLITE_ROW)
+            while (d.stmt_sua_shape.step())
             {
-                int part_num = sqlite3_column_int(d.stmt_sua_shape, 0);
-                if(part_num != current_part)
+                int part_num = d.stmt_sua_shape.column_int(0);
+                if (part_num != current_part)
                 {
                     sua_ring ring;
-                    ring.upper_limit = col_text(d.stmt_sua_shape, 1);
-                    ring.lower_limit = col_text(d.stmt_sua_shape, 2);
-                    if(part_num == circle_part)
+                    ring.upper_limit = d.stmt_sua_shape.column_text(1);
+                    ring.lower_limit = d.stmt_sua_shape.column_text(2);
+                    if (part_num == circle_part)
                     {
                         ring.is_circle = true;
                         ring.circle_lon = circle_lon;
@@ -595,8 +502,8 @@ namespace nasrbrowse
                     current_part = part_num;
                 }
                 su.parts.back().points.push_back(
-                    {col_double(d.stmt_sua_shape, 4),
-                     col_double(d.stmt_sua_shape, 3)});
+                    {d.stmt_sua_shape.column_double(4),
+                     d.stmt_sua_shape.column_double(3)});
             }
             return su;
         });
@@ -607,10 +514,10 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.obstacles, d.stmt_obstacles,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return obstacle{col_text(s, 0), col_double(s, 1), col_double(s, 2),
-                            sqlite3_column_int(s, 3), col_text(s, 4)};
+            return obstacle{s.column_text(0), s.column_double(1), s.column_double(2),
+                            s.column_int(3), s.column_text(4)};
         });
     }
 
@@ -619,17 +526,17 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.artccs, d.stmt_artcc,
-            lon_min, lat_min, lon_max, lat_max, [&](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
         {
-            artcc a{sqlite3_column_int(s, 0), col_text(s, 1),
-                    col_text(s, 2), col_text(s, 3), {}};
+            artcc a{s.column_int(0), s.column_text(1),
+                    s.column_text(2), s.column_text(3), {}};
 
-            sqlite3_reset(d.stmt_artcc_shape);
-            sqlite3_bind_int(d.stmt_artcc_shape, 1, a.artcc_id);
-            while(sqlite3_step(d.stmt_artcc_shape) == SQLITE_ROW)
+            d.stmt_artcc_shape.reset();
+            d.stmt_artcc_shape.bind(1, a.artcc_id);
+            while (d.stmt_artcc_shape.step())
             {
-                a.points.push_back({col_double(d.stmt_artcc_shape, 1),
-                                    col_double(d.stmt_artcc_shape, 0)});
+                a.points.push_back({d.stmt_artcc_shape.column_double(1),
+                                    d.stmt_artcc_shape.column_double(0)});
             }
             return a;
         });
@@ -640,10 +547,10 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.pjas, d.stmt_pjas,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return pja{col_text(s, 0), col_text(s, 1),
-                       col_double(s, 2), col_double(s, 3), col_double(s, 4)};
+            return pja{s.column_text(0), s.column_text(1),
+                       s.column_double(2), s.column_double(3), s.column_double(4)};
         });
     }
 
@@ -652,24 +559,24 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.adizs, d.stmt_adiz,
-            lon_min, lat_min, lon_max, lat_max, [&](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
         {
-            adiz a{sqlite3_column_int(s, 0), col_text(s, 1), {}};
+            adiz a{s.column_int(0), s.column_text(1), {}};
 
-            sqlite3_reset(d.stmt_adiz_shape);
-            sqlite3_bind_int(d.stmt_adiz_shape, 1, a.adiz_id);
+            d.stmt_adiz_shape.reset();
+            d.stmt_adiz_shape.bind(1, a.adiz_id);
             int current_part = -1;
-            while(sqlite3_step(d.stmt_adiz_shape) == SQLITE_ROW)
+            while (d.stmt_adiz_shape.step())
             {
-                int part_num = sqlite3_column_int(d.stmt_adiz_shape, 0);
-                if(part_num != current_part)
+                int part_num = d.stmt_adiz_shape.column_int(0);
+                if (part_num != current_part)
                 {
                     a.parts.push_back({});
                     current_part = part_num;
                 }
                 a.parts.back().push_back(
-                    {col_double(d.stmt_adiz_shape, 2),
-                     col_double(d.stmt_adiz_shape, 1)});
+                    {d.stmt_adiz_shape.column_double(2),
+                     d.stmt_adiz_shape.column_double(1)});
             }
             return a;
         });
@@ -680,12 +587,12 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.fsss, d.stmt_fss,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return fss{col_text(s, 0), col_text(s, 1), col_text(s, 2),
-                        col_text(s, 3), col_text(s, 4),
-                        col_double(s, 5), col_double(s, 6),
-                        col_text(s, 7), col_text(s, 8)};
+            return fss{s.column_text(0), s.column_text(1), s.column_text(2),
+                        s.column_text(3), s.column_text(4),
+                        s.column_double(5), s.column_double(6),
+                        s.column_text(7), s.column_text(8)};
         });
     }
 
@@ -694,12 +601,12 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.awoss, d.stmt_awos,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return awos{col_text(s, 0), col_text(s, 1),
-                         col_text(s, 2), col_text(s, 3),
-                         col_double(s, 4), col_double(s, 5),
-                         col_double(s, 6), col_text(s, 7), col_text(s, 8)};
+            return awos{s.column_text(0), s.column_text(1),
+                         s.column_text(2), s.column_text(3),
+                         s.column_double(4), s.column_double(5),
+                         s.column_double(6), s.column_text(7), s.column_text(8)};
         });
     }
 
@@ -708,11 +615,11 @@ namespace nasrbrowse
     {
         auto& d = *pimpl;
         return d.query_bbox(d.comm_outlets, d.stmt_comm_outlets,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite3_stmt* s)
+            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return comm_outlet{col_text(s, 0), col_text(s, 1),
-                                col_text(s, 2), col_text(s, 3),
-                                col_double(s, 4), col_double(s, 5)};
+            return comm_outlet{s.column_text(0), s.column_text(1),
+                                s.column_text(2), s.column_text(3),
+                                s.column_double(4), s.column_double(5)};
         });
     }
 

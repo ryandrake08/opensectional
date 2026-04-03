@@ -82,6 +82,22 @@ target_compile_options(imgui_wrapper PRIVATE
     $<$<CONFIG:RelWithDebInfo>:-O2 -g -pg>
 )
 
+# SQLite C++ wrapper library
+add_library(sqlite_wrapper STATIC
+    sqlite/database.cpp
+    sqlite/statement.cpp
+)
+target_compile_features(sqlite_wrapper PRIVATE cxx_std_11)
+target_include_directories(sqlite_wrapper PUBLIC ${CMAKE_SOURCE_DIR})
+target_link_libraries(sqlite_wrapper PUBLIC ${SQLITE3_LIBRARIES})
+target_include_directories(sqlite_wrapper PUBLIC ${SQLITE3_INCLUDE_DIRS})
+target_compile_options(sqlite_wrapper PRIVATE -Wall -Wextra)
+target_compile_options(sqlite_wrapper PRIVATE
+    $<$<CONFIG:Debug>:-O0 -ggdb -fsanitize=address>
+    $<$<CONFIG:Release>:-O3>
+    $<$<CONFIG:RelWithDebInfo>:-O2 -g -pg>
+)
+
 # Include directories
 target_include_directories(nasrbrowse PRIVATE
     ${CMAKE_SOURCE_DIR}/src    # For #include "layer.hpp" etc.
@@ -114,9 +130,8 @@ target_link_options(nasrbrowse PRIVATE
 # Link libraries
 target_link_libraries(nasrbrowse PRIVATE
     imgui_wrapper
-    ${SQLITE3_LIBRARIES}
+    sqlite_wrapper
 )
-target_include_directories(nasrbrowse PRIVATE ${SQLITE3_INCLUDE_DIRS})
 
 # Shader compilation (Metal, SPIRV)
 add_subdirectory(shaders)
