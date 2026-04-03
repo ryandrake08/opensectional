@@ -31,6 +31,9 @@ namespace nasrbrowse
         sqlite::statement stmt_fss;
         sqlite::statement stmt_awos;
         sqlite::statement stmt_comm_outlets;
+        sqlite::statement stmt_artcc_seg;
+        sqlite::statement stmt_adiz_seg;
+        sqlite::statement stmt_cls_arsp_seg;
 
         std::vector<airport> airports;
         std::vector<navaid> navaids;
@@ -48,6 +51,9 @@ namespace nasrbrowse
         std::vector<fss> fsss;
         std::vector<awos> awoss;
         std::vector<comm_outlet> comm_outlets;
+        std::vector<boundary_segment> artcc_segs;
+        std::vector<boundary_segment> adiz_segs;
+        std::vector<airspace_segment> cls_arsp_segs;
 
         impl(const char* db_path)
             : db(db_path)
@@ -278,6 +284,39 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
+            )"))
+
+            , stmt_artcc_seg(db.prepare(R"(
+                SELECT SEG_ID, ALTITUDE, LON_DECIMAL, LAT_DECIMAL
+                FROM ARTCC_SEG
+                WHERE SEG_ID IN (
+                    SELECT id FROM ARTCC_SEG_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+                ORDER BY SEG_ID, POINT_SEQ
+            )"))
+
+            , stmt_adiz_seg(db.prepare(R"(
+                SELECT SEG_ID, LON_DECIMAL, LAT_DECIMAL
+                FROM ADIZ_SEG
+                WHERE SEG_ID IN (
+                    SELECT id FROM ADIZ_SEG_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+                ORDER BY SEG_ID, POINT_SEQ
+            )"))
+
+            , stmt_cls_arsp_seg(db.prepare(R"(
+                SELECT SEG_ID, CLASS, LOCAL_TYPE, LON_DECIMAL, LAT_DECIMAL
+                FROM CLS_ARSP_SEG
+                WHERE SEG_ID IN (
+                    SELECT id FROM CLS_ARSP_SEG_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+                ORDER BY SEG_ID, POINT_SEQ
             )"))
         {
         }
@@ -620,6 +659,74 @@ namespace nasrbrowse
                                 s.column_text(2), s.column_text(3),
                                 s.column_double(4), s.column_double(5)};
         });
+    }
+
+    const std::vector<boundary_segment>& nasr_database::query_artcc_segments(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        d.artcc_segs.clear();
+        d.bind_bbox(d.stmt_artcc_seg, lon_min, lat_min, lon_max, lat_max);
+        int current_seg = -1;
+        while (d.stmt_artcc_seg.step())
+        {
+            int seg_id = d.stmt_artcc_seg.column_int(0);
+            if (seg_id != current_seg)
+            {
+                d.artcc_segs.push_back({d.stmt_artcc_seg.column_text(1), {}});
+                current_seg = seg_id;
+            }
+            d.artcc_segs.back().points.push_back(
+                {d.stmt_artcc_seg.column_double(3),
+                 d.stmt_artcc_seg.column_double(2)});
+        }
+        return d.artcc_segs;
+    }
+
+    const std::vector<boundary_segment>& nasr_database::query_adiz_segments(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        d.adiz_segs.clear();
+        d.bind_bbox(d.stmt_adiz_seg, lon_min, lat_min, lon_max, lat_max);
+        int current_seg = -1;
+        while (d.stmt_adiz_seg.step())
+        {
+            int seg_id = d.stmt_adiz_seg.column_int(0);
+            if (seg_id != current_seg)
+            {
+                d.adiz_segs.push_back({{}, {}});
+                current_seg = seg_id;
+            }
+            d.adiz_segs.back().points.push_back(
+                {d.stmt_adiz_seg.column_double(2),
+                 d.stmt_adiz_seg.column_double(1)});
+        }
+        return d.adiz_segs;
+    }
+
+    const std::vector<airspace_segment>& nasr_database::query_class_airspace_segments(
+        double lon_min, double lat_min, double lon_max, double lat_max)
+    {
+        auto& d = *pimpl;
+        d.cls_arsp_segs.clear();
+        d.bind_bbox(d.stmt_cls_arsp_seg, lon_min, lat_min, lon_max, lat_max);
+        int current_seg = -1;
+        while (d.stmt_cls_arsp_seg.step())
+        {
+            int seg_id = d.stmt_cls_arsp_seg.column_int(0);
+            if (seg_id != current_seg)
+            {
+                d.cls_arsp_segs.push_back(
+                    {d.stmt_cls_arsp_seg.column_text(1),
+                     d.stmt_cls_arsp_seg.column_text(2), {}});
+                current_seg = seg_id;
+            }
+            d.cls_arsp_segs.back().points.push_back(
+                {d.stmt_cls_arsp_seg.column_double(4),
+                 d.stmt_cls_arsp_seg.column_double(3)});
+        }
+        return d.cls_arsp_segs;
     }
 
 } // namespace nasrbrowse

@@ -132,6 +132,20 @@ namespace nasrbrowse
         std::vector<std::vector<airspace_point>> parts;
     };
 
+    // Subdivided polyline segments for rendering (tight R-tree bbox)
+    struct boundary_segment
+    {
+        std::string altitude;  // ARTCC only: "LOW", "HIGH", "UNLIMITED"
+        std::vector<airspace_point> points;
+    };
+
+    struct airspace_segment
+    {
+        std::string airspace_class;  // "B", "C", "D", "E"
+        std::string local_type;      // "CLASS_B", "CLASS_C", etc.
+        std::vector<airspace_point> points;
+    };
+
     struct obstacle
     {
         std::string oas_num;
@@ -244,6 +258,14 @@ namespace nasrbrowse
                                              double lon_max, double lat_max);
         const std::vector<comm_outlet>& query_comm_outlets(double lon_min, double lat_min,
                                                             double lon_max, double lat_max);
+
+        // Subdivided segment queries for rendering (tight R-tree bboxes)
+        const std::vector<boundary_segment>& query_artcc_segments(
+            double lon_min, double lat_min, double lon_max, double lat_max);
+        const std::vector<boundary_segment>& query_adiz_segments(
+            double lon_min, double lat_min, double lon_max, double lat_max);
+        const std::vector<airspace_segment>& query_class_airspace_segments(
+            double lon_min, double lat_min, double lon_max, double lat_max);
     };
 
 } // namespace nasrbrowse

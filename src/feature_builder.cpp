@@ -463,6 +463,28 @@ namespace nasrbrowse
             output.styles.push_back(ls);
         }
 
+        void append_polyline(polyline_data& output,
+                              const std::vector<airspace_point>& points,
+                              const line_style& ls)
+        {
+            if(points.size() < 2)
+            {
+                return;
+            }
+
+            std::vector<glm::vec2> polyline;
+            polyline.reserve(points.size());
+            for(const auto& pt : points)
+            {
+                polyline.emplace_back(
+                    static_cast<float>(lon_to_mx(pt.lon)),
+                    static_cast<float>(lat_to_my(pt.lat)));
+            }
+
+            output.polylines.push_back(std::move(polyline));
+            output.styles.push_back(ls);
+        }
+
         // --- Feature build methods ---
 
         void build_airport_polylines(double lon_min, double lat_min,
@@ -879,15 +901,13 @@ namespace nasrbrowse
         {
             if(!styles.adiz_visible(req.zoom)) return;
 
-            const auto& adizs = db.query_adiz(lon_min, lat_min, lon_max, lat_max);
+            const auto& segs = db.query_adiz_segments(
+                lon_min, lat_min, lon_max, lat_max);
             auto ls = to_line_style(styles.adiz_style());
 
-            for(const auto& a : adizs)
+            for(const auto& seg : segs)
             {
-                for(const auto& part : a.parts)
-                {
-                    append_polygon_ring(poly[layer_adiz], part, ls);
-                }
+                append_polyline(poly[layer_adiz], seg.points, ls);
             }
         }
 
@@ -895,14 +915,15 @@ namespace nasrbrowse
                                     double lon_max, double lat_max,
                                     const feature_build_request& req)
         {
-            const auto& artccs = db.query_artcc(lon_min, lat_min, lon_max, lat_max);
+            const auto& segs = db.query_artcc_segments(
+                lon_min, lat_min, lon_max, lat_max);
 
-            for(const auto& a : artccs)
+            for(const auto& seg : segs)
             {
-                if(!styles.artcc_visible(a.altitude, req.zoom)) continue;
-                auto ls = to_line_style(styles.artcc_style(a.altitude));
+                if(!styles.artcc_visible(seg.altitude, req.zoom)) continue;
+                auto ls = to_line_style(styles.artcc_style(seg.altitude));
 
-                append_polygon_ring(poly[layer_artcc], a.points, ls);
+                append_polyline(poly[layer_artcc], seg.points, ls);
             }
         }
 
@@ -933,17 +954,15 @@ namespace nasrbrowse
                                        double lon_max, double lat_max,
                                        const feature_build_request& req)
         {
-            const auto& airspaces = db.query_class_airspace(lon_min, lat_min, lon_max, lat_max);
+            const auto& segs = db.query_class_airspace_segments(
+                lon_min, lat_min, lon_max, lat_max);
 
-            for(const auto& arsp : airspaces)
+            for(const auto& seg : segs)
             {
-                if(!styles.airspace_visible(arsp.airspace_class, arsp.local_type, req.zoom)) continue;
-                auto ls = to_line_style(styles.airspace_style(arsp.airspace_class, arsp.local_type));
+                if(!styles.airspace_visible(seg.airspace_class, seg.local_type, req.zoom)) continue;
+                auto ls = to_line_style(styles.airspace_style(seg.airspace_class, seg.local_type));
 
-                for(const auto& ring : arsp.parts)
-                {
-                    append_polygon_ring(poly[layer_airspace], ring.points, ls);
-                }
+                append_polyline(poly[layer_airspace], seg.points, ls);
             }
         }
 

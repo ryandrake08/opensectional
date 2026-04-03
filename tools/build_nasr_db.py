@@ -62,6 +62,39 @@ def parse_dms(dms_str):
     return decimal
 
 
+def subdivide_ring(points, max_points=32):
+    """Split a polygon ring into overlapping chunks for tighter R-tree bboxes.
+
+    Each chunk has at most max_points points and overlaps the next by 1 point.
+    The final chunk wraps back to include the first point to close the ring
+    visually.  Returns a list of point lists.
+    """
+    n = len(points)
+    if n <= max_points:
+        return [points]
+
+    # Ensure ring is closed for wrap-around
+    closed = points
+    if points[0] != points[-1]:
+        closed = points + [points[0]]
+        n = len(closed)
+
+    stride = max_points - 1  # overlap by 1
+    chunks = []
+    offset = 0
+    while offset < n - 1:
+        end = min(offset + max_points, n)
+        chunk = closed[offset:end]
+        # If this is the last chunk and it doesn't reach the closing point,
+        # append the first point to visually close the ring
+        if end == n and chunk[-1] != closed[0]:
+            chunk.append(closed[0])
+        chunks.append(chunk)
+        offset += stride
+
+    return chunks
+
+
 def handle_antimeridian(points):
     """Handle geometry that crosses the antimeridian (±180° longitude).
 
@@ -1976,6 +2009,52 @@ def build_adiz(conn, geojson_path):
 
     conn.execute("CREATE INDEX idx_adiz_shp ON ADIZ_SHP(ADIZ_ID)")
 
+    # Subdivided segments for rendering (tighter R-tree bboxes)
+    conn.execute("DROP TABLE IF EXISTS ADIZ_SEG")
+    conn.execute("""
+        CREATE TABLE ADIZ_SEG (
+            SEG_ID INTEGER,
+            ADIZ_ID INTEGER,
+            POINT_SEQ INTEGER,
+            LON_DECIMAL REAL,
+            LAT_DECIMAL REAL
+        )
+    """)
+
+    # Build lookup from (ADIZ_ID, PART_NUM) to ring points
+    adiz_rings = {}
+    for row in conn.execute(
+            "SELECT ADIZ_ID, PART_NUM, LON_DECIMAL, LAT_DECIMAL "
+            "FROM ADIZ_SHP ORDER BY ADIZ_ID, PART_NUM, POINT_SEQ"):
+        adiz_rings.setdefault((row[0], row[1]), []).append((row[2], row[3]))
+
+    seg_data = []
+    seg_id = 0
+    for (aid, part_num), ring in sorted(adiz_rings.items()):
+        for chunk in subdivide_ring(ring):
+            seg_id += 1
+            for point_seq, (lon, lat) in enumerate(chunk):
+                seg_data.append((seg_id, aid, point_seq, lon, lat))
+
+    conn.executemany("INSERT INTO ADIZ_SEG VALUES (?, ?, ?, ?, ?)", seg_data)
+    print(f"  ADIZ_SEG: {seg_id} segments, {len(seg_data)} points")
+
+    conn.execute("""
+        CREATE VIRTUAL TABLE ADIZ_SEG_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO ADIZ_SEG_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT SEG_ID,
+               MIN(LON_DECIMAL), MAX(LON_DECIMAL),
+               MIN(LAT_DECIMAL), MAX(LAT_DECIMAL)
+        FROM ADIZ_SEG
+        GROUP BY SEG_ID
+    """)
+
+    conn.execute("CREATE INDEX idx_adiz_seg ON ADIZ_SEG(SEG_ID)")
+
 
 def build_cls_arsp(conn, shp_zf):
     """Import class airspace polygons from ESRI shapefile."""
@@ -2090,6 +2169,61 @@ def build_cls_arsp(conn, shp_zf):
     # Index for fast shape point lookup
     conn.execute("CREATE INDEX idx_cls_arsp_shp ON CLS_ARSP_SHP(ARSP_ID)")
 
+    # Subdivided segments for rendering (tighter R-tree bboxes)
+    conn.execute("DROP TABLE IF EXISTS CLS_ARSP_SEG")
+    conn.execute("""
+        CREATE TABLE CLS_ARSP_SEG (
+            SEG_ID INTEGER,
+            ARSP_ID INTEGER,
+            CLASS TEXT,
+            LOCAL_TYPE TEXT,
+            POINT_SEQ INTEGER,
+            LON_DECIMAL REAL,
+            LAT_DECIMAL REAL
+        )
+    """)
+
+    # Build lookup from (ARSP_ID, PART_NUM) to ring points
+    arsp_rings = {}
+    for row in conn.execute(
+            "SELECT ARSP_ID, PART_NUM, LON_DECIMAL, LAT_DECIMAL "
+            "FROM CLS_ARSP_SHP ORDER BY ARSP_ID, PART_NUM, POINT_SEQ"):
+        arsp_rings.setdefault((row[0], row[1]), []).append((row[2], row[3]))
+
+    # Build lookup from ARSP_ID to (CLASS, LOCAL_TYPE)
+    arsp_meta = {}
+    for aid, cls, lt in conn.execute(
+            "SELECT ARSP_ID, CLASS, LOCAL_TYPE FROM CLS_ARSP_BASE"):
+        arsp_meta[aid] = (cls, lt)
+
+    seg_data = []
+    seg_id = 0
+    for (aid, part_num), ring in sorted(arsp_rings.items()):
+        cls, lt = arsp_meta[aid]
+        for chunk in subdivide_ring(ring):
+            seg_id += 1
+            for point_seq, (lon, lat) in enumerate(chunk):
+                seg_data.append((seg_id, aid, cls, lt, point_seq, lon, lat))
+
+    conn.executemany("INSERT INTO CLS_ARSP_SEG VALUES (?, ?, ?, ?, ?, ?, ?)", seg_data)
+    print(f"  CLS_ARSP_SEG: {seg_id} segments, {len(seg_data)} points")
+
+    conn.execute("""
+        CREATE VIRTUAL TABLE CLS_ARSP_SEG_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO CLS_ARSP_SEG_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT SEG_ID,
+               MIN(LON_DECIMAL), MAX(LON_DECIMAL),
+               MIN(LAT_DECIMAL), MAX(LAT_DECIMAL)
+        FROM CLS_ARSP_SEG
+        GROUP BY SEG_ID
+    """)
+
+    conn.execute("CREATE INDEX idx_cls_arsp_seg ON CLS_ARSP_SEG(SEG_ID)")
+
 
 def build_artcc(conn, csv_zf):
     """Import ARTCC boundary polygons from ARB_BASE and ARB_SEG CSVs."""
@@ -2171,6 +2305,52 @@ def build_artcc(conn, csv_zf):
     """)
 
     conn.execute("CREATE INDEX idx_artcc_shp ON ARTCC_SHP(ARTCC_ID)")
+
+    # Subdivided segments for rendering (tighter R-tree bboxes)
+    conn.execute("DROP TABLE IF EXISTS ARTCC_SEG")
+    conn.execute("""
+        CREATE TABLE ARTCC_SEG (
+            SEG_ID INTEGER,
+            ARTCC_ID INTEGER,
+            ALTITUDE TEXT,
+            POINT_SEQ INTEGER,
+            LON_DECIMAL REAL,
+            LAT_DECIMAL REAL
+        )
+    """)
+
+    # Build lookup from ARTCC_ID to its ring points (already in POINT_SEQ order)
+    artcc_rings = {}
+    for artcc_id, point_seq, lon, lat in shp_rows:
+        artcc_rings.setdefault(artcc_id, []).append((lon, lat))
+
+    seg_data = []
+    seg_id = 0
+    for artcc_id, loc_id, name, altitude in base_rows:
+        ring = artcc_rings.get(artcc_id, [])
+        for chunk in subdivide_ring(ring):
+            seg_id += 1
+            for point_seq, (lon, lat) in enumerate(chunk):
+                seg_data.append((seg_id, artcc_id, altitude, point_seq, lon, lat))
+
+    conn.executemany("INSERT INTO ARTCC_SEG VALUES (?, ?, ?, ?, ?, ?)", seg_data)
+    print(f"  ARTCC_SEG: {seg_id} segments, {len(seg_data)} points")
+
+    conn.execute("""
+        CREATE VIRTUAL TABLE ARTCC_SEG_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO ARTCC_SEG_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT SEG_ID,
+               MIN(LON_DECIMAL), MAX(LON_DECIMAL),
+               MIN(LAT_DECIMAL), MAX(LAT_DECIMAL)
+        FROM ARTCC_SEG
+        GROUP BY SEG_ID
+    """)
+
+    conn.execute("CREATE INDEX idx_artcc_seg ON ARTCC_SEG(SEG_ID)")
 
 
 def main():
