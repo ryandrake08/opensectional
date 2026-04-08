@@ -21,7 +21,7 @@ namespace sdl
             }
 
             // Log texture creation details
-            SDL_Log("Texture created: %ux%u", info.width, info.height);
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Texture created: %ux%u", info.width, info.height);
         }
 
         // Non-owning constructor - wraps existing texture

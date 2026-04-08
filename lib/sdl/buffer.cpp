@@ -27,6 +27,9 @@ namespace sdl
             {
                 throw error("Failed to create GPU buffer");
             }
+
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "GPU buffer created: %u bytes",
+                         num * size);
         }
 
         ~impl() noexcept

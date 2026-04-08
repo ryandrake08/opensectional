@@ -72,7 +72,7 @@ namespace sdl
             }
 
             // Log loaded image information
-            SDL_Log("Surface loaded: %s (%dx%d)", file_path, handle->w, handle->h);
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Surface loaded: %s (%dx%d)", file_path, handle->w, handle->h);
         }
 
         ~impl() noexcept

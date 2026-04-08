@@ -55,6 +55,10 @@ namespace sdl
             {
                 throw error("Failed to create shader");
             }
+
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Shader created: %s, %zu bytes",
+                         stage == SDL_GPU_SHADERSTAGE_VERTEX ? "vertex" : "fragment",
+                         code_size);
         }
 
         ~impl() noexcept

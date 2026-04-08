@@ -25,9 +25,11 @@ namespace sdl
         /**
          * Initialize SDL subsystems.
          *
+         * @param verbose When true, enables debug-level logging for
+         *                resource lifecycle and GPU operations.
          * @throws std::runtime_error if SDL initialization fails
          */
-        explicit instance();
+        explicit instance(bool verbose = false);
 
         /**
          * Quit SDL subsystems.

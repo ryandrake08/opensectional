@@ -25,7 +25,7 @@ namespace sdl
             }
 
             // Log font loading information
-            SDL_Log("Font loaded: %s (%dpt)", path, ptsize);
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Font loaded: %s (%dpt)", path, ptsize);
         }
 
         ~impl() noexcept

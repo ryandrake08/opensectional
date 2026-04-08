@@ -84,7 +84,7 @@ namespace sdl
             }
             if(!format_list.empty())
             {
-                SDL_Log("  Supported shader formats: %s", format_list.c_str());
+                SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "  Supported shader formats: %s", format_list.c_str());
             }
         }
 

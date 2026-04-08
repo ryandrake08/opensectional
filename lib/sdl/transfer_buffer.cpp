@@ -39,7 +39,7 @@ namespace sdl
         {
             if(current_offset != buffer_capacity)
             {
-                SDL_Log("Transfer buffer not fully used: %u of %u bytes (%u unused)", current_offset, buffer_capacity, buffer_capacity - current_offset);
+                SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Transfer buffer not fully used: %u of %u bytes (%u unused)", current_offset, buffer_capacity, buffer_capacity - current_offset);
             }
             SDL_ReleaseGPUTransferBuffer(device, handle);
         }

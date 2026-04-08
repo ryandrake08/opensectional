@@ -7,7 +7,7 @@ namespace sdl
 {
     struct instance::impl
     {
-        impl()
+        explicit impl(bool verbose)
         {
 #ifdef __linux__
             // Force X11 backend on Linux (avoids Wayland/libdecor/GTK memory leaks)
@@ -25,8 +25,9 @@ namespace sdl
                 throw error("Failed to initialize SDL_ttf");
             }
 
-            // Log informational messages, suppress noisy GPU/render categories
-            SDL_SetLogPriorities(SDL_LOG_PRIORITY_INFO);
+            // Set log priorities: DEBUG when verbose, INFO otherwise.
+            // Suppress noisy GPU/render categories either way.
+            SDL_SetLogPriorities(verbose ? SDL_LOG_PRIORITY_DEBUG : SDL_LOG_PRIORITY_INFO);
             SDL_SetLogPriority(SDL_LOG_CATEGORY_GPU, SDL_LOG_PRIORITY_WARN);
             SDL_SetLogPriority(SDL_LOG_CATEGORY_RENDER, SDL_LOG_PRIORITY_WARN);
             SDL_SetLogPriority(SDL_LOG_CATEGORY_ERROR, SDL_LOG_PRIORITY_ERROR);
@@ -37,19 +38,19 @@ namespace sdl
                     SDL_VERSIONNUM_MINOR(version),
                     SDL_VERSIONNUM_MICRO(version));
 
-            // Log display information
+            // Display enumeration (debug-only)
             int num_displays = 0;
             SDL_DisplayID* displays = SDL_GetDisplays(&num_displays);
             if(displays != nullptr && num_displays > 0)
             {
-                SDL_Log("Found %d display(s)", num_displays);
+                SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Found %d display(s)", num_displays);
                 for(int i = 0; i < num_displays; i++)
                 {
                     const char* display_name = SDL_GetDisplayName(displays[i]);
                     SDL_Rect bounds;
                     if(SDL_GetDisplayBounds(displays[i], &bounds))
                     {
-                        SDL_Log("  Display %d: %s (%dx%d)", i,
+                        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "  Display %d: %s (%dx%d)", i,
                                 display_name ? display_name : "Unknown",
                                 bounds.w, bounds.h);
                     }
@@ -57,17 +58,17 @@ namespace sdl
                 SDL_free(displays);
             }
 
-            // Log available GPU drivers
+            // GPU driver enumeration (debug-only)
             int num_gpu_drivers = SDL_GetNumGPUDrivers();
             if(num_gpu_drivers > 0)
             {
-                SDL_Log("Available GPU drivers: %d", num_gpu_drivers);
+                SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Available GPU drivers: %d", num_gpu_drivers);
                 for(int i = 0; i < num_gpu_drivers; i++)
                 {
                     const char* driver_name = SDL_GetGPUDriver(i);
                     if(driver_name)
                     {
-                        SDL_Log("  GPU driver %d: %s", i, driver_name);
+                        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "  GPU driver %d: %s", i, driver_name);
                     }
                 }
             }
@@ -81,7 +82,7 @@ namespace sdl
         }
     };
 
-    instance::instance() : pimpl(new impl)
+    instance::instance(bool verbose) : pimpl(new impl(verbose))
     {
     }
 

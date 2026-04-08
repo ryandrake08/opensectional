@@ -113,6 +113,11 @@ namespace sdl
             {
                 throw error("Failed to create graphics pipeline");
             }
+
+            static const char* topology_names[] = { "triangle_list", "triangle_strip", "line_list", "line_strip", "point_list" };
+            const char* topo_name = (topology < 5) ? topology_names[topology] : "unknown";
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Pipeline created: %s, depth: %s",
+                         topo_name, (depth_format != SDL_GPU_TEXTUREFORMAT_INVALID) ? "yes" : "no");
         }
 
         ~impl() noexcept

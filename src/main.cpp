@@ -2,6 +2,7 @@
 #include "render_context.hpp"
 #include "ui_overlay.hpp"
 #include "chart_style.hpp"
+#include <cstring>
 #include <csignal>
 #include <cstdlib>
 #include <exception>
@@ -128,11 +129,31 @@ namespace
 
 int main(int argc, char** argv)
 {
-    if(argc < 3)
+    // Parse optional flags
+    bool verbose = false;
+    int argi = 1;
+    while(argi < argc && argv[argi][0] == '-')
     {
-        std::cerr << "Usage: nasrbrowse <tile_path> <nasr.db>" << std::endl;
+        if(std::strcmp(argv[argi], "-v") == 0)
+        {
+            verbose = true;
+        }
+        else
+        {
+            std::cerr << "Unknown option: " << argv[argi] << std::endl;
+            return EXIT_FAILURE;
+        }
+        argi++;
+    }
+
+    if(argc - argi < 2)
+    {
+        std::cerr << "Usage: nasrbrowse [-v] <tile_path> <nasr.db>" << std::endl;
         return EXIT_FAILURE;
     }
+
+    const char* tile_path = argv[argi];
+    const char* db_path = argv[argi + 1];
 
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
@@ -143,7 +164,7 @@ int main(int argc, char** argv)
     try
     {
         // Initialize SDL
-        sdl::instance sdl_ctx;
+        sdl::instance sdl_ctx(verbose);
         auto win_flags = sdl::window_flags_t(
             static_cast<uint64_t>(sdl::window_flags::resizable) |
             static_cast<uint64_t>(sdl::window_flags::high_pixel_density));
@@ -193,7 +214,7 @@ int main(int argc, char** argv)
 
         // Create map layer
         auto map_layer = std::make_shared<layer_map>(
-            dev, argv[1], argv[2], chart_styles,
+            dev, tile_path, db_path, chart_styles,
             text_engine, label_font, outline_font, LABEL_OUTLINE_SIZE, text_sampler);
         event_mgr.add_listener(map_layer);
 
