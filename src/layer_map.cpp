@@ -619,7 +619,8 @@ bool layer_map::on_update()
         pimpl->labels.update_positions(
             pimpl->view.center_x, pimpl->view.center_y,
             pimpl->view.half_extent_y,
-            pimpl->viewport_width, pimpl->viewport_height);
+            pimpl->viewport_width, pimpl->viewport_height,
+            pimpl->vis);
     }
 
     bool result = pimpl->needs_update || pimpl->tiles.needs_upload()

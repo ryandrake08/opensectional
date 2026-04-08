@@ -43,6 +43,7 @@ namespace nasrbrowse
         std::string text;
         double mx, my;              // World-space Mercator meters
         int priority;               // Higher = placed first
+        int layer;                  // layer_id for visibility filtering
     };
 
     // Completed feature geometry from the worker

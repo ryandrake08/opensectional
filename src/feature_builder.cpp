@@ -61,6 +61,7 @@ namespace nasrbrowse
             std::string text;
             double mx, my;      // Mercator meters
             int priority;
+            int layer;
         };
         std::vector<world_label> world_labels;
 
@@ -99,7 +100,7 @@ namespace nasrbrowse
                 for(auto& wl : world_labels)
                 {
                     result.labels.push_back(
-                        {std::move(wl.text), wl.mx, wl.my, wl.priority});
+                        {std::move(wl.text), wl.mx, wl.my, wl.priority, wl.layer});
                 }
 
                 {
@@ -605,7 +606,7 @@ namespace nasrbrowse
                 bool towered = apt.twr_type_code.find("ATCT") != std::string::npos;
                 world_labels.push_back({id,
                     lon_to_mx(apt.lon) + mx_offset, lat_to_my(apt.lat),
-                    towered ? 100 : 80});
+                    towered ? 100 : 80, layer_airports});
             }
         }
 
@@ -686,7 +687,7 @@ namespace nasrbrowse
                     || nav.nav_type == "TACAN" || nav.nav_type == "VORTAC";
                 world_labels.push_back({nav.nav_id,
                     lon_to_mx(nav.lon) + mx_offset, lat_to_my(nav.lat),
-                    is_vor ? 60 : 40});
+                    is_vor ? 60 : 40, layer_navaids});
             }
         }
 
@@ -782,7 +783,7 @@ namespace nasrbrowse
                 bool on_airway = fix_on_airway(fix.fix_id);
                 world_labels.push_back({fix.fix_id,
                     lon_to_mx(fix.lon) + mx_offset, lat_to_my(fix.lat),
-                    on_airway ? 30 : 20});
+                    on_airway ? 30 : 20, layer_fixes});
             }
         }
 

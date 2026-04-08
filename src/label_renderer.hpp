@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature_builder.hpp"
+#include "ui_overlay.hpp"
 #include <glm/glm.hpp>
 #include <memory>
 #include <vector>
@@ -37,7 +38,8 @@ namespace nasrbrowse
         // viewport (called every frame).
         void update_positions(double center_x, double center_y,
                               double half_extent_y,
-                              int viewport_width, int viewport_height);
+                              int viewport_width, int viewport_height,
+                              const layer_visibility& vis);
 
         bool needs_upload() const;
         void copy(sdl::copy_pass& pass, sdl::device& dev);

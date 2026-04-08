@@ -23,6 +23,7 @@ namespace nasrbrowse
         double mx, my;
         float approx_width;
         int priority;
+        int layer;
     };
 
     struct label_renderer::impl
@@ -86,14 +87,16 @@ namespace nasrbrowse
                 sdl::text(pimpl->engine, pimpl->outline_font, lc.text.c_str()),
                 lc.mx, lc.my,
                 static_cast<float>(lc.text.size()) * APPROX_CHAR_WIDTH,
-                lc.priority
+                lc.priority,
+                lc.layer
             });
         }
     }
 
     void label_renderer::update_positions(double center_x, double center_y,
                                           double half_extent_y,
-                                          int viewport_width, int viewport_height)
+                                          int viewport_width, int viewport_height,
+                                          const layer_visibility& vis)
     {
         constexpr float LABEL_HEIGHT = 16.0F;
         constexpr float LABEL_OFFSET_Y = 24.0F;
@@ -131,6 +134,11 @@ namespace nasrbrowse
         for(size_t idx : sorted_indices)
         {
             const auto& lbl = pimpl->labels[idx];
+
+            if(!vis[lbl.layer])
+            {
+                continue;
+            }
 
             // Project world to screen (Y-down)
             float sx = static_cast<float>(
