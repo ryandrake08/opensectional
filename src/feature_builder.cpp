@@ -27,6 +27,14 @@ namespace nasrbrowse
     constexpr double SYMBOL_RADIUS_OBSTACLE = 0.012;
     constexpr double SYMBOL_RADIUS_COMM     = 0.012;
 
+    // Label placement priorities (higher = placed first in overlap elimination)
+    constexpr int LABEL_PRIORITY_AIRPORT_TOWERED   = 100;
+    constexpr int LABEL_PRIORITY_AIRPORT_UNTOWERED = 80;
+    constexpr int LABEL_PRIORITY_NAVAID_VOR        = 60;
+    constexpr int LABEL_PRIORITY_NAVAID_NDB        = 40;
+    constexpr int LABEL_PRIORITY_FIX_AIRWAY        = 30;
+    constexpr int LABEL_PRIORITY_FIX_OTHER         = 20;
+
     // Vector letter sizing (shared by airport and PJA icons)
     constexpr float LETTER_HEIGHT    = 0.385F;
     constexpr float LETTER_ASPECT    = 0.7F;
@@ -606,7 +614,8 @@ namespace nasrbrowse
                 bool towered = apt.twr_type_code.find("ATCT") != std::string::npos;
                 world_labels.push_back({id,
                     lon_to_mx(apt.lon) + mx_offset, lat_to_my(apt.lat),
-                    towered ? 100 : 80, layer_airports});
+                    towered ? LABEL_PRIORITY_AIRPORT_TOWERED : LABEL_PRIORITY_AIRPORT_UNTOWERED,
+                    layer_airports});
             }
         }
 
@@ -687,7 +696,8 @@ namespace nasrbrowse
                     || nav.nav_type == "TACAN" || nav.nav_type == "VORTAC";
                 world_labels.push_back({nav.nav_id,
                     lon_to_mx(nav.lon) + mx_offset, lat_to_my(nav.lat),
-                    is_vor ? 60 : 40, layer_navaids});
+                    is_vor ? LABEL_PRIORITY_NAVAID_VOR : LABEL_PRIORITY_NAVAID_NDB,
+                    layer_navaids});
             }
         }
 
@@ -783,7 +793,8 @@ namespace nasrbrowse
                 bool on_airway = fix_on_airway(fix.fix_id);
                 world_labels.push_back({fix.fix_id,
                     lon_to_mx(fix.lon) + mx_offset, lat_to_my(fix.lat),
-                    on_airway ? 30 : 20, layer_fixes});
+                    on_airway ? LABEL_PRIORITY_FIX_AIRWAY : LABEL_PRIORITY_FIX_OTHER,
+                    layer_fixes});
             }
         }
 

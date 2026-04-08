@@ -27,7 +27,8 @@ public:
     layer_map(sdl::device& dev, const char* tile_path, const char* db_path,
               const nasrbrowse::chart_style& cs,
               sdl::text_engine& text_engine, sdl::font& font,
-              sdl::font& outline_font, const sdl::sampler& text_sampler);
+              sdl::font& outline_font, int outline_size,
+              const sdl::sampler& text_sampler);
     ~layer_map() override;
 
     void set_visibility(const nasrbrowse::layer_visibility& vis);

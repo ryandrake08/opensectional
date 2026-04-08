@@ -87,7 +87,8 @@ struct layer_map::impl
     impl(sdl::device& dev, const char* tile_path, const char* db_path,
          const nasrbrowse::chart_style& cs,
          sdl::text_engine& text_engine, sdl::font& font,
-         sdl::font& outline_font, const sdl::sampler& text_sampler)
+         sdl::font& outline_font, int outline_size,
+         const sdl::sampler& text_sampler)
         : dev(dev)
         , viewport_width(0)
         , viewport_height(0)
@@ -95,7 +96,7 @@ struct layer_map::impl
         , show_tiles(true)
         , tiles(dev, tile_path)
         , features(dev, db_path, cs)
-        , labels(dev, text_engine, font, outline_font)
+        , labels(dev, text_engine, font, outline_font, outline_size)
         , text_sampler(text_sampler)
         , pick_db(db_path)
         , styles(cs)
@@ -439,9 +440,10 @@ struct layer_map::impl
 layer_map::layer_map(sdl::device& dev, const char* tile_path, const char* db_path,
                      const nasrbrowse::chart_style& cs,
                      sdl::text_engine& text_engine, sdl::font& font,
-                     sdl::font& outline_font, const sdl::sampler& text_sampler)
+                     sdl::font& outline_font, int outline_size,
+                     const sdl::sampler& text_sampler)
     : layer()
-    , pimpl(new impl(dev, tile_path, db_path, cs, text_engine, font, outline_font, text_sampler))
+    , pimpl(new impl(dev, tile_path, db_path, cs, text_engine, font, outline_font, outline_size, text_sampler))
 {
 }
 

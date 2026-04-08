@@ -15,13 +15,26 @@
 
 namespace nasrbrowse
 {
+    // Label layout constants
+    constexpr float LABEL_HEIGHT = 16.0F;
+    constexpr float LABEL_OFFSET_Y = 24.0F;
+    constexpr float LABEL_PAD_X = 4.0F;
+    constexpr float LABEL_PAD_Y = 2.0F;
+
+    // Text rendering scale (SDL_ttf text-to-geometry conversion factor)
+    constexpr float TEXT_SCALE = 800.0F;
+
+    // Fill color (white) and outline color (black)
+    constexpr uint8_t FILL_R = 255, FILL_G = 255, FILL_B = 255, FILL_A = 255;
+    constexpr uint8_t OUTLINE_R = 0, OUTLINE_G = 0, OUTLINE_B = 0, OUTLINE_A = 255;
+
     // A label with its cached text objects and world-space position
     struct cached_label
     {
         sdl::text fill;
         sdl::text outline;
         double mx, my;
-        float approx_width;
+        float width;
         int priority;
         int layer;
     };
@@ -32,6 +45,7 @@ namespace nasrbrowse
         sdl::text_engine& engine;
         sdl::font& font;
         sdl::font& outline_font;
+        float outline_offset;
 
         // Cached label text objects (rebuilt only on set_candidates)
         std::vector<cached_label> labels;
@@ -56,18 +70,20 @@ namespace nasrbrowse
         bool dirty = false;
 
         impl(sdl::device& dev, sdl::text_engine& engine,
-             sdl::font& font, sdl::font& outline_font)
+             sdl::font& font, sdl::font& outline_font, int outline_size)
             : dev(dev)
             , engine(engine)
             , font(font)
             , outline_font(outline_font)
+            , outline_offset(static_cast<float>(outline_size) * TEXT_SCALE / 800.0F)
         {
         }
     };
 
     label_renderer::label_renderer(sdl::device& dev, sdl::text_engine& engine,
-                                   sdl::font& font, sdl::font& outline_font)
-        : pimpl(new impl(dev, engine, font, outline_font))
+                                   sdl::font& font, sdl::font& outline_font,
+                                   int outline_size)
+        : pimpl(new impl(dev, engine, font, outline_font, outline_size))
     {
     }
 
@@ -75,18 +91,18 @@ namespace nasrbrowse
 
     void label_renderer::set_candidates(const std::vector<label_candidate>& candidates)
     {
-        constexpr float APPROX_CHAR_WIDTH = 7.5F;
-
         pimpl->labels.clear();
         pimpl->labels.reserve(candidates.size());
 
         for(const auto& lc : candidates)
         {
+            sdl::text fill(pimpl->engine, pimpl->font, lc.text.c_str());
+            float width = fill.get_bounds(TEXT_SCALE).width();
             pimpl->labels.push_back({
-                sdl::text(pimpl->engine, pimpl->font, lc.text.c_str()),
+                std::move(fill),
                 sdl::text(pimpl->engine, pimpl->outline_font, lc.text.c_str()),
                 lc.mx, lc.my,
-                static_cast<float>(lc.text.size()) * APPROX_CHAR_WIDTH,
+                width,
                 lc.priority,
                 lc.layer
             });
@@ -98,13 +114,6 @@ namespace nasrbrowse
                                           int viewport_width, int viewport_height,
                                           const layer_visibility& vis)
     {
-        constexpr float LABEL_HEIGHT = 16.0F;
-        constexpr float LABEL_OFFSET_Y = 24.0F;
-        constexpr float LABEL_PAD_X = 4.0F;
-        constexpr float LABEL_PAD_Y = 2.0F;
-        constexpr float OUTLINE_OFFSET = 2.0F;
-        constexpr float SCALE = 800.0F;
-
         // World-to-screen transform
         double scale = viewport_height / (2.0 * half_extent_y);
         double screen_cx = viewport_width * 0.5;
@@ -147,13 +156,13 @@ namespace nasrbrowse
                 screen_cy - (lbl.my - center_y) * scale);
 
             // Label dimensions and position (above symbol, centered)
-            float lx = sx - lbl.approx_width * 0.5F;
+            float lx = sx - lbl.width * 0.5F;
             float ly = sy - LABEL_OFFSET_Y - LABEL_HEIGHT;
 
             // Bounding box with padding
             float x0 = lx - LABEL_PAD_X;
             float y0 = ly - LABEL_PAD_Y;
-            float x1 = lx + lbl.approx_width + LABEL_PAD_X;
+            float x1 = lx + lbl.width + LABEL_PAD_X;
             float y1 = ly + LABEL_HEIGHT + LABEL_PAD_Y;
 
             // Skip if off-screen
@@ -194,14 +203,15 @@ namespace nasrbrowse
             size_t idx = pimpl->visible[i];
             const auto& pos = pimpl->positions[i];
 
-            glm::vec3 opos(pos.x - OUTLINE_OFFSET, pos.y + OUTLINE_OFFSET, 0.0F);
+            float ofs = pimpl->outline_offset;
+            glm::vec3 opos(pos.x - ofs, pos.y + ofs, 0.0F);
             pimpl->labels[idx].outline.append_geometry(
                 pimpl->outline_vertices, pimpl->outline_indices, opos,
-                SCALE, 0, 0, 0, 255);
+                TEXT_SCALE, OUTLINE_R, OUTLINE_G, OUTLINE_B, OUTLINE_A);
 
             pimpl->labels[idx].fill.append_geometry(
                 pimpl->fill_vertices, pimpl->fill_indices, pos,
-                SCALE, 255, 255, 255, 255);
+                TEXT_SCALE, FILL_R, FILL_G, FILL_B, FILL_A);
         }
 
         pimpl->dirty = true;
