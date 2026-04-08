@@ -29,12 +29,15 @@ namespace nasrbrowse
                        sdl::font& font, sdl::font& outline_font);
         ~label_renderer();
 
-        // Set labels to render. Projects world-space positions to screen
-        // using the current viewport transform.
-        void set_labels(const std::vector<label_candidate>& labels,
-                        double center_x, double center_y,
-                        double half_extent_y,
-                        int viewport_width, int viewport_height);
+        // Update the label candidate set (called when feature builder drains).
+        // Rebuilds sdl::text objects for new/changed labels.
+        void set_candidates(const std::vector<label_candidate>& labels);
+
+        // Reproject label positions and rebuild geometry for the current
+        // viewport (called every frame).
+        void update_positions(double center_x, double center_y,
+                              double half_extent_y,
+                              int viewport_width, int viewport_height);
 
         bool needs_upload() const;
         void copy(sdl::copy_pass& pass, sdl::device& dev);

@@ -606,15 +606,20 @@ void layer_map::on_resize(float normalized_viewport_width, int viewport_height_p
 bool layer_map::on_update()
 {
     pimpl->tiles.drain();
-    pimpl->features.drain();
 
-    // Reproject labels every frame using the current viewport
-    if(!pimpl->features.labels().empty())
+    bool new_candidates = pimpl->features.drain();
+    if(new_candidates)
     {
-        pimpl->labels.set_labels(pimpl->features.labels(),
-                                  pimpl->view.center_x, pimpl->view.center_y,
-                                  pimpl->view.half_extent_y,
-                                  pimpl->viewport_width, pimpl->viewport_height);
+        pimpl->labels.set_candidates(pimpl->features.labels());
+    }
+
+    // Reproject labels only when the view changed or new candidates arrived
+    if(pimpl->needs_update || new_candidates)
+    {
+        pimpl->labels.update_positions(
+            pimpl->view.center_x, pimpl->view.center_y,
+            pimpl->view.half_extent_y,
+            pimpl->viewport_width, pimpl->viewport_height);
     }
 
     bool result = pimpl->needs_update || pimpl->tiles.needs_upload()
