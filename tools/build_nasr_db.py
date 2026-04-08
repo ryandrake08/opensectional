@@ -70,14 +70,15 @@ def subdivide_ring(points, max_points=32):
     visually.  Returns a list of point lists.
     """
     n = len(points)
-    if n <= max_points:
-        return [points]
 
-    # Ensure ring is closed for wrap-around
+    # Ensure ring is closed
     closed = points
     if points[0] != points[-1]:
         closed = points + [points[0]]
         n = len(closed)
+
+    if n <= max_points:
+        return [closed]
 
     stride = max_points - 1  # overlap by 1
     chunks = []
