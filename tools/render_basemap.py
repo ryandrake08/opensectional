@@ -736,6 +736,81 @@ def _get_tier(z):
         return 'high'
 
 
+def is_solid_color(img_path):
+    """Check if a PNG tile is a single solid color."""
+    with Image.open(img_path) as img:
+        extrema = img.getextrema()
+        # extrema is ((r_min, r_max), (g_min, g_max), (b_min, b_max), ...)
+        return all(lo == hi for lo, hi in extrema)
+
+
+def prune_solid_tiles(output_dir, min_zoom, max_zoom):
+    """Delete solid-color tiles that are redundant due to overzoom fallback.
+
+    Sweeps from max_zoom down to min_zoom+1. A tile is prunable if:
+      1. It is a single solid color, AND
+      2. All 4 of its children are missing (pruned earlier or at max zoom)
+
+    This ensures we never delete a tile that a missing child would need
+    to fall back through.
+
+    z=min_zoom tiles are never pruned (they are the root fallback).
+    """
+    pruned = 0
+    pruned_bytes = 0
+
+    for z in range(max_zoom, min_zoom, -1):
+        z_pruned = 0
+        n = 2 ** z
+        for x in range(n):
+            x_dir = os.path.join(output_dir, str(z), str(x))
+            if not os.path.isdir(x_dir):
+                continue
+            for y in range(n):
+                tile_path = os.path.join(x_dir, f"{y}.png")
+                if not os.path.isfile(tile_path):
+                    continue
+
+                # Check that all 4 children are missing (at max_zoom,
+                # no children exist, so this is trivially true)
+                if z < max_zoom:
+                    cx, cy = x * 2, y * 2
+                    children_exist = False
+                    for dx in (0, 1):
+                        for dy in (0, 1):
+                            child = os.path.join(output_dir, str(z + 1),
+                                                 str(cx + dx),
+                                                 f"{cy + dy}.png")
+                            if os.path.isfile(child):
+                                children_exist = True
+                                break
+                        if children_exist:
+                            break
+                    if children_exist:
+                        continue
+
+                if is_solid_color(tile_path):
+                    pruned_bytes += os.path.getsize(tile_path)
+                    os.remove(tile_path)
+                    z_pruned += 1
+
+        pruned += z_pruned
+        if z_pruned > 0:
+            print(f"    z{z}: pruned {z_pruned:,} solid tiles")
+
+    # Clean up empty directories
+    for z in range(max_zoom, min_zoom, -1):
+        z_dir = os.path.join(output_dir, str(z))
+        if not os.path.isdir(z_dir):
+            continue
+        for x_name in os.listdir(z_dir):
+            x_dir = os.path.join(z_dir, x_name)
+            if os.path.isdir(x_dir) and not os.listdir(x_dir):
+                os.rmdir(x_dir)
+
+    return pruned, pruned_bytes
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Render basemap tiles from Natural Earth GeoPackage')
@@ -748,6 +823,8 @@ def main():
                         help='Path to .ttf font file (default: thirdparty/fonts/NotoSans-Regular.ttf)')
     parser.add_argument('--workers', type=int, default=os.cpu_count(),
                         help=f'Number of parallel workers (default: {os.cpu_count()})')
+    parser.add_argument('--prune', action='store_true',
+                        help='Delete solid-color tiles that are redundant via overzoom')
     args = parser.parse_args()
 
     min_zoom, max_zoom = parse_zoom_range(args.zoom)
@@ -848,6 +925,17 @@ def main():
                     print(f"    z{z}: {z_count:,} tiles")
                 print(f"    {tier_name} tier: {tier_count:,} tiles in "
                       f"{tier_elapsed:.1f}s ({tiles_per_sec:.1f} tiles/s)")
+
+    # Prune redundant solid-color tiles
+    if args.prune and max_zoom > min_zoom:
+        print("Pruning solid-color tiles (reverse sweep)...")
+        pruned, pruned_bytes = prune_solid_tiles(args.output, min_zoom,
+                                                  max_zoom)
+        if pruned > 0:
+            mb = pruned_bytes / (1024 * 1024)
+            print(f"  Pruned {pruned:,} tiles ({mb:.1f} MB)")
+        else:
+            print("  No tiles pruned")
 
     elapsed = time.time() - t_start
     overall_rate = rendered / elapsed if elapsed > 0 else 0
