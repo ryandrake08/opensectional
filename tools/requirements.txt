@@ -1,2 +1,5 @@
 beautifulsoup4>=4.12
+fiona>=1.9
+pillow>=10.0
+pyproj>=3.6
 shapely>=2.0

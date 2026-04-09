@@ -136,16 +136,27 @@ The download script fetches data from the FAA NASR subscription page, the Digita
 - `WXL_BASE` / `WXL_SVC` — weather reporting locations and services
 - `OBS_BASE` — ~628,000 obstacles (towers, poles, buildings) with AGL/AMSL heights
 
-### 2. Raster Chart Tiles
+### 2. Basemap Tiles
 
-The basemap requires pre-built XYZ tile pyramids from FAA aeronav charts. These are generated separately using [aeronav2tiles](https://github.com/ryandrake08/aeronav) or a similar tool. The tile directory structure is:
+NASRBrowse requires a basemap tile directory in standard XYZ layout (`{z}/{x}/{y}.png`). The recommended basemap is rendered from Natural Earth public domain data.
 
+#### Natural Earth basemap (recommended)
+
+A minimal two-color worldwide basemap with coastlines, borders, roads, railroads, rivers, lakes, and labels.
+
+```bash
+# Download Natural Earth GeoPackage (~100 MB zip)
+wget -P mapdata https://naciscdn.org/naturalearth/packages/natural_earth_vector.gpkg.zip
+
+# Render basemap tiles
+tools/env/bin/python3 tools/render_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/
 ```
-tiles/
-  {z}/
-    {x}/
-      {y}.png
-```
+
+On first run, the script reprojects the source data to EPSG:3857 and saves a `*_3857.gpkg` file alongside the zip. Subsequent runs reuse the preprocessed file automatically. Use `--workers N` to control parallelism (defaults to all CPUs).
+
+#### FAA VFR raster charts (alternative)
+
+For a basemap derived from FAA aeronav charts, generate XYZ tile pyramids using [aeronav2tiles](https://github.com/ryandrake08/aeronav) or a similar tool and point nasrbrowse at the output directory.
 
 ## Controls
 

@@ -7,6 +7,7 @@ build
 tools/env
 nasr_data
 nasr.db
+basemap
 vfr
 IMPLEMENTATION_PLAN.md
 REQUIREMENTS.md
