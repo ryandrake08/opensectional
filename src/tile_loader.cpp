@@ -89,6 +89,12 @@ namespace nasrbrowse
         }
     }
 
+    bool tile_loader::is_failed(const tile_key& key) const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        return pimpl->failed_set.count(key) > 0;
+    }
+
     void tile_loader::cancel()
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);

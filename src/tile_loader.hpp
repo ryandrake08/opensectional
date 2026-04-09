@@ -41,6 +41,9 @@ namespace nasrbrowse
         // Clear all queued requests (in-flight and completed are unaffected)
         void cancel();
 
+        // Check if a tile has previously failed to load
+        bool is_failed(const tile_key& key) const;
+
         // Drain completed results (call from main thread)
         std::vector<tile_load_result> drain_results();
     };

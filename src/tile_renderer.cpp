@@ -56,8 +56,13 @@ namespace std
 
 namespace nasrbrowse
 {
-    // Generate 6 vertices for a tile quad in Web Mercator meters
-    static void get_tile_vertices(const tile_key& key, sdl::vertex_t2f_c4ub_v3f* verts)
+    // Generate 6 vertices for a tile quad in Web Mercator meters.
+    // UV coordinates specify the sub-region of the texture to sample
+    // (normally 0-1 for the full tile, smaller range when using a
+    // parent tile as a fallback).
+    static void get_tile_vertices(const tile_key& key,
+                                  float u0, float v0, float u1, float v1,
+                                  sdl::vertex_t2f_c4ub_v3f* verts)
     {
         double mx_min, my_min, mx_max, my_max;
         tile_bounds_meters(key.x, key.y, key.z, mx_min, my_min, mx_max, my_max);
@@ -70,12 +75,38 @@ namespace nasrbrowse
         uint8_t r = 255, g = 255, b = 255, a = 255;
 
         // Two triangles forming a quad
-        verts[0] = { 0.0F, 1.0F, r, g, b, a, x0, y0, 0.0F };
-        verts[1] = { 1.0F, 1.0F, r, g, b, a, x1, y0, 0.0F };
-        verts[2] = { 0.0F, 0.0F, r, g, b, a, x0, y1, 0.0F };
-        verts[3] = { 0.0F, 0.0F, r, g, b, a, x0, y1, 0.0F };
-        verts[4] = { 1.0F, 1.0F, r, g, b, a, x1, y0, 0.0F };
-        verts[5] = { 1.0F, 0.0F, r, g, b, a, x1, y1, 0.0F };
+        verts[0] = { u0, v1, r, g, b, a, x0, y0, 0.0F };
+        verts[1] = { u1, v1, r, g, b, a, x1, y0, 0.0F };
+        verts[2] = { u0, v0, r, g, b, a, x0, y1, 0.0F };
+        verts[3] = { u0, v0, r, g, b, a, x0, y1, 0.0F };
+        verts[4] = { u1, v1, r, g, b, a, x1, y0, 0.0F };
+        verts[5] = { u1, v0, r, g, b, a, x1, y1, 0.0F };
+    }
+
+    // Compute the parent tile at a lower zoom and the UV sub-rect within it
+    // that corresponds to the display tile.
+    static tile_key ancestor_uv(const tile_key& display_tile, int ancestor_zoom,
+                                float& u0, float& v0, float& u1, float& v1)
+    {
+        int dz = display_tile.z - ancestor_zoom;
+        int scale = 1 << dz;
+
+        // Wrap x into valid range for the display zoom
+        int n_display = 1 << display_tile.z;
+        int wx = ((display_tile.x % n_display) + n_display) % n_display;
+
+        tile_key ancestor;
+        ancestor.z = ancestor_zoom;
+        ancestor.x = wx >> dz;
+        ancestor.y = display_tile.y >> dz;
+
+        float inv_scale = 1.0F / static_cast<float>(scale);
+        u0 = static_cast<float>(wx % scale) * inv_scale;
+        v0 = static_cast<float>(display_tile.y % scale) * inv_scale;
+        u1 = u0 + inv_scale;
+        v1 = v0 + inv_scale;
+
+        return ancestor;
     }
 
     struct tile_renderer::impl
@@ -104,6 +135,15 @@ namespace nasrbrowse
         // Results drained from loader, staged for copy()
         std::vector<tile_load_result> pending_results;
 
+        // Fallback quads for visible tiles rendered via an ancestor texture
+        struct fallback_quad
+        {
+            std::unique_ptr<sdl::buffer> vertex_buffer;
+            std::shared_ptr<tile_gpu> ancestor_gpu;
+        };
+        std::vector<fallback_quad> fallback_quads;
+        bool fallback_dirty;
+
         impl(sdl::device& dev, const std::string& tile_path)
             : dev(dev)
             , tile_path(tile_path)
@@ -116,6 +156,7 @@ namespace nasrbrowse
             , cached_ty_max(0)
             , has_cached_range(false)
             , cache(1024)
+            , fallback_dirty(false)
         {
         }
 
@@ -128,13 +169,50 @@ namespace nasrbrowse
                    std::to_string(wx) + "/" + std::to_string(key.y) + ".png";
         }
 
+        // Request a tile for loading. If it previously failed, walk up
+        // the zoom tree and request the nearest untried ancestor.
         void request_tile(const tile_key& key)
         {
             auto it = tile_map.find(key);
-            if(it == tile_map.end() || it->second.expired())
+            if(it != tile_map.end() && !it->second.expired())
+            {
+                return;
+            }
+
+            if(!loader.is_failed(key))
             {
                 loader.request(key, tile_file_path(key));
+                return;
             }
+
+            // This tile has no data — request its parent
+            if(key.z > 0)
+            {
+                int n = 1 << key.z;
+                int wx = ((key.x % n) + n) % n;
+                request_tile({ key.z - 1, wx / 2, key.y / 2 });
+            }
+        }
+
+        // Find the best loaded ancestor for a tile. Returns true if found,
+        // with the ancestor's GPU resources and UV sub-rect.
+        bool find_ancestor(const tile_key& key, std::shared_ptr<tile_gpu>& gpu,
+                           float& u0, float& v0, float& u1, float& v1)
+        {
+            for(int az = key.z - 1; az >= 0; az--)
+            {
+                tile_key ancestor = ancestor_uv(key, az, u0, v0, u1, v1);
+                auto it = tile_map.find(ancestor);
+                if(it != tile_map.end())
+                {
+                    gpu = it->second.lock();
+                    if(gpu)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
     };
 
@@ -194,10 +272,11 @@ namespace nasrbrowse
         pimpl->cached_ty_min = ty_min;
         pimpl->cached_ty_max = ty_max;
         pimpl->has_cached_range = true;
+        pimpl->fallback_dirty = true;
 
         pimpl->loader.cancel();
 
-        // Request visible tiles (highest priority — enqueued first)
+        // Request visible tiles (walks up to ancestors for failed tiles)
         for(const auto& key : pimpl->visible_tiles)
         {
             pimpl->request_tile(key);
@@ -259,6 +338,10 @@ namespace nasrbrowse
     void tile_renderer::drain()
     {
         auto results = pimpl->loader.drain_results();
+        if(!results.empty())
+        {
+            pimpl->fallback_dirty = true;
+        }
         for(auto& result : results)
         {
             pimpl->pending_results.push_back(std::move(result));
@@ -267,20 +350,16 @@ namespace nasrbrowse
 
     bool tile_renderer::needs_upload() const
     {
-        return !pimpl->pending_results.empty();
+        return !pimpl->pending_results.empty() || pimpl->fallback_dirty;
     }
 
     void tile_renderer::copy(sdl::copy_pass& pass)
     {
-        if(pimpl->pending_results.empty())
-        {
-            return;
-        }
-
+        // Upload newly loaded tiles
         for(auto& result : pimpl->pending_results)
         {
             std::vector<sdl::vertex_t2f_c4ub_v3f> vertices(6);
-            get_tile_vertices(result.key, vertices.data());
+            get_tile_vertices(result.key, 0.0F, 0.0F, 1.0F, 1.0F, vertices.data());
 
             auto gpu = std::make_shared<tile_gpu>();
             gpu->key = result.key;
@@ -295,6 +374,40 @@ namespace nasrbrowse
             pimpl->tile_map[result.key] = gpu;
         }
         pimpl->pending_results.clear();
+
+        // Build fallback quads for visible tiles that don't have a direct
+        // match — find the best loaded ancestor and render with UV sub-rect
+        pimpl->fallback_quads.clear();
+        pimpl->fallback_dirty = false;
+
+        for(const auto& key : pimpl->visible_tiles)
+        {
+            // Skip tiles that have a direct match (rendered normally)
+            auto it = pimpl->tile_map.find(key);
+            if(it != pimpl->tile_map.end() && !it->second.expired())
+            {
+                continue;
+            }
+
+            float u0, v0, u1, v1;
+            std::shared_ptr<tile_gpu> ancestor_gpu;
+            if(!pimpl->find_ancestor(key, ancestor_gpu, u0, v0, u1, v1))
+            {
+                continue;
+            }
+
+            pimpl->cache.get(ancestor_gpu);
+
+            std::vector<sdl::vertex_t2f_c4ub_v3f> verts(6);
+            get_tile_vertices(key, u0, v0, u1, v1, verts.data());
+
+            auto vbuf = pass.create_and_upload_buffer(pimpl->dev, sdl::buffer_usage::vertex, verts);
+
+            impl::fallback_quad quad;
+            quad.vertex_buffer = std::make_unique<sdl::buffer>(std::move(vbuf));
+            quad.ancestor_gpu = ancestor_gpu;
+            pimpl->fallback_quads.push_back(std::move(quad));
+        }
     }
 
     void tile_renderer::render(sdl::render_pass& pass, const render_context& ctx, const glm::mat4& view_matrix) const
@@ -308,6 +421,7 @@ namespace nasrbrowse
         uniforms.projection_matrix = ctx.projection_matrix;
         uniforms.view_matrix = view_matrix;
 
+        // Render direct-match tiles
         for(const auto& key : pimpl->visible_tiles)
         {
             auto it = pimpl->tile_map.find(key);
@@ -315,7 +429,6 @@ namespace nasrbrowse
             {
                 continue;
             }
-
             auto gpu = it->second.lock();
             if(!gpu)
             {
@@ -328,6 +441,16 @@ namespace nasrbrowse
             pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
             pass.bind_vertex_buffer(*gpu->vertex_buffer);
             pass.bind_fragment_texture_sampler(0, *gpu->tex, ctx.sampler);
+            pass.draw(6);
+        }
+
+        // Render fallback quads (ancestor tiles with UV sub-rects)
+        for(const auto& quad : pimpl->fallback_quads)
+        {
+            pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
+            pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
+            pass.bind_vertex_buffer(*quad.vertex_buffer);
+            pass.bind_fragment_texture_sampler(0, *quad.ancestor_gpu->tex, ctx.sampler);
             pass.draw(6);
         }
     }
