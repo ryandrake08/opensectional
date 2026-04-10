@@ -1483,6 +1483,10 @@ def build_sua(conn, aixm_zf):
                     r /= 1.852
                 elif uom == "M":
                     r /= 1852.0
+                elif uom == "FT":
+                    r *= 0.3048 / 1852.0
+                elif uom == "MI":
+                    r *= 1609.344 / 1852.0
                 elif uom != "NM":
                     r /= 1.852  # assume KM if unknown
                 circle_rows.append((sua_id, 0, ci["lon"], ci["lat"], r))
