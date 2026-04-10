@@ -752,7 +752,9 @@ def is_solid_color(img_path):
     with Image.open(img_path) as img:
         # Convert to RGB so extrema is always per-channel tuples,
         # regardless of whether the source is palette or RGB mode.
-        extrema = img.convert('RGB').getextrema()
+        # Go via RGBA first so palette transparency bytes are handled
+        # cleanly (avoids PIL UserWarning).
+        extrema = img.convert('RGBA').convert('RGB').getextrema()
         return all(lo == hi for lo, hi in extrema)
 
 
