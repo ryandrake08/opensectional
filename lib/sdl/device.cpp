@@ -57,11 +57,11 @@ namespace sdl
                 throw error("Failed to set swapchain parameters");
             }
 
-            SDL_Log("  Swapchain composition: %s, present mode: %s", compositionName, presentationName);
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  Swapchain composition: %s, present mode: %s", compositionName, presentationName);
 
             // Log GPU backend information
             const char* backend_name = SDL_GetGPUDeviceDriver(handle);
-            SDL_Log("GPU device created: %s", backend_name ? backend_name : "Unknown");
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GPU device created: %s", backend_name ? backend_name : "Unknown");
 
             // Log supported shader formats
             SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(handle);

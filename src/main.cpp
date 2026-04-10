@@ -165,13 +165,20 @@ namespace
 int main(int argc, char** argv)
 {
     // Parse optional flags
-    bool verbose = false;
+    int verbosity = 0;
     int argi = 1;
     while(argi < argc && argv[argi][0] == '-')
     {
-        if(std::strcmp(argv[argi], "-v") == 0)
+        if(argv[argi][1] == 'v' && argv[argi][2] != '-')
         {
-            verbose = true;
+            // Count v's: -v = 1, -vv = 2, -vvv = 3
+            const char* p = argv[argi] + 1;
+            while(*p == 'v') { verbosity++; p++; }
+            if(*p != '\0')
+            {
+                std::cerr << "Unknown option: " << argv[argi] << std::endl;
+                return EXIT_FAILURE;
+            }
         }
         else
         {
@@ -183,7 +190,7 @@ int main(int argc, char** argv)
 
     if(argc - argi < 2)
     {
-        std::cerr << "Usage: nasrbrowse [-v] <tile_path> <nasr.db>" << std::endl;
+        std::cerr << "Usage: nasrbrowse [-v|-vv|-vvv] <tile_path> <nasr.db>" << std::endl;
         return EXIT_FAILURE;
     }
 
@@ -199,7 +206,7 @@ int main(int argc, char** argv)
     try
     {
         // Initialize SDL
-        sdl::instance sdl_ctx(verbose);
+        sdl::instance sdl_ctx(verbosity);
         auto win_flags = sdl::window_flags_t(
             static_cast<uint64_t>(sdl::window_flags::resizable) |
             static_cast<uint64_t>(sdl::window_flags::high_pixel_density));

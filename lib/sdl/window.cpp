@@ -19,7 +19,7 @@ namespace sdl
             // Log window information
             SDL_DisplayID display_id = SDL_GetDisplayForWindow(handle);
             const char* display_name = SDL_GetDisplayName(display_id);
-            SDL_Log("Window created: \"%s\" (%dx%d) on display: %s",
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Window created: \"%s\" (%dx%d) on display: %s",
                     title,
                     width, height,
                     display_name ? display_name : "Unknown");

@@ -7,7 +7,7 @@ namespace sdl
 {
     struct instance::impl
     {
-        explicit impl(bool verbose)
+        explicit impl(int verbosity)
         {
 #ifdef __linux__
             // Force X11 backend on Linux (avoids Wayland/libdecor/GTK memory leaks)
@@ -25,18 +25,21 @@ namespace sdl
                 throw error("Failed to initialize SDL_ttf");
             }
 
-            // Set log priorities: DEBUG when verbose, INFO otherwise.
-            // Suppress noisy GPU/render categories either way.
-            SDL_SetLogPriorities(verbose ? SDL_LOG_PRIORITY_DEBUG : SDL_LOG_PRIORITY_INFO);
-            SDL_SetLogPriority(SDL_LOG_CATEGORY_GPU, SDL_LOG_PRIORITY_WARN);
-            SDL_SetLogPriority(SDL_LOG_CATEGORY_RENDER, SDL_LOG_PRIORITY_WARN);
-            SDL_SetLogPriority(SDL_LOG_CATEGORY_ERROR, SDL_LOG_PRIORITY_ERROR);
+            // Map verbosity level to SDL log priority
+            static const SDL_LogPriority levels[] = {
+                SDL_LOG_PRIORITY_ERROR,  // 0: errors only
+                SDL_LOG_PRIORITY_WARN,   // 1: warnings
+                SDL_LOG_PRIORITY_INFO,   // 2: info
+                SDL_LOG_PRIORITY_DEBUG,  // 3: debug
+            };
+            int clamped = (verbosity < 0) ? 0 : (verbosity > 3) ? 3 : verbosity;
+            SDL_SetLogPriorities(levels[clamped]);
 
             int version = SDL_GetVersion();
-            SDL_Log("SDL3 initialized, version: %d.%d.%d",
-                    SDL_VERSIONNUM_MAJOR(version),
-                    SDL_VERSIONNUM_MINOR(version),
-                    SDL_VERSIONNUM_MICRO(version));
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SDL3 initialized, version: %d.%d.%d",
+                        SDL_VERSIONNUM_MAJOR(version),
+                        SDL_VERSIONNUM_MINOR(version),
+                        SDL_VERSIONNUM_MICRO(version));
 
             // Display enumeration (debug-only)
             int num_displays = 0;
@@ -77,12 +80,12 @@ namespace sdl
         ~impl()
         {
             TTF_Quit();
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SDL3 terminated");
             SDL_Quit();
-            SDL_Log("SDL3 terminated");
         }
     };
 
-    instance::instance(bool verbose) : pimpl(new impl(verbose))
+    instance::instance(int verbosity) : pimpl(new impl(verbosity))
     {
     }
 
