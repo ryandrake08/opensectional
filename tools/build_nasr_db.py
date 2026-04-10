@@ -1321,6 +1321,182 @@ def _parse_one_airspace(airspace):
     }
 
 
+XLINK = "http://www.w3.org/1999/xlink"
+
+
+def _parse_radio_channels(root, gml_id_map):
+    """Parse RadioCommunicationChannel elements.
+
+    Returns a dict mapping gml:id -> {mode, tx_freq, rx_freq}.
+    """
+    channels = {}
+    for rcc in root.iter(f"{{{AIXM}}}RadioCommunicationChannel"):
+        gid = rcc.get(f"{{{GML}}}id", "")
+        ts = rcc.find(f".//{{{AIXM}}}RadioCommunicationChannelTimeSlice")
+        if ts is None:
+            continue
+        mode = _text(ts, f"{{{AIXM}}}mode")
+        tx = _text(ts, f"{{{AIXM}}}frequencyTransmission")
+        rx = _text(ts, f"{{{AIXM}}}frequencyReception")
+        channels[gid] = {
+            "mode": mode,
+            "tx_freq": float(tx) if tx else None,
+            "rx_freq": float(rx) if rx else None,
+        }
+    return channels
+
+
+def _parse_units(root):
+    """Parse Unit elements.
+
+    Returns a dict mapping gml:id -> {name, type, military}.
+    """
+    units = {}
+    for unit in root.iter(f"{{{AIXM}}}Unit"):
+        gid = unit.get(f"{{{GML}}}id", "")
+        ts = unit.find(f".//{{{AIXM}}}UnitTimeSlice")
+        if ts is None:
+            continue
+        units[gid] = {
+            "name": _text(ts, f"{{{AIXM}}}name"),
+            "type": _text(ts, f"{{{AIXM}}}type"),
+            "military": _text(ts, f"{{{AIXM}}}military"),
+        }
+    return units
+
+
+def _resolve_href(href, lookup):
+    """Resolve an xlink:href like '#Unit1' against a gml:id lookup dict."""
+    if not href:
+        return None
+    key = href.lstrip("#")
+    return lookup.get(key)
+
+
+def _parse_services(root, units, channels):
+    """Parse AirTrafficControlService and InformationService elements.
+
+    Returns a list of service dicts with unit and channel info resolved.
+    """
+    services = []
+
+    for svc in root.iter(f"{{{AIXM}}}AirTrafficControlService"):
+        ts = svc.find(f".//{{{AIXM}}}AirTrafficControlServiceTimeSlice")
+        if ts is None:
+            continue
+        stype = _text(ts, f"{{{AIXM}}}type")
+        sp = ts.find(f"{{{AIXM}}}serviceProvider")
+        sp_href = sp.get(f"{{{XLINK}}}href", "") if sp is not None else ""
+        unit = _resolve_href(sp_href, units)
+        services.append({
+            "service_type": stype or "ACS",
+            "unit_name": unit["name"] if unit else "",
+            "unit_type": unit["type"] if unit else "",
+        })
+
+    for svc in root.iter(f"{{{AIXM}}}InformationService"):
+        ts = svc.find(f".//{{{AIXM}}}InformationServiceTimeSlice")
+        if ts is None:
+            continue
+        stype = _text(ts, f"{{{AIXM}}}type")
+        sp = ts.find(f"{{{AIXM}}}serviceProvider")
+        sp_href = sp.get(f"{{{XLINK}}}href", "") if sp is not None else ""
+        unit = _resolve_href(sp_href, units)
+        services.append({
+            "service_type": stype or "INFO",
+            "unit_name": unit["name"] if unit else "",
+            "unit_type": unit["type"] if unit else "",
+        })
+
+    return services
+
+
+def _parse_timesheets(root):
+    """Parse Timesheet entries from AirspaceUsage elements.
+
+    Returns a list of schedule dicts with day, start/end times, timezone,
+    and DST flag.
+    """
+    schedules = []
+
+    for usage_ts in root.iter(f"{{{AIXM}}}AirspaceUsageTimeSlice"):
+        # DST flag from the AirspaceUsage extension
+        dst_flag = ""
+        for ext in usage_ts.findall(f"{{{AIXM}}}extension"):
+            dst = ext.find(f".//{{{SAA}}}daylightSavings")
+            if dst is not None and dst.text:
+                dst_flag = dst.text.strip()
+
+        for timesheet in usage_ts.iter(f"{{{AIXM}}}Timesheet"):
+            day = _text(timesheet, f"{{{AIXM}}}day")
+            start_time = _text(timesheet, f"{{{AIXM}}}startTime")
+            end_time = _text(timesheet, f"{{{AIXM}}}endTime")
+            time_ref = _text(timesheet, f"{{{AIXM}}}timeReference")
+
+            # UTC offset from TimesheetExtension
+            time_offset = ""
+            for ext in timesheet.findall(f"{{{AIXM}}}extension"):
+                offset_el = ext.find(f".//{{{SAA}}}timeOffset")
+                if offset_el is not None and offset_el.text:
+                    time_offset = offset_el.text.strip()
+
+            schedules.append({
+                "day": day,
+                "start_time": start_time,
+                "end_time": end_time,
+                "time_ref": time_ref,
+                "time_offset": time_offset,
+                "dst_flag": dst_flag,
+            })
+
+    return schedules
+
+
+def _parse_freq_allocations(root, channels):
+    """Parse frequency allocations from InformationService extensions.
+
+    Each InformationService may have a RadioCommunicationChannelAllocation
+    that links a channel to an airspace with charted/communicationAllowed
+    metadata. Also captures direct channel references.
+
+    Returns a list of freq dicts with mode, tx/rx freq, and allocation info.
+    """
+    freqs = []
+    seen = set()  # avoid duplicates from both direct ref and allocation
+
+    for svc in root.iter(f"{{{AIXM}}}InformationService"):
+        ts = svc.find(f".//{{{AIXM}}}InformationServiceTimeSlice")
+        if ts is None:
+            continue
+
+        # Direct channel reference
+        rc = ts.find(f"{{{AIXM}}}radioCommunication")
+        if rc is not None:
+            href = rc.get(f"{{{XLINK}}}href", "")
+            ch = _resolve_href(href, channels)
+            if ch and href not in seen:
+                seen.add(href)
+                freqs.append(ch.copy())
+
+        # Channel allocations from extension
+        for alloc in ts.iter(f"{{{SAA}}}SaaRadioCommunicationChannel"):
+            ref = alloc.find(f"{{{SAA}}}associatedChannel")
+            if ref is None:
+                continue
+            href = ref.get(f"{{{XLINK}}}href", "")
+            ch = _resolve_href(href, channels)
+            if ch and href not in seen:
+                seen.add(href)
+                freqs.append(ch.copy())
+
+    # Also include any channels not referenced by services (standalone)
+    for gid, ch in channels.items():
+        if f"#{gid}" not in seen and gid not in seen:
+            freqs.append(ch.copy())
+
+    return freqs
+
+
 def parse_aixm_sua(xml_data):
     """Parse AIXM 5.0 SUA XML data.
 
@@ -1329,7 +1505,8 @@ def parse_aixm_sua(xml_data):
     Returns a list of parsed airspace dicts (may be empty).
 
     The AIXM document has sibling hasMember elements at the root level:
-    OrganisationAuthority, Airspace, Unit (controlling/ARTCC), AirspaceUsage.
+    OrganisationAuthority, Airspace, Unit (controlling/ARTCC), AirspaceUsage,
+    RadioCommunicationChannel, AirTrafficControlService, InformationService.
     """
     root = ET.fromstring(xml_data)
 
@@ -1345,12 +1522,12 @@ def parse_aixm_sua(xml_data):
     # Extract metadata from Unit elements (military status, ICAO compliance)
     military = ""
     compliant_icao = ""
-    for unit_ts in root.iter(f"{{{AIXM}}}UnitTimeSlice"):
-        unit_type = _text(unit_ts, f"{{{AIXM}}}type")
-        if unit_type == "MILOPS":
-            military = _text(unit_ts, f"{{{AIXM}}}military")
-        elif unit_type == "ARTCC":
-            compliant_icao = _text(unit_ts, f"{{{AIXM}}}compliantICAO")
+    units = _parse_units(root)
+    for unit in units.values():
+        if unit["type"] == "MILOPS" and not military:
+            military = unit["military"]
+        elif unit["type"] == "ARTCC" and not compliant_icao:
+            compliant_icao = _text(root, f"{{{AIXM}}}compliantICAO")
 
     # Extract metadata from AirspaceUsage (activity, status, working hours)
     activity = ""
@@ -1364,6 +1541,12 @@ def parse_aixm_sua(xml_data):
         if not working_hours:
             working_hours = _text(usage_ts, f"{{{AIXM}}}workingHours")
 
+    # Parse radio channels, services, and timesheets
+    channels = _parse_radio_channels(root, {})
+    services = _parse_services(root, units, channels)
+    timesheets = _parse_timesheets(root)
+    freqs = _parse_freq_allocations(root, channels)
+
     results = []
     for airspace in root.iter(f"{{{AIXM}}}Airspace"):
         result = _parse_one_airspace(airspace)
@@ -1374,6 +1557,10 @@ def parse_aixm_sua(xml_data):
             result["activity"] = result["activity"] or activity
             result["status"] = result["status"] or status
             result["working_hours"] = result["working_hours"] or working_hours
+            # Attach per-file detail data (shared across all airspaces in file)
+            result["freqs"] = freqs
+            result["services"] = services
+            result["schedules"] = timesheets
             results.append(result)
     return results
 
@@ -1440,12 +1627,54 @@ def build_sua(conn, aixm_zf):
         )
     """)
 
+    conn.execute("DROP TABLE IF EXISTS SUA_FREQ")
+    conn.execute("""
+        CREATE TABLE SUA_FREQ (
+            SUA_ID INTEGER,
+            FREQ_SEQ INTEGER,
+            MODE TEXT,
+            TX_FREQ_MHZ REAL,
+            RX_FREQ_MHZ REAL,
+            PRIMARY KEY (SUA_ID, FREQ_SEQ)
+        )
+    """)
+
+    conn.execute("DROP TABLE IF EXISTS SUA_SCHEDULE")
+    conn.execute("""
+        CREATE TABLE SUA_SCHEDULE (
+            SUA_ID INTEGER,
+            SCHED_SEQ INTEGER,
+            DAY_OF_WEEK TEXT,
+            START_TIME TEXT,
+            END_TIME TEXT,
+            TIME_REF TEXT,
+            TIME_OFFSET TEXT,
+            DST_FLAG TEXT,
+            PRIMARY KEY (SUA_ID, SCHED_SEQ)
+        )
+    """)
+
+    conn.execute("DROP TABLE IF EXISTS SUA_SERVICE")
+    conn.execute("""
+        CREATE TABLE SUA_SERVICE (
+            SUA_ID INTEGER,
+            SVC_SEQ INTEGER,
+            SERVICE_TYPE TEXT,
+            UNIT_NAME TEXT,
+            UNIT_TYPE TEXT,
+            PRIMARY KEY (SUA_ID, SVC_SEQ)
+        )
+    """)
+
     epsilon = 0.0001
     total_before = 0
     total_after = 0
     base_rows = []
     shp_rows = []
     circle_rows = []
+    freq_rows = []
+    schedule_rows = []
+    service_rows = []
     skipped = 0
 
     for xml_name in xml_files:
@@ -1502,6 +1731,36 @@ def build_sua(conn, aixm_zf):
                                          point_seq, lon, lat))
                     part_num += 1
 
+            # Frequencies
+            for seq, freq in enumerate(result.get("freqs", []), 1):
+                freq_rows.append((
+                    sua_id, seq,
+                    freq["mode"],
+                    freq["tx_freq"],
+                    freq["rx_freq"],
+                ))
+
+            # Schedules
+            for seq, sched in enumerate(result.get("schedules", []), 1):
+                schedule_rows.append((
+                    sua_id, seq,
+                    sched["day"],
+                    sched["start_time"],
+                    sched["end_time"],
+                    sched["time_ref"],
+                    sched["time_offset"],
+                    sched["dst_flag"],
+                ))
+
+            # Services
+            for seq, svc in enumerate(result.get("services", []), 1):
+                service_rows.append((
+                    sua_id, seq,
+                    svc["service_type"],
+                    svc["unit_name"],
+                    svc["unit_type"],
+                ))
+
     conn.executemany(
         "INSERT INTO SUA_BASE VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         base_rows,
@@ -1514,11 +1773,26 @@ def build_sua(conn, aixm_zf):
         "INSERT INTO SUA_CIRCLE VALUES (?, ?, ?, ?, ?)",
         circle_rows,
     )
+    conn.executemany(
+        "INSERT INTO SUA_FREQ VALUES (?, ?, ?, ?, ?)",
+        freq_rows,
+    )
+    conn.executemany(
+        "INSERT INTO SUA_SCHEDULE VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        schedule_rows,
+    )
+    conn.executemany(
+        "INSERT INTO SUA_SERVICE VALUES (?, ?, ?, ?, ?)",
+        service_rows,
+    )
 
     print(f"  Parsed {len(xml_files)} files, {skipped} skipped")
     print(f"  SUA_BASE: {len(base_rows)} airspaces")
     print(f"  SUA_SHP: {len(shp_rows)} shape points")
     print(f"  SUA_CIRCLE: {len(circle_rows)} circle airspaces")
+    print(f"  SUA_FREQ: {len(freq_rows)} frequency entries")
+    print(f"  SUA_SCHEDULE: {len(schedule_rows)} schedule entries")
+    print(f"  SUA_SERVICE: {len(service_rows)} service entries")
     if total_before > 0:
         print(f"  Simplified: {total_before} -> {total_after} points "
               f"({100 * total_after / total_before:.1f}%)")
@@ -1539,6 +1813,9 @@ def build_sua(conn, aixm_zf):
     """)
 
     conn.execute("CREATE INDEX idx_sua_shp ON SUA_SHP(SUA_ID)")
+    conn.execute("CREATE INDEX idx_sua_freq ON SUA_FREQ(SUA_ID)")
+    conn.execute("CREATE INDEX idx_sua_schedule ON SUA_SCHEDULE(SUA_ID)")
+    conn.execute("CREATE INDEX idx_sua_service ON SUA_SERVICE(SUA_ID)")
 
     # Subdivided segments for rendering (tighter R-tree bboxes)
     # Circles are not subdivided — they use SUA_CIRCLE directly.
@@ -2567,21 +2844,23 @@ def main():
     print("\nDatabase summary:")
     tables = ["APT_BASE", "CLS_ARSP", "NAV_BASE", "NAV_RMK", "NAV_CKPT",
               "FIX_BASE", "FIX_CHRT", "FIX_NAV",
-              "AWY_BASE", "AWY_SEG",
+              "AWY_BASE", "AWY_SEG", "AWY_SEG_ALT",
               "HPF_BASE", "HPF_SPD_ALT", "HPF_CHRT", "HPF_RMK",
               "PJA_BASE", "MTR_BASE", "MTR_SEG",
               "MAA_BASE", "MAA_SHP", "MAA_RMK",
               "DP_BASE", "DP_APT", "DP_RTE",
               "STAR_BASE", "STAR_APT", "STAR_RTE",
               "PFR_BASE", "PFR_SEG", "CDR",
-              "WXL_BASE", "WXL_SVC",
+              "WXL_BASE", "WXL_SVC", "WP_LOOKUP",
               "APT_RWY", "APT_RWY_END", "RWY_SEG", "APT_ATT", "APT_RMK",
               "ILS_BASE", "ILS_GS", "ILS_DME", "ILS_MKR", "ILS_RMK",
               "ATC_BASE", "ATC_ATIS", "ATC_RMK", "ATC_SVC",
               "FRQ", "COM", "FSS_BASE", "FSS_RMK", "AWOS",
-              "CLS_ARSP_BASE", "CLS_ARSP_SHP",
-              "SUA_BASE", "SUA_SHP", "ARTCC_BASE", "ARTCC_SHP", "OBS_BASE",
-              "ADIZ_BASE", "ADIZ_SHP"]
+              "CLS_ARSP_BASE", "CLS_ARSP_SHP", "CLS_ARSP_SEG",
+              "SUA_BASE", "SUA_SHP", "SUA_CIRCLE", "SUA_SEG",
+              "SUA_FREQ", "SUA_SCHEDULE", "SUA_SERVICE",
+              "ARTCC_BASE", "ARTCC_SHP", "ARTCC_SEG", "OBS_BASE",
+              "ADIZ_BASE", "ADIZ_SHP", "ADIZ_SEG"]
     for table in tables:
         count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         print(f"  {table}: {count} rows")
