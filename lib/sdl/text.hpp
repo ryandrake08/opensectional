@@ -97,25 +97,22 @@ namespace sdl
         bool set_string(const char* str, size_t length = 0);
 
         /**
-         * Get text bounding box with normalization and scaling.
+         * Get text bounding box in font pixel coordinates.
          *
-         * Normalizes font pixels by dividing by 800.0, then applies scale.
-         *
-         * @param scale Scale factor to apply after normalization
-         * @return Bounds in normalized scaled coordinates, or all zeros if no geometry
+         * @return Bounds in pixel coordinates, or all zeros if no geometry
          */
-        text_bounds get_bounds(float scale) const;
+        text_bounds get_bounds() const;
 
         /**
          * Append text geometry to vertex and index buffers.
          *
          * Builds geometry for this text and appends it to the provided buffers.
+         * Vertex positions are in font pixel coordinates.
          * Uses T2F_C4UB_V3F vertex format (texcoord, color, position).
          *
          * @param vertices Vertex buffer to append to
          * @param indices Index buffer to append to (indices adjusted for current vertex count)
-         * @param position Position to place the text (in normalized coordinates)
-         * @param scale Scale factor to apply to text
+         * @param position Position to place the text (in pixels)
          * @param r Red component (0-255)
          * @param g Green component (0-255)
          * @param b Blue component (0-255)
@@ -125,7 +122,6 @@ namespace sdl
             std::vector<vertex_t2f_c4ub_v3f>& vertices,
             std::vector<int>& indices,
             const glm::vec3& position,
-            float scale,
             unsigned char r, unsigned char g, unsigned char b, unsigned char a) const;
     };
 

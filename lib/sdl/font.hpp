@@ -74,5 +74,12 @@ namespace sdl
          * @param outline Outline size (0 = no outline)
          */
         void set_outline(int outline);
+
+        /**
+         * Get font outline size in pixels.
+         *
+         * @return Outline size (0 = no outline)
+         */
+        int get_outline() const;
     };
 } // namespace sdl

@@ -21,9 +21,6 @@ namespace nasrbrowse
     constexpr float LABEL_PAD_X = 4.0F;
     constexpr float LABEL_PAD_Y = 2.0F;
 
-    // Text rendering scale (SDL_ttf text-to-geometry conversion factor)
-    constexpr float TEXT_SCALE = 800.0F;
-
     // Fill color (white) and outline color (black)
     constexpr uint8_t FILL_R = 255, FILL_G = 255, FILL_B = 255, FILL_A = 255;
     constexpr uint8_t OUTLINE_R = 0, OUTLINE_G = 0, OUTLINE_B = 0, OUTLINE_A = 255;
@@ -45,8 +42,6 @@ namespace nasrbrowse
         sdl::text_engine& engine;
         sdl::font& font;
         sdl::font& outline_font;
-        float outline_offset;
-
         // Cached label text objects (rebuilt only on set_candidates)
         std::vector<cached_label> labels;
 
@@ -70,20 +65,18 @@ namespace nasrbrowse
         bool dirty = false;
 
         impl(sdl::device& dev, sdl::text_engine& engine,
-             sdl::font& font, sdl::font& outline_font, int outline_size)
+             sdl::font& font, sdl::font& outline_font)
             : dev(dev)
             , engine(engine)
             , font(font)
             , outline_font(outline_font)
-            , outline_offset(static_cast<float>(outline_size) * TEXT_SCALE / 800.0F)
         {
         }
     };
 
     label_renderer::label_renderer(sdl::device& dev, sdl::text_engine& engine,
-                                   sdl::font& font, sdl::font& outline_font,
-                                   int outline_size)
-        : pimpl(new impl(dev, engine, font, outline_font, outline_size))
+                                   sdl::font& font, sdl::font& outline_font)
+        : pimpl(new impl(dev, engine, font, outline_font))
     {
     }
 
@@ -97,7 +90,7 @@ namespace nasrbrowse
         for(const auto& lc : candidates)
         {
             sdl::text fill(pimpl->engine, pimpl->font, lc.text.c_str());
-            float width = fill.get_bounds(TEXT_SCALE).width();
+            float width = fill.get_bounds().width();
             pimpl->labels.push_back({
                 std::move(fill),
                 sdl::text(pimpl->engine, pimpl->outline_font, lc.text.c_str()),
@@ -203,15 +196,15 @@ namespace nasrbrowse
             size_t idx = pimpl->visible[i];
             const auto& pos = pimpl->positions[i];
 
-            float ofs = pimpl->outline_offset;
+            float ofs = static_cast<float>(pimpl->outline_font.get_outline() * 2);
             glm::vec3 opos(pos.x - ofs, pos.y + ofs, 0.0F);
             pimpl->labels[idx].outline.append_geometry(
                 pimpl->outline_vertices, pimpl->outline_indices, opos,
-                TEXT_SCALE, OUTLINE_R, OUTLINE_G, OUTLINE_B, OUTLINE_A);
+                OUTLINE_R, OUTLINE_G, OUTLINE_B, OUTLINE_A);
 
             pimpl->labels[idx].fill.append_geometry(
                 pimpl->fill_vertices, pimpl->fill_indices, pos,
-                TEXT_SCALE, FILL_R, FILL_G, FILL_B, FILL_A);
+                FILL_R, FILL_G, FILL_B, FILL_A);
         }
 
         pimpl->dirty = true;

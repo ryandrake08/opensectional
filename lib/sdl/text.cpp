@@ -67,7 +67,7 @@ namespace sdl
         return TTF_SetTextString(pimpl->handle, str, length);
     }
 
-    text_bounds text::get_bounds(float scale) const
+    text_bounds text::get_bounds() const
     {
         text_bounds bounds = { 0.0F, 0.0F, 0.0F, 0.0F };
 
@@ -103,34 +103,21 @@ namespace sdl
             }
         }
 
-        // Apply normalization and scale
-        float norm_scale = scale / 800.0F;
-
-        text_bounds scaled_bounds;
-        scaled_bounds.min_x = bounds.min_x * norm_scale;
-        scaled_bounds.max_x = bounds.max_x * norm_scale;
-        scaled_bounds.min_y = bounds.min_y * norm_scale;
-        scaled_bounds.max_y = bounds.max_y * norm_scale;
-
-        return scaled_bounds;
+        return bounds;
     }
 
     void text::append_geometry(
         std::vector<vertex_t2f_c4ub_v3f>& vertices,
         std::vector<int>& indices,
         const glm::vec3& position,
-        float scale,
         unsigned char r, unsigned char g, unsigned char b, unsigned char a) const
     {
-        // Get draw data from SDL3_ttf
-        TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(pimpl->handle);
+         // Get draw data from SDL3_ttf
+       TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(pimpl->handle);
         if(!sequences)
         {
             return;
         }
-
-        // Calculate normalization scale
-        float norm_scale = scale / 800.0F;
 
         // Iterate through all draw sequences
         for(TTF_GPUAtlasDrawSequence* seq = sequences; seq != nullptr; seq = seq->next)
@@ -152,8 +139,8 @@ namespace sdl
                 vert.g = g;
                 vert.b = b;
                 vert.a = a;
-                vert.x = position.x + seq->xy[i].x * norm_scale;
-                vert.y = position.y + seq->xy[i].y * norm_scale;
+                vert.x = position.x + seq->xy[i].x;
+                vert.y = position.y + seq->xy[i].y;
                 vert.z = position.z;
                 vertices.push_back(vert);
             }

@@ -246,10 +246,9 @@ int main(int argc, char** argv)
 
         // Text rendering
         sdl::text_engine text_engine(dev);
-        constexpr int LABEL_OUTLINE_SIZE = 1;
         sdl::font label_font(text_engine, NotoSans_Regular_ttf, NotoSans_Regular_ttf_len, 13);
         sdl::font outline_font(text_engine, NotoSans_Regular_ttf, NotoSans_Regular_ttf_len, 13);
-        outline_font.set_outline(LABEL_OUTLINE_SIZE);
+        outline_font.set_outline(1);
         sdl::sampler text_sampler(dev, sdl::filter::nearest, sdl::filter::nearest,
                                   sdl::sampler_address_mode::clamp_to_edge);
 
@@ -259,7 +258,7 @@ int main(int argc, char** argv)
         // Create map layer
         auto map_layer = std::make_shared<layer_map>(
             dev, tile_path, db_path, chart_styles,
-            text_engine, label_font, outline_font, LABEL_OUTLINE_SIZE, text_sampler);
+            text_engine, label_font, outline_font, text_sampler);
         event_mgr.add_listener(map_layer);
 
         // Send initial resize

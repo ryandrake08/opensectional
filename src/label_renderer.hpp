@@ -27,8 +27,7 @@ namespace nasrbrowse
 
     public:
         label_renderer(sdl::device& dev, sdl::text_engine& engine,
-                       sdl::font& font, sdl::font& outline_font,
-                       int outline_size);
+                       sdl::font& font, sdl::font& outline_font);
         ~label_renderer();
 
         // Update the label candidate set (called when feature builder drains).
