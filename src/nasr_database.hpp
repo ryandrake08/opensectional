@@ -129,6 +129,8 @@ namespace nasrbrowse
     // Column order follows RWY_SEG table
     struct runway
     {
+        std::string site_no;
+        std::string rwy_id;
         double end1_lat;
         double end1_lon;
         double end2_lat;

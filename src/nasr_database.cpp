@@ -195,14 +195,15 @@ namespace nasrbrowse
             )", 4))
 
             , stmt_runways(prepare_checked(db, R"(
-                SELECT END1_LAT, END1_LON, END2_LAT, END2_LON
+                SELECT SITE_NO, RWY_ID,
+                       END1_LAT, END1_LON, END2_LAT, END2_LON
                 FROM RWY_SEG
                 WHERE rowid IN (
                     SELECT id FROM RWY_SEG_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 4))
+            )", 6))
 
             , stmt_sua(prepare_checked(db, R"(
                 SELECT SUA_ID, DESIGNATOR, NAME, SUA_TYPE,
@@ -552,8 +553,9 @@ namespace nasrbrowse
         return d.query_bbox(d.runways, d.stmt_runways,
             bbox, [](sqlite::statement& s)
         {
-            return runway{s.column_double(0), s.column_double(1),
-                          s.column_double(2), s.column_double(3)};
+            return runway{s.column_text(0), s.column_text(1),
+                          s.column_double(2), s.column_double(3),
+                          s.column_double(4), s.column_double(5)};
         });
     }
 

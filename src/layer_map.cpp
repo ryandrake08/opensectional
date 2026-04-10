@@ -582,7 +582,7 @@ void layer_map::on_button_input(sdl::input_button_t button, sdl::input_action_t 
                     else if constexpr(std::is_same_v<T, nasrbrowse::mtr_segment>)
                         std::cerr << "  MTR: " << feature.mtr_id << " " << feature.from_point << "-" << feature.to_point << std::endl;
                     else if constexpr(std::is_same_v<T, nasrbrowse::runway>)
-                        std::cerr << "  Runway" << std::endl;
+                        std::cerr << "  Runway: " << feature.rwy_id << std::endl;
                 }, f);
             }
         }

@@ -709,6 +709,8 @@ def build_apt_rwy(conn, csv_zf):
     conn.execute("""
         CREATE TABLE RWY_SEG AS
         SELECT
+            e1.SITE_NO,
+            e1.RWY_ID,
             e1.LAT_DECIMAL AS END1_LAT,
             e1.LONG_DECIMAL AS END1_LON,
             e2.LAT_DECIMAL AS END2_LAT,
