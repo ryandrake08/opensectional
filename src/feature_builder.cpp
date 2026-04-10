@@ -118,26 +118,25 @@ namespace nasrbrowse
             }
         }
 
-        void build_all_features(double qlon_min, double qlat_min,
-                                 double qlon_max, double qlat_max,
+        void build_all_features(const geo_bbox& bbox,
                                  const feature_build_request& req,
                                  double mx_offset)
         {
-            build_airport_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_navaid_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_airway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_mtr_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_sua_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_pja_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_maa_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_adiz_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_artcc_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_obstacle_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_rco_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_awos_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_fix_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_runway_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
-            build_airspace_polylines(qlon_min, qlat_min, qlon_max, qlat_max, req, mx_offset);
+            build_airport_polylines(bbox, req, mx_offset);
+            build_navaid_polylines(bbox, req, mx_offset);
+            build_airway_polylines(bbox, req, mx_offset);
+            build_mtr_polylines(bbox, req, mx_offset);
+            build_sua_polylines(bbox, req, mx_offset);
+            build_pja_polylines(bbox, req, mx_offset);
+            build_maa_polylines(bbox, req, mx_offset);
+            build_adiz_polylines(bbox, req, mx_offset);
+            build_artcc_polylines(bbox, req, mx_offset);
+            build_obstacle_polylines(bbox, req, mx_offset);
+            build_rco_polylines(bbox, req, mx_offset);
+            build_awos_polylines(bbox, req, mx_offset);
+            build_fix_polylines(bbox, req, mx_offset);
+            build_runway_polylines(bbox, req, mx_offset);
+            build_airspace_polylines(bbox, req, mx_offset);
         }
 
         void build_vertices(const feature_build_request& req)
@@ -146,30 +145,31 @@ namespace nasrbrowse
 
             double lon_pad = (req.lon_max - req.lon_min) * QUERY_BBOX_PADDING;
             double lat_pad = (req.lat_max - req.lat_min) * QUERY_BBOX_PADDING;
-            double qlon_min = req.lon_min - lon_pad;
-            double qlat_min = req.lat_min - lat_pad;
-            double qlon_max = req.lon_max + lon_pad;
-            double qlat_max = req.lat_max + lat_pad;
+            geo_bbox qbox{
+                req.lon_min - lon_pad, req.lat_min - lat_pad,
+                req.lon_max + lon_pad, req.lat_max + lat_pad};
 
             for(auto& p : poly) p.clear();
             world_labels.clear();
 
             // Normal query (includes handle_antimeridian copies at extended coords)
-            build_all_features(qlon_min, qlat_min, qlon_max, qlat_max, req, 0.0);
+            build_all_features(qbox, req, 0.0);
 
             // If viewport extends past +180°, also query the [-180, 180] features
             // that appear on the right side, shifted by +world_size in Mercator
-            if(qlon_max > 180.0)
+            if(qbox.lon_max > 180.0)
             {
-                build_all_features(qlon_min - 360.0, qlat_min,
-                                   qlon_max - 360.0, qlat_max, req, WORLD_SIZE);
+                geo_bbox shifted{qbox.lon_min - 360.0, qbox.lat_min,
+                                 qbox.lon_max - 360.0, qbox.lat_max};
+                build_all_features(shifted, req, WORLD_SIZE);
             }
 
             // If viewport extends past -180°, query features shifted by -world_size
-            if(qlon_min < -180.0)
+            if(qbox.lon_min < -180.0)
             {
-                build_all_features(qlon_min + 360.0, qlat_min,
-                                   qlon_max + 360.0, qlat_max, req, -WORLD_SIZE);
+                geo_bbox shifted{qbox.lon_min + 360.0, qbox.lat_min,
+                                 qbox.lon_max + 360.0, qbox.lat_max};
+                build_all_features(shifted, req, -WORLD_SIZE);
             }
         }
 
@@ -542,12 +542,11 @@ namespace nasrbrowse
 
         // --- Feature build methods ---
 
-        void build_airport_polylines(double lon_min, double lat_min,
-                                      double lon_max, double lat_max,
+        void build_airport_polylines(const geo_bbox& bbox,
                                       const feature_build_request& req,
                                       double mx_offset)
         {
-            const auto& airports = db.query_airports(lon_min, lat_min, lon_max, lat_max);
+            const auto& airports = db.query_airports(bbox);
             constexpr float APT_OUTER_SCALE = 1.2F;
             constexpr float APT_RING_WIDTH_PX = 1.0F;
             constexpr float APT_FILL_RADIUS = 0.5F;
@@ -619,8 +618,7 @@ namespace nasrbrowse
             }
         }
 
-        void build_navaid_polylines(double lon_min, double lat_min,
-                                     double lon_max, double lat_max,
+        void build_navaid_polylines(const geo_bbox& bbox,
                                      const feature_build_request& req,
                                      double mx_offset)
         {
@@ -629,7 +627,7 @@ namespace nasrbrowse
             constexpr float NAV_VORDME_WIDTH = 1.1F;
             constexpr float NAV_CLEARANCE = 2.0F;
 
-            const auto& navaids = db.query_navaids(lon_min, lat_min, lon_max, lat_max);
+            const auto& navaids = db.query_navaids(bbox);
             float r = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
 
             navaid_positions.clear();
@@ -701,13 +699,12 @@ namespace nasrbrowse
             }
         }
 
-        void build_airway_polylines(double lon_min, double lat_min,
-                                     double lon_max, double lat_max,
+        void build_airway_polylines(const geo_bbox& bbox,
                                      const feature_build_request& req,
                                      double mx_offset)
         {
             airway_waypoints.clear();
-            const auto& airways = db.query_airways(lon_min, lat_min, lon_max, lat_max);
+            const auto& airways = db.query_airways(bbox);
 
             for(const auto& seg : airways)
             {
@@ -756,12 +753,11 @@ namespace nasrbrowse
             }
         }
 
-        void build_fix_polylines(double lon_min, double lat_min,
-                                  double lon_max, double lat_max,
+        void build_fix_polylines(const geo_bbox& bbox,
                                   const feature_build_request& req,
                                   double mx_offset)
         {
-            const auto& fixes = db.query_fixes(lon_min, lat_min, lon_max, lat_max);
+            const auto& fixes = db.query_fixes(bbox);
             float radius = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_FIX);
 
             for(const auto& fix : fixes)
@@ -798,8 +794,7 @@ namespace nasrbrowse
             }
         }
 
-        void build_mtr_polylines(double lon_min, double lat_min,
-                                  double lon_max, double lat_max,
+        void build_mtr_polylines(const geo_bbox& bbox,
                                   const feature_build_request& req,
                                   double mx_offset)
         {
@@ -808,7 +803,7 @@ namespace nasrbrowse
                 return;
             }
 
-            const auto& mtrs = db.query_mtrs(lon_min, lat_min, lon_max, lat_max);
+            const auto& mtrs = db.query_mtrs(bbox);
             const auto& fs = styles.mtr_style();
 
             for(const auto& seg : mtrs)
@@ -823,8 +818,7 @@ namespace nasrbrowse
             }
         }
 
-        void build_runway_polylines(double lon_min, double lat_min,
-                                     double lon_max, double lat_max,
+        void build_runway_polylines(const geo_bbox& bbox,
                                      const feature_build_request& req,
                                      double mx_offset)
         {
@@ -833,7 +827,7 @@ namespace nasrbrowse
                 return;
             }
 
-            const auto& runways = db.query_runways(lon_min, lat_min, lon_max, lat_max);
+            const auto& runways = db.query_runways(bbox);
             const auto& fs = styles.runway_style();
 
             for(const auto& rwy : runways)
@@ -848,14 +842,13 @@ namespace nasrbrowse
             }
         }
 
-        void build_sua_polylines(double lon_min, double lat_min,
-                                  double lon_max, double lat_max,
+        void build_sua_polylines(const geo_bbox& bbox,
                                   const feature_build_request& req,
                                   double mx_offset)
         {
             // Polygon rings from subdivided segments
             const auto& segs = db.query_sua_segments(
-                lon_min, lat_min, lon_max, lat_max);
+                bbox);
 
             for(const auto& seg : segs)
             {
@@ -866,7 +859,7 @@ namespace nasrbrowse
             }
 
             // Circles use the full feature query
-            const auto& suas = db.query_sua(lon_min, lat_min, lon_max, lat_max);
+            const auto& suas = db.query_sua(bbox);
 
             for(const auto& s : suas)
             {
@@ -887,8 +880,7 @@ namespace nasrbrowse
             }
         }
 
-        void build_pja_polylines(double lon_min, double lat_min,
-                                  double lon_max, double lat_max,
+        void build_pja_polylines(const geo_bbox& bbox,
                                   const feature_build_request& req,
                                   double mx_offset)
         {
@@ -899,7 +891,7 @@ namespace nasrbrowse
             constexpr double NM_TO_METERS = 1852.0;
             constexpr double SYMBOL_RADIUS_PJA = SYMBOL_RADIUS_AIRPORT;
 
-            const auto& pjas = db.query_pjas(lon_min, lat_min, lon_max, lat_max);
+            const auto& pjas = db.query_pjas(bbox);
 
             for(const auto& p : pjas)
             {
@@ -935,8 +927,7 @@ namespace nasrbrowse
             }
         }
 
-        void build_maa_polylines(double lon_min, double lat_min,
-                                  double lon_max, double lat_max,
+        void build_maa_polylines(const geo_bbox& bbox,
                                   const feature_build_request& req,
                                   double mx_offset)
         {
@@ -946,7 +937,7 @@ namespace nasrbrowse
 
             constexpr double NM_TO_METERS = 1852.0;
 
-            const auto& maas = db.query_maas(lon_min, lat_min, lon_max, lat_max);
+            const auto& maas = db.query_maas(bbox);
 
             for(const auto& m : maas)
             {
@@ -991,15 +982,14 @@ namespace nasrbrowse
             }
         }
 
-        void build_adiz_polylines(double lon_min, double lat_min,
-                                   double lon_max, double lat_max,
+        void build_adiz_polylines(const geo_bbox& bbox,
                                    const feature_build_request& req,
                                    double mx_offset)
         {
             if(!styles.adiz_visible(req.zoom)) return;
 
             const auto& segs = db.query_adiz_segments(
-                lon_min, lat_min, lon_max, lat_max);
+                bbox);
             auto ls = to_line_style(styles.adiz_style());
 
             for(const auto& seg : segs)
@@ -1008,13 +998,12 @@ namespace nasrbrowse
             }
         }
 
-        void build_artcc_polylines(double lon_min, double lat_min,
-                                    double lon_max, double lat_max,
+        void build_artcc_polylines(const geo_bbox& bbox,
                                     const feature_build_request& req,
                                     double mx_offset)
         {
             const auto& segs = db.query_artcc_segments(
-                lon_min, lat_min, lon_max, lat_max);
+                bbox);
 
             for(const auto& seg : segs)
             {
@@ -1025,12 +1014,11 @@ namespace nasrbrowse
             }
         }
 
-        void build_obstacle_polylines(double lon_min, double lat_min,
-                                       double lon_max, double lat_max,
+        void build_obstacle_polylines(const geo_bbox& bbox,
                                        const feature_build_request& req,
                                        double mx_offset)
         {
-            const auto& obstacles = db.query_obstacles(lon_min, lat_min, lon_max, lat_max);
+            const auto& obstacles = db.query_obstacles(bbox);
             float radius = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_OBSTACLE);
 
             for(const auto& obs : obstacles)
@@ -1049,13 +1037,12 @@ namespace nasrbrowse
             }
         }
 
-        void build_airspace_polylines(double lon_min, double lat_min,
-                                       double lon_max, double lat_max,
+        void build_airspace_polylines(const geo_bbox& bbox,
                                        const feature_build_request& req,
                                        double mx_offset)
         {
             const auto& segs = db.query_class_airspace_segments(
-                lon_min, lat_min, lon_max, lat_max);
+                bbox);
 
             for(const auto& seg : segs)
             {
@@ -1081,23 +1068,21 @@ namespace nasrbrowse
             }
         }
 
-        void build_rco_polylines(double lon_min, double lat_min,
-                                  double lon_max, double lat_max,
+        void build_rco_polylines(const geo_bbox& bbox,
                                   const feature_build_request& req,
                                   double mx_offset)
         {
             if(!styles.rco_visible(req.zoom)) return;
-            build_comm_polylines(db.query_comm_outlets(lon_min, lat_min, lon_max, lat_max),
+            build_comm_polylines(db.query_comm_outlets(bbox),
                                  layer_rco, to_line_style(styles.rco_style()), req, mx_offset);
         }
 
-        void build_awos_polylines(double lon_min, double lat_min,
-                                   double lon_max, double lat_max,
+        void build_awos_polylines(const geo_bbox& bbox,
                                    const feature_build_request& req,
                                    double mx_offset)
         {
             if(!styles.awos_visible(req.zoom)) return;
-            build_comm_polylines(db.query_awos(lon_min, lat_min, lon_max, lat_max),
+            build_comm_polylines(db.query_awos(bbox),
                                  layer_awos, to_line_style(styles.awos_style()), req, mx_offset);
         }
     };

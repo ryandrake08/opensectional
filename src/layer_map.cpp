@@ -263,10 +263,12 @@ struct layer_map::impl
         double pick_half_ndc = (PICK_BOX_SIZE_PIXELS * 0.5) / viewport_height;
         double box_world_half = pick_half_ndc * 2.0 * view.half_extent_y;
         double box_lon_half = mx_to_lon(box_world_half);
-        double box_lon_min = click_lon - box_lon_half;
-        double box_lon_max = click_lon + box_lon_half;
-        double box_lat_min = my_to_lat(world_y - box_world_half);
-        double box_lat_max = my_to_lat(world_y + box_world_half);
+        geo_bbox pick_box{
+            click_lon - box_lon_half,
+            my_to_lat(world_y - box_world_half),
+            click_lon + box_lon_half,
+            my_to_lat(world_y + box_world_half)};
+        geo_bbox click_box{click_lon, click_lat, click_lon, click_lat};
 
         pick_result result;
         result.lon = click_lon;
@@ -275,8 +277,7 @@ struct layer_map::impl
         // Point features: query with pick box, all results are hits
         if(vis[layer_airports])
         {
-            const auto& airports = pick_db.query_airports(
-                box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+            const auto& airports = pick_db.query_airports(pick_box);
             for(const auto& apt : airports)
             {
                 if(styles.airport_visible(apt, z))
@@ -286,8 +287,7 @@ struct layer_map::impl
 
         if(vis[layer_navaids])
         {
-            const auto& navaids = pick_db.query_navaids(
-                box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+            const auto& navaids = pick_db.query_navaids(pick_box);
             for(const auto& nav : navaids)
             {
                 if(styles.navaid_visible(nav.nav_type, z))
@@ -297,8 +297,7 @@ struct layer_map::impl
 
         if(vis[layer_fixes])
         {
-            const auto& fixes = pick_db.query_fixes(
-                box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+            const auto& fixes = pick_db.query_fixes(pick_box);
             for(const auto& f : fixes)
             {
                 // Naive: pick if visible under either airway or non-airway zoom key
@@ -309,8 +308,7 @@ struct layer_map::impl
 
         if(vis[layer_obstacles])
         {
-            const auto& obstacles = pick_db.query_obstacles(
-                box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+            const auto& obstacles = pick_db.query_obstacles(pick_box);
             for(const auto& obs : obstacles)
             {
                 if(styles.obstacle_visible(obs.agl_ht, z))
@@ -322,8 +320,7 @@ struct layer_map::impl
         {
             if(styles.rco_visible(z))
             {
-                const auto& outlets = pick_db.query_comm_outlets(
-                    box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+                const auto& outlets = pick_db.query_comm_outlets(pick_box);
                 for(const auto& c : outlets)
                     result.features.push_back(c);
             }
@@ -333,8 +330,7 @@ struct layer_map::impl
         {
             if(styles.awos_visible(z))
             {
-                const auto& stations = pick_db.query_awos(
-                    box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+                const auto& stations = pick_db.query_awos(pick_box);
                 for(const auto& a : stations)
                     result.features.push_back(a);
             }
@@ -343,8 +339,7 @@ struct layer_map::impl
         // Area features: query with click point as degenerate bbox, then test containment
         if(vis[layer_airspace])
         {
-            const auto& airspaces = pick_db.query_class_airspace(
-                click_lon, click_lat, click_lon, click_lat);
+            const auto& airspaces = pick_db.query_class_airspace(click_box);
             for(const auto& a : airspaces)
             {
                 if(!styles.airspace_visible(a.airspace_class, a.local_type, z))
@@ -369,8 +364,7 @@ struct layer_map::impl
 
         if(vis[layer_sua])
         {
-            const auto& suas = pick_db.query_sua(
-                click_lon, click_lat, click_lon, click_lat);
+            const auto& suas = pick_db.query_sua(click_box);
             for(const auto& s : suas)
             {
                 if(!styles.sua_visible(s.sua_type, z))
@@ -388,8 +382,7 @@ struct layer_map::impl
 
         if(vis[layer_artcc])
         {
-            const auto& artccs = pick_db.query_artcc(
-                click_lon, click_lat, click_lon, click_lat);
+            const auto& artccs = pick_db.query_artcc(click_box);
             for(const auto& a : artccs)
             {
                 if(!styles.artcc_visible(a.altitude, z))
@@ -403,8 +396,7 @@ struct layer_map::impl
         {
             if(styles.adiz_visible(z))
             {
-                const auto& adizs = pick_db.query_adiz(
-                    click_lon, click_lat, click_lon, click_lat);
+                const auto& adizs = pick_db.query_adiz(click_box);
                 for(const auto& a : adizs)
                 {
                     for(const auto& part : a.parts)
@@ -423,8 +415,7 @@ struct layer_map::impl
         {
             if(styles.pja_area_visible(z))
             {
-                const auto& pjas = pick_db.query_pjas(
-                    click_lon, click_lat, click_lon, click_lat);
+                const auto& pjas = pick_db.query_pjas(click_box);
                 for(const auto& p : pjas)
                 {
                     if(point_in_circle_nm(click_lon, click_lat, p.lon, p.lat, p.radius_nm))
@@ -439,8 +430,7 @@ struct layer_map::impl
             bool maa_point_vis = styles.maa_point_visible(z);
             if(maa_area_vis || maa_point_vis)
             {
-                const auto& maas = pick_db.query_maas(
-                    click_lon, click_lat, click_lon, click_lat);
+                const auto& maas = pick_db.query_maas(click_box);
                 for(const auto& m : maas)
                 {
                     if(!m.shape.empty() && maa_area_vis)
@@ -462,12 +452,11 @@ struct layer_map::impl
         }
 
         // Line features: query with pick box, test point-to-segment distance
-        double pick_radius_nm = (box_lat_max - box_lat_min) * 0.5 * 60.0;
+        double pick_radius_nm = (pick_box.lat_max - pick_box.lat_min) * 0.5 * 60.0;
 
         if(vis[layer_airways])
         {
-            const auto& airways = pick_db.query_airways(
-                box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+            const auto& airways = pick_db.query_airways(pick_box);
             for(const auto& seg : airways)
             {
                 if(!styles.airway_visible(seg.awy_id, z))
@@ -483,8 +472,7 @@ struct layer_map::impl
         {
             if(styles.mtr_visible(z))
             {
-                const auto& mtrs = pick_db.query_mtrs(
-                    box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+                const auto& mtrs = pick_db.query_mtrs(pick_box);
                 for(const auto& seg : mtrs)
                 {
                     double d = point_to_segment_nm(click_lon, click_lat,
@@ -499,8 +487,7 @@ struct layer_map::impl
         {
             if(styles.runway_visible(z))
             {
-                const auto& runways = pick_db.query_runways(
-                    box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+                const auto& runways = pick_db.query_runways(pick_box);
                 for(const auto& rwy : runways)
                 {
                     double d = point_to_segment_nm(click_lon, click_lat,

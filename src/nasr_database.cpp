@@ -379,25 +379,23 @@ namespace nasrbrowse
         {
         }
 
-        void bind_bbox(sqlite::statement& stmt, double lon_min, double lat_min,
-                       double lon_max, double lat_max)
+        void bind_bbox(sqlite::statement& stmt, const geo_bbox& bbox)
         {
             stmt.reset();
-            stmt.bind(1, lon_min);
-            stmt.bind(2, lat_min);
-            stmt.bind(3, lon_max);
-            stmt.bind(4, lat_max);
+            stmt.bind(1, bbox.lon_min);
+            stmt.bind(2, bbox.lat_min);
+            stmt.bind(3, bbox.lon_max);
+            stmt.bind(4, bbox.lat_max);
         }
 
         template<typename T, typename RowMapper>
         const std::vector<T>& query_bbox(std::vector<T>& results,
                                           sqlite::statement& stmt,
-                                          double lon_min, double lat_min,
-                                          double lon_max, double lat_max,
+                                          const geo_bbox& bbox,
                                           RowMapper&& map_row)
         {
             results.clear();
-            bind_bbox(stmt, lon_min, lat_min, lon_max, lat_max);
+            bind_bbox(stmt, bbox);
             while (stmt.step())
             {
                 results.push_back(map_row(stmt));
@@ -412,12 +410,11 @@ namespace nasrbrowse
 
     nasr_database::~nasr_database() = default;
 
-    const std::vector<airport>& nasr_database::query_airports(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<airport>& nasr_database::query_airports(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.airports, d.stmt_airports,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
+            bbox, [](sqlite::statement& s)
         {
             return airport{
                 s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
@@ -433,12 +430,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<navaid>& nasr_database::query_navaids(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<navaid>& nasr_database::query_navaids(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.navaids, d.stmt_navaids,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
+            bbox, [](sqlite::statement& s)
         {
             return navaid{
                 s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
@@ -451,12 +447,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<fix>& nasr_database::query_fixes(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<fix>& nasr_database::query_fixes(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.fixes, d.stmt_fixes,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
+            bbox, [](sqlite::statement& s)
         {
             return fix{
                 s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
@@ -465,12 +460,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<airway_segment>& nasr_database::query_airways(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<airway_segment>& nasr_database::query_airways(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.airways, d.stmt_airways,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
+            bbox, [](sqlite::statement& s)
         {
             return airway_segment{
                 s.column_text(0), s.column_text(1), s.column_int(2),
@@ -481,12 +475,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<mtr_segment>& nasr_database::query_mtrs(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<mtr_segment>& nasr_database::query_mtrs(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.mtrs, d.stmt_mtrs,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
+            bbox, [](sqlite::statement& s)
         {
             return mtr_segment{
                 s.column_text(0), s.column_text(1), s.column_text(2),
@@ -495,12 +488,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<maa>& nasr_database::query_maas(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<maa>& nasr_database::query_maas(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.maas, d.stmt_maas,
-            lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
+            bbox, [&](sqlite::statement& s)
         {
             maa m{s.column_text(0), s.column_text(1), s.column_text(2),
                   s.column_double(3), s.column_double(4), s.column_double(5),
@@ -521,12 +513,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<class_airspace>& nasr_database::query_class_airspace(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<class_airspace>& nasr_database::query_class_airspace(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.class_airspaces, d.stmt_cls_arsp,
-            lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
+            bbox, [&](sqlite::statement& s)
         {
             class_airspace a{s.column_int(0),
                 s.column_text(1), s.column_text(2), s.column_text(3),
@@ -555,24 +546,22 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<runway>& nasr_database::query_runways(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<runway>& nasr_database::query_runways(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.runways, d.stmt_runways,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
+            bbox, [](sqlite::statement& s)
         {
             return runway{s.column_double(0), s.column_double(1),
                           s.column_double(2), s.column_double(3)};
         });
     }
 
-    const std::vector<sua>& nasr_database::query_sua(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<sua>& nasr_database::query_sua(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.suas, d.stmt_sua,
-            lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
+            bbox, [&](sqlite::statement& s)
         {
             sua su{s.column_int(0), s.column_text(1), s.column_text(2), s.column_text(3),
                    s.column_text(4), s.column_text(5),
@@ -622,12 +611,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<obstacle>& nasr_database::query_obstacles(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<obstacle>& nasr_database::query_obstacles(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.obstacles, d.stmt_obstacles,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
+            bbox, [](sqlite::statement& s)
         {
             return obstacle{
                 s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
@@ -639,12 +627,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<artcc>& nasr_database::query_artcc(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<artcc>& nasr_database::query_artcc(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.artccs, d.stmt_artcc,
-            lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
+            bbox, [&](sqlite::statement& s)
         {
             artcc a{s.column_int(0), s.column_text(1),
                     s.column_text(2), s.column_text(3), {}};
@@ -660,12 +647,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<pja>& nasr_database::query_pjas(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<pja>& nasr_database::query_pjas(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.pjas, d.stmt_pjas,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
+            bbox, [](sqlite::statement& s)
         {
             return pja{s.column_text(0), s.column_text(1),
                        s.column_double(2), s.column_double(3), s.column_double(4),
@@ -673,12 +659,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<adiz>& nasr_database::query_adiz(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<adiz>& nasr_database::query_adiz(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.adizs, d.stmt_adiz,
-            lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
+            bbox, [&](sqlite::statement& s)
         {
             adiz a{s.column_int(0), s.column_text(1),
                    s.column_text(2), s.column_text(3), s.column_text(4), {}};
@@ -702,12 +687,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<fss>& nasr_database::query_fss(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<fss>& nasr_database::query_fss(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.fsss, d.stmt_fss,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
+            bbox, [](sqlite::statement& s)
         {
             return fss{
                 s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
@@ -718,12 +702,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<awos>& nasr_database::query_awos(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<awos>& nasr_database::query_awos(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.awoss, d.stmt_awos,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
+            bbox, [](sqlite::statement& s)
         {
             return awos{
                 s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
@@ -734,12 +717,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<comm_outlet>& nasr_database::query_comm_outlets(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<comm_outlet>& nasr_database::query_comm_outlets(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.comm_outlets, d.stmt_comm_outlets,
-            lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
+            bbox, [](sqlite::statement& s)
         {
             return comm_outlet{
                 s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
@@ -750,12 +732,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<boundary_segment>& nasr_database::query_artcc_segments(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<boundary_segment>& nasr_database::query_artcc_segments(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         d.artcc_segs.clear();
-        d.bind_bbox(d.stmt_artcc_seg, lon_min, lat_min, lon_max, lat_max);
+        d.bind_bbox(d.stmt_artcc_seg, bbox);
         int current_seg = -1;
         while (d.stmt_artcc_seg.step())
         {
@@ -772,12 +753,11 @@ namespace nasrbrowse
         return d.artcc_segs;
     }
 
-    const std::vector<boundary_segment>& nasr_database::query_adiz_segments(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<boundary_segment>& nasr_database::query_adiz_segments(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         d.adiz_segs.clear();
-        d.bind_bbox(d.stmt_adiz_seg, lon_min, lat_min, lon_max, lat_max);
+        d.bind_bbox(d.stmt_adiz_seg, bbox);
         int current_seg = -1;
         while (d.stmt_adiz_seg.step())
         {
@@ -794,12 +774,11 @@ namespace nasrbrowse
         return d.adiz_segs;
     }
 
-    const std::vector<airspace_segment>& nasr_database::query_class_airspace_segments(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<airspace_segment>& nasr_database::query_class_airspace_segments(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         d.cls_arsp_segs.clear();
-        d.bind_bbox(d.stmt_cls_arsp_seg, lon_min, lat_min, lon_max, lat_max);
+        d.bind_bbox(d.stmt_cls_arsp_seg, bbox);
         int current_seg = -1;
         while (d.stmt_cls_arsp_seg.step())
         {
@@ -818,12 +797,11 @@ namespace nasrbrowse
         return d.cls_arsp_segs;
     }
 
-    const std::vector<sua_segment>& nasr_database::query_sua_segments(
-        double lon_min, double lat_min, double lon_max, double lat_max)
+    const std::vector<sua_segment>& nasr_database::query_sua_segments(const geo_bbox& bbox)
     {
         auto& d = *pimpl;
         d.sua_segs.clear();
-        d.bind_bbox(d.stmt_sua_seg, lon_min, lat_min, lon_max, lat_max);
+        d.bind_bbox(d.stmt_sua_seg, bbox);
         int current_seg = -1;
         while (d.stmt_sua_seg.step())
         {

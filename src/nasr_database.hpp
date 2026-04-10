@@ -1,4 +1,5 @@
 #pragma once
+#include "geo_types.hpp"
 #include <memory>
 #include <string>
 #include <vector>
@@ -103,12 +104,6 @@ namespace nasrbrowse
         double from_lon;
         double to_lat;
         double to_lon;
-    };
-
-    struct airspace_point
-    {
-        double lat;
-        double lon;
     };
 
     struct polygon_ring
@@ -335,48 +330,28 @@ namespace nasrbrowse
 
         // Query features within a geographic bounding box (lon/lat degrees).
         // Results are valid until the next query call on the same type.
-        const std::vector<airport>& query_airports(double lon_min, double lat_min,
-                                                   double lon_max, double lat_max);
-        const std::vector<navaid>& query_navaids(double lon_min, double lat_min,
-                                                 double lon_max, double lat_max);
-        const std::vector<fix>& query_fixes(double lon_min, double lat_min,
-                                            double lon_max, double lat_max);
-        const std::vector<airway_segment>& query_airways(double lon_min, double lat_min,
-                                                         double lon_max, double lat_max);
-        const std::vector<mtr_segment>& query_mtrs(double lon_min, double lat_min,
-                                                    double lon_max, double lat_max);
-        const std::vector<maa>& query_maas(double lon_min, double lat_min,
-                                            double lon_max, double lat_max);
-        const std::vector<class_airspace>& query_class_airspace(double lon_min, double lat_min,
-                                                                double lon_max, double lat_max);
-        const std::vector<runway>& query_runways(double lon_min, double lat_min,
-                                                  double lon_max, double lat_max);
-        const std::vector<sua>& query_sua(double lon_min, double lat_min,
-                                          double lon_max, double lat_max);
-        const std::vector<obstacle>& query_obstacles(double lon_min, double lat_min,
-                                                      double lon_max, double lat_max);
-        const std::vector<artcc>& query_artcc(double lon_min, double lat_min,
-                                               double lon_max, double lat_max);
-        const std::vector<pja>& query_pjas(double lon_min, double lat_min,
-                                            double lon_max, double lat_max);
-        const std::vector<adiz>& query_adiz(double lon_min, double lat_min,
-                                             double lon_max, double lat_max);
-        const std::vector<fss>& query_fss(double lon_min, double lat_min,
-                                           double lon_max, double lat_max);
-        const std::vector<awos>& query_awos(double lon_min, double lat_min,
-                                             double lon_max, double lat_max);
-        const std::vector<comm_outlet>& query_comm_outlets(double lon_min, double lat_min,
-                                                            double lon_max, double lat_max);
+        const std::vector<airport>& query_airports(const geo_bbox& bbox);
+        const std::vector<navaid>& query_navaids(const geo_bbox& bbox);
+        const std::vector<fix>& query_fixes(const geo_bbox& bbox);
+        const std::vector<airway_segment>& query_airways(const geo_bbox& bbox);
+        const std::vector<mtr_segment>& query_mtrs(const geo_bbox& bbox);
+        const std::vector<maa>& query_maas(const geo_bbox& bbox);
+        const std::vector<class_airspace>& query_class_airspace(const geo_bbox& bbox);
+        const std::vector<runway>& query_runways(const geo_bbox& bbox);
+        const std::vector<sua>& query_sua(const geo_bbox& bbox);
+        const std::vector<obstacle>& query_obstacles(const geo_bbox& bbox);
+        const std::vector<artcc>& query_artcc(const geo_bbox& bbox);
+        const std::vector<pja>& query_pjas(const geo_bbox& bbox);
+        const std::vector<adiz>& query_adiz(const geo_bbox& bbox);
+        const std::vector<fss>& query_fss(const geo_bbox& bbox);
+        const std::vector<awos>& query_awos(const geo_bbox& bbox);
+        const std::vector<comm_outlet>& query_comm_outlets(const geo_bbox& bbox);
 
         // Subdivided segment queries for rendering (tight R-tree bboxes)
-        const std::vector<boundary_segment>& query_artcc_segments(
-            double lon_min, double lat_min, double lon_max, double lat_max);
-        const std::vector<boundary_segment>& query_adiz_segments(
-            double lon_min, double lat_min, double lon_max, double lat_max);
-        const std::vector<airspace_segment>& query_class_airspace_segments(
-            double lon_min, double lat_min, double lon_max, double lat_max);
-        const std::vector<sua_segment>& query_sua_segments(
-            double lon_min, double lat_min, double lon_max, double lat_max);
+        const std::vector<boundary_segment>& query_artcc_segments(const geo_bbox& bbox);
+        const std::vector<boundary_segment>& query_adiz_segments(const geo_bbox& bbox);
+        const std::vector<airspace_segment>& query_class_airspace_segments(const geo_bbox& bbox);
+        const std::vector<sua_segment>& query_sua_segments(const geo_bbox& bbox);
     };
 
 } // namespace nasrbrowse

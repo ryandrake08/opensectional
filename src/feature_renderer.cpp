@@ -1,5 +1,6 @@
 #include "feature_renderer.hpp"
 #include "feature_builder.hpp"
+#include "geo_types.hpp"
 #include "line_renderer.hpp"
 #include "map_view.hpp"
 #include "render_context.hpp"
@@ -29,7 +30,7 @@ namespace nasrbrowse
         int viewport_height;
 
         // Cached query bbox (in lon/lat)
-        double query_lon_min, query_lat_min, query_lon_max, query_lat_max;
+        geo_bbox query_bbox;
         double last_zoom;
         bool has_cached_query;
 
@@ -48,10 +49,7 @@ namespace nasrbrowse
             , half_extent_y(HALF_CIRCUMFERENCE)
             , aspect_ratio(1.0)
             , viewport_height(0)
-            , query_lon_min(0)
-            , query_lat_min(0)
-            , query_lon_max(0)
-            , query_lat_max(0)
+            , query_bbox{0, 0, 0, 0}
             , last_zoom(-1)
             , has_cached_query(false)
         {
@@ -62,8 +60,7 @@ namespace nasrbrowse
             return nasrbrowse::zoom_level(half_extent_y, viewport_height);
         }
 
-        bool needs_requery(double lon_min, double lat_min,
-                           double lon_max, double lat_max) const
+        bool needs_requery(const geo_bbox& bbox) const
         {
             if(!has_cached_query)
             {
@@ -76,8 +73,8 @@ namespace nasrbrowse
                 return true;
             }
 
-            return lon_min < query_lon_min || lon_max > query_lon_max ||
-                   lat_min < query_lat_min || lat_max > query_lat_max;
+            return bbox.lon_min < query_bbox.lon_min || bbox.lon_max > query_bbox.lon_max ||
+                   bbox.lat_min < query_bbox.lat_min || bbox.lat_max > query_bbox.lat_max;
         }
 
         void rebuild_sdf_lines()
@@ -119,31 +116,26 @@ namespace nasrbrowse
         pimpl->viewport_height = viewport_height;
         pimpl->aspect_ratio = aspect_ratio;
 
-        double lon_min = mx_to_lon(vx_min);
-        double lon_max = mx_to_lon(vx_max);
-        double lat_min = my_to_lat(vy_min);
-        double lat_max = my_to_lat(vy_max);
+        geo_bbox view_bbox{mx_to_lon(vx_min), my_to_lat(vy_min),
+                            mx_to_lon(vx_max), my_to_lat(vy_max)};
 
-        if(pimpl->needs_requery(lon_min, lat_min, lon_max, lat_max))
+        if(pimpl->needs_requery(view_bbox))
         {
-            double lon_pad = (lon_max - lon_min) * QUERY_BBOX_PADDING;
-            double lat_pad = (lat_max - lat_min) * QUERY_BBOX_PADDING;
+            double lon_pad = (view_bbox.lon_max - view_bbox.lon_min) * QUERY_BBOX_PADDING;
+            double lat_pad = (view_bbox.lat_max - view_bbox.lat_min) * QUERY_BBOX_PADDING;
 
             feature_build_request req;
-            req.lon_min = lon_min - lon_pad;
-            req.lat_min = lat_min - lat_pad;
-            req.lon_max = lon_max + lon_pad;
-            req.lat_max = lat_max + lat_pad;
+            req.lon_min = view_bbox.lon_min - lon_pad;
+            req.lat_min = view_bbox.lat_min - lat_pad;
+            req.lon_max = view_bbox.lon_max + lon_pad;
+            req.lat_max = view_bbox.lat_max + lat_pad;
             req.half_extent_y = half_extent_y;
             req.viewport_height = viewport_height;
             req.zoom = pimpl->zoom_level();
             pimpl->builder.request(req);
 
             // Speculatively update cache so we don't re-request next frame
-            pimpl->query_lon_min = req.lon_min;
-            pimpl->query_lat_min = req.lat_min;
-            pimpl->query_lon_max = req.lon_max;
-            pimpl->query_lat_max = req.lat_max;
+            pimpl->query_bbox = {req.lon_min, req.lat_min, req.lon_max, req.lat_max};
             pimpl->last_zoom = req.zoom;
             pimpl->has_cached_query = true;
         }
