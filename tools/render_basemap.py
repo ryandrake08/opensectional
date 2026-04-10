@@ -67,9 +67,9 @@ SCALERANK_THRESHOLDS = {
 
 # Label font sizes by zoom
 LABEL_FONT_SIZES = {
-    'country': {0: 10, 2: 12, 4: 14, 6: 16},
-    'state':   {0: 0, 3: 8, 5: 10, 7: 12},
-    'city':    {0: 0, 4: 8, 6: 9, 7: 10, 8: 11},
+    'country': {0: 0, 5: 12, 6: 14, 7: 16},
+    'state':   {0: 0, 6: 10, 7: 12},
+    'city':    {0: 0, 7: 10, 8: 11},
 }
 
 # Natural Earth layers used — multi-scale: pick resolution by zoom
@@ -531,6 +531,14 @@ def render_tile(z, x, y, cache, font_cache):
     to_pixel = make_coord_transform(bbox_3857)
     tile_box = box(*bbox_3857)
 
+    # Padded box for label containment — labels whose anchor is just outside
+    # the tile still need to be drawn so their text isn't clipped at the edge.
+    # Pad by 50% of tile extent (~128px worth) to cover long label text.
+    label_pad_x = (bbox_3857[2] - bbox_3857[0]) * 0.5
+    label_pad_y = (bbox_3857[3] - bbox_3857[1]) * 0.5
+    label_box = box(bbox_3857[0] - label_pad_x, bbox_3857[1] - label_pad_y,
+                    bbox_3857[2] + label_pad_x, bbox_3857[3] + label_pad_y)
+
     layers = get_layer_set(z)
 
     img = Image.new('RGBA', (TILE_SIZE, TILE_SIZE), COLOR_OCEAN)
@@ -607,17 +615,20 @@ def render_tile(z, x, y, cache, font_cache):
         draw_line(draw, pg, COLOR_BORDER_1, width)
 
     # --- Labels ---
+    # Use the wider label bbox for queries so we find features whose
+    # anchor is outside the tile but whose text extends into it.
+    label_query_bbox = label_box.bounds
 
     # Country labels
     country_font_size = get_font_size('country', z)
     if country_font_size > 0:
         font = font_cache.get(country_font_size)
         sr_max = get_scalerank_threshold('places', z)
-        geoms, props = cache.query(LABEL_LAYERS['countries'], query_bbox,
+        geoms, props = cache.query(LABEL_LAYERS['countries'], label_query_bbox,
                                    scalerank_max=sr_max, scalerank_field='scalerank')
         for geom, prop in zip(geoms, props):
             centroid = geom.representative_point()
-            if tile_box.contains(centroid):
+            if label_box.contains(centroid):
                 px, py = to_pixel(centroid.x, centroid.y)
                 name = prop.get('NAME', prop.get('ADMIN', ''))
                 if name:
@@ -627,11 +638,11 @@ def render_tile(z, x, y, cache, font_cache):
     state_font_size = get_font_size('state', z)
     if state_font_size > 0:
         font = font_cache.get(state_font_size)
-        geoms, props = cache.query(LABEL_LAYERS['states'], query_bbox,
+        geoms, props = cache.query(LABEL_LAYERS['states'], label_query_bbox,
                                    scalerank_max=3)
         for geom, prop in zip(geoms, props):
             centroid = geom.representative_point()
-            if tile_box.contains(centroid):
+            if label_box.contains(centroid):
                 px, py = to_pixel(centroid.x, centroid.y)
                 name = prop.get('name', '')
                 if name:
@@ -642,16 +653,16 @@ def render_tile(z, x, y, cache, font_cache):
     if city_font_size > 0:
         font = font_cache.get(city_font_size)
         sr_max = get_scalerank_threshold('places', z)
-        geoms, props = cache.query(LABEL_LAYERS['places'], query_bbox,
+        geoms, props = cache.query(LABEL_LAYERS['places'], label_query_bbox,
                                    scalerank_max=sr_max)
         for geom, prop in zip(geoms, props):
-            if tile_box.contains(geom):
+            if label_box.contains(geom):
                 px, py = to_pixel(geom.x, geom.y)
                 name = prop.get('name', '')
                 if name:
                     draw_label(draw, name, px, py, font)
 
-    return img.convert('RGB')
+    return img.convert('P', palette=Image.ADAPTIVE, colors=256)
 
 
 # ---------------------------------------------------------------------------
@@ -739,8 +750,9 @@ def _get_tier(z):
 def is_solid_color(img_path):
     """Check if a PNG tile is a single solid color."""
     with Image.open(img_path) as img:
-        extrema = img.getextrema()
-        # extrema is ((r_min, r_max), (g_min, g_max), (b_min, b_max), ...)
+        # Convert to RGB so extrema is always per-channel tuples,
+        # regardless of whether the source is palette or RGB mode.
+        extrema = img.convert('RGB').getextrema()
         return all(lo == hi for lo, hi in extrema)
 
 

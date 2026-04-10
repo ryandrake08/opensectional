@@ -19,10 +19,13 @@ namespace sdl
                 throw error(std::string("Failed to load image: ") + file_path);
             }
 
-            // Handle grayscale images (treat grayscale as alpha, RGB as white)
+            // Handle grayscale images (treat grayscale as alpha, RGB as white).
+            // Paletted images with a color palette are NOT grayscale — they
+            // should go through SDL_ConvertSurface to expand the palette.
             SDL_Surface* rgba_surface = nullptr;
-            bool is_grayscale = (loaded_surface->format == SDL_PIXELFORMAT_INDEX8) ||
-                                (SDL_ISPIXELFORMAT_INDEXED(loaded_surface->format));
+            bool is_indexed = SDL_ISPIXELFORMAT_INDEXED(loaded_surface->format);
+            bool has_palette = is_indexed && SDL_GetSurfacePalette(loaded_surface) != nullptr;
+            bool is_grayscale = is_indexed && !has_palette;
 
             if(is_grayscale)
             {
