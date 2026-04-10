@@ -29,7 +29,7 @@
 #include <default_metallib.h>
 #include <line_metallib.h>
 #include <textured_metallib.h>
-#else
+#endif
 #include <default_frag_spv.h>
 #include <default_vert_spv.h>
 #include <line_frag_spv.h>
@@ -43,7 +43,6 @@
 #include <line_vert_dxil.h>
 #include <textured_frag_dxil.h>
 #include <textured_vert_dxil.h>
-#endif
 #endif
 
 // Embedded font
@@ -112,36 +111,33 @@ namespace
     }
 #endif
 
+#ifdef __APPLE__
+    shader_bytecode get_metallib_bytecode(shader_id id)
+    {
+        switch(id)
+        {
+        case shader_id::DEFAULT:  return { default_metallib, default_metallib_len };
+        case shader_id::LINE:     return { line_metallib, line_metallib_len };
+        case shader_id::TEXTURED: return { textured_metallib, textured_metallib_len };
+        }
+        return { nullptr, 0 };
+    }
+#endif
+
     sdl::shader load_shader(const sdl::device& dev, shader_id id, sdl::shader_stage_t stage,
                             uint32_t num_samplers = 0, uint32_t num_storage_buffers = 0)
     {
         const char* entrypoint = (stage == sdl::shader_stage::vertex) ? "vertex_main" : "fragment_main";
-
-#ifdef __APPLE__
-        const unsigned char* data = nullptr;
-        unsigned int len = 0;
-
-        switch(id)
-        {
-        case shader_id::DEFAULT:
-            data = default_metallib;
-            len = default_metallib_len;
-            break;
-        case shader_id::LINE:
-            data = line_metallib;
-            len = line_metallib_len;
-            break;
-        case shader_id::TEXTURED:
-            data = textured_metallib;
-            len = textured_metallib_len;
-            break;
-        }
-
-        return sdl::shader(dev, data, len, entrypoint, stage, sdl::shader_format::invalid, num_samplers, num_storage_buffers);
-#else
         sdl::shader_format_t format = dev.get_shader_format();
         shader_bytecode bc = { nullptr, 0 };
 
+#ifdef __APPLE__
+        if(format == sdl::shader_format::metallib)
+        {
+            bc = get_metallib_bytecode(id);
+            return sdl::shader(dev, bc.data, bc.len, entrypoint, stage, format, num_samplers, num_storage_buffers);
+        }
+#endif
 #ifdef _WIN32
         if(format == sdl::shader_format::dxil)
             bc = get_dxil_bytecode(id, stage);
@@ -150,7 +146,6 @@ namespace
             bc = get_spirv_bytecode(id, stage);
 
         return sdl::shader(dev, bc.data, bc.len, entrypoint, stage, format, num_samplers, num_storage_buffers);
-#endif
     }
 } // anonymous namespace
 
@@ -195,7 +190,7 @@ int main(int argc, char** argv)
 
     if(argc - argi < 2)
     {
-        std::cerr << "Usage: nasrbrowse [-v|-vv|-vvv] [--gpu vulkan|direct3d12] <tile_path> <nasr.db>" << std::endl;
+        std::cerr << "Usage: nasrbrowse [-v|-vv|-vvv] [--gpu vulkan|metal|direct3d12] <tile_path> <nasr.db>" << std::endl;
         return EXIT_FAILURE;
     }
 
@@ -217,13 +212,7 @@ int main(int argc, char** argv)
             static_cast<uint64_t>(sdl::window_flags::high_pixel_density));
         sdl::window win(sdl_ctx, "NASRBrowse", 1280, 1024, win_flags);
 
-        // Default to Vulkan on Windows (better performance than D3D12 via SDL3).
-        // Override with --gpu direct3d12 if needed.
-#ifdef _WIN32
         const char* default_driver = "vulkan";
-#else
-        const char* default_driver = nullptr;
-#endif
         sdl::device dev(win, true, gpu_driver ? gpu_driver : default_driver);
 
         // Create pipelines

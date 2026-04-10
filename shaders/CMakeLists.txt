@@ -47,14 +47,17 @@ if(NOT XXD)
     message(FATAL_ERROR "xxd not found - required for embedding shader bytecode")
 endif()
 
-# Find DXC and SPIRV-Cross for HLSL pipeline
+# Find DXC (all platforms) and SPIRV-Cross (macOS only, for SPIR-V → MSL)
 find_program(DXC dxc PATHS "${VULKAN_SDK_PATH}/bin" NO_DEFAULT_PATH)
-find_program(SPIRV_CROSS spirv-cross PATHS "${VULKAN_SDK_PATH}/bin" NO_DEFAULT_PATH)
+if(NOT DXC)
+    message(FATAL_ERROR "dxc not found in VULKAN_SDK - required for HLSL shader compilation")
+endif()
 
-if(DXC AND SPIRV_CROSS)
-    message(STATUS "HLSL shader pipeline available (DXC + SPIRV-Cross)")
-else()
-    message(FATAL_ERROR "HLSL shader pipeline not available - DXC and SPIRV-Cross required")
+if(APPLE)
+    find_program(SPIRV_CROSS spirv-cross PATHS "${VULKAN_SDK_PATH}/bin" NO_DEFAULT_PATH)
+    if(NOT SPIRV_CROSS)
+        message(FATAL_ERROR "spirv-cross not found in VULKAN_SDK - required for Metal shader compilation")
+    endif()
 endif()
 
 # Custom target for all shaders
@@ -70,9 +73,12 @@ foreach(SHADER ${SHADERS})
     endif()
 
     if(APPLE)
-        # macOS: HLSL → SPIR-V → MSL → .metallib → .h
+        # macOS: HLSL → SPIR-V → MSL → .metallib → .h (Metal path)
+        #        HLSL → SPIR-V → .h (Vulkan/MoltenVK path)
         set(METALLIB_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}.metallib")
         set(HEADER_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_metallib.h")
+        set(HEADER_VERT_SPV "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_vert_spv.h")
+        set(HEADER_FRAG_SPV "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_frag_spv.h")
         set(AIR_FILES "")
 
         # Process both vertex and fragment stages
@@ -148,8 +154,27 @@ foreach(SHADER ${SHADERS})
             VERBATIM
         )
 
+        # Embed SPIR-V → .h (for Vulkan/MoltenVK path)
+        add_custom_command(
+            OUTPUT ${HEADER_VERT_SPV}
+            COMMAND ${XXD} -i ${SHADER}_vert.spv > ${HEADER_VERT_SPV}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_vert.spv
+            COMMENT "Embedding vertex shader bytecode: ${SHADER}_vert.spv → ${SHADER}_vert_spv.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT ${HEADER_FRAG_SPV}
+            COMMAND ${XXD} -i ${SHADER}_frag.spv > ${HEADER_FRAG_SPV}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_frag.spv
+            COMMENT "Embedding fragment shader bytecode: ${SHADER}_frag.spv → ${SHADER}_frag_spv.h"
+            VERBATIM
+        )
+
         # Add to shader target dependencies
-        add_custom_target(${SHADER}_shader DEPENDS ${HEADER_FILE})
+        add_custom_target(${SHADER}_shader DEPENDS ${HEADER_FILE} ${HEADER_VERT_SPV} ${HEADER_FRAG_SPV})
         add_dependencies(shaders ${SHADER}_shader)
 
     else()

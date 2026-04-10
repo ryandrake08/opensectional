@@ -74,6 +74,10 @@ cmake --build build-mingw -j
 
 The resulting `build-mingw/nasrbrowse.exe` is self-contained (all dependencies statically linked, font embedded). The target machine needs a Vulkan-capable GPU with up-to-date drivers.
 
+### GPU Backend
+
+NASRBrowse defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` or `--gpu direct3d12` to override. The shader format is selected at runtime based on the active backend.
+
 ### Shader Compiler Toolchain
 
 Shaders are written in HLSL and cross-compiled during the build. This requires:
@@ -95,9 +99,9 @@ cmake --build build-debug -j
 ```
 
 Shaders are cross-compiled automatically during the build:
-- macOS: HLSL → SPIR-V → MSL → .metallib
+- macOS: HLSL → SPIR-V + HLSL → SPIR-V → MSL → .metallib (both formats)
 - Linux: HLSL → SPIR-V
-- Windows: HLSL → SPIR-V + HLSL → DXIL (both formats, runtime selection)
+- Windows: HLSL → SPIR-V + HLSL → DXIL (both formats)
 
 ## Data Preparation
 
@@ -196,8 +200,9 @@ For a basemap derived from FAA aeronav charts, generate XYZ tile pyramids using 
 | `-v` | Show warnings |
 | `-vv` | Show info (initialization, GPU backend, present mode) |
 | `-vvv` | Show debug (resource lifecycle, buffer uploads, shader creation) |
-| `--gpu vulkan` | Force Vulkan backend (default on Windows) |
-| `--gpu direct3d12` | Force Direct3D 12 backend |
+| `--gpu vulkan` | Force Vulkan backend (default on all platforms) |
+| `--gpu metal` | Force Metal backend (macOS only) |
+| `--gpu direct3d12` | Force Direct3D 12 backend (Windows only) |
 
 Layer visibility (basemap, airports, runways, navaids, fixes, airways, MTRs,
 airspace, SUA, ADIZ, ARTCC, obstacles) is controlled via checkbox panel in the
