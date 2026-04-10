@@ -11,7 +11,7 @@ namespace sdl
         SDL_Window* window;
         SDL_GPUDevice* handle;
 
-        impl(SDL_Window* win, bool vsync) : window(win), handle(SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_DXIL, true, nullptr))
+        impl(SDL_Window* win, bool vsync) : window(win), handle(SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL, true, nullptr))
         {
             // Create GPU device with automatic backend selection
             if(!handle)

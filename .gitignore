@@ -4,7 +4,10 @@
 .vscode
 __pycache__
 build
-tools/env
+build-mingw
+mingw-deps
+mingw-deps-build
+tools/env*
 nasr_data
 nasr.db
 basemap

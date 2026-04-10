@@ -4,6 +4,15 @@ project(nasrbrowse CXX)
 # Export compile commands
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Build-type-specific compiler options (MinGW lacks ASan and gprof support)
+if(MINGW)
+    set(DEBUG_COMPILE_OPTIONS -O0 -g)
+    set(RELWITHDEBINFO_COMPILE_OPTIONS -O2 -g)
+else()
+    set(DEBUG_COMPILE_OPTIONS -O0 -ggdb -fsanitize=address)
+    set(RELWITHDEBINFO_COMPILE_OPTIONS -O2 -g -pg)
+endif()
+
 # Find SDL3 (system-installed)
 find_package(SDL3 REQUIRED CONFIG)
 find_package(SDL3_image REQUIRED CONFIG)
@@ -66,9 +75,9 @@ target_include_directories(sdl_wrapper PUBLIC
 target_link_libraries(sdl_wrapper PUBLIC SDL3::SDL3 SDL3_image::SDL3_image SDL3_ttf::SDL3_ttf)
 target_compile_options(sdl_wrapper PRIVATE -Wall -Wextra)
 target_compile_options(sdl_wrapper PRIVATE
-    $<$<CONFIG:Debug>:-O0 -ggdb -fsanitize=address>
+    $<$<CONFIG:Debug>:${DEBUG_COMPILE_OPTIONS}>
     $<$<CONFIG:Release>:-O3>
-    $<$<CONFIG:RelWithDebInfo>:-O2 -g -pg>
+    $<$<CONFIG:RelWithDebInfo>:${RELWITHDEBINFO_COMPILE_OPTIONS}>
 )
 
 # ImGui C++ wrapper library
@@ -78,9 +87,9 @@ target_include_directories(imgui_wrapper PRIVATE ${CMAKE_SOURCE_DIR}/lib)
 target_link_libraries(imgui_wrapper PUBLIC sdl_wrapper imgui)
 target_compile_options(imgui_wrapper PRIVATE -Wall -Wextra)
 target_compile_options(imgui_wrapper PRIVATE
-    $<$<CONFIG:Debug>:-O0 -ggdb -fsanitize=address>
+    $<$<CONFIG:Debug>:${DEBUG_COMPILE_OPTIONS}>
     $<$<CONFIG:Release>:-O3>
-    $<$<CONFIG:RelWithDebInfo>:-O2 -g -pg>
+    $<$<CONFIG:RelWithDebInfo>:${RELWITHDEBINFO_COMPILE_OPTIONS}>
 )
 
 # SQLite C++ wrapper library
@@ -90,13 +99,13 @@ add_library(sqlite_wrapper STATIC
 )
 target_compile_features(sqlite_wrapper PRIVATE cxx_std_11)
 target_include_directories(sqlite_wrapper PUBLIC ${CMAKE_SOURCE_DIR}/lib)
-target_link_libraries(sqlite_wrapper PUBLIC ${SQLITE3_LIBRARIES})
+target_link_libraries(sqlite_wrapper PUBLIC ${SQLITE3_LINK_LIBRARIES})
 target_include_directories(sqlite_wrapper PUBLIC ${SQLITE3_INCLUDE_DIRS})
 target_compile_options(sqlite_wrapper PRIVATE -Wall -Wextra)
 target_compile_options(sqlite_wrapper PRIVATE
-    $<$<CONFIG:Debug>:-O0 -ggdb -fsanitize=address>
+    $<$<CONFIG:Debug>:${DEBUG_COMPILE_OPTIONS}>
     $<$<CONFIG:Release>:-O3>
-    $<$<CONFIG:RelWithDebInfo>:-O2 -g -pg>
+    $<$<CONFIG:RelWithDebInfo>:${RELWITHDEBINFO_COMPILE_OPTIONS}>
 )
 
 # Include directories
@@ -112,9 +121,9 @@ target_compile_options(nasrbrowse PRIVATE -Wall -Wextra)
 
 # Build-type-specific compiler options
 target_compile_options(nasrbrowse PRIVATE
-    $<$<CONFIG:Debug>:-O0 -ggdb -fsanitize=address>
+    $<$<CONFIG:Debug>:${DEBUG_COMPILE_OPTIONS}>
     $<$<CONFIG:Release>:-O3>
-    $<$<CONFIG:RelWithDebInfo>:-O2 -g -pg>
+    $<$<CONFIG:RelWithDebInfo>:${RELWITHDEBINFO_COMPILE_OPTIONS}>
 )
 
 # Build-type-specific definitions
@@ -124,8 +133,8 @@ target_compile_definitions(nasrbrowse PRIVATE
 
 # Build-type-specific linker options
 target_link_options(nasrbrowse PRIVATE
-    $<$<CONFIG:Debug>:-fsanitize=address>
-    $<$<CONFIG:RelWithDebInfo>:-pg>
+    $<$<CONFIG:Debug>:${DEBUG_COMPILE_OPTIONS}>
+    $<$<CONFIG:RelWithDebInfo>:${RELWITHDEBINFO_COMPILE_OPTIONS}>
 )
 
 # Link libraries
