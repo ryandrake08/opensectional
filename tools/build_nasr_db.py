@@ -2315,16 +2315,21 @@ def build_artcc(conn, csv_zf):
 
     seg_rows = list(read_csv_rows(csv_zf, "ARB_SEG.csv"))
 
-    # Group segments by LOCATION_ID + ALTITUDE, forming one polygon each
+    # Group segments by LOCATION_ID + ALTITUDE + TYPE, forming one polygon each.
+    # TYPE matters for oceanic ARTCCs where a single (LOCATION_ID, ALTITUDE)
+    # can have separate CTA, FIR, CTA/FIR, and UTA boundary rings.
+    # Within a group, "POINT OF BEGINNING" in BNDRY_PT_DESCRIP delimits
+    # sub-rings (e.g. ZOA UTA has 4 separate polygons in one TYPE group).
     from collections import defaultdict
     boundaries = defaultdict(list)
     for row in seg_rows:
-        key = (row["LOCATION_ID"], row["ALTITUDE"])
+        key = (row["LOCATION_ID"], row["ALTITUDE"], row.get("TYPE", ""))
         try:
             seq = int(row["POINT_SEQ"])
             lat = float(row["LAT_DECIMAL"])
             lon = float(row["LONG_DECIMAL"])
-            boundaries[key].append((seq, lon, lat))
+            desc = row.get("BNDRY_PT_DESCRIP", "")
+            boundaries[key].append((seq, lon, lat, desc))
         except (ValueError, KeyError):
             continue
 
@@ -2336,18 +2341,31 @@ def build_artcc(conn, csv_zf):
     for row in read_csv_rows(csv_zf, "ARB_BASE.csv"):
         base_info[row["LOCATION_ID"]] = row.get("LOCATION_NAME", "")
 
-    for (loc_id, altitude), points in sorted(boundaries.items()):
+    for (loc_id, altitude, _), points in sorted(boundaries.items()):
         points.sort(key=lambda p: p[0])  # sort by POINT_SEQ
         if len(points) < 3:
             continue
 
-        ring = [(lon, lat) for _, lon, lat in points]
+        # Split into sub-rings at "POINT OF BEGINNING" boundaries
+        sub_rings = []
+        current = []
+        for _, lon, lat, desc in points:
+            current.append((lon, lat))
+            if "POINT OF BEGINNING" in desc.upper():
+                sub_rings.append(current)
+                current = []
+        if current:
+            sub_rings.append(current)
+
         name = base_info.get(loc_id, loc_id)
-        for copy in handle_antimeridian(ring):
-            artcc_id = len(base_rows) + 1
-            base_rows.append((artcc_id, loc_id, name, altitude))
-            for point_seq, (lon, lat) in enumerate(copy):
-                shp_rows.append((artcc_id, point_seq, lon, lat))
+        for ring in sub_rings:
+            if len(ring) < 3:
+                continue
+            for copy in handle_antimeridian(ring):
+                artcc_id = len(base_rows) + 1
+                base_rows.append((artcc_id, loc_id, name, altitude))
+                for point_seq, (lon, lat) in enumerate(copy):
+                    shp_rows.append((artcc_id, point_seq, lon, lat))
 
     conn.executemany("INSERT INTO ARTCC_BASE VALUES (?, ?, ?, ?)", base_rows)
     conn.executemany("INSERT INTO ARTCC_SHP VALUES (?, ?, ?, ?)", shp_rows)
