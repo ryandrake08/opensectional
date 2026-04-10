@@ -22,6 +22,9 @@ tools/env/bin/python3 tools/download_nasr_data.py nasr_data
 
 # 6. Run (requires pre-built XYZ tile directory)
 ./build/nasrbrowse <tile_path> nasr.db
+
+# Verbosity: -v (warnings), -vv (info), -vvv (debug)
+./build/nasrbrowse -vv <tile_path> nasr.db
 ```
 
 ## Dependencies
@@ -53,6 +56,24 @@ brew install cmake sdl3 sdl3_image sdl3_ttf sqlite3
 sudo apt install cmake libsdl3-dev libsdl3-image-dev libsdl3-ttf-dev libsqlite3-dev xxd
 ```
 
+### Windows (cross-compiled from Linux)
+
+Cross-compile using MinGW-w64. The toolchain and dependency build script are included:
+
+```bash
+# Install MinGW toolchain (Debian/Ubuntu)
+sudo apt install g++-mingw-w64-x86-64
+
+# Build cross-compiled dependencies (SDL3, SDL3_image, SDL3_ttf, SQLite3)
+./tools/build-mingw-deps.sh
+
+# Build
+cmake -B build-mingw -DCMAKE_TOOLCHAIN_FILE=mingw-w64-toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build-mingw -j
+```
+
+The resulting `build-mingw/nasrbrowse.exe` is self-contained (all dependencies statically linked, font embedded). The target machine needs a Vulkan-capable GPU with up-to-date drivers.
+
 ### Shader Compiler Toolchain
 
 Shaders are written in HLSL and cross-compiled during the build. This requires:
@@ -74,8 +95,9 @@ cmake --build build-debug -j
 ```
 
 Shaders are cross-compiled automatically during the build:
-- macOS: HLSL to Metal (via `metal` and `metallib` tools)
-- Linux: HLSL to SPIR-V (via `glslangValidator` or similar)
+- macOS: HLSL → SPIR-V → MSL → .metallib
+- Linux: HLSL → SPIR-V
+- Windows: HLSL → SPIR-V + HLSL → DXIL (both formats, runtime selection)
 
 ## Data Preparation
 
@@ -167,6 +189,16 @@ For a basemap derived from FAA aeronav charts, generate XYZ tile pyramids using 
 | W/A/S/D | Pan (keyboard) |
 | R/F | Zoom in/out (keyboard) |
 
+### Command Line Options
+
+| Option | Description |
+|--------|-------------|
+| `-v` | Show warnings |
+| `-vv` | Show info (initialization, GPU backend, present mode) |
+| `-vvv` | Show debug (resource lifecycle, buffer uploads, shader creation) |
+| `--gpu vulkan` | Force Vulkan backend (default on Windows) |
+| `--gpu direct3d12` | Force Direct3D 12 backend |
+
 Layer visibility (basemap, airports, runways, navaids, fixes, airways, MTRs,
 airspace, SUA, ADIZ, ARTCC, obstacles) is controlled via checkbox panel in the
 top-right corner.
@@ -186,12 +218,13 @@ src/                    Application sources
 lib/imgui/              ImGui RAII wrapper library
 lib/sdl/                SDL3 GPU API wrapper library
 lib/sqlite/             SQLite RAII wrapper library
-shaders/                HLSL shaders (cross-compiled to Metal/SPIR-V)
+shaders/                HLSL shaders (cross-compiled to Metal/SPIR-V/DXIL)
 thirdparty/             Vendored dependencies (GLM, Dear ImGui)
 tools/
-  download_nasr_data.py FAA data downloader (NASR, DOF, ADIZ)
-  build_nasr_db.py      Database builder (reads downloaded data files)
-  test_nasr_queries.py  Database query correctness and performance tests
+  download_nasr_data.py   FAA data downloader (NASR, DOF, ADIZ)
+  build_nasr_db.py        Database builder (reads downloaded data files)
+  build-mingw-deps.sh     Cross-compile Windows dependencies
+  test_nasr_queries.py    Database query correctness and performance tests
 ```
 
 ## Testing

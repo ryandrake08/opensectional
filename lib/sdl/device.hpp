@@ -28,9 +28,11 @@ namespace sdl
          *
          * @param win SDL window wrapper (enforces creation order)
          * @param vsync Enable vsync (default: false for lowest latency)
+         * @param preferred_driver Force a specific backend (e.g. "vulkan",
+         *                         "direct3d12"), or nullptr for auto-selection
          * @throws std::runtime_error if device creation or window claim fails
          */
-        explicit device(const sdl::window& win, bool vsync = false);
+        explicit device(const sdl::window& win, bool vsync = false, const char* preferred_driver = nullptr);
 
         /**
          * Destroy device and release window.

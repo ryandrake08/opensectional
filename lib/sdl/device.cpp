@@ -11,9 +11,14 @@ namespace sdl
         SDL_Window* window;
         SDL_GPUDevice* handle;
 
-        impl(SDL_Window* win, bool vsync) : window(win), handle(SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_DXIL, false, nullptr))
+        impl(SDL_Window* win, bool vsync, const char* preferred_driver) : window(win), handle(nullptr)
         {
-            // Create GPU device with automatic backend selection
+            // Create GPU device
+            if(preferred_driver)
+            {
+                SDL_SetHint(SDL_HINT_GPU_DRIVER, preferred_driver);
+            }
+            handle = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_DXIL, false, nullptr);
             if(!handle)
             {
                 throw error("Failed to create GPU device");
@@ -34,19 +39,22 @@ namespace sdl
 
             // Choose swapchain presentation mode in order of preference:
             // With vsync=false: IMMEDIATE > MAILBOX > VSYNC
-            // With vsync=true:  MAILBOX > VSYNC
+            // With vsync=true:  VSYNC
             SDL_GPUPresentMode swapchainPresentation = SDL_GPU_PRESENTMODE_VSYNC;
             const char* presentationName = "VSYNC";
 
-            if(!vsync && SDL_WindowSupportsGPUPresentMode(handle, window, SDL_GPU_PRESENTMODE_IMMEDIATE))
+            if(!vsync)
             {
-                swapchainPresentation = SDL_GPU_PRESENTMODE_IMMEDIATE;
-                presentationName = "IMMEDIATE";
-            }
-            else if(SDL_WindowSupportsGPUPresentMode(handle, window, SDL_GPU_PRESENTMODE_MAILBOX))
-            {
-                swapchainPresentation = SDL_GPU_PRESENTMODE_MAILBOX;
-                presentationName = "MAILBOX";
+                if(SDL_WindowSupportsGPUPresentMode(handle, window, SDL_GPU_PRESENTMODE_IMMEDIATE))
+                {
+                    swapchainPresentation = SDL_GPU_PRESENTMODE_IMMEDIATE;
+                    presentationName = "IMMEDIATE";
+                }
+                else if(SDL_WindowSupportsGPUPresentMode(handle, window, SDL_GPU_PRESENTMODE_MAILBOX))
+                {
+                    swapchainPresentation = SDL_GPU_PRESENTMODE_MAILBOX;
+                    presentationName = "MAILBOX";
+                }
             }
 
             // Configure swapchain
@@ -95,7 +103,7 @@ namespace sdl
         }
     };
 
-    device::device(const sdl::window& win, bool vsync) : pimpl(new impl(win.get(), vsync))
+    device::device(const sdl::window& win, bool vsync, const char* preferred_driver) : pimpl(new impl(win.get(), vsync, preferred_driver))
     {
     }
 

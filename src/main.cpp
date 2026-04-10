@@ -166,6 +166,7 @@ int main(int argc, char** argv)
 {
     // Parse optional flags
     int verbosity = 0;
+    const char* gpu_driver = nullptr;
     int argi = 1;
     while(argi < argc && argv[argi][0] == '-')
     {
@@ -180,6 +181,10 @@ int main(int argc, char** argv)
                 return EXIT_FAILURE;
             }
         }
+        else if(std::strcmp(argv[argi], "--gpu") == 0 && argi + 1 < argc)
+        {
+            gpu_driver = argv[++argi];
+        }
         else
         {
             std::cerr << "Unknown option: " << argv[argi] << std::endl;
@@ -190,7 +195,7 @@ int main(int argc, char** argv)
 
     if(argc - argi < 2)
     {
-        std::cerr << "Usage: nasrbrowse [-v|-vv|-vvv] <tile_path> <nasr.db>" << std::endl;
+        std::cerr << "Usage: nasrbrowse [-v|-vv|-vvv] [--gpu vulkan|direct3d12] <tile_path> <nasr.db>" << std::endl;
         return EXIT_FAILURE;
     }
 
@@ -211,7 +216,15 @@ int main(int argc, char** argv)
             static_cast<uint64_t>(sdl::window_flags::resizable) |
             static_cast<uint64_t>(sdl::window_flags::high_pixel_density));
         sdl::window win(sdl_ctx, "NASRBrowse", 1280, 1024, win_flags);
-        sdl::device dev(win, true);
+
+        // Default to Vulkan on Windows (better performance than D3D12 via SDL3).
+        // Override with --gpu direct3d12 if needed.
+#ifdef _WIN32
+        const char* default_driver = "vulkan";
+#else
+        const char* default_driver = nullptr;
+#endif
+        sdl::device dev(win, true, gpu_driver ? gpu_driver : default_driver);
 
         // Create pipelines
         sdl::pipeline linelist_program(dev,
