@@ -51,6 +51,34 @@ static bool point_in_circle_nm(double px, double py,
     return (dlat * dlat + dlon * dlon) <= (radius_nm * radius_nm);
 }
 
+// Equirectangular distance from a point to the nearest point on a segment, in NM
+static double point_to_segment_nm(double px, double py,
+                                   double ax, double ay,
+                                   double bx, double by)
+{
+    double cos_lat = std::cos(py * M_PI / 180.0);
+    double ax_nm = (ax - px) * 60.0 * cos_lat;
+    double ay_nm = (ay - py) * 60.0;
+    double bx_nm = (bx - px) * 60.0 * cos_lat;
+    double by_nm = (by - py) * 60.0;
+
+    double dx = bx_nm - ax_nm;
+    double dy = by_nm - ay_nm;
+    double len2 = dx * dx + dy * dy;
+
+    double t = 0;
+    if(len2 > 0)
+    {
+        t = -(ax_nm * dx + ay_nm * dy) / len2;
+        if(t < 0) t = 0;
+        else if(t > 1) t = 1;
+    }
+
+    double cx = ax_nm + t * dx;
+    double cy = ay_nm + t * dy;
+    return std::sqrt(cx * cx + cy * cy);
+}
+
 
 struct layer_map::impl
 {
@@ -433,6 +461,56 @@ struct layer_map::impl
             }
         }
 
+        // Line features: query with pick box, test point-to-segment distance
+        double pick_radius_nm = (box_lat_max - box_lat_min) * 0.5 * 60.0;
+
+        if(vis[layer_airways])
+        {
+            const auto& airways = pick_db.query_airways(
+                box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+            for(const auto& seg : airways)
+            {
+                if(!styles.airway_visible(seg.awy_id, z))
+                    continue;
+                double d = point_to_segment_nm(click_lon, click_lat,
+                    seg.from_lon, seg.from_lat, seg.to_lon, seg.to_lat);
+                if(d <= pick_radius_nm)
+                    result.features.push_back(seg);
+            }
+        }
+
+        if(vis[layer_mtrs])
+        {
+            if(styles.mtr_visible(z))
+            {
+                const auto& mtrs = pick_db.query_mtrs(
+                    box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+                for(const auto& seg : mtrs)
+                {
+                    double d = point_to_segment_nm(click_lon, click_lat,
+                        seg.from_lon, seg.from_lat, seg.to_lon, seg.to_lat);
+                    if(d <= pick_radius_nm)
+                        result.features.push_back(seg);
+                }
+            }
+        }
+
+        if(vis[layer_runways])
+        {
+            if(styles.runway_visible(z))
+            {
+                const auto& runways = pick_db.query_runways(
+                    box_lon_min, box_lat_min, box_lon_max, box_lat_max);
+                for(const auto& rwy : runways)
+                {
+                    double d = point_to_segment_nm(click_lon, click_lat,
+                        rwy.end1_lon, rwy.end1_lat, rwy.end2_lon, rwy.end2_lat);
+                    if(d <= pick_radius_nm)
+                        result.features.push_back(rwy);
+                }
+            }
+        }
+
         return result;
     }
 };
@@ -512,6 +590,10 @@ void layer_map::on_button_input(sdl::input_button_t button, sdl::input_action_t 
                         std::cerr << "  AWOS: " << feature.id << " " << feature.type << std::endl;
                     else if constexpr(std::is_same_v<T, nasrbrowse::comm_outlet>)
                         std::cerr << "  " << feature.comm_type << ": " << feature.outlet_name << " (" << feature.facility_name << ")" << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::airway_segment>)
+                        std::cerr << "  Airway: " << feature.awy_id << " " << feature.from_point << "-" << feature.to_point << std::endl;
+                    else if constexpr(std::is_same_v<T, nasrbrowse::runway>)
+                        std::cerr << "  Runway" << std::endl;
                 }, f);
             }
         }

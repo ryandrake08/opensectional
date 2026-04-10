@@ -18,7 +18,9 @@ namespace nasrbrowse
         maa,
         pja,
         awos,
-        comm_outlet
+        comm_outlet,
+        airway_segment,
+        runway
     >;
 
     struct pick_result
