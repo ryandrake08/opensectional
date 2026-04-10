@@ -134,11 +134,25 @@ target_link_libraries(nasrbrowse PRIVATE
     sqlite_wrapper
 )
 
+# Embed font as C header
+find_program(XXD xxd REQUIRED)
+set(FONT_SOURCE "${CMAKE_SOURCE_DIR}/thirdparty/fonts/NotoSans-Regular.ttf")
+set(FONT_HEADER "${CMAKE_BINARY_DIR}/NotoSans_Regular_ttf.h")
+add_custom_command(
+    OUTPUT ${FONT_HEADER}
+    COMMAND ${XXD} -i NotoSans-Regular.ttf > ${FONT_HEADER}
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/thirdparty/fonts"
+    DEPENDS ${FONT_SOURCE}
+    COMMENT "Embedding font: NotoSans-Regular.ttf"
+    VERBATIM
+)
+add_custom_target(embedded_font DEPENDS ${FONT_HEADER})
+
 # Shader compilation (Metal, SPIRV)
 add_subdirectory(shaders)
 
-# Add shader headers to include path
-target_include_directories(nasrbrowse PRIVATE ${SHADER_INCLUDE_DIR})
+# Add shader and font headers to include path
+target_include_directories(nasrbrowse PRIVATE ${SHADER_INCLUDE_DIR} ${CMAKE_BINARY_DIR})
 
-# Ensure shaders are built before the executable
-add_dependencies(nasrbrowse shaders)
+# Ensure shaders and font are built before the executable
+add_dependencies(nasrbrowse shaders embedded_font)

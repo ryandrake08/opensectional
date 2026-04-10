@@ -38,6 +38,9 @@
 #include <textured_vert_spv.h>
 #endif
 
+// Embedded font
+#include <NotoSans_Regular_ttf.h>
+
 namespace
 {
     enum class shader_id
@@ -203,8 +206,8 @@ int main(int argc, char** argv)
         // Text rendering
         sdl::text_engine text_engine(dev);
         constexpr int LABEL_OUTLINE_SIZE = 1;
-        sdl::font label_font(text_engine, "thirdparty/fonts/NotoSans-Regular.ttf", 13);
-        sdl::font outline_font(text_engine, "thirdparty/fonts/NotoSans-Regular.ttf", 13);
+        sdl::font label_font(text_engine, NotoSans_Regular_ttf, NotoSans_Regular_ttf_len, 13);
+        sdl::font outline_font(text_engine, NotoSans_Regular_ttf, NotoSans_Regular_ttf_len, 13);
         outline_font.set_outline(LABEL_OUTLINE_SIZE);
         sdl::sampler text_sampler(dev, sdl::filter::nearest, sdl::filter::nearest,
                                   sdl::sampler_address_mode::clamp_to_edge);

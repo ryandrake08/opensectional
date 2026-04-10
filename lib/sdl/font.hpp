@@ -38,6 +38,17 @@ namespace sdl
         font(const text_engine& engine, const char* path, int ptsize);
 
         /**
+         * Load font from memory.
+         *
+         * @param engine Text engine (enforces creation order)
+         * @param data Pointer to font data (must remain valid for font lifetime)
+         * @param size Size of font data in bytes
+         * @param ptsize Point size to load
+         * @throws std::runtime_error if font loading fails
+         */
+        font(const text_engine& engine, const void* data, size_t size, int ptsize);
+
+        /**
          * Close font.
          */
         ~font();

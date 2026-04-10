@@ -28,6 +28,23 @@ namespace sdl
             SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Font loaded: %s (%dpt)", path, ptsize);
         }
 
+        impl(const void* data, size_t size, int ptsize) : handle(nullptr)
+        {
+            SDL_IOStream* io = SDL_IOFromConstMem(data, size);
+            if(!io)
+            {
+                throw error("Failed to create IOStream from font data");
+            }
+
+            handle = TTF_OpenFontIO(io, true, static_cast<float>(ptsize));
+            if(!handle)
+            {
+                throw error("Failed to load embedded font");
+            }
+
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Font loaded from memory (%dpt)", ptsize);
+        }
+
         ~impl() noexcept
         {
             TTF_CloseFont(handle);
@@ -37,6 +54,10 @@ namespace sdl
     font::font(const text_engine& /* engine */, const char* path, int ptsize) : pimpl(new impl(path, ptsize))
     {
         // Note: engine parameter is unused, but enforces initialization order at compile time
+    }
+
+    font::font(const text_engine& /* engine */, const void* data, size_t size, int ptsize) : pimpl(new impl(data, size, ptsize))
+    {
     }
 
     font::~font() = default;
