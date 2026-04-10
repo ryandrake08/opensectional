@@ -1,10 +1,26 @@
 #include "nasr_database.hpp"
 #include <sqlite/database.hpp>
 #include <sqlite/statement.hpp>
+#include <stdexcept>
 #include <string>
 
 namespace nasrbrowse
 {
+    // Prepare a statement and validate its column count at startup
+    static sqlite::statement prepare_checked(sqlite::database& db, const char* sql,
+                                              int expected_columns)
+    {
+        auto stmt = db.prepare(sql);
+        int actual = stmt.column_count();
+        if(actual != expected_columns)
+        {
+            throw std::runtime_error(
+                "Column count mismatch: expected " + std::to_string(expected_columns) +
+                " but got " + std::to_string(actual));
+        }
+        return stmt;
+    }
+
     struct nasr_database::impl
     {
         sqlite::database db;
@@ -40,7 +56,7 @@ namespace nasrbrowse
         std::vector<navaid> navaids;
         std::vector<fix> fixes;
         std::vector<airway_segment> airways;
-        std::vector<airway_segment> mtrs;
+        std::vector<mtr_segment> mtrs;
         std::vector<maa> maas;
         std::vector<class_airspace> class_airspaces;
         std::vector<runway> runways;
@@ -60,22 +76,23 @@ namespace nasrbrowse
         impl(const char* db_path)
             : db(db_path)
 
-            , stmt_airports(db.prepare(R"(
-                SELECT a.ARPT_ID, a.ARPT_NAME, a.SITE_TYPE_CODE, a.TWR_TYPE_CODE,
-                       a.OWNERSHIP_TYPE_CODE, a.FACILITY_USE_CODE, a.ARPT_STATUS,
-                       a.ICAO_ID, a.HARD_SURFACE, a.LAT_DECIMAL, a.LONG_DECIMAL,
-                       a.ELEV,
+            , stmt_airports(prepare_checked(db, R"(
+                SELECT a.SITE_TYPE_CODE, a.STATE_CODE, a.ARPT_ID, a.CITY,
+                       a.COUNTRY_CODE, a.ARPT_NAME,
+                       a.OWNERSHIP_TYPE_CODE, a.FACILITY_USE_CODE,
+                       a.LAT_DECIMAL, a.LONG_DECIMAL, a.ELEV,
+                       a.MAG_VARN, a.MAG_HEMIS, a.TPA,
+                       a.RESP_ARTCC_ID, a.FSS_ID, a.NOTAM_ID,
+                       a.ACTIVATION_DATE, a.ARPT_STATUS, a.FUEL_TYPES,
+                       a.LGT_SKED, a.BCN_LGT_SKED,
+                       a.TWR_TYPE_CODE, a.ICAO_ID, a.HARD_SURFACE,
                        CASE
                            WHEN c.CLASS_B_AIRSPACE = 'Y' THEN 'B'
                            WHEN c.CLASS_C_AIRSPACE = 'Y' THEN 'C'
                            WHEN c.CLASS_D_AIRSPACE = 'Y' THEN 'D'
                            WHEN c.CLASS_E_AIRSPACE = 'Y' THEN 'E'
                            ELSE ''
-                       END,
-                       a.MAG_VARN, a.MAG_HEMIS, a.TPA,
-                       a.RESP_ARTCC_ID, a.FSS_ID, a.NOTAM_ID,
-                       a.ACTIVATION_DATE, a.FUEL_TYPES,
-                       a.LGT_SKED, a.BCN_LGT_SKED
+                       END
                 FROM APT_BASE a
                 LEFT JOIN CLS_ARSP c ON c.SITE_NO = a.SITE_NO
                 WHERE a.rowid IN (
@@ -83,10 +100,16 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 26))
 
-            , stmt_navaids(db.prepare(R"(
-                SELECT NAV_ID, NAV_TYPE, NAME, FREQ, LAT_DECIMAL, LONG_DECIMAL
+            , stmt_navaids(prepare_checked(db, R"(
+                SELECT NAV_ID, NAV_TYPE, STATE_CODE, CITY, COUNTRY_CODE,
+                       NAV_STATUS, NAME, OPER_HOURS,
+                       HIGH_ALT_ARTCC_ID, LOW_ALT_ARTCC_ID,
+                       LAT_DECIMAL, LONG_DECIMAL, ELEV,
+                       MAG_VARN, MAG_VARN_HEMIS, FREQ,
+                       CHAN, PWR_OUTPUT, SIMUL_VOICE_FLAG,
+                       VOICE_CALL, RESTRICTION_FLAG
                 FROM NAV_BASE
                 WHERE NAV_STATUS != 'SHUTDOWN'
                 AND rowid IN (
@@ -94,10 +117,12 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 21))
 
-            , stmt_fixes(db.prepare(R"(
-                SELECT FIX_ID, FIX_USE_CODE, LAT_DECIMAL, LONG_DECIMAL
+            , stmt_fixes(prepare_checked(db, R"(
+                SELECT FIX_ID, STATE_CODE, COUNTRY_CODE, ICAO_REGION_CODE,
+                       LAT_DECIMAL, LONG_DECIMAL, FIX_USE_CODE,
+                       ARTCC_ID_HIGH, ARTCC_ID_LOW
                 FROM FIX_BASE
                 WHERE FIX_USE_CODE IN ('WP', 'RP', 'VFR', 'CN', 'MR', 'MW', 'NRS')
                 AND rowid IN (
@@ -105,11 +130,12 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 9))
 
-            , stmt_airways(db.prepare(R"(
-                SELECT AWY_ID, FROM_POINT, TO_POINT,
-                       FROM_LAT, FROM_LON, TO_LAT, TO_LON
+            , stmt_airways(prepare_checked(db, R"(
+                SELECT AWY_ID, AWY_LOCATION, POINT_SEQ, FROM_POINT, TO_POINT,
+                       FROM_LAT, FROM_LON, TO_LAT, TO_LON,
+                       AWY_SEG_GAP_FLAG, MIN_ENROUTE_ALT, MAG_COURSE_DIST
                 FROM AWY_SEG
                 WHERE AWY_SEG_GAP_FLAG != 'Y'
                 AND rowid IN (
@@ -117,9 +143,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 12))
 
-            , stmt_mtrs(db.prepare(R"(
+            , stmt_mtrs(prepare_checked(db, R"(
                 SELECT MTR_ID, FROM_POINT, TO_POINT,
                        FROM_LAT, FROM_LON, TO_LAT, TO_LON
                 FROM MTR_SEG
@@ -128,44 +154,47 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 7))
 
-            , stmt_maas(db.prepare(R"(
-                SELECT MAA_ID, TYPE, NAME, LAT, LON, RADIUS_NM
+            , stmt_maas(prepare_checked(db, R"(
+                SELECT MAA_ID, TYPE, NAME, LAT, LON, RADIUS_NM,
+                       MAX_ALT, MIN_ALT
                 FROM MAA_BASE
                 WHERE rowid IN (
                     SELECT id FROM MAA_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 8))
 
-            , stmt_maa_shape(db.prepare(R"(
+            , stmt_maa_shape(prepare_checked(db, R"(
                 SELECT LON_DECIMAL, LAT_DECIMAL
                 FROM MAA_SHP
                 WHERE MAA_ID = ?1
                 ORDER BY POINT_SEQ
-            )"))
+            )", 2))
 
-            , stmt_cls_arsp(db.prepare(R"(
+            , stmt_cls_arsp(prepare_checked(db, R"(
                 SELECT ARSP_ID, NAME, CLASS, LOCAL_TYPE,
-                       UPPER_DESC, UPPER_VAL, LOWER_DESC, LOWER_VAL
+                       IDENT, SECTOR,
+                       UPPER_DESC, UPPER_VAL, LOWER_DESC, LOWER_VAL,
+                       WKHR_CODE, WKHR_RMK
                 FROM CLS_ARSP_BASE
                 WHERE ARSP_ID IN (
                     SELECT id FROM CLS_ARSP_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 12))
 
-            , stmt_cls_arsp_shape(db.prepare(R"(
+            , stmt_cls_arsp_shape(prepare_checked(db, R"(
                 SELECT PART_NUM, IS_HOLE, LON_DECIMAL, LAT_DECIMAL
                 FROM CLS_ARSP_SHP
                 WHERE ARSP_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
-            )"))
+            )", 4))
 
-            , stmt_runways(db.prepare(R"(
+            , stmt_runways(prepare_checked(db, R"(
                 SELECT END1_LAT, END1_LON, END2_LAT, END2_LON
                 FROM RWY_SEG
                 WHERE rowid IN (
@@ -173,42 +202,50 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 4))
 
-            , stmt_sua(db.prepare(R"(
-                SELECT SUA_ID, DESIGNATOR, NAME, SUA_TYPE
+            , stmt_sua(prepare_checked(db, R"(
+                SELECT SUA_ID, DESIGNATOR, NAME, SUA_TYPE,
+                       UPPER_LIMIT, LOWER_LIMIT,
+                       CONTROLLING_AUTHORITY, ADMIN_AREA, CITY,
+                       MILITARY, ACTIVITY, STATUS,
+                       WORKING_HOURS, ICAO_COMPLIANT, LEGAL_NOTE
                 FROM SUA_BASE
                 WHERE SUA_ID IN (
                     SELECT id FROM SUA_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 15))
 
-            , stmt_sua_shape(db.prepare(R"(
+            , stmt_sua_shape(prepare_checked(db, R"(
                 SELECT PART_NUM, UPPER_LIMIT, LOWER_LIMIT, LON_DECIMAL, LAT_DECIMAL
                 FROM SUA_SHP
                 WHERE SUA_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
-            )"))
+            )", 5))
 
-            , stmt_sua_circle(db.prepare(R"(
+            , stmt_sua_circle(prepare_checked(db, R"(
                 SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM
                 FROM SUA_CIRCLE
                 WHERE SUA_ID = ?1
-            )"))
+            )", 4))
 
-            , stmt_obstacles(db.prepare(R"(
-                SELECT OAS_NUM, LAT_DECIMAL, LON_DECIMAL, AGL_HT, LIGHTING
+            , stmt_obstacles(prepare_checked(db, R"(
+                SELECT OAS_NUM, VERIFY_STATUS, COUNTRY, STATE, CITY,
+                       LAT_DECIMAL, LON_DECIMAL,
+                       OBSTACLE_TYPE, QUANTITY, AGL_HT, AMSL_HT,
+                       LIGHTING, HORIZ_ACC, VERT_ACC,
+                       MARKING, FAA_STUDY, ACTION, JDATE
                 FROM OBS_BASE
                 WHERE rowid IN (
                     SELECT id FROM OBS_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 18))
 
-            , stmt_artcc(db.prepare(R"(
+            , stmt_artcc(prepare_checked(db, R"(
                 SELECT ARTCC_ID, LOCATION_ID, LOCATION_NAME, ALTITUDE
                 FROM ARTCC_BASE
                 WHERE ARTCC_ID IN (
@@ -216,69 +253,77 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 4))
 
-            , stmt_artcc_shape(db.prepare(R"(
+            , stmt_artcc_shape(prepare_checked(db, R"(
                 SELECT LON_DECIMAL, LAT_DECIMAL
                 FROM ARTCC_SHP
                 WHERE ARTCC_ID = ?1
                 ORDER BY POINT_SEQ
-            )"))
+            )", 2))
 
-            , stmt_pjas(db.prepare(R"(
-                SELECT PJA_ID, NAME, LAT, LON, RADIUS_NM
+            , stmt_pjas(prepare_checked(db, R"(
+                SELECT PJA_ID, NAME, LAT, LON, RADIUS_NM, MAX_ALTITUDE
                 FROM PJA_BASE
                 WHERE rowid IN (
                     SELECT id FROM PJA_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 6))
 
-            , stmt_adiz(db.prepare(R"(
-                SELECT ADIZ_ID, NAME
+            , stmt_adiz(prepare_checked(db, R"(
+                SELECT ADIZ_ID, NAME, LOCATION, WORKING_HOURS, MILITARY
                 FROM ADIZ_BASE
                 WHERE ADIZ_ID IN (
                     SELECT id FROM ADIZ_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 5))
 
-            , stmt_adiz_shape(db.prepare(R"(
+            , stmt_adiz_shape(prepare_checked(db, R"(
                 SELECT PART_NUM, LON_DECIMAL, LAT_DECIMAL
                 FROM ADIZ_SHP
                 WHERE ADIZ_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
-            )"))
+            )", 3))
 
-            , stmt_fss(db.prepare(R"(
-                SELECT FSS_ID, NAME, VOICE_CALL, CITY, STATE_CODE,
+            , stmt_fss(prepare_checked(db, R"(
+                SELECT FSS_ID, NAME, FSS_FAC_TYPE, VOICE_CALL,
+                       CITY, STATE_CODE, COUNTRY_CODE,
                        CAST(LAT_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
-                       OPR_HOURS, FAC_STATUS
+                       OPR_HOURS, FAC_STATUS, PHONE_NO, TOLL_FREE_NO
                 FROM FSS_BASE
                 WHERE rowid IN (
                     SELECT id FROM FSS_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 13))
 
-            , stmt_awos(db.prepare(R"(
-                SELECT ASOS_AWOS_ID, ASOS_AWOS_TYPE, CITY, STATE_CODE,
+            , stmt_awos(prepare_checked(db, R"(
+                SELECT ASOS_AWOS_ID, ASOS_AWOS_TYPE, STATE_CODE, CITY,
+                       COUNTRY_CODE, COMMISSIONED_DATE, NAVAID_FLAG,
                        CAST(LAT_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
-                       CAST(ELEV AS REAL), PHONE_NO, SITE_NO
+                       CAST(ELEV AS REAL),
+                       PHONE_NO, SECOND_PHONE_NO,
+                       SITE_NO, SITE_TYPE_CODE, REMARK
                 FROM AWOS
                 WHERE rowid IN (
                     SELECT id FROM AWOS_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 15))
 
-            , stmt_comm_outlets(db.prepare(R"(
-                SELECT COMM_TYPE, COMM_OUTLET_NAME, FACILITY_ID, FACILITY_NAME,
-                       CAST(LAT_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL)
+            , stmt_comm_outlets(prepare_checked(db, R"(
+                SELECT COMM_LOC_ID, COMM_TYPE, NAV_ID, NAV_TYPE,
+                       CITY, STATE_CODE, COUNTRY_CODE,
+                       COMM_OUTLET_NAME,
+                       CAST(LAT_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
+                       FACILITY_ID, FACILITY_NAME,
+                       OPR_HRS, COMM_STATUS_CODE, REMARK
                 FROM COM
                 WHERE COMM_TYPE IN ('RCO', 'RCO1', 'RCAG')
                   AND rowid IN (
@@ -286,9 +331,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )"))
+            )", 15))
 
-            , stmt_artcc_seg(db.prepare(R"(
+            , stmt_artcc_seg(prepare_checked(db, R"(
                 SELECT SEG_ID, ALTITUDE, LON_DECIMAL, LAT_DECIMAL
                 FROM ARTCC_SEG
                 WHERE SEG_ID IN (
@@ -297,9 +342,9 @@ namespace nasrbrowse
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 ORDER BY SEG_ID, POINT_SEQ
-            )"))
+            )", 4))
 
-            , stmt_adiz_seg(db.prepare(R"(
+            , stmt_adiz_seg(prepare_checked(db, R"(
                 SELECT SEG_ID, LON_DECIMAL, LAT_DECIMAL
                 FROM ADIZ_SEG
                 WHERE SEG_ID IN (
@@ -308,9 +353,9 @@ namespace nasrbrowse
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 ORDER BY SEG_ID, POINT_SEQ
-            )"))
+            )", 3))
 
-            , stmt_cls_arsp_seg(db.prepare(R"(
+            , stmt_cls_arsp_seg(prepare_checked(db, R"(
                 SELECT SEG_ID, CLASS, LOCAL_TYPE, LON_DECIMAL, LAT_DECIMAL
                 FROM CLS_ARSP_SEG
                 WHERE SEG_ID IN (
@@ -319,9 +364,9 @@ namespace nasrbrowse
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 ORDER BY SEG_ID, POINT_SEQ
-            )"))
+            )", 5))
 
-            , stmt_sua_seg(db.prepare(R"(
+            , stmt_sua_seg(prepare_checked(db, R"(
                 SELECT SEG_ID, SUA_TYPE, LON_DECIMAL, LAT_DECIMAL
                 FROM SUA_SEG
                 WHERE SEG_ID IN (
@@ -330,7 +375,7 @@ namespace nasrbrowse
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 ORDER BY SEG_ID, POINT_SEQ
-            )"))
+            )", 4))
         {
         }
 
@@ -377,13 +422,14 @@ namespace nasrbrowse
             return airport{
                 s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
                 s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7),
-                s.column_int(8) != 0,
-                s.column_double(9), s.column_double(10), s.column_double(11),
-                s.column_text(12),
-                s.column_text(13), s.column_text(14), s.column_text(15),
-                s.column_text(16), s.column_text(17), s.column_text(18),
-                s.column_text(19), s.column_text(20),
-                s.column_text(21), s.column_text(22)};
+                s.column_double(8), s.column_double(9), s.column_double(10),
+                s.column_text(11), s.column_text(12), s.column_text(13),
+                s.column_text(14), s.column_text(15), s.column_text(16),
+                s.column_text(17), s.column_text(18), s.column_text(19),
+                s.column_text(20), s.column_text(21),
+                s.column_text(22), s.column_text(23),
+                s.column_int(24) != 0,
+                s.column_text(25)};
         });
     }
 
@@ -394,8 +440,14 @@ namespace nasrbrowse
         return d.query_bbox(d.navaids, d.stmt_navaids,
             lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return navaid{s.column_text(0), s.column_text(1), s.column_text(2),
-                          s.column_text(3), s.column_double(4), s.column_double(5)};
+            return navaid{
+                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7),
+                s.column_text(8), s.column_text(9),
+                s.column_double(10), s.column_double(11), s.column_double(12),
+                s.column_text(13), s.column_text(14), s.column_text(15),
+                s.column_text(16), s.column_text(17), s.column_text(18),
+                s.column_text(19), s.column_text(20)};
         });
     }
 
@@ -406,8 +458,10 @@ namespace nasrbrowse
         return d.query_bbox(d.fixes, d.stmt_fixes,
             lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return fix{s.column_text(0), s.column_text(1),
-                       s.column_double(2), s.column_double(3)};
+            return fix{
+                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                s.column_double(4), s.column_double(5),
+                s.column_text(6), s.column_text(7), s.column_text(8)};
         });
     }
 
@@ -419,20 +473,22 @@ namespace nasrbrowse
             lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
             return airway_segment{
-                s.column_text(0), s.column_text(1), s.column_text(2),
-                s.column_double(3), s.column_double(4),
-                s.column_double(5), s.column_double(6)};
+                s.column_text(0), s.column_text(1), s.column_int(2),
+                s.column_text(3), s.column_text(4),
+                s.column_double(5), s.column_double(6),
+                s.column_double(7), s.column_double(8),
+                s.column_text(9), s.column_text(10), s.column_text(11)};
         });
     }
 
-    const std::vector<airway_segment>& nasr_database::query_mtrs(
+    const std::vector<mtr_segment>& nasr_database::query_mtrs(
         double lon_min, double lat_min, double lon_max, double lat_max)
     {
         auto& d = *pimpl;
         return d.query_bbox(d.mtrs, d.stmt_mtrs,
             lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return airway_segment{
+            return mtr_segment{
                 s.column_text(0), s.column_text(1), s.column_text(2),
                 s.column_double(3), s.column_double(4),
                 s.column_double(5), s.column_double(6)};
@@ -447,7 +503,8 @@ namespace nasrbrowse
             lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
         {
             maa m{s.column_text(0), s.column_text(1), s.column_text(2),
-                  s.column_double(3), s.column_double(4), s.column_double(5), {}};
+                  s.column_double(3), s.column_double(4), s.column_double(5),
+                  s.column_text(6), s.column_text(7), {}};
 
             // Load shape polygon for shape-defined entries
             if (m.lat == 0.0)
@@ -473,7 +530,9 @@ namespace nasrbrowse
         {
             class_airspace a{s.column_int(0),
                 s.column_text(1), s.column_text(2), s.column_text(3),
-                s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7), {}};
+                s.column_text(4), s.column_text(5),
+                s.column_text(6), s.column_text(7), s.column_text(8), s.column_text(9),
+                s.column_text(10), s.column_text(11), {}};
 
             d.stmt_cls_arsp_shape.reset();
             d.stmt_cls_arsp_shape.bind(1, a.arsp_id);
@@ -515,8 +574,11 @@ namespace nasrbrowse
         return d.query_bbox(d.suas, d.stmt_sua,
             lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
         {
-            sua su{s.column_int(0), s.column_text(1),
-                   s.column_text(2), s.column_text(3), {}};
+            sua su{s.column_int(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                   s.column_text(4), s.column_text(5),
+                   s.column_text(6), s.column_text(7), s.column_text(8),
+                   s.column_text(9), s.column_text(10), s.column_text(11),
+                   s.column_text(12), s.column_text(13), s.column_text(14), {}};
 
             // Load circle metadata if this SUA is a pure circle
             int circle_part = -1;
@@ -567,8 +629,13 @@ namespace nasrbrowse
         return d.query_bbox(d.obstacles, d.stmt_obstacles,
             lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return obstacle{s.column_text(0), s.column_double(1), s.column_double(2),
-                            s.column_int(3), s.column_text(4)};
+            return obstacle{
+                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                s.column_text(4),
+                s.column_double(5), s.column_double(6),
+                s.column_text(7), s.column_int(8), s.column_int(9), s.column_int(10),
+                s.column_text(11), s.column_text(12), s.column_text(13),
+                s.column_text(14), s.column_text(15), s.column_text(16), s.column_text(17)};
         });
     }
 
@@ -601,7 +668,8 @@ namespace nasrbrowse
             lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
             return pja{s.column_text(0), s.column_text(1),
-                       s.column_double(2), s.column_double(3), s.column_double(4)};
+                       s.column_double(2), s.column_double(3), s.column_double(4),
+                       s.column_text(5)};
         });
     }
 
@@ -612,7 +680,8 @@ namespace nasrbrowse
         return d.query_bbox(d.adizs, d.stmt_adiz,
             lon_min, lat_min, lon_max, lat_max, [&](sqlite::statement& s)
         {
-            adiz a{s.column_int(0), s.column_text(1), {}};
+            adiz a{s.column_int(0), s.column_text(1),
+                   s.column_text(2), s.column_text(3), s.column_text(4), {}};
 
             d.stmt_adiz_shape.reset();
             d.stmt_adiz_shape.bind(1, a.adiz_id);
@@ -640,10 +709,12 @@ namespace nasrbrowse
         return d.query_bbox(d.fsss, d.stmt_fss,
             lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return fss{s.column_text(0), s.column_text(1), s.column_text(2),
-                        s.column_text(3), s.column_text(4),
-                        s.column_double(5), s.column_double(6),
-                        s.column_text(7), s.column_text(8)};
+            return fss{
+                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                s.column_text(4), s.column_text(5), s.column_text(6),
+                s.column_double(7), s.column_double(8),
+                s.column_text(9), s.column_text(10),
+                s.column_text(11), s.column_text(12)};
         });
     }
 
@@ -654,10 +725,12 @@ namespace nasrbrowse
         return d.query_bbox(d.awoss, d.stmt_awos,
             lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return awos{s.column_text(0), s.column_text(1),
-                         s.column_text(2), s.column_text(3),
-                         s.column_double(4), s.column_double(5),
-                         s.column_double(6), s.column_text(7), s.column_text(8)};
+            return awos{
+                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                s.column_text(4), s.column_text(5), s.column_text(6),
+                s.column_double(7), s.column_double(8), s.column_double(9),
+                s.column_text(10), s.column_text(11),
+                s.column_text(12), s.column_text(13), s.column_text(14)};
         });
     }
 
@@ -668,9 +741,12 @@ namespace nasrbrowse
         return d.query_bbox(d.comm_outlets, d.stmt_comm_outlets,
             lon_min, lat_min, lon_max, lat_max, [](sqlite::statement& s)
         {
-            return comm_outlet{s.column_text(0), s.column_text(1),
-                                s.column_text(2), s.column_text(3),
-                                s.column_double(4), s.column_double(5)};
+            return comm_outlet{
+                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7),
+                s.column_double(8), s.column_double(9),
+                s.column_text(10), s.column_text(11),
+                s.column_text(12), s.column_text(13), s.column_text(14)};
         });
     }
 

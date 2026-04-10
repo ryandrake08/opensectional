@@ -44,6 +44,9 @@ namespace sqlite
         // Step to next row; returns true if a row is available
         bool step();
 
+        // Number of columns in the result set
+        int column_count() const;
+
         // Column accessors (0-indexed)
         int column_int(int col);
         double column_double(int col);

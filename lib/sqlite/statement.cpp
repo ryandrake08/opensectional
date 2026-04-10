@@ -69,6 +69,11 @@ namespace sqlite
         return sqlite3_step(pimpl->stmt) == SQLITE_ROW;
     }
 
+    int statement::column_count() const
+    {
+        return sqlite3_column_count(pimpl->stmt);
+    }
+
     int statement::column_int(int col)
     {
         return sqlite3_column_int(pimpl->stmt, col);

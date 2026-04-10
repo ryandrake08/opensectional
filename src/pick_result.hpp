@@ -20,6 +20,7 @@ namespace nasrbrowse
         awos,
         comm_outlet,
         airway_segment,
+        mtr_segment,
         runway
     >;
 
