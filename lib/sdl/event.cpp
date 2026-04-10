@@ -39,10 +39,10 @@ namespace sdl
             case SDL_EVENT_KEY_DOWN:
             case SDL_EVENT_KEY_UP:
             {
-                const int action = (event.type == SDL_EVENT_KEY_DOWN) ? 1 : 0;
+                input_action_t action = (event.type == SDL_EVENT_KEY_DOWN) ? input_action::press : input_action::release;
                 for(const auto& listener : listeners)
                 {
-                    listener->key_event(input_key_t(event.key.key), input_action_t(action), input_mod_t(event.key.mod));
+                    listener->key_event(input_key_t(event.key.key), action, input_mod_t(event.key.mod));
                 }
                 break;
             }
@@ -50,10 +50,10 @@ namespace sdl
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
             case SDL_EVENT_MOUSE_BUTTON_UP:
             {
-                const int action = (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) ? 1 : 0;
+                input_action_t action = (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) ? input_action::press : input_action::release;
                 for(const auto& listener : listeners)
                 {
-                    listener->button_event(input_button_t(event.button.button), input_action_t(action), input_mod_t(0));
+                    listener->button_event(input_button_t(event.button.button), action, input_mod_t(0));
                 }
                 break;
             }

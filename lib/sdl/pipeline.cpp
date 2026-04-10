@@ -3,6 +3,7 @@
 #include "error.hpp"
 #include "shader.hpp"
 #include <SDL3/SDL.h>
+#include <cstddef>
 #include <memory>
 
 namespace sdl
@@ -26,21 +27,21 @@ namespace sdl
             SDL_GPUVertexAttribute attributes[3] = {};
             attributes[0].location = 0;
             attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
-            attributes[0].offset = 0;
+            attributes[0].offset = offsetof(vertex_t2f_c4ub_v3f, s);
             attributes[0].buffer_slot = 0;
             attributes[1].location = 1;
             attributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM;
-            attributes[1].offset = 8;
+            attributes[1].offset = offsetof(vertex_t2f_c4ub_v3f, r);
             attributes[1].buffer_slot = 0;
             attributes[2].location = 2;
             attributes[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-            attributes[2].offset = 12;
+            attributes[2].offset = offsetof(vertex_t2f_c4ub_v3f, x);
             attributes[2].buffer_slot = 0;
 
             // Set up vertex buffer layout
             SDL_GPUVertexBufferDescription vertex_buffer_desc = {};
             vertex_buffer_desc.slot = 0;
-            vertex_buffer_desc.pitch = 24; // sizeof(vertex_t2f_c4ub_v3f)
+            vertex_buffer_desc.pitch = sizeof(vertex_t2f_c4ub_v3f);
             vertex_buffer_desc.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
             vertex_buffer_desc.instance_step_rate = 0;
 
@@ -115,7 +116,7 @@ namespace sdl
             }
 
             static const char* topology_names[] = { "triangle_list", "triangle_strip", "line_list", "line_strip", "point_list" };
-            const char* topo_name = (topology < 5) ? topology_names[topology] : "unknown";
+            const char* topo_name = (topology < sizeof(topology_names) / sizeof(topology_names[0])) ? topology_names[topology] : "unknown";
             SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Pipeline created: %s, depth: %s",
                          topo_name, (depth_format != SDL_GPU_TEXTUREFORMAT_INVALID) ? "yes" : "no");
         }
