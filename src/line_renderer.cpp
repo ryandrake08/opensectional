@@ -220,6 +220,7 @@ namespace nasrbrowse
         pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
         pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
         pass.bind_vertex_storage_buffer(0, *pimpl->metadata_buf);
+        pass.bind_vertex_storage_buffer(1, *pimpl->packed_points);
         pass.bind_fragment_storage_buffer(0, *pimpl->packed_points);
         pass.bind_fragment_storage_buffer(1, *pimpl->metadata_buf);
         pass.draw(6, pimpl->instance_count);

@@ -36,6 +36,14 @@
 #include <line_vert_spv.h>
 #include <textured_frag_spv.h>
 #include <textured_vert_spv.h>
+#ifdef _WIN32
+#include <default_frag_dxil.h>
+#include <default_vert_dxil.h>
+#include <line_frag_dxil.h>
+#include <line_vert_dxil.h>
+#include <textured_frag_dxil.h>
+#include <textured_vert_dxil.h>
+#endif
 #endif
 
 // Embedded font
@@ -50,9 +58,65 @@ namespace
         TEXTURED
     };
 
+    struct shader_bytecode
+    {
+        const unsigned char* data;
+        unsigned int len;
+    };
+
+    shader_bytecode get_spirv_bytecode(shader_id id, sdl::shader_stage_t stage)
+    {
+        if(stage == sdl::shader_stage::vertex)
+        {
+            switch(id)
+            {
+            case shader_id::DEFAULT:  return { default_vert_spv, default_vert_spv_len };
+            case shader_id::LINE:     return { line_vert_spv, line_vert_spv_len };
+            case shader_id::TEXTURED: return { textured_vert_spv, textured_vert_spv_len };
+            }
+        }
+        else
+        {
+            switch(id)
+            {
+            case shader_id::DEFAULT:  return { default_frag_spv, default_frag_spv_len };
+            case shader_id::LINE:     return { line_frag_spv, line_frag_spv_len };
+            case shader_id::TEXTURED: return { textured_frag_spv, textured_frag_spv_len };
+            }
+        }
+        return { nullptr, 0 };
+    }
+
+#ifdef _WIN32
+    shader_bytecode get_dxil_bytecode(shader_id id, sdl::shader_stage_t stage)
+    {
+        if(stage == sdl::shader_stage::vertex)
+        {
+            switch(id)
+            {
+            case shader_id::DEFAULT:  return { default_vert_dxil, default_vert_dxil_len };
+            case shader_id::LINE:     return { line_vert_dxil, line_vert_dxil_len };
+            case shader_id::TEXTURED: return { textured_vert_dxil, textured_vert_dxil_len };
+            }
+        }
+        else
+        {
+            switch(id)
+            {
+            case shader_id::DEFAULT:  return { default_frag_dxil, default_frag_dxil_len };
+            case shader_id::LINE:     return { line_frag_dxil, line_frag_dxil_len };
+            case shader_id::TEXTURED: return { textured_frag_dxil, textured_frag_dxil_len };
+            }
+        }
+        return { nullptr, 0 };
+    }
+#endif
+
     sdl::shader load_shader(const sdl::device& dev, shader_id id, sdl::shader_stage_t stage,
                             uint32_t num_samplers = 0, uint32_t num_storage_buffers = 0)
     {
+        const char* entrypoint = (stage == sdl::shader_stage::vertex) ? "vertex_main" : "fragment_main";
+
 #ifdef __APPLE__
         const unsigned char* data = nullptr;
         unsigned int len = 0;
@@ -73,51 +137,19 @@ namespace
             break;
         }
 
-        const char* entrypoint = (stage == sdl::shader_stage::vertex) ? "vertex_main" : "fragment_main";
         return sdl::shader(dev, data, len, entrypoint, stage, sdl::shader_format::invalid, num_samplers, num_storage_buffers);
 #else
-        const unsigned char* data = nullptr;
-        unsigned int len = 0;
+        sdl::shader_format_t format = dev.get_shader_format();
+        shader_bytecode bc = { nullptr, 0 };
 
-        if(stage == sdl::shader_stage::vertex)
-        {
-            switch(id)
-            {
-            case shader_id::DEFAULT:
-                data = default_vert_spv;
-                len = default_vert_spv_len;
-                break;
-            case shader_id::LINE:
-                data = line_vert_spv;
-                len = line_vert_spv_len;
-                break;
-            case shader_id::TEXTURED:
-                data = textured_vert_spv;
-                len = textured_vert_spv_len;
-                break;
-            }
-        }
+#ifdef _WIN32
+        if(format == sdl::shader_format::dxil)
+            bc = get_dxil_bytecode(id, stage);
         else
-        {
-            switch(id)
-            {
-            case shader_id::DEFAULT:
-                data = default_frag_spv;
-                len = default_frag_spv_len;
-                break;
-            case shader_id::LINE:
-                data = line_frag_spv;
-                len = line_frag_spv_len;
-                break;
-            case shader_id::TEXTURED:
-                data = textured_frag_spv;
-                len = textured_frag_spv_len;
-                break;
-            }
-        }
+#endif
+            bc = get_spirv_bytecode(id, stage);
 
-        const char* entrypoint = (stage == sdl::shader_stage::vertex) ? "vertex_main" : "fragment_main";
-        return sdl::shader(dev, data, len, entrypoint, stage, sdl::shader_format::spirv, num_samplers, num_storage_buffers);
+        return sdl::shader(dev, bc.data, bc.len, entrypoint, stage, format, num_samplers, num_storage_buffers);
 #endif
     }
 } // anonymous namespace
@@ -186,7 +218,7 @@ int main(int argc, char** argv)
             sdl::primitive_type::triangle_list);
 
         sdl::pipeline line_program(dev,
-            load_shader(dev, shader_id::LINE, sdl::shader_stage::vertex, 0, 1),
+            load_shader(dev, shader_id::LINE, sdl::shader_stage::vertex, 0, 2),
             load_shader(dev, shader_id::LINE, sdl::shader_stage::fragment, 0, 2),
             sdl::primitive_type::triangle_list,
             sdl::texture_format_t(0), false);

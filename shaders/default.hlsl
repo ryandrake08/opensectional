@@ -4,8 +4,8 @@
 struct VSInput
 {
     float2 texcoord : TEXCOORD0;
-    float4 color : COLOR0;         // Normalized from UBYTE4
-    float3 position : POSITION0;
+    float4 color : TEXCOORD1;      // Normalized from UBYTE4
+    float3 position : TEXCOORD2;
 };
 
 // Universal uniform buffer structure (all fields, uses only what's needed)

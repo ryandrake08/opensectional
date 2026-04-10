@@ -42,14 +42,61 @@ struct PolylineMetadata
     float _pad2;
 };
 
-// Vertex stage: metadata at vertex storage slot 0
-// Fragment stage: packed points at slot 0, metadata at slot 1
+// Storage buffer bindings
+// Vertex stage: metadata at slot 0, polyline at slot 1 (polyline unused but must be declared)
+// Fragment stage: polyline at slot 0, metadata at slot 1
+#ifdef RAW_BUFFERS
+// D3D12 path: SDL3 creates raw byte-addressed SRVs for storage buffers
+#ifdef VERTEX_SHADER
+ByteAddressBuffer metadata_raw : register(t0, space0);
+ByteAddressBuffer polyline_raw : register(t1, space0);
+#else
+ByteAddressBuffer polyline_raw : register(t0, space2);
+ByteAddressBuffer metadata_raw : register(t1, space2);
+#endif
+
+#define METADATA_STRIDE 96
+#define POLYLINE_STRIDE 16
+
+PolylineMetadata load_metadata(uint index)
+{
+    uint base = index * METADATA_STRIDE;
+    PolylineMetadata m;
+    m.bounds_min_max = asfloat(metadata_raw.Load4(base));
+    m.line_color = asfloat(metadata_raw.Load4(base + 16));
+    m.border_color = asfloat(metadata_raw.Load4(base + 32));
+    m.line_half_width = asfloat(metadata_raw.Load(base + 48));
+    m.border_width = asfloat(metadata_raw.Load(base + 52));
+    m.dash_length = asfloat(metadata_raw.Load(base + 56));
+    m.gap_length = asfloat(metadata_raw.Load(base + 60));
+    m.fill_width = asfloat(metadata_raw.Load(base + 64));
+    m.segment_count = metadata_raw.Load(base + 68);
+    m.point_offset = metadata_raw.Load(base + 72);
+    m.primitive_type = metadata_raw.Load(base + 76);
+    m.circle_center = asfloat(metadata_raw.Load2(base + 80));
+    m.circle_radius = asfloat(metadata_raw.Load(base + 88));
+    m._pad2 = 0;
+    return m;
+}
+
+float4 load_polyline_point(uint index)
+{
+    return asfloat(polyline_raw.Load4(index * POLYLINE_STRIDE));
+}
+
+#else
+// Vulkan/SPIR-V path: structured buffers
 #ifdef VERTEX_SHADER
 StructuredBuffer<PolylineMetadata> metadata : register(t0, space0);
 StructuredBuffer<float4> polyline : register(t1, space0);
 #else
 StructuredBuffer<float4> polyline : register(t0, space2);
 StructuredBuffer<PolylineMetadata> metadata : register(t1, space2);
+#endif
+
+PolylineMetadata load_metadata(uint index) { return metadata[index]; }
+float4 load_polyline_point(uint index) { return polyline[index]; }
+
 #endif
 
 struct PSInput
@@ -61,7 +108,7 @@ struct PSInput
 
 PSInput vertex_main(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
 {
-    PolylineMetadata meta = metadata[instance_id];
+    PolylineMetadata meta = load_metadata(instance_id);
 
     // Expand bounds by line margin in world space
     float effective_fill = (meta.fill_width > 0) ? meta.fill_width : meta.border_width;
@@ -97,7 +144,7 @@ PSInput vertex_main(uint vertex_id : SV_VertexID, uint instance_id : SV_Instance
 
 float4 fragment_main(PSInput input) : SV_Target
 {
-    PolylineMetadata meta = metadata[input.instance_id];
+    PolylineMetadata meta = load_metadata(input.instance_id);
 
     float2 screen_pos = input.world_pos * world_to_screen_scale + world_to_screen_offset;
 
@@ -123,8 +170,8 @@ float4 fragment_main(PSInput input) : SV_Target
 
         for(uint i = 0; i < meta.segment_count; i++)
         {
-            float2 a = polyline[base + i].xy * world_to_screen_scale + world_to_screen_offset;
-            float2 b = polyline[base + i + 1].xy * world_to_screen_scale + world_to_screen_offset;
+            float2 a = load_polyline_point(base + i).xy * world_to_screen_scale + world_to_screen_offset;
+            float2 b = load_polyline_point(base + i + 1).xy * world_to_screen_scale + world_to_screen_offset;
 
             float2 ab = b - a;
             float len_sq = dot(ab, ab);

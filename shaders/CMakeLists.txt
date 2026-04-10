@@ -153,7 +153,7 @@ foreach(SHADER ${SHADERS})
         add_dependencies(shaders ${SHADER}_shader)
 
     else()
-        # Linux: HLSL → SPIR-V → .h
+        # Non-Apple: HLSL → SPIR-V (always) + HLSL → DXIL (Windows only)
         set(SPV_VERT "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_vert.spv")
         set(SPV_FRAG "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_frag.spv")
         set(HEADER_VERT "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_vert_spv.h")
@@ -198,8 +198,57 @@ foreach(SHADER ${SHADERS})
             VERBATIM
         )
 
+        set(SHADER_HEADERS ${HEADER_VERT} ${HEADER_FRAG})
+
+        # Windows: also compile HLSL → DXIL for D3D12 backend
+        if(WIN32)
+            set(DXIL_VERT "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_vert.dxil")
+            set(DXIL_FRAG "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_frag.dxil")
+            set(HEADER_DXIL_VERT "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_vert_dxil.h")
+            set(HEADER_DXIL_FRAG "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_frag_dxil.h")
+
+            # HLSL → DXIL (vertex)
+            add_custom_command(
+                OUTPUT ${DXIL_VERT}
+                COMMAND ${DXC} -T vs_6_0 -E vertex_main -DVERTEX_SHADER -DRAW_BUFFERS ${HLSL_SOURCE} -Fo ${DXIL_VERT}
+                DEPENDS ${HLSL_SOURCE}
+                COMMENT "Compiling HLSL vertex shader (DXIL): ${SHADER}.hlsl → ${SHADER}_vert.dxil"
+                VERBATIM
+            )
+
+            # HLSL → DXIL (fragment)
+            add_custom_command(
+                OUTPUT ${DXIL_FRAG}
+                COMMAND ${DXC} -T ps_6_0 -E fragment_main -DRAW_BUFFERS ${HLSL_SOURCE} -Fo ${DXIL_FRAG}
+                DEPENDS ${HLSL_SOURCE}
+                COMMENT "Compiling HLSL fragment shader (DXIL): ${SHADER}.hlsl → ${SHADER}_frag.dxil"
+                VERBATIM
+            )
+
+            # Embed DXIL → .h
+            add_custom_command(
+                OUTPUT ${HEADER_DXIL_VERT}
+                COMMAND ${XXD} -i ${SHADER}_vert.dxil > ${HEADER_DXIL_VERT}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                DEPENDS ${DXIL_VERT}
+                COMMENT "Embedding vertex shader bytecode: ${SHADER}_vert.dxil → ${SHADER}_vert_dxil.h"
+                VERBATIM
+            )
+
+            add_custom_command(
+                OUTPUT ${HEADER_DXIL_FRAG}
+                COMMAND ${XXD} -i ${SHADER}_frag.dxil > ${HEADER_DXIL_FRAG}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                DEPENDS ${DXIL_FRAG}
+                COMMENT "Embedding fragment shader bytecode: ${SHADER}_frag.dxil → ${SHADER}_frag_dxil.h"
+                VERBATIM
+            )
+
+            list(APPEND SHADER_HEADERS ${HEADER_DXIL_VERT} ${HEADER_DXIL_FRAG})
+        endif()
+
         # Add to shader target dependencies
-        add_custom_target(${SHADER}_shader DEPENDS ${HEADER_VERT} ${HEADER_FRAG})
+        add_custom_target(${SHADER}_shader DEPENDS ${SHADER_HEADERS})
         add_dependencies(shaders ${SHADER}_shader)
     endif()
 endforeach()
