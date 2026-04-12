@@ -1678,6 +1678,12 @@ def build_sua(conn, aixm_zf):
     schedule_rows = []
     service_rows = []
     skipped = 0
+    # A small number of AIXM files inline neighboring airspaces as additional
+    # top-level <Airspace> elements (e.g. R-4812 SAND SPRINGS inlines R-4804A
+    # and R-4810). Those neighbors have their own canonical files, so dedupe
+    # by designator — iteration is sorted, and the canonical file sorts before
+    # any file that inlines it as a reference.
+    seen_designators = set()
 
     for xml_name in xml_files:
         results = parse_aixm_sua(inner_zf.read(xml_name))
@@ -1686,6 +1692,9 @@ def build_sua(conn, aixm_zf):
             continue
 
         for result in results:
+            if result["designator"] in seen_designators:
+                continue
+            seen_designators.add(result["designator"])
             sua_id = len(base_rows) + 1
             base_rows.append((
                 sua_id,
