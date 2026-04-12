@@ -834,6 +834,51 @@ def build_atc(conn, csv_zf):
     conn.execute("CREATE INDEX idx_atc_svc_fac ON ATC_SVC(FACILITY_ID, FACILITY_TYPE)")
 
 
+def remove_spike_vertices(points):
+    """Drop vertices that form a near-reversal cusp.
+
+    Two cases, both near-reversal at a vertex:
+      - mild reversal (>160°) with a very short edge (<~1 km): typical
+        arc-to-line junction artifact where the arc's final sample slightly
+        overshoots the next line's declared corner.
+      - hard reversal (>175°) with any modest edge (<~5 km): out-and-back
+        "filament" produced when a union of polygons sharing an arc leaves
+        a sliver that collapses into a perpendicular spike.
+
+    Douglas-Peucker simplification does not reliably remove either pattern
+    because the perpendicular distance from the cusp vertex to the line
+    between its neighbors is non-trivial even when the spike is visually
+    obvious.
+    """
+    # Iterate until stable: removing one cusp can expose a new cusp at its
+    # neighbor (the neighbor's angle changes when its non-cusp side shifts).
+    while len(points) >= 4:
+        n = len(points)
+        keep = [True] * n
+        any_dropped = False
+        for i in range(n):
+            a = points[(i - 1) % n]
+            b = points[i]
+            c = points[(i + 1) % n]
+            v1 = (b[0] - a[0], b[1] - a[1])
+            v2 = (c[0] - b[0], c[1] - b[1])
+            l1 = math.hypot(*v1)
+            l2 = math.hypot(*v2)
+            if l1 == 0 or l2 == 0:
+                continue
+            dot = (v1[0] * v2[0] + v1[1] * v2[1]) / (l1 * l2)
+            dot = max(-1.0, min(1.0, dot))
+            ang = math.degrees(math.acos(dot))
+            shorter = min(l1, l2)
+            if (ang > 160 and shorter < 0.01) or (ang > 175 and shorter < 0.05):
+                keep[i] = False
+                any_dropped = True
+        if not any_dropped:
+            break
+        points = [p for p, k in zip(points, keep) if k]
+    return points
+
+
 def simplify_ring(points, epsilon):
     """Simplify a polygon ring using Shapely's GEOS-backed RDP.
 
@@ -954,61 +999,77 @@ def read_shp_polygons(f):
         yield parts
 
 
-def radius_to_degrees(radius, uom, center_lat):
-    """Convert a radius to approximate degrees for polygon generation.
+# WGS84 mean radius, used for great-circle distance/destination math.
+EARTH_RADIUS_M = 6371008.8
 
-    Uses a simple spherical approximation. Returns (dlat, dlon) in degrees.
-    """
+
+def _radius_to_meters(radius, uom):
     if uom == "NM":
-        meters = radius * 1852.0
-    elif uom == "MI":
-        meters = radius * 1609.344
-    elif uom == "FT":
-        meters = radius * 0.3048
-    else:
-        meters = radius * 1852.0  # default to NM
-    dlat = meters / 111320.0
-    dlon = meters / (111320.0 * math.cos(math.radians(center_lat)))
-    return dlat, dlon
+        return radius * 1852.0
+    if uom == "MI":
+        return radius * 1609.344
+    if uom == "FT":
+        return radius * 0.3048
+    if uom == "KM":
+        return radius * 1000.0
+    if uom == "M":
+        return radius
+    return radius * 1852.0  # default to NM
+
+
+def destination_point(lat_deg, lon_deg, bearing_deg, distance_m):
+    """Great-circle destination from origin.
+
+    Bearing is degrees clockwise from true north. Returns (lon, lat) in
+    degrees. Uses the spherical earth model with WGS84 mean radius.
+    """
+    d_R = distance_m / EARTH_RADIUS_M
+    lat1 = math.radians(lat_deg)
+    lon1 = math.radians(lon_deg)
+    br = math.radians(bearing_deg)
+    sin_lat2 = (math.sin(lat1) * math.cos(d_R)
+                + math.cos(lat1) * math.sin(d_R) * math.cos(br))
+    lat2 = math.asin(sin_lat2)
+    lon2 = lon1 + math.atan2(
+        math.sin(br) * math.sin(d_R) * math.cos(lat1),
+        math.cos(d_R) - math.sin(lat1) * sin_lat2)
+    return math.degrees(lon2), math.degrees(lat2)
+
+
+def _math_angle_to_bearing(math_deg):
+    # Current FAA AIXM-SAA data encodes arc angles in math convention:
+    # 0° = east, 90° = north, CCW. Convert to compass bearing (0° = north, CW).
+    return (90.0 - math_deg) % 360.0
 
 
 def generate_circle(center_lon, center_lat, radius, uom, num_points=72):
-    """Generate a polygon approximating a circle."""
-    dlat, dlon = radius_to_degrees(radius, uom, center_lat)
+    """Polygon approximating a circle of constant great-circle radius."""
+    meters = _radius_to_meters(radius, uom)
     points = []
     for i in range(num_points):
-        angle = 2.0 * math.pi * i / num_points
-        lon = center_lon + dlon * math.cos(angle)
-        lat = center_lat + dlat * math.sin(angle)
-        points.append((lon, lat))
-    points.append(points[0])  # close the ring
+        math_deg = 360.0 * i / num_points
+        bearing = _math_angle_to_bearing(math_deg)
+        points.append(destination_point(center_lat, center_lon, bearing, meters))
+    points.append(points[0])
     return points
 
 
 def generate_arc(center_lon, center_lat, radius, uom, start_deg, end_deg):
-    """Generate points along an arc from start_deg to end_deg.
+    """Points along an arc from start_deg to end_deg.
 
-    Angles are in degrees, counter-clockwise from east (math convention),
-    matching the CRS84 coordinate convention used in the FAA AIXM data.
-    The arc sweeps directly from start to end: decreasing angle sweeps
-    clockwise on the map, increasing angle sweeps counter-clockwise.
-    Returns list of (lon, lat) tuples.
+    Angles are degrees in math convention (0° = east, CCW), matching the
+    arc-angle encoding seen in the FAA AIXM-SAA source. Each sample uses
+    great-circle destination math so the distance is a true great-circle
+    radius (not a planar offset that grows worse at high latitudes).
     """
-    dlat, dlon = radius_to_degrees(radius, uom, center_lat)
-
-    start_rad = math.radians(start_deg)
-    end_rad = math.radians(end_deg)
-
-    sweep = end_rad - start_rad
-
-    num_points = max(int(abs(sweep) / math.radians(5.0)), 2)
-
+    meters = _radius_to_meters(radius, uom)
+    sweep = end_deg - start_deg
+    num_points = max(int(abs(sweep) / 5.0), 2)
     points = []
     for i in range(num_points + 1):
-        angle = start_rad + sweep * i / num_points
-        lon = center_lon + dlon * math.cos(angle)
-        lat = center_lat + dlat * math.sin(angle)
-        points.append((lon, lat))
+        math_deg = start_deg + sweep * i / num_points
+        bearing = _math_angle_to_bearing(math_deg)
+        points.append(destination_point(center_lat, center_lon, bearing, meters))
     return points
 
 
@@ -1025,8 +1086,18 @@ def parse_ring_points(ring_elem):
     Handles LineStringSegment, CircleByCenterPoint, and ArcByCenterPoint
     curve segments. Multiple curveMember elements within a Ring are
     concatenated to form the complete boundary.
+
+    Arc endpoints are snapped to the declared corner coordinates from
+    adjacent LineStringSegments: those <gml:pos> values are the AIXM's
+    authoritative corner positions, while an arc's mathematical endpoint
+    (center + radius * angle) is an approximation that drifts tens to
+    thousands of meters from the declared corner due to DMS rounding and
+    spherical geometry. Without this, arc-to-line joins introduce
+    self-intersections, spurious spikes at corners, and floating-point
+    sliver artifacts downstream.
     """
-    points = []
+    # First pass: collect segments as descriptors; detect pure circle.
+    raw = []  # ("line", [(lon,lat),...]) | ("arc", clon, clat, rad, uom, s, e)
     for curve_member in ring_elem.findall(f"{{{GML}}}curveMember"):
         curve = curve_member.find(f"{{{GML}}}Curve")
         if curve is None:
@@ -1037,9 +1108,12 @@ def parse_ring_points(ring_elem):
         for seg in segments:
             tag = seg.tag.split("}")[-1]
             if tag == "LineStringSegment":
+                pts = []
                 for pos in seg.findall(f"{{{GML}}}pos"):
                     lon, lat = pos.text.strip().split()
-                    points.append((float(lon), float(lat)))
+                    pts.append((float(lon), float(lat)))
+                if pts:
+                    raw.append(("line", pts))
             elif tag == "CircleByCenterPoint":
                 pos = seg.find(f".//{{{GML}}}pos")
                 rad = seg.find(f"{{{GML}}}radius")
@@ -1049,24 +1123,58 @@ def parse_ring_points(ring_elem):
                     radius_val = float(rad.text)
                     uom = rad.get("uom", "NM")
                     circle_pts = generate_circle(clon, clat, radius_val, uom)
-                    circle_meta = {
+                    return circle_pts, {
                         "lon": clon, "lat": clat,
                         "radius": radius_val, "uom": uom,
                     }
-                    return circle_pts, circle_meta
             elif tag == "ArcByCenterPoint":
                 pos = seg.find(f".//{{{GML}}}pos")
                 rad = seg.find(f"{{{GML}}}radius")
-                start_angle = seg.find(f"{{{GML}}}startAngle")
-                end_angle = seg.find(f"{{{GML}}}endAngle")
-                if pos is not None and rad is not None and start_angle is not None and end_angle is not None:
+                sa = seg.find(f"{{{GML}}}startAngle")
+                ea = seg.find(f"{{{GML}}}endAngle")
+                if (pos is not None and rad is not None
+                        and sa is not None and ea is not None):
                     lon, lat = pos.text.strip().split()
-                    arc_pts = generate_arc(
-                        float(lon), float(lat),
-                        float(rad.text), rad.get("uom", "NM"),
-                        float(start_angle.text), float(end_angle.text),
-                    )
-                    points.extend(arc_pts)
+                    raw.append(("arc", float(lon), float(lat),
+                                float(rad.text), rad.get("uom", "NM"),
+                                float(sa.text), float(ea.text)))
+
+    n = len(raw)
+
+    def prev_corner(i):
+        # Only snap to an immediately adjacent LineStringSegment (treating
+        # the ring as a closed loop). For arc-to-arc transitions we leave
+        # the computed position alone — snapping to a distant line's
+        # endpoint would teleport the arc across the ring.
+        prev = raw[(i - 1) % n]
+        return prev[1][-1] if prev[0] == "line" else None
+
+    def next_corner(i):
+        nxt = raw[(i + 1) % n]
+        return nxt[1][0] if nxt[0] == "line" else None
+
+    # Second pass: emit points, snapping arc endpoints to declared corners.
+    points = []
+    for i, seg in enumerate(raw):
+        if seg[0] == "line":
+            for p in seg[1]:
+                if not points or points[-1] != p:
+                    points.append(p)
+        else:
+            _, clon, clat, radius, uom, start_deg, end_deg = seg
+            arc_pts = generate_arc(clon, clat, radius, uom, start_deg, end_deg)
+            if not arc_pts:
+                continue
+            pc = prev_corner(i)
+            nc = next_corner(i)
+            if pc is not None:
+                arc_pts[0] = pc
+            if nc is not None:
+                arc_pts[-1] = nc
+            if points and points[-1] == arc_pts[0]:
+                arc_pts = arc_pts[1:]
+            points.extend(arc_pts)
+
     return points, None
 
 
@@ -1201,6 +1309,7 @@ def _parse_one_airspace(airspace):
     SNAP = 1e-5
     additive_polys = []
     for _, shape, _ in additive:
+        shape = remove_spike_vertices(shape)
         if len(shape) < 3:
             continue
         p = make_valid(ShapelyPolygon(shape))
@@ -1212,25 +1321,46 @@ def _parse_one_airspace(airspace):
     if not additive_polys:
         return None
     unioned = unary_union(additive_polys) if len(additive_polys) > 1 else additive_polys[0]
-    if isinstance(unioned, ShapelyPolygon):
-        polys = [unioned]
-    elif isinstance(unioned, ShapelyMultiPolygon):
-        polys = list(unioned.geoms)
-    else:
-        print(f"  WARN: {designator}: union yielded unexpected type "
-              f"{type(unioned).__name__}, skipping", file=sys.stderr)
+    # Flatten to polygons. unary_union may return a GeometryCollection when
+    # the input mixes polygons with degenerate (zero-width) geometry, e.g.
+    # where snapping produced a polygon that touches another only at a
+    # point or along a line. We extract the polygons and drop any
+    # non-polygonal debris.
+    polys = []
+    def _collect(g):
+        if isinstance(g, ShapelyPolygon):
+            if not g.is_empty:
+                polys.append(g)
+        elif isinstance(g, ShapelyMultiPolygon):
+            for sub in g.geoms:
+                _collect(sub)
+        elif hasattr(g, "geoms"):
+            for sub in g.geoms:
+                _collect(sub)
+    _collect(unioned)
+    if not polys:
+        print(f"  WARN: {designator}: union yielded no polygons "
+              f"(type {type(unioned).__name__}), skipping", file=sys.stderr)
         return None
 
-    # outer_parts is now list of (ring_coords, is_hole). Skip sub-threshold
-    # sliver holes from floating-point union artifacts — real holes are
-    # orders of magnitude larger than the ~1e-9 deg² slivers produced where
-    # shared-edge vertices don't quite coincide.
-    HOLE_AREA_MIN = 1e-6  # deg² (~0.01 km² at midlatitudes)
+    # Filter slivers from floating-point union / make_valid artifacts.
+    # Hole slivers use an absolute threshold (real holes are much larger).
+    # Outer slivers use a *relative* threshold only when a MultiPolygon has
+    # secondary pieces vastly smaller than the main geom — we don't want to
+    # drop a legitimate small single-component SUA.
+    HOLE_AREA_MIN = 1e-6       # deg² (~0.01 km²)
+    OUTER_SLIVER_RATIO = 1e-3  # drop outer piece if < 0.1% of largest poly
     outer_parts = []
     slivers_dropped = 0
     real_holes = 0
+    outer_slivers_dropped = 0
+    max_outer_area = max((p.area for p in polys if not p.is_empty), default=0.0)
     for poly in polys:
         if poly.is_empty:
+            continue
+        if (len(polys) > 1 and max_outer_area > 0
+                and poly.area < max_outer_area * OUTER_SLIVER_RATIO):
+            outer_slivers_dropped += 1
             continue
         outer_parts.append((list(poly.exterior.coords), False))
         for interior in poly.interiors:
@@ -1246,6 +1376,10 @@ def _parse_one_airspace(airspace):
     if slivers_dropped:
         print(f"  NOTE: {designator}: dropped {slivers_dropped} sliver hole(s) "
               f"from union (floating-point artifacts)", file=sys.stderr)
+    if outer_slivers_dropped:
+        print(f"  NOTE: {designator}: dropped {outer_slivers_dropped} sliver "
+              f"outer fragment(s) from union (self-intersection repair)",
+              file=sys.stderr)
 
     # Preserve circle_info only if the result is exactly one unchanged circle
     result_circle_info = None
@@ -1726,7 +1860,14 @@ def build_sua(conn, aixm_zf):
             for part, part_upper, part_lower, is_hole in result["parts"]:
                 for copy in handle_antimeridian(part):
                     total_before += len(copy)
-                    simplified = simplify_ring(copy, epsilon)
+                    despiked = remove_spike_vertices(copy)
+                    simplified = simplify_ring(despiked, epsilon)
+                    # Drop degenerate parts (fewer than 3 distinct vertices)
+                    # — typically a SUBTR zone that simplified down to a
+                    # filament or a single out-and-back segment.
+                    unique_pts = len({(lon, lat) for lon, lat in simplified})
+                    if unique_pts < 3:
+                        continue
                     total_after += len(simplified)
                     for point_seq, (lon, lat) in enumerate(simplified):
                         shp_rows.append((sua_id, part_num, part_upper, part_lower,
