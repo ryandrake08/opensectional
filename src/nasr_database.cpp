@@ -3,6 +3,7 @@
 #include <sqlite/statement.hpp>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 
 namespace nasrbrowse
 {
@@ -74,6 +75,13 @@ namespace nasrbrowse
         std::vector<airspace_segment> cls_arsp_segs;
         std::vector<sua_segment> sua_segs;
         std::vector<sua_circle> sua_circles;
+
+        // ARSP_IDs of class airspaces that are "shadowed" by a
+        // higher-priority class at the same airport (same non-empty IDENT
+        // with a lexicographically smaller CLASS letter, B<C<D<E).
+        // Computed once at construction; used to skip segments in
+        // query_class_airspace_segments() without a per-row SQL subquery.
+        std::unordered_set<int> shadowed_arsp_ids;
 
         impl(const char* db_path)
             : db(db_path)
@@ -375,13 +383,13 @@ namespace nasrbrowse
                 ORDER BY SEG_ID, POINT_SEQ
             )", 3))
 
-            // Suppress segments of airspaces "shadowed" by a higher-priority
-            // airspace at the same airport (same non-empty IDENT, lower CLASS
-            // letter — B<C<D<E lexicographically matches the class hierarchy).
-            // Example: KBFL Class E2 is hidden because KBFL also has a Class D.
-            // Picking still returns the shadowed airspace from CLS_ARSP_BASE.
+            // Shadowed airspaces (ARSP_IDs with a higher-priority class at
+            // the same IDENT) are filtered in query_class_airspace_segments
+            // using a precomputed set — doing it per-row in SQL was O(N²)
+            // at continental zoom.
             , stmt_cls_arsp_seg(prepare_checked(db, R"(
-                SELECT s.SEG_ID, s.CLASS, s.LOCAL_TYPE, s.LON_DECIMAL, s.LAT_DECIMAL
+                SELECT s.SEG_ID, s.ARSP_ID, s.CLASS, s.LOCAL_TYPE,
+                       s.LON_DECIMAL, s.LAT_DECIMAL
                 FROM CLS_ARSP_SEG s
                 WHERE s.SEG_ID IN (
                     SELECT id FROM CLS_ARSP_SEG_RTREE
@@ -391,15 +399,8 @@ namespace nasrbrowse
                 AND (?5 IS NULL
                      OR s.CLASS IN (SELECT value FROM json_each(?5))
                      OR s.LOCAL_TYPE IN (SELECT value FROM json_each(?5)))
-                AND NOT EXISTS (
-                    SELECT 1 FROM CLS_ARSP_BASE me
-                    JOIN CLS_ARSP_BASE other ON me.IDENT = other.IDENT
-                    WHERE me.ARSP_ID = s.ARSP_ID
-                      AND me.IDENT != ''
-                      AND other.CLASS < me.CLASS
-                )
                 ORDER BY s.SEG_ID, s.POINT_SEQ
-            )", 5))
+            )", 6))
 
             , stmt_sua_seg(prepare_checked(db, R"(
                 SELECT SEG_ID, SUA_TYPE, LON_DECIMAL, LAT_DECIMAL
@@ -413,6 +414,21 @@ namespace nasrbrowse
                 ORDER BY SEG_ID, POINT_SEQ
             )", 4))
         {
+            // Precompute the set of shadowed ARSP_IDs. Any class airspace
+            // that has a lower-class neighbor at the same non-empty IDENT
+            // is suppressed at render time (B<C<D<E by CLASS letter).
+            sqlite::statement stmt_shadows(prepare_checked(db, R"(
+                SELECT me.ARSP_ID
+                FROM CLS_ARSP_BASE me
+                WHERE me.IDENT != ''
+                  AND EXISTS (
+                    SELECT 1 FROM CLS_ARSP_BASE other
+                    WHERE other.IDENT = me.IDENT
+                      AND other.CLASS < me.CLASS
+                  )
+            )", 1));
+            while(stmt_shadows.step())
+                shadowed_arsp_ids.insert(stmt_shadows.column_int(0));
         }
 
         void bind_bbox(sqlite::statement& stmt, const geo_bbox& bbox)
@@ -881,19 +897,24 @@ namespace nasrbrowse
         d.bind_bbox(d.stmt_cls_arsp_seg, bbox);
         d.bind_filter(d.stmt_cls_arsp_seg, 5, class_filter);
         int current_seg = -1;
+        bool skip_current = false;
         while (d.stmt_cls_arsp_seg.step())
         {
             int seg_id = d.stmt_cls_arsp_seg.column_int(0);
             if (seg_id != current_seg)
             {
-                d.cls_arsp_segs.push_back(
-                    {d.stmt_cls_arsp_seg.column_text(1),
-                     d.stmt_cls_arsp_seg.column_text(2), {}});
+                int arsp_id = d.stmt_cls_arsp_seg.column_int(1);
+                skip_current = d.shadowed_arsp_ids.count(arsp_id) != 0;
                 current_seg = seg_id;
+                if (skip_current) continue;
+                d.cls_arsp_segs.push_back(
+                    {d.stmt_cls_arsp_seg.column_text(2),
+                     d.stmt_cls_arsp_seg.column_text(3), {}});
             }
+            if (skip_current) continue;
             d.cls_arsp_segs.back().points.push_back(
-                {d.stmt_cls_arsp_seg.column_double(4),
-                 d.stmt_cls_arsp_seg.column_double(3)});
+                {d.stmt_cls_arsp_seg.column_double(5),
+                 d.stmt_cls_arsp_seg.column_double(4)});
         }
         return d.cls_arsp_segs;
     }
