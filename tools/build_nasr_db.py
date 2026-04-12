@@ -1012,76 +1012,6 @@ def generate_arc(center_lon, center_lat, radius, uom, start_deg, end_deg):
     return points
 
 
-def merge_shared_edges(parts):
-    """Merge polygon rings that share edges into combined outlines.
-
-    Adjacent polygons (e.g. BASE + UNION) sharing an edge will have that
-    edge traversed in opposite directions. Removing these opposing edge
-    pairs and following the remaining edges reconstructs the outer boundary.
-
-    Only edges that appear in two different parts are considered shared.
-    Edges within a single part are never removed.
-    """
-    if len(parts) <= 1:
-        return parts
-
-    # Map each directed edge to the set of part indices it appears in
-    edge_parts = {}
-    for part_idx, part in enumerate(parts):
-        n = len(part)
-        for i in range(n):
-            a = part[i]
-            b = part[(i + 1) % n]
-            if a != b:
-                edge_parts.setdefault((a, b), set()).add(part_idx)
-
-    # An edge is shared only if its reverse exists AND they come from
-    # different parts (not a self-intersecting polygon edge)
-    shared = set()
-    for edge, pidxs in edge_parts.items():
-        rev = (edge[1], edge[0])
-        if rev in edge_parts:
-            rev_pidxs = edge_parts[rev]
-            if pidxs != rev_pidxs:
-                shared.add(edge)
-                shared.add(rev)
-
-    if not shared:
-        return parts
-
-    # Keep only non-shared edges, preserving order
-    kept = []
-    for part in parts:
-        n = len(part)
-        for i in range(n):
-            a = part[i]
-            b = part[(i + 1) % n]
-            if a != b and (a, b) not in shared:
-                kept.append((a, b))
-
-    # Build adjacency and reconstruct polygon(s)
-    adj = {}
-    for a, b in kept:
-        adj[a] = b
-
-    visited = set()
-    result = []
-    for start in adj:
-        if start in visited:
-            continue
-        ring = []
-        current = start
-        while current not in visited:
-            visited.add(current)
-            ring.append(current)
-            current = adj.get(current)
-            if current is None:
-                break
-        if len(ring) >= 3:
-            result.append(ring)
-
-    return result if result else parts
-
 
 GML = "http://www.opengis.net/gml/3.2"
 AIXM = "http://www.aixm.aero/schema/5.0"
@@ -1254,55 +1184,112 @@ def _parse_one_airspace(airspace):
         return None
 
     additive.sort(key=lambda c: c[0])
-    outer_parts = merge_shared_edges([shape for _, shape, _ in additive])
 
-    # Preserve circle_info if exactly one additive part is a pure circle
+    # Union additive parts (BASE + UNION) into outer rings. shapely handles
+    # both edge-sharing neighbors and arbitrary overlaps; the prior
+    # merge_shared_edges-based path failed for overlapping circles whose
+    # sampled arc vertices didn't coincide (e.g. R-4804A's "snowman").
+    from shapely.geometry import Polygon as ShapelyPolygon
+    from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
+    from shapely.ops import unary_union
+    from shapely.validation import make_valid
+    from shapely import set_precision
+    # Snap to ~1 m grid so polygons that share edges (sampled with slightly
+    # different floating-point vertices) produce a clean union instead of
+    # sliver holes. Airspace boundaries are not defined to sub-meter
+    # precision, so this is well below any meaningful threshold.
+    SNAP = 1e-5
+    additive_polys = []
+    for _, shape, _ in additive:
+        if len(shape) < 3:
+            continue
+        p = make_valid(ShapelyPolygon(shape))
+        if p.is_empty:
+            continue
+        p = set_precision(p, SNAP)
+        if not p.is_empty:
+            additive_polys.append(p)
+    if not additive_polys:
+        return None
+    unioned = unary_union(additive_polys) if len(additive_polys) > 1 else additive_polys[0]
+    if isinstance(unioned, ShapelyPolygon):
+        polys = [unioned]
+    elif isinstance(unioned, ShapelyMultiPolygon):
+        polys = list(unioned.geoms)
+    else:
+        print(f"  WARN: {designator}: union yielded unexpected type "
+              f"{type(unioned).__name__}, skipping", file=sys.stderr)
+        return None
+
+    # outer_parts is now list of (ring_coords, is_hole). Skip sub-threshold
+    # sliver holes from floating-point union artifacts — real holes are
+    # orders of magnitude larger than the ~1e-9 deg² slivers produced where
+    # shared-edge vertices don't quite coincide.
+    HOLE_AREA_MIN = 1e-6  # deg² (~0.01 km² at midlatitudes)
+    outer_parts = []
+    slivers_dropped = 0
+    real_holes = 0
+    for poly in polys:
+        if poly.is_empty:
+            continue
+        outer_parts.append((list(poly.exterior.coords), False))
+        for interior in poly.interiors:
+            hole_poly = ShapelyPolygon(interior.coords)
+            if hole_poly.area < HOLE_AREA_MIN:
+                slivers_dropped += 1
+                continue
+            outer_parts.append((list(interior.coords), True))
+            real_holes += 1
+    if real_holes:
+        print(f"  NOTE: {designator}: union produced {real_holes} interior "
+              f"hole(s)", file=sys.stderr)
+    if slivers_dropped:
+        print(f"  NOTE: {designator}: dropped {slivers_dropped} sliver hole(s) "
+              f"from union (floating-point artifacts)", file=sys.stderr)
+
+    # Preserve circle_info only if the result is exactly one unchanged circle
     result_circle_info = None
-    if len(additive) == 1 and additive[0][2] is not None and len(outer_parts) == 1:
+    if (len(additive) == 1 and additive[0][2] is not None
+            and len(outer_parts) == 1 and not outer_parts[0][1]):
         result_circle_info = additive[0][2]
 
-    # parts: list of (shape, upper_limit, lower_limit)
-    # Outer rings use the BASE altitude limits
-    parts = [(ring, upper_limit, lower_limit) for ring in outer_parts]
+    # parts: list of (shape, upper_limit, lower_limit, is_hole)
+    # Outer rings and any union-produced holes use the BASE altitude limits
+    parts = [(ring, upper_limit, lower_limit, is_hole)
+             for ring, is_hole in outer_parts]
 
     # SUBTR zones have their own altitude limits (not holes — airspace
     # still exists inside, just with a different ceiling/floor).
     # Clip each SUBTR polygon to the outer boundary since SUBTR circles
     # often extend beyond the airspace limits.
     if subtractive:
-        from shapely.geometry import Polygon as ShapelyPolygon
-        from shapely.ops import unary_union
-        from shapely.validation import make_valid
-        valid_outers = []
-        for r in outer_parts:
-            if len(r) >= 3:
-                p = make_valid(ShapelyPolygon(r))
-                if not p.is_empty:
-                    valid_outers.append(p)
-        outer_union = unary_union(valid_outers) if valid_outers else None
+        outer_union = unary_union(
+            [p for p in additive_polys if not p.is_empty])
         subtractive.sort(key=lambda c: c[0])
         for _, shape, sub_upper, sub_lower in subtractive:
-            if len(shape) < 3 or outer_union is None:
+            if len(shape) < 3 or outer_union.is_empty:
                 continue
             sub_poly = make_valid(ShapelyPolygon(shape))
             if sub_poly.is_empty:
                 continue
             clipped = sub_poly.intersection(outer_union)
             if clipped.is_empty:
+                print(f"  NOTE: {designator}: SUBTR zone lies entirely "
+                      f"outside outer boundary, skipping", file=sys.stderr)
                 continue
-            # intersection may produce MultiPolygon; take each piece
-            from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
             if isinstance(clipped, ShapelyMultiPolygon):
-                polys = list(clipped.geoms)
+                sub_polys = list(clipped.geoms)
             elif isinstance(clipped, ShapelyPolygon):
-                polys = [clipped]
+                sub_polys = [clipped]
             else:
+                print(f"  WARN: {designator}: SUBTR intersection yielded "
+                      f"{type(clipped).__name__}, skipping", file=sys.stderr)
                 continue
-            for poly in polys:
+            for poly in sub_polys:
                 if poly.is_empty:
                     continue
-                coords = list(poly.exterior.coords)
-                parts.append((coords, sub_upper, sub_lower))
+                parts.append((list(poly.exterior.coords),
+                              sub_upper, sub_lower, False))
 
     return {
         "designator": designator,
@@ -1624,6 +1611,7 @@ def build_sua(conn, aixm_zf):
             PART_NUM INTEGER,
             UPPER_LIMIT TEXT,
             LOWER_LIMIT TEXT,
+            IS_HOLE INTEGER,
             POINT_SEQ INTEGER,
             LON_DECIMAL REAL,
             LAT_DECIMAL REAL
@@ -1735,13 +1723,14 @@ def build_sua(conn, aixm_zf):
                 circle_rows.append((sua_id, 0, ci["lon"], ci["lat"], r))
 
             part_num = 0
-            for part, part_upper, part_lower in result["parts"]:
+            for part, part_upper, part_lower, is_hole in result["parts"]:
                 for copy in handle_antimeridian(part):
                     total_before += len(copy)
                     simplified = simplify_ring(copy, epsilon)
                     total_after += len(simplified)
                     for point_seq, (lon, lat) in enumerate(simplified):
                         shp_rows.append((sua_id, part_num, part_upper, part_lower,
+                                         1 if is_hole else 0,
                                          point_seq, lon, lat))
                     part_num += 1
 
@@ -1780,7 +1769,7 @@ def build_sua(conn, aixm_zf):
         base_rows,
     )
     conn.executemany(
-        "INSERT INTO SUA_SHP VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_SHP VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         shp_rows,
     )
     conn.executemany(

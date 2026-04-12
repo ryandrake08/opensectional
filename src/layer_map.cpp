@@ -372,14 +372,21 @@ struct layer_map::impl
             {
                 if(!styles.sua_visible(s.sua_type, z))
                     continue;
+                bool inside = false;
                 for(const auto& ring : s.parts)
                 {
                     if(point_in_ring(click_lon, click_lat, ring.points))
                     {
-                        result.features.push_back(s);
-                        break;
+                        if(ring.is_hole)
+                        {
+                            inside = false;
+                            break;
+                        }
+                        inside = true;
                     }
                 }
+                if(inside)
+                    result.features.push_back(s);
             }
         }
 

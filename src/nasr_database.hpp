@@ -144,6 +144,7 @@ namespace nasrbrowse
         std::vector<airspace_point> points;
         std::string upper_limit;
         std::string lower_limit;
+        bool is_hole = false;
         bool is_circle = false;
         double circle_lon = 0;
         double circle_lat = 0;

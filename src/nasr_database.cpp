@@ -226,11 +226,12 @@ namespace nasrbrowse
             )", 15))
 
             , stmt_sua_shape(prepare_checked(db, R"(
-                SELECT PART_NUM, UPPER_LIMIT, LOWER_LIMIT, LON_DECIMAL, LAT_DECIMAL
+                SELECT PART_NUM, UPPER_LIMIT, LOWER_LIMIT, IS_HOLE,
+                       LON_DECIMAL, LAT_DECIMAL
                 FROM SUA_SHP
                 WHERE SUA_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
-            )", 5))
+            )", 6))
 
             , stmt_sua_circle(prepare_checked(db, R"(
                 SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM
@@ -676,6 +677,7 @@ namespace nasrbrowse
                     sua_ring ring;
                     ring.upper_limit = d.stmt_sua_shape.column_text(1);
                     ring.lower_limit = d.stmt_sua_shape.column_text(2);
+                    ring.is_hole = d.stmt_sua_shape.column_int(3) != 0;
                     if (part_num == circle_part)
                     {
                         ring.is_circle = true;
@@ -687,8 +689,8 @@ namespace nasrbrowse
                     current_part = part_num;
                 }
                 su.parts.back().points.push_back(
-                    {d.stmt_sua_shape.column_double(4),
-                     d.stmt_sua_shape.column_double(3)});
+                    {d.stmt_sua_shape.column_double(5),
+                     d.stmt_sua_shape.column_double(4)});
             }
             return su;
         });
