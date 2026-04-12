@@ -374,18 +374,30 @@ namespace nasrbrowse
                 ORDER BY SEG_ID, POINT_SEQ
             )", 3))
 
+            // Suppress segments of airspaces "shadowed" by a higher-priority
+            // airspace at the same airport (same non-empty IDENT, lower CLASS
+            // letter — B<C<D<E lexicographically matches the class hierarchy).
+            // Example: KBFL Class E2 is hidden because KBFL also has a Class D.
+            // Picking still returns the shadowed airspace from CLS_ARSP_BASE.
             , stmt_cls_arsp_seg(prepare_checked(db, R"(
-                SELECT SEG_ID, CLASS, LOCAL_TYPE, LON_DECIMAL, LAT_DECIMAL
-                FROM CLS_ARSP_SEG
-                WHERE SEG_ID IN (
+                SELECT s.SEG_ID, s.CLASS, s.LOCAL_TYPE, s.LON_DECIMAL, s.LAT_DECIMAL
+                FROM CLS_ARSP_SEG s
+                WHERE s.SEG_ID IN (
                     SELECT id FROM CLS_ARSP_SEG_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 AND (?5 IS NULL
-                     OR CLASS IN (SELECT value FROM json_each(?5))
-                     OR LOCAL_TYPE IN (SELECT value FROM json_each(?5)))
-                ORDER BY SEG_ID, POINT_SEQ
+                     OR s.CLASS IN (SELECT value FROM json_each(?5))
+                     OR s.LOCAL_TYPE IN (SELECT value FROM json_each(?5)))
+                AND NOT EXISTS (
+                    SELECT 1 FROM CLS_ARSP_BASE me
+                    JOIN CLS_ARSP_BASE other ON me.IDENT = other.IDENT
+                    WHERE me.ARSP_ID = s.ARSP_ID
+                      AND me.IDENT != ''
+                      AND other.CLASS < me.CLASS
+                )
+                ORDER BY s.SEG_ID, s.POINT_SEQ
             )", 5))
 
             , stmt_sua_seg(prepare_checked(db, R"(
