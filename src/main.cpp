@@ -162,6 +162,7 @@ int main(int argc, char** argv)
     // Parse optional flags
     int verbosity = 0;
     const char* gpu_driver = nullptr;
+    const char* tile_path = nullptr;
     int argi = 1;
     while(argi < argc && argv[argi][0] == '-')
     {
@@ -176,9 +177,13 @@ int main(int argc, char** argv)
                 return EXIT_FAILURE;
             }
         }
-        else if(std::strcmp(argv[argi], "--gpu") == 0 && argi + 1 < argc)
+        else if((std::strcmp(argv[argi], "-g") == 0 || std::strcmp(argv[argi], "--gpu") == 0) && argi + 1 < argc)
         {
             gpu_driver = argv[++argi];
+        }
+        else if((std::strcmp(argv[argi], "-b") == 0 || std::strcmp(argv[argi], "--basemap") == 0) && argi + 1 < argc)
+        {
+            tile_path = argv[++argi];
         }
         else
         {
@@ -188,14 +193,13 @@ int main(int argc, char** argv)
         argi++;
     }
 
-    if(argc - argi < 2)
+    if(argc - argi < 1)
     {
-        std::cerr << "Usage: nasrbrowse [-v|-vv|-vvv] [--gpu vulkan|metal|direct3d12] <tile_path> <nasr.db>" << std::endl;
+        std::cerr << "Usage: nasrbrowse [-v|-vv|-vvv] [-g|--gpu vulkan|metal|direct3d12] [-b|--basemap <tile_path>] <nasr.db>" << std::endl;
         return EXIT_FAILURE;
     }
 
-    const char* tile_path = argv[argi];
-    const char* db_path = argv[argi + 1];
+    const char* db_path = argv[argi];
 
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);

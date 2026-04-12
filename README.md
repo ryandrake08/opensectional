@@ -4,6 +4,8 @@ A desktop application for visualizing FAA NASR (National Airspace System Resourc
 
 ## Quick Start
 
+**Requires the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home)** (for `dxc` and `spirv-cross` shader tools) with `VULKAN_SDK` set. See [Shader Compiler Toolchain](#shader-compiler-toolchain) for details.
+
 ```bash
 # 1. Install dependencies (macOS with MacPorts)
 sudo port install cmake SDL3 SDL3_image SDL3_ttf sqlite3
@@ -20,11 +22,11 @@ tools/env/bin/python3 tools/download_nasr_data.py nasr_data
 
 # 5. Build the NASR database (use the command printed by the download script)
 
-# 6. Run (requires pre-built XYZ tile directory)
-./build/nasrbrowse <tile_path> nasr.db
+# 6. Run (basemap tile directory optional, supply with -b to enable the basemap layer)
+./build/nasrbrowse -b <tile_path> nasr.db
 
 # Verbosity: -v (warnings), -vv (info), -vvv (debug)
-./build/nasrbrowse -vv <tile_path> nasr.db
+./build/nasrbrowse -vv -b <tile_path> nasr.db
 ```
 
 ## Dependencies
@@ -120,7 +122,7 @@ tools/env/bin/python3 tools/download_nasr_data.py nasr_data
 
 The download script fetches data from the FAA NASR subscription page, the Digital Obstacle File page, and ADIZ boundaries from the FAA ArcGIS service. Use `--preview` for the next cycle's data instead of the current one.
 
-`build_nasr_db.py` reads the downloaded ZIP files (no manual extraction needed) and produces a SQLite database (~171 MB) containing 57 tables. All spatial tables have R-tree indexes for efficient bounding-box queries. Column names match FAA NASR naming conventions.
+`build_nasr_db.py` reads the downloaded ZIP files (no manual extraction needed) and produces a SQLite database. All spatial tables have R-tree indexes for efficient bounding-box queries. Column names match FAA NASR naming conventions.
 
 **Airports & Runways**
 - `APT_BASE` — 19,606 airports with coordinates, elevation, ownership, facility use
@@ -132,7 +134,8 @@ The download script fetches data from the FAA NASR subscription page, the Digita
 **Navigation**
 - `NAV_BASE` / `NAV_RMK` / `NAV_CKPT` — 1,649 navaids (VOR, NDB, DME) with remarks and checkpoints
 - `FIX_BASE` / `FIX_NAV` / `FIX_CHRT` — 69,983 fixes with navaid relationships and chart references
-- `AWY_BASE` / `AWY_SEG` — 17,616 airway segments with resolved coordinates
+- `AWY_BASE` / `AWY_SEG` / `AWY_SEG_ALT` — 17,616 airway segments with resolved coordinates and altitude restrictions
+- `WP_LOOKUP` — 91,249 waypoint name→coordinate entries used to resolve route points
 
 **Procedures & Routes**
 - `DP_BASE` / `DP_APT` / `DP_RTE` — departure procedures (SIDs)
@@ -143,10 +146,11 @@ The download script fetches data from the FAA NASR subscription page, the Digita
 - `MTR_BASE` / `MTR_SEG` — 5,366 military training route segments
 
 **Airspace**
-- `CLS_ARSP_BASE` / `CLS_ARSP_SHP` — 5,608 class airspace polygons (B/C/D/E)
-- `SUA_BASE` / `SUA_SHP` — 1,234 special use airspace polygons (MOA/RA/WA/AA/PA/NSA)
-- `ARTCC_BASE` / `ARTCC_SHP` — ARTCC boundary polygons
-- `ADIZ_BASE` / `ADIZ_SHP` — 19 Air Defense Identification Zone boundaries
+- `CLS_ARSP_BASE` / `CLS_ARSP_SHP` / `CLS_ARSP_SEG` — 5,608 class airspace polygons (B/C/D/E) with pre-computed rendering segments
+- `SUA_BASE` / `SUA_SHP` / `SUA_SEG` — 1,234 special use airspace polygons (MOA/RA/WA/AA/PA/NSA) with rendering segments
+- `SUA_CIRCLE` / `SUA_FREQ` / `SUA_SCHEDULE` / `SUA_SERVICE` — SUA circular boundaries, controlling frequencies, activation schedules, and controlling agencies
+- `ARTCC_BASE` / `ARTCC_SHP` / `ARTCC_SEG` — ARTCC boundary polygons with rendering segments
+- `ADIZ_BASE` / `ADIZ_SHP` / `ADIZ_SEG` — 19 Air Defense Identification Zone boundaries with rendering segments
 - `MAA_BASE` / `MAA_SHP` / `MAA_RMK` — 174 miscellaneous activity areas
 - `PJA_BASE` — parachute jump areas
 
@@ -168,17 +172,17 @@ NASRBrowse requires a basemap tile directory in standard XYZ layout (`{z}/{x}/{y
 
 #### Natural Earth basemap (recommended)
 
-A minimal two-color worldwide basemap with coastlines, borders, roads, railroads, rivers, lakes, and labels.
+A minimal worldwide basemap with coastlines, borders, roads, railroads, rivers, lakes, and labels.
 
 ```bash
 # Download Natural Earth GeoPackage (~100 MB zip)
 wget -P mapdata https://naciscdn.org/naturalearth/packages/natural_earth_vector.gpkg.zip
 
 # Render basemap tiles
-tools/env/bin/python3 tools/render_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/
+tools/env/bin/python3 tools/render_basemap.py natural_earth_vector.gpkg.zip basemap/
 ```
 
-On first run, the script reprojects the source data to EPSG:3857 and saves a `*_3857.gpkg` file alongside the zip. Subsequent runs reuse the preprocessed file automatically. Use `--workers N` to control parallelism (defaults to all CPUs).
+On first run, the script reprojects the source data to EPSG:3857 and saves a `*_3857.gpkg` file alongside the zip. Subsequent runs reuse the preprocessed file automatically.
 
 #### FAA VFR raster charts (alternative)
 
@@ -200,9 +204,10 @@ For a basemap derived from FAA aeronav charts, generate XYZ tile pyramids using 
 | `-v` | Show warnings |
 | `-vv` | Show info (initialization, GPU backend, present mode) |
 | `-vvv` | Show debug (resource lifecycle, buffer uploads, shader creation) |
-| `--gpu vulkan` | Force Vulkan backend (default on all platforms) |
-| `--gpu metal` | Force Metal backend (macOS only) |
-| `--gpu direct3d12` | Force Direct3D 12 backend (Windows only) |
+| `-g vulkan`, `--gpu vulkan` | Force Vulkan backend (default on all platforms) |
+| `-g metal`, `--gpu metal` | Force Metal backend (macOS only) |
+| `-g direct3d12`, `--gpu direct3d12` | Force Direct3D 12 backend (Windows only) |
+| `-b <path>`, `--basemap <path>` | XYZ tile directory for the basemap layer (optional; omit to run without a basemap) |
 
 Layer visibility (basemap, airports, runways, navaids, fixes, airways, MTRs,
 airspace, SUA, ADIZ, ARTCC, obstacles) is controlled via checkbox panel in the

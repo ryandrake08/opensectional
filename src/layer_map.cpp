@@ -89,8 +89,8 @@ struct layer_map::impl
     bool needs_update;
     bool show_tiles;
 
-    // Tile renderer for raster basemap
-    nasrbrowse::tile_renderer tiles;
+    // Tile renderer for raster basemap (null if no basemap was provided)
+    std::unique_ptr<nasrbrowse::tile_renderer> tiles;
 
     // Vector feature renderer
     nasrbrowse::feature_renderer features;
@@ -122,7 +122,7 @@ struct layer_map::impl
         , viewport_height(0)
         , needs_update(true)
         , show_tiles(true)
-        , tiles(dev, tile_path)
+        , tiles(tile_path ? std::unique_ptr<nasrbrowse::tile_renderer>(new nasrbrowse::tile_renderer(dev, tile_path)) : nullptr)
         , features(dev, db_path, cs)
         , labels(dev, text_engine, font, outline_font)
         , text_sampler(text_sampler)
@@ -232,10 +232,13 @@ struct layer_map::impl
 
     void update_tiles()
     {
-        tiles.update(view_x_min(), view.view_y_min(),
-                     view_x_max(), view.view_y_max(),
-                     view.half_extent_y, viewport_height,
-                     aspect_ratio());
+        if(tiles)
+        {
+            tiles->update(view_x_min(), view.view_y_min(),
+                          view_x_max(), view.view_y_max(),
+                          view.half_extent_y, viewport_height,
+                          aspect_ratio());
+        }
         features.update(view_x_min(), view.view_y_min(),
                         view_x_max(), view.view_y_max(),
                         view.half_extent_y, viewport_height,
@@ -678,7 +681,7 @@ void layer_map::on_resize(float normalized_viewport_width, int viewport_height_p
 
 bool layer_map::on_update()
 {
-    pimpl->tiles.drain();
+    if(pimpl->tiles) pimpl->tiles->drain();
 
     bool new_candidates = pimpl->features.drain();
     if(new_candidates)
@@ -696,7 +699,8 @@ bool layer_map::on_update()
             pimpl->vis);
     }
 
-    bool result = pimpl->needs_update || pimpl->tiles.needs_upload()
+    bool result = pimpl->needs_update
+        || (pimpl->tiles && pimpl->tiles->needs_upload())
         || pimpl->features.needs_upload() || pimpl->labels.needs_upload();
 
     if(result)
@@ -714,7 +718,7 @@ void layer_map::on_copy(sdl::copy_pass& pass)
         auto buf = pass.create_and_upload_buffer(pimpl->dev, sdl::buffer_usage::vertex, pimpl->grid_vertices);
         pimpl->grid_buffer = std::make_unique<sdl::buffer>(std::move(buf));
     }
-    pimpl->tiles.copy(pass);
+    if(pimpl->tiles) pimpl->tiles->copy(pass);
     pimpl->features.copy(pass);
     pimpl->labels.copy(pass, pimpl->dev);
 }
@@ -728,9 +732,9 @@ void layer_map::on_render(sdl::render_pass& pass, const nasrbrowse::render_conte
                              glm::translate(glm::mat4(1.0F), glm::vec3(-cx, -cy, 0.0F));
 
     // Render tiles (textured pass)
-    if(pimpl->show_tiles)
+    if(pimpl->show_tiles && pimpl->tiles)
     {
-        pimpl->tiles.render(pass, ctx, view_matrix);
+        pimpl->tiles->render(pass, ctx, view_matrix);
     }
 
     pimpl->features.render(pass, ctx, view_matrix);
