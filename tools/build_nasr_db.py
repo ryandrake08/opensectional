@@ -1549,8 +1549,20 @@ def parse_aixm_sua(xml_data):
     timesheets = _parse_timesheets(root)
     freqs = _parse_freq_allocations(root, channels)
 
+    # A file's canonical Airspace is the one not referenced by any
+    # <theAirspace xlink:href="#..."> within the file. Other <Airspace>
+    # elements are neighbors inlined by reference (e.g. R-4812's file
+    # inlines R-4804A and R-4810) and have their own canonical files.
+    referenced_ids = set()
+    for ref in root.iter(f"{{{AIXM}}}theAirspace"):
+        href = ref.get(f"{{{XLINK}}}href", "")
+        if href.startswith("#"):
+            referenced_ids.add(href[1:])
+
     results = []
     for airspace in root.iter(f"{{{AIXM}}}Airspace"):
+        if airspace.get(f"{{{GML}}}id") in referenced_ids:
+            continue
         result = _parse_one_airspace(airspace)
         if result is not None:
             result["controlling_authority"] = controlling_auth
@@ -1678,12 +1690,6 @@ def build_sua(conn, aixm_zf):
     schedule_rows = []
     service_rows = []
     skipped = 0
-    # A small number of AIXM files inline neighboring airspaces as additional
-    # top-level <Airspace> elements (e.g. R-4812 SAND SPRINGS inlines R-4804A
-    # and R-4810). Those neighbors have their own canonical files, so dedupe
-    # by designator — iteration is sorted, and the canonical file sorts before
-    # any file that inlines it as a reference.
-    seen_designators = set()
 
     for xml_name in xml_files:
         results = parse_aixm_sua(inner_zf.read(xml_name))
@@ -1692,9 +1698,6 @@ def build_sua(conn, aixm_zf):
             continue
 
         for result in results:
-            if result["designator"] in seen_designators:
-                continue
-            seen_designators.add(result["designator"])
             sua_id = len(base_rows) + 1
             base_rows.append((
                 sua_id,
