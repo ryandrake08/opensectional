@@ -34,6 +34,7 @@ namespace sqlite
         void reset();
 
         // Bind parameters (1-indexed)
+        void bind_null(int index);
         void bind(int index, int value);
         void bind(int index, double value);
         void bind(int index, const char* value);

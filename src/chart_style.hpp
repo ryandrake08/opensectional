@@ -1,6 +1,8 @@
 #pragma once
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace nasrbrowse
 {
@@ -104,6 +106,30 @@ namespace nasrbrowse
         // AWOS visibility and style
         bool awos_visible(double zoom) const;
         const feature_style& awos_style() const;
+
+        // Group-level early-out helpers: true if ANY variant in the group
+        // is visible at this zoom. Used by builders to skip DB queries
+        // entirely when nothing in the layer would render.
+        bool any_airport_visible(double zoom) const;
+        bool any_navaid_visible(double zoom) const;
+        bool any_fix_visible(double zoom) const;
+        bool any_obstacle_visible(double zoom) const;
+        bool any_airway_visible(double zoom) const;
+        bool any_airspace_visible(double zoom) const;
+        bool any_sua_visible(double zoom) const;
+        bool any_artcc_visible(double zoom) const;
+
+        // SQL-filter helpers: each returns the set of DB-column values that
+        // would render at this zoom, ready to drop into an IN (...) filter.
+        // Returns nullopt when the "everything else" bucket is visible (caller
+        // should skip filtering). Populated vector is the explicit allow-list.
+        // Populated empty vector should not occur in practice — callers are
+        // expected to guard with any_*_visible() first.
+        using filter_list = std::optional<std::vector<std::string>>;
+
+        filter_list visible_airport_classes(double zoom) const;       // APT airspace_class: B,C,D,E
+        filter_list visible_airspace_values(double zoom) const;       // Union of CLASS and LOCAL_TYPE values
+        filter_list visible_sua_types(double zoom) const;             // SUA_TYPE: RA,PA,WA,AA,NSA
     };
 
 } // namespace nasrbrowse

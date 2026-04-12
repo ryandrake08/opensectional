@@ -38,6 +38,7 @@ namespace nasrbrowse
         sqlite::statement stmt_sua;
         sqlite::statement stmt_sua_shape;
         sqlite::statement stmt_sua_circle;
+        sqlite::statement stmt_sua_circles_bbox;
         sqlite::statement stmt_obstacles;
         sqlite::statement stmt_artcc;
         sqlite::statement stmt_artcc_shape;
@@ -72,34 +73,38 @@ namespace nasrbrowse
         std::vector<boundary_segment> adiz_segs;
         std::vector<airspace_segment> cls_arsp_segs;
         std::vector<sua_segment> sua_segs;
+        std::vector<sua_circle> sua_circles;
 
         impl(const char* db_path)
             : db(db_path)
 
             , stmt_airports(prepare_checked(db, R"(
-                SELECT a.SITE_TYPE_CODE, a.STATE_CODE, a.ARPT_ID, a.CITY,
-                       a.COUNTRY_CODE, a.ARPT_NAME,
-                       a.OWNERSHIP_TYPE_CODE, a.FACILITY_USE_CODE,
-                       a.LAT_DECIMAL, a.LONG_DECIMAL, a.ELEV,
-                       a.MAG_VARN, a.MAG_HEMIS, a.TPA,
-                       a.RESP_ARTCC_ID, a.FSS_ID, a.NOTAM_ID,
-                       a.ACTIVATION_DATE, a.ARPT_STATUS, a.FUEL_TYPES,
-                       a.LGT_SKED, a.BCN_LGT_SKED,
-                       a.TWR_TYPE_CODE, a.ICAO_ID, a.HARD_SURFACE,
-                       CASE
-                           WHEN c.CLASS_B_AIRSPACE = 'Y' THEN 'B'
-                           WHEN c.CLASS_C_AIRSPACE = 'Y' THEN 'C'
-                           WHEN c.CLASS_D_AIRSPACE = 'Y' THEN 'D'
-                           WHEN c.CLASS_E_AIRSPACE = 'Y' THEN 'E'
-                           ELSE ''
-                       END
-                FROM APT_BASE a
-                LEFT JOIN CLS_ARSP c ON c.SITE_NO = a.SITE_NO
-                WHERE a.rowid IN (
-                    SELECT id FROM APT_BASE_RTREE
-                    WHERE max_lon >= ?1 AND min_lon <= ?3
-                      AND max_lat >= ?2 AND min_lat <= ?4
+                SELECT * FROM (
+                    SELECT a.SITE_TYPE_CODE, a.STATE_CODE, a.ARPT_ID, a.CITY,
+                           a.COUNTRY_CODE, a.ARPT_NAME,
+                           a.OWNERSHIP_TYPE_CODE, a.FACILITY_USE_CODE,
+                           a.LAT_DECIMAL, a.LONG_DECIMAL, a.ELEV,
+                           a.MAG_VARN, a.MAG_HEMIS, a.TPA,
+                           a.RESP_ARTCC_ID, a.FSS_ID, a.NOTAM_ID,
+                           a.ACTIVATION_DATE, a.ARPT_STATUS, a.FUEL_TYPES,
+                           a.LGT_SKED, a.BCN_LGT_SKED,
+                           a.TWR_TYPE_CODE, a.ICAO_ID, a.HARD_SURFACE,
+                           CASE
+                               WHEN c.CLASS_B_AIRSPACE = 'Y' THEN 'B'
+                               WHEN c.CLASS_C_AIRSPACE = 'Y' THEN 'C'
+                               WHEN c.CLASS_D_AIRSPACE = 'Y' THEN 'D'
+                               WHEN c.CLASS_E_AIRSPACE = 'Y' THEN 'E'
+                               ELSE ''
+                           END AS airspace_class
+                    FROM APT_BASE a
+                    LEFT JOIN CLS_ARSP c ON c.SITE_NO = a.SITE_NO
+                    WHERE a.rowid IN (
+                        SELECT id FROM APT_BASE_RTREE
+                        WHERE max_lon >= ?1 AND min_lon <= ?3
+                          AND max_lat >= ?2 AND min_lat <= ?4
+                    )
                 )
+                WHERE ?5 IS NULL OR airspace_class IN (SELECT value FROM json_each(?5))
             )", 26))
 
             , stmt_navaids(prepare_checked(db, R"(
@@ -217,6 +222,7 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
+                AND (?5 IS NULL OR SUA_TYPE IN (SELECT value FROM json_each(?5)))
             )", 15))
 
             , stmt_sua_shape(prepare_checked(db, R"(
@@ -230,6 +236,18 @@ namespace nasrbrowse
                 SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM
                 FROM SUA_CIRCLE
                 WHERE SUA_ID = ?1
+            )", 4))
+
+            , stmt_sua_circles_bbox(prepare_checked(db, R"(
+                SELECT b.SUA_TYPE, c.CENTER_LON, c.CENTER_LAT, c.RADIUS_NM
+                FROM SUA_CIRCLE c
+                JOIN SUA_BASE b ON b.SUA_ID = c.SUA_ID
+                WHERE c.SUA_ID IN (
+                    SELECT id FROM SUA_BASE_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+                AND (?5 IS NULL OR b.SUA_TYPE IN (SELECT value FROM json_each(?5)))
             )", 4))
 
             , stmt_obstacles(prepare_checked(db, R"(
@@ -364,6 +382,9 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
+                AND (?5 IS NULL
+                     OR CLASS IN (SELECT value FROM json_each(?5))
+                     OR LOCAL_TYPE IN (SELECT value FROM json_each(?5)))
                 ORDER BY SEG_ID, POINT_SEQ
             )", 5))
 
@@ -375,6 +396,7 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
+                AND (?5 IS NULL OR SUA_TYPE IN (SELECT value FROM json_each(?5)))
                 ORDER BY SEG_ID, POINT_SEQ
             )", 4))
         {
@@ -387,6 +409,33 @@ namespace nasrbrowse
             stmt.bind(2, bbox.lat_min);
             stmt.bind(3, bbox.lon_max);
             stmt.bind(4, bbox.lat_max);
+        }
+
+        // Binds a filter list at the given parameter index: NULL when the
+        // filter is absent (SQL treats the filter clause as a no-op), or a
+        // JSON array string consumed by json_each() otherwise.
+        std::string filter_json;  // kept alive for the duration of step()
+        void bind_filter(sqlite::statement& stmt, int index,
+                         const std::optional<std::vector<std::string>>& filter)
+        {
+            if(!filter)
+            {
+                stmt.bind_null(index);
+                return;
+            }
+            filter_json.clear();
+            filter_json.push_back('[');
+            bool first = true;
+            for(const auto& v : *filter)
+            {
+                if(!first) filter_json.push_back(',');
+                first = false;
+                filter_json.push_back('"');
+                filter_json.append(v);
+                filter_json.push_back('"');
+            }
+            filter_json.push_back(']');
+            stmt.bind(index, filter_json);
         }
 
         template<typename T, typename RowMapper>
@@ -403,6 +452,24 @@ namespace nasrbrowse
             }
             return results;
         }
+
+        template<typename T, typename RowMapper>
+        const std::vector<T>& query_bbox_filtered(
+            std::vector<T>& results,
+            sqlite::statement& stmt,
+            const geo_bbox& bbox,
+            const std::optional<std::vector<std::string>>& filter,
+            RowMapper&& map_row)
+        {
+            results.clear();
+            bind_bbox(stmt, bbox);
+            bind_filter(stmt, 5, filter);
+            while (stmt.step())
+            {
+                results.push_back(map_row(stmt));
+            }
+            return results;
+        }
     };
 
     nasr_database::nasr_database(const char* db_path) : pimpl(new impl(db_path))
@@ -411,11 +478,12 @@ namespace nasrbrowse
 
     nasr_database::~nasr_database() = default;
 
-    const std::vector<airport>& nasr_database::query_airports(const geo_bbox& bbox)
+    const std::vector<airport>& nasr_database::query_airports(const geo_bbox& bbox,
+                                                                const filter_list& class_filter)
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.airports, d.stmt_airports,
-            bbox, [](sqlite::statement& s)
+        return d.query_bbox_filtered(d.airports, d.stmt_airports,
+            bbox, class_filter, [](sqlite::statement& s)
         {
             return airport{
                 s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
@@ -559,11 +627,12 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<sua>& nasr_database::query_sua(const geo_bbox& bbox)
+    const std::vector<sua>& nasr_database::query_sua(const geo_bbox& bbox,
+                                                      const filter_list& type_filter)
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.suas, d.stmt_sua,
-            bbox, [&](sqlite::statement& s)
+        return d.query_bbox_filtered(d.suas, d.stmt_sua,
+            bbox, type_filter, [&](sqlite::statement& s)
         {
             sua su{s.column_int(0), s.column_text(1), s.column_text(2), s.column_text(3),
                    s.column_text(4), s.column_text(5),
@@ -610,6 +679,20 @@ namespace nasrbrowse
                      d.stmt_sua_shape.column_double(3)});
             }
             return su;
+        });
+    }
+
+    const std::vector<sua_circle>& nasr_database::query_sua_circles(
+        const geo_bbox& bbox, const filter_list& type_filter)
+    {
+        auto& d = *pimpl;
+        return d.query_bbox_filtered(d.sua_circles, d.stmt_sua_circles_bbox,
+            bbox, type_filter, [](sqlite::statement& s)
+        {
+            return sua_circle{s.column_text(0),
+                              s.column_double(1),
+                              s.column_double(2),
+                              s.column_double(3)};
         });
     }
 
@@ -776,11 +859,13 @@ namespace nasrbrowse
         return d.adiz_segs;
     }
 
-    const std::vector<airspace_segment>& nasr_database::query_class_airspace_segments(const geo_bbox& bbox)
+    const std::vector<airspace_segment>& nasr_database::query_class_airspace_segments(
+        const geo_bbox& bbox, const filter_list& class_filter)
     {
         auto& d = *pimpl;
         d.cls_arsp_segs.clear();
         d.bind_bbox(d.stmt_cls_arsp_seg, bbox);
+        d.bind_filter(d.stmt_cls_arsp_seg, 5, class_filter);
         int current_seg = -1;
         while (d.stmt_cls_arsp_seg.step())
         {
@@ -799,11 +884,13 @@ namespace nasrbrowse
         return d.cls_arsp_segs;
     }
 
-    const std::vector<sua_segment>& nasr_database::query_sua_segments(const geo_bbox& bbox)
+    const std::vector<sua_segment>& nasr_database::query_sua_segments(
+        const geo_bbox& bbox, const filter_list& type_filter)
     {
         auto& d = *pimpl;
         d.sua_segs.clear();
         d.bind_bbox(d.stmt_sua_seg, bbox);
+        d.bind_filter(d.stmt_sua_seg, 5, type_filter);
         int current_seg = -1;
         while (d.stmt_sua_seg.step())
         {

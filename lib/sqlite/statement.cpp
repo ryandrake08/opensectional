@@ -32,6 +32,11 @@ namespace sqlite
         sqlite3_reset(pimpl->stmt);
     }
 
+    void statement::bind_null(int index)
+    {
+        sqlite3_bind_null(pimpl->stmt, index);
+    }
+
     void statement::bind(int index, int value)
     {
         sqlite3_bind_int(pimpl->stmt, index, value);

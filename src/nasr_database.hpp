@@ -1,6 +1,7 @@
 #pragma once
 #include "geo_types.hpp"
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -212,6 +213,16 @@ namespace nasrbrowse
         std::vector<airspace_point> points;
     };
 
+    // Render-only narrow row (render path doesn't need polygon rings or
+    // the 12 unused text columns from SUA_BASE).
+    struct sua_circle
+    {
+        std::string sua_type;
+        double center_lon;
+        double center_lat;
+        double radius_nm;
+    };
+
     // Column order follows OBS_BASE table
     struct obstacle
     {
@@ -332,7 +343,12 @@ namespace nasrbrowse
 
         // Query features within a geographic bounding box (lon/lat degrees).
         // Results are valid until the next query call on the same type.
-        const std::vector<airport>& query_airports(const geo_bbox& bbox);
+        // Optional filter: when provided, restricts rows to those whose
+        // relevant attribute is in the given value list (nullopt = no filter).
+        using filter_list = std::optional<std::vector<std::string>>;
+
+        const std::vector<airport>& query_airports(const geo_bbox& bbox,
+                                                    const filter_list& class_filter = std::nullopt);
         const std::vector<navaid>& query_navaids(const geo_bbox& bbox);
         const std::vector<fix>& query_fixes(const geo_bbox& bbox);
         const std::vector<airway_segment>& query_airways(const geo_bbox& bbox);
@@ -340,7 +356,10 @@ namespace nasrbrowse
         const std::vector<maa>& query_maas(const geo_bbox& bbox);
         const std::vector<class_airspace>& query_class_airspace(const geo_bbox& bbox);
         const std::vector<runway>& query_runways(const geo_bbox& bbox);
-        const std::vector<sua>& query_sua(const geo_bbox& bbox);
+        const std::vector<sua>& query_sua(const geo_bbox& bbox,
+                                           const filter_list& type_filter = std::nullopt);
+        const std::vector<sua_circle>& query_sua_circles(const geo_bbox& bbox,
+                                                          const filter_list& type_filter = std::nullopt);
         const std::vector<obstacle>& query_obstacles(const geo_bbox& bbox);
         const std::vector<artcc>& query_artcc(const geo_bbox& bbox);
         const std::vector<pja>& query_pjas(const geo_bbox& bbox);
@@ -352,8 +371,10 @@ namespace nasrbrowse
         // Subdivided segment queries for rendering (tight R-tree bboxes)
         const std::vector<boundary_segment>& query_artcc_segments(const geo_bbox& bbox);
         const std::vector<boundary_segment>& query_adiz_segments(const geo_bbox& bbox);
-        const std::vector<airspace_segment>& query_class_airspace_segments(const geo_bbox& bbox);
-        const std::vector<sua_segment>& query_sua_segments(const geo_bbox& bbox);
+        const std::vector<airspace_segment>& query_class_airspace_segments(
+            const geo_bbox& bbox, const filter_list& class_filter = std::nullopt);
+        const std::vector<sua_segment>& query_sua_segments(
+            const geo_bbox& bbox, const filter_list& type_filter = std::nullopt);
     };
 
 } // namespace nasrbrowse

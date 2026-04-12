@@ -449,4 +449,114 @@ namespace nasrbrowse
     const feature_style& chart_style::awos_style() const
     { return get("awos"); }
 
+    // Group-level early-out helpers
+    bool chart_style::any_airport_visible(double zoom) const
+    {
+        static const char* keys[] = {
+            "airport_class_b", "airport_class_c", "airport_class_d",
+            "airport_class_e", "airport_other"};
+        for(const char* k : keys) if(visible(k, zoom)) return true;
+        return false;
+    }
+
+    bool chart_style::any_navaid_visible(double zoom) const
+    {
+        return visible("navaid_vor", zoom) || visible("navaid_ndb", zoom);
+    }
+
+    bool chart_style::any_fix_visible(double zoom) const
+    {
+        return visible("fix_airway", zoom) || visible("fix_noairway", zoom);
+    }
+
+    bool chart_style::any_obstacle_visible(double zoom) const
+    {
+        return visible("obstacle_1000ft", zoom)
+            || visible("obstacle_200ft", zoom)
+            || visible("obstacle_low", zoom);
+    }
+
+    bool chart_style::any_airway_visible(double zoom) const
+    {
+        static const char* keys[] = {
+            "airway_v", "airway_t", "airway_br", "airway_tk",
+            "airway_j", "airway_q", "airway_ar", "airway_rte", "airway_h",
+            "airway_m", "airway_l", "airway_y", "airway_w", "airway_n",
+            "airway_r", "airway_a", "airway_g", "airway_b"};
+        for(const char* k : keys) if(visible(k, zoom)) return true;
+        return false;
+    }
+
+    bool chart_style::any_airspace_visible(double zoom) const
+    {
+        static const char* keys[] = {
+            "airspace_b", "airspace_c", "airspace_d",
+            "airspace_e2", "airspace_e3", "airspace_e4",
+            "airspace_e5", "airspace_e6", "airspace_e7"};
+        for(const char* k : keys) if(visible(k, zoom)) return true;
+        return false;
+    }
+
+    bool chart_style::any_sua_visible(double zoom) const
+    {
+        static const char* keys[] = {
+            "sua_prohibited", "sua_restricted", "sua_warning",
+            "sua_alert", "sua_moa", "sua_nsa"};
+        for(const char* k : keys) if(visible(k, zoom)) return true;
+        return false;
+    }
+
+    bool chart_style::any_artcc_visible(double zoom) const
+    {
+        return visible("artcc_low", zoom)
+            || visible("artcc_high", zoom)
+            || visible("artcc_oceanic", zoom);
+    }
+
+    // SQL-filter helpers
+    chart_style::filter_list chart_style::visible_airport_classes(double zoom) const
+    {
+        // "airport_other" catches everything not in {B,C,D,E}; if it's visible,
+        // skip SQL filtering (pass all rows through).
+        if(visible("airport_other", zoom)) return std::nullopt;
+        std::vector<std::string> out;
+        if(visible("airport_class_b", zoom)) out.emplace_back("B");
+        if(visible("airport_class_c", zoom)) out.emplace_back("C");
+        if(visible("airport_class_d", zoom)) out.emplace_back("D");
+        if(visible("airport_class_e", zoom)) out.emplace_back("E");
+        return out;
+    }
+
+    chart_style::filter_list chart_style::visible_airspace_values(double zoom) const
+    {
+        // No "other" bucket — every airspace row fits a specific key. Collect
+        // both CLASS values (B/C/D) and LOCAL_TYPE values (CLASS_E2..E7).
+        // SQL filter is "CLASS IN (...) OR LOCAL_TYPE IN (...)" against this
+        // same list (the two columns' value spaces don't overlap).
+        std::vector<std::string> out;
+        if(visible("airspace_b", zoom)) out.emplace_back("B");
+        if(visible("airspace_c", zoom)) out.emplace_back("C");
+        if(visible("airspace_d", zoom)) out.emplace_back("D");
+        if(visible("airspace_e2", zoom)) out.emplace_back("CLASS_E2");
+        if(visible("airspace_e3", zoom)) out.emplace_back("CLASS_E3");
+        if(visible("airspace_e4", zoom)) out.emplace_back("CLASS_E4");
+        if(visible("airspace_e5", zoom)) out.emplace_back("CLASS_E5");
+        if(visible("airspace_e6", zoom)) out.emplace_back("CLASS_E6");
+        if(visible("airspace_e7", zoom)) out.emplace_back("CLASS_E7");
+        return out;
+    }
+
+    chart_style::filter_list chart_style::visible_sua_types(double zoom) const
+    {
+        // "sua_moa" catches MOA plus anything unrecognized; if visible, skip filter.
+        if(visible("sua_moa", zoom)) return std::nullopt;
+        std::vector<std::string> out;
+        if(visible("sua_restricted", zoom)) out.emplace_back("RA");
+        if(visible("sua_prohibited", zoom)) out.emplace_back("PA");
+        if(visible("sua_warning", zoom)) out.emplace_back("WA");
+        if(visible("sua_alert", zoom)) out.emplace_back("AA");
+        if(visible("sua_nsa", zoom)) out.emplace_back("NSA");
+        return out;
+    }
+
 } // namespace nasrbrowse

@@ -43,9 +43,6 @@ namespace nasrbrowse
     // Interior fill for outlined+filled symbols (airports, PJA diamonds)
     constexpr float SYMBOL_FILL_PX   = 50.0F;
 
-    // Query bbox padding (fraction of view extent)
-    constexpr double QUERY_BBOX_PADDING = 0.5;
-
     struct feature_builder::impl
     {
         nasr_database db;
@@ -143,11 +140,8 @@ namespace nasrbrowse
         {
             constexpr double WORLD_SIZE = 2.0 * HALF_CIRCUMFERENCE;
 
-            double lon_pad = (req.lon_max - req.lon_min) * QUERY_BBOX_PADDING;
-            double lat_pad = (req.lat_max - req.lat_min) * QUERY_BBOX_PADDING;
-            geo_bbox qbox{
-                req.lon_min - lon_pad, req.lat_min - lat_pad,
-                req.lon_max + lon_pad, req.lat_max + lat_pad};
+            // Request bbox is already padded by feature_renderer; use as-is.
+            geo_bbox qbox{req.lon_min, req.lat_min, req.lon_max, req.lat_max};
 
             for(auto& p : poly) p.clear();
             world_labels.clear();
@@ -546,7 +540,9 @@ namespace nasrbrowse
                                       const feature_build_request& req,
                                       double mx_offset)
         {
-            const auto& airports = db.query_airports(bbox);
+            if(!styles.any_airport_visible(req.zoom)) return;
+            const auto& airports = db.query_airports(bbox,
+                styles.visible_airport_classes(req.zoom));
             constexpr float APT_OUTER_SCALE = 1.2F;
             constexpr float APT_RING_WIDTH_PX = 1.0F;
             constexpr float APT_FILL_RADIUS = 0.5F;
@@ -622,6 +618,7 @@ namespace nasrbrowse
                                      const feature_build_request& req,
                                      double mx_offset)
         {
+            if(!styles.any_navaid_visible(req.zoom)) return;
             constexpr float NAV_NDB_CIRCLE = 0.4F;
             constexpr float NAV_DME_RECT = 0.85F;
             constexpr float NAV_VORDME_WIDTH = 1.1F;
@@ -704,6 +701,7 @@ namespace nasrbrowse
                                      double mx_offset)
         {
             airway_waypoints.clear();
+            if(!styles.any_airway_visible(req.zoom)) return;
             const auto& airways = db.query_airways(bbox);
 
             for(const auto& seg : airways)
@@ -757,6 +755,7 @@ namespace nasrbrowse
                                   const feature_build_request& req,
                                   double mx_offset)
         {
+            if(!styles.any_fix_visible(req.zoom)) return;
             const auto& fixes = db.query_fixes(bbox);
             float radius = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_FIX);
 
@@ -846,9 +845,10 @@ namespace nasrbrowse
                                   const feature_build_request& req,
                                   double mx_offset)
         {
+            if(!styles.any_sua_visible(req.zoom)) return;
+            auto sua_filter = styles.visible_sua_types(req.zoom);
             // Polygon rings from subdivided segments
-            const auto& segs = db.query_sua_segments(
-                bbox);
+            const auto& segs = db.query_sua_segments(bbox, sua_filter);
 
             for(const auto& seg : segs)
             {
@@ -858,25 +858,17 @@ namespace nasrbrowse
                 append_polyline(poly[layer_sua], seg.points, ls, mx_offset);
             }
 
-            // Circles use the full feature query
-            const auto& suas = db.query_sua(bbox);
-
-            for(const auto& s : suas)
+            // Circles: narrow render-only query (single JOIN'd statement,
+            // no N+1 per-row shape/circle lookups).
+            const auto& circles = db.query_sua_circles(bbox, sua_filter);
+            for(const auto& c : circles)
             {
-                if(!styles.sua_visible(s.sua_type, req.zoom)) continue;
-                auto ls = to_line_style(styles.sua_style(s.sua_type));
-
-                for(const auto& ring : s.parts)
-                {
-                    if(ring.is_circle)
-                    {
-                        double lat_rad = ring.circle_lat * M_PI / 180.0;
-                        float cx = static_cast<float>(lon_to_mx(ring.circle_lon) + mx_offset);
-                        float cy = static_cast<float>(lat_to_my(ring.circle_lat));
-                        float r = static_cast<float>(ring.circle_radius_nm * 1852.0 / std::cos(lat_rad));
-                        poly[layer_sua].circles.push_back({{cx, cy}, r, ls});
-                    }
-                }
+                auto ls = to_line_style(styles.sua_style(c.sua_type));
+                double lat_rad = c.center_lat * M_PI / 180.0;
+                float cx = static_cast<float>(lon_to_mx(c.center_lon) + mx_offset);
+                float cy = static_cast<float>(lat_to_my(c.center_lat));
+                float r = static_cast<float>(c.radius_nm * 1852.0 / std::cos(lat_rad));
+                poly[layer_sua].circles.push_back({{cx, cy}, r, ls});
             }
         }
 
@@ -1002,6 +994,7 @@ namespace nasrbrowse
                                     const feature_build_request& req,
                                     double mx_offset)
         {
+            if(!styles.any_artcc_visible(req.zoom)) return;
             const auto& segs = db.query_artcc_segments(
                 bbox);
 
@@ -1018,6 +1011,7 @@ namespace nasrbrowse
                                        const feature_build_request& req,
                                        double mx_offset)
         {
+            if(!styles.any_obstacle_visible(req.zoom)) return;
             const auto& obstacles = db.query_obstacles(bbox);
             float radius = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_OBSTACLE);
 
@@ -1041,8 +1035,9 @@ namespace nasrbrowse
                                        const feature_build_request& req,
                                        double mx_offset)
         {
-            const auto& segs = db.query_class_airspace_segments(
-                bbox);
+            if(!styles.any_airspace_visible(req.zoom)) return;
+            const auto& segs = db.query_class_airspace_segments(bbox,
+                styles.visible_airspace_values(req.zoom));
 
             for(const auto& seg : segs)
             {
