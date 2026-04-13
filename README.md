@@ -84,6 +84,52 @@ cmake --build build-mingw -j
 
 The resulting `build-mingw/nasrbrowse.exe` is self-contained (all dependencies statically linked, font embedded). The target machine needs a Vulkan-capable GPU with up-to-date drivers.
 
+## Installers
+
+Once `nasr.db`, `basemap/`, and `nasrbrowse.ini` exist in the source tree (see [Data Preparation](#data-preparation)), CPack produces end-user installers that bundle the application together with all three assets.
+
+### macOS (DragNDrop DMG)
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+cd build && cpack
+```
+
+Produces `NASRBrowse-0.1.0-Darwin.dmg`. `nasrbrowse.app` bundles the Homebrew SDL3 dylibs into `Contents/Frameworks/` via `fixup_bundle` at install time, so the DMG is self-contained.
+
+The installer is unsigned; to distribute outside your own machine, sign and notarize after `cpack`:
+
+```bash
+codesign --deep --force --options runtime --sign "Developer ID Application: Your Name (TEAMID)" \
+    build/_CPack_Packages/Darwin/DragNDrop/NASRBrowse-0.1.0-Darwin/ALL_IN_ONE/nasrbrowse.app
+xcrun notarytool submit build/NASRBrowse-0.1.0-Darwin.dmg \
+    --apple-id <your-apple-id> --team-id TEAMID --password <app-specific-password> --wait
+xcrun stapler staple build/NASRBrowse-0.1.0-Darwin.dmg
+```
+
+### Windows (NSIS)
+
+Cross-compile from Linux, then run `cpack`:
+
+```bash
+cmake -B build-mingw -DCMAKE_TOOLCHAIN_FILE=mingw-w64-toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build-mingw -j
+cd build-mingw && cpack -G NSIS
+```
+
+Produces `NASRBrowse-0.1.0-win64.exe`. Installs into `Program Files\NASRBrowse\`, creates a Start Menu shortcut, and registers an uninstaller. Bundles the MinGW C++ runtime DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`); SDL3/SDL3_image/SDL3_ttf/sqlite3 are statically linked by `build-mingw-deps.sh`.
+
+NSIS (`makensis`) must be installed on the build host. Debian/Ubuntu: `sudo apt install nsis`.
+
+### App icon
+
+`nasrbrowse.png` (1024×1024) is the app icon source. The build generates `nasrbrowse.icns` (macOS, via `sips` + `iconutil`) or `nasrbrowse.ico` (Windows, via ImageMagick `magick`) into the build directory and hands it to the installer. If the required tool is missing, the icon step is skipped silently and the installer ships without a custom icon.
+
+### Asset gap
+
+`nasr.db` and `basemap/` are not in source control (too large, rebuilt from FAA / Natural Earth sources). `cpack` aborts with `Installer asset missing: ...` until they have been generated. See [Data Preparation](#data-preparation).
+
 ### GPU Backend
 
 NASRBrowse defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` or `--gpu direct3d12` to override. The shader format is selected at runtime based on the active backend.
