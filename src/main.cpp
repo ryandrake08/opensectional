@@ -8,6 +8,7 @@
 #include <exception>
 #include <imgui/context.hpp>
 #include <iostream>
+#include <sdl/filesystem.hpp>
 #include <memory>
 #include <sdl/command_buffer.hpp>
 #include <sdl/copy_pass.hpp>
@@ -157,16 +158,40 @@ namespace
     }
 }
 
+namespace
+{
+    void print_usage(std::ostream& out, const char* prog)
+    {
+        out << "Usage: " << prog << " [options]\n"
+            << "  -h, --help                 Show this help and exit\n"
+            << "  -v, -vv, -vvv              Increase verbosity\n"
+            << "  -g, --gpu <driver>         GPU driver: vulkan, metal, direct3d12\n"
+            << "  -b, --basemap <path>       Basemap tile directory\n"
+            << "  -d, --database <nasr.db>   NASR SQLite database\n"
+            << "  -c, --conf <nasrbrowse.ini> Chart style config\n"
+            << "\n"
+            << "When a path option is omitted, the asset is loaded from next to\n"
+            << "the executable (installer layout) or the current directory.\n";
+    }
+}
+
 int main(int argc, char** argv)
 {
     // Parse optional flags
     int verbosity = 0;
     const char* gpu_driver = nullptr;
     const char* tile_path = nullptr;
+    const char* db_path = nullptr;
+    const char* conf_path = nullptr;
     int argi = 1;
     while(argi < argc && argv[argi][0] == '-')
     {
-        if(argv[argi][1] == 'v' && argv[argi][2] != '-')
+        if(std::strcmp(argv[argi], "-h") == 0 || std::strcmp(argv[argi], "--help") == 0)
+        {
+            print_usage(std::cout, argv[0]);
+            return EXIT_SUCCESS;
+        }
+        else if(argv[argi][1] == 'v' && argv[argi][2] != '-')
         {
             // Count v's: -v = 1, -vv = 2, -vvv = 3
             const char* p = argv[argi] + 1;
@@ -185,6 +210,14 @@ int main(int argc, char** argv)
         {
             tile_path = argv[++argi];
         }
+        else if((std::strcmp(argv[argi], "-d") == 0 || std::strcmp(argv[argi], "--database") == 0) && argi + 1 < argc)
+        {
+            db_path = argv[++argi];
+        }
+        else if((std::strcmp(argv[argi], "-c") == 0 || std::strcmp(argv[argi], "--conf") == 0) && argi + 1 < argc)
+        {
+            conf_path = argv[++argi];
+        }
         else
         {
             std::cerr << "Unknown option: " << argv[argi] << std::endl;
@@ -193,13 +226,44 @@ int main(int argc, char** argv)
         argi++;
     }
 
-    if(argc - argi < 1)
+    if(argi < argc)
     {
-        std::cerr << "Usage: nasrbrowse [-v|-vv|-vvv] [-g|--gpu vulkan|metal|direct3d12] [-b|--basemap <tile_path>] <nasr.db>" << std::endl;
+        std::cerr << "Unexpected positional argument: " << argv[argi] << std::endl;
         return EXIT_FAILURE;
     }
 
-    const char* db_path = argv[argi];
+    // Fall back to a bundled database if the user did not pass -d.
+    std::string db_path_owned;
+    if(db_path == nullptr)
+    {
+        db_path_owned = sdl::resolve_bundled_asset("nasr.db");
+        if(db_path_owned.empty())
+        {
+            std::cerr << "No nasr.db supplied and none found next to the executable or in the current directory." << std::endl;
+            print_usage(std::cerr, argv[0]);
+            return EXIT_FAILURE;
+        }
+        db_path = db_path_owned.c_str();
+    }
+
+    // Fall back to a bundled basemap if the user did not pass -b.
+    std::string tile_path_owned;
+    if(tile_path == nullptr)
+    {
+        tile_path_owned = sdl::resolve_bundled_asset("basemap");
+        if(!tile_path_owned.empty())
+            tile_path = tile_path_owned.c_str();
+    }
+
+    // Fall back to a bundled INI if the user did not pass -c; when nothing
+    // is found, pass the bare filename so chart_style's own
+    // "missing file -> hardcoded defaults" path runs.
+    std::string ini_path_owned;
+    if(conf_path == nullptr)
+    {
+        ini_path_owned = sdl::resolve_bundled_asset("nasrbrowse.ini");
+        conf_path = ini_path_owned.empty() ? "nasrbrowse.ini" : ini_path_owned.c_str();
+    }
 
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
@@ -257,7 +321,7 @@ int main(int argc, char** argv)
                                   sdl::sampler_address_mode::clamp_to_edge);
 
         // Load chart style (hardcoded VFR defaults, overridden by INI if present)
-        nasrbrowse::chart_style chart_styles("nasrbrowse.ini", nasrbrowse::chart_mode::vfr);
+        nasrbrowse::chart_style chart_styles(conf_path, nasrbrowse::chart_mode::vfr);
 
         // Create map layer
         auto map_layer = std::make_shared<layer_map>(

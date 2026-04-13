@@ -52,6 +52,7 @@ add_library(sdl_wrapper STATIC
     lib/sdl/device.cpp
     lib/sdl/error.cpp
     lib/sdl/event.cpp
+    lib/sdl/filesystem.cpp
     lib/sdl/font.cpp
     lib/sdl/instance.cpp
     lib/sdl/pipeline.cpp

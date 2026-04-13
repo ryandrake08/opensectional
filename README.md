@@ -22,11 +22,19 @@ tools/env/bin/python3 tools/download_nasr_data.py nasr_data
 
 # 5. Build the NASR database (use the command printed by the download script)
 
-# 6. Run (basemap tile directory optional, supply with -b to enable the basemap layer)
-./build/nasrbrowse -b <tile_path> nasr.db
+# 6. Run. With no options, nasrbrowse looks for nasr.db, basemap/, and
+#    nasrbrowse.ini next to the executable (installer layout) or in the
+#    current working directory (dev).
+./build/nasrbrowse
+
+# Override any asset path explicitly:
+./build/nasrbrowse -d nasr.db -b basemap -c nasrbrowse.ini
 
 # Verbosity: -v (warnings), -vv (info), -vvv (debug)
-./build/nasrbrowse -vv -b <tile_path> nasr.db
+./build/nasrbrowse -vv
+
+# Full usage:
+./build/nasrbrowse --help
 ```
 
 ## Dependencies
@@ -201,13 +209,20 @@ For a basemap derived from FAA aeronav charts, generate XYZ tile pyramids using 
 
 | Option | Description |
 |--------|-------------|
+| `-h`, `--help` | Show usage and exit |
 | `-v` | Show warnings |
 | `-vv` | Show info (initialization, GPU backend, present mode) |
 | `-vvv` | Show debug (resource lifecycle, buffer uploads, shader creation) |
 | `-g vulkan`, `--gpu vulkan` | Force Vulkan backend (default on all platforms) |
 | `-g metal`, `--gpu metal` | Force Metal backend (macOS only) |
 | `-g direct3d12`, `--gpu direct3d12` | Force Direct3D 12 backend (Windows only) |
-| `-b <path>`, `--basemap <path>` | XYZ tile directory for the basemap layer (optional; omit to run without a basemap) |
+| `-b <path>`, `--basemap <path>` | XYZ tile directory for the basemap layer |
+| `-d <path>`, `--database <path>` | NASR SQLite database |
+| `-c <path>`, `--conf <path>` | Chart style INI config |
+
+Any of `-b`, `-d`, `-c` that are omitted are resolved first from next to the
+executable (installer layout), then from the current working directory. The
+basemap layer is skipped if no basemap is found; the database is required.
 
 Layer visibility (basemap, airports, runways, navaids, fixes, airways, MTRs,
 airspace, SUA, ADIZ, ARTCC, obstacles) is controlled via checkbox panel in the
