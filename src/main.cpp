@@ -302,6 +302,9 @@ int main(int argc, char** argv)
                 needs_render = true;
             }
 
+            if(map_layer->draw_imgui())
+                needs_render = true;
+
             if(imgui_ctx.wants_mouse())
             {
                 needs_render = true;

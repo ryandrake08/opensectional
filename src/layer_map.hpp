@@ -35,6 +35,12 @@ public:
     void set_imgui_wants_mouse(bool wants);
     double zoom_level() const;
 
+    // Draw map-owned ImGui overlays (the pick-selector popup). Call during
+    // an ImGui frame (between new_frame and end_frame). Returns true if
+    // another frame is needed (e.g. warming up a freshly opened popup
+    // whose auto-resized window ImGui hides for its first measurement frame).
+    bool draw_imgui();
+
     void on_button_input(sdl::input_button_t button, sdl::input_action_t action, sdl::input_mod_t mods) override;
     void on_cursor_position(double xpos, double ypos) override;
     void on_key_input(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t mods) override;
