@@ -288,28 +288,31 @@ struct layer_map::impl
             }
         }
 
-        if(vis[layer_navaids])
+        if(vis[layer_navaids] && vis.altitude.any())
         {
             const auto& navaids = pick_db.query_navaids(pick_box);
             for(const auto& nav : navaids)
             {
-                if(styles.navaid_visible(nav.nav_type, z))
-                    result.features.push_back(nav);
+                if(!styles.navaid_visible(nav.nav_type, z)) continue;
+                bool keep = (nav.is_low && vis.altitude.show_low)
+                         || (nav.is_high && vis.altitude.show_high);
+                if(keep) result.features.push_back(nav);
             }
         }
 
-        if(vis[layer_fixes])
+        if(vis[layer_fixes] && vis.altitude.any())
         {
             const auto& fixes = pick_db.query_fixes(pick_box);
             for(const auto& f : fixes)
             {
-                // Naive: pick if visible under either airway or non-airway zoom key
-                if(styles.fix_visible(true, z) || styles.fix_visible(false, z))
-                    result.features.push_back(f);
+                if(!(styles.fix_visible(true, z) || styles.fix_visible(false, z))) continue;
+                bool keep = (f.is_low && vis.altitude.show_low)
+                         || (f.is_high && vis.altitude.show_high);
+                if(keep) result.features.push_back(f);
             }
         }
 
-        if(vis[layer_obstacles])
+        if(vis[layer_obstacles] && vis.altitude.low_enabled())
         {
             const auto& obstacles = pick_db.query_obstacles(pick_box);
             for(const auto& obs : obstacles)
@@ -319,7 +322,7 @@ struct layer_map::impl
             }
         }
 
-        if(vis[layer_rco])
+        if(vis[layer_rco] && vis.altitude.low_enabled())
         {
             if(styles.rco_visible(z))
             {
@@ -329,7 +332,7 @@ struct layer_map::impl
             }
         }
 
-        if(vis[layer_awos])
+        if(vis[layer_awos] && vis.altitude.low_enabled())
         {
             if(styles.awos_visible(z))
             {
@@ -340,7 +343,7 @@ struct layer_map::impl
         }
 
         // Area features: query with click point as degenerate bbox, then test containment
-        if(vis[layer_airspace])
+        if(vis[layer_airspace] && vis.altitude.low_enabled())
         {
             const auto& airspaces = pick_db.query_class_airspace(click_box);
             for(const auto& a : airspaces)
@@ -365,7 +368,7 @@ struct layer_map::impl
             }
         }
 
-        if(vis[layer_sua])
+        if(vis[layer_sua] && vis.altitude.any())
         {
             const auto& suas = pick_db.query_sua(click_box);
             for(const auto& s : suas)
@@ -373,6 +376,7 @@ struct layer_map::impl
                 if(!styles.sua_visible(s.sua_type, z))
                     continue;
                 bool inside = false;
+                bool any_ring_in_band = false;
                 for(const auto& ring : s.parts)
                 {
                     if(point_in_ring(click_lon, click_lat, ring.points))
@@ -383,19 +387,23 @@ struct layer_map::impl
                             break;
                         }
                         inside = true;
+                        if(vis.altitude.overlaps(ring.lower_ft_msl, ring.upper_ft_msl))
+                            any_ring_in_band = true;
                     }
                 }
-                if(inside)
+                if(inside && any_ring_in_band)
                     result.features.push_back(s);
             }
         }
 
-        if(vis[layer_artcc])
+        if(vis[layer_artcc] && vis.altitude.any())
         {
             const auto& artccs = pick_db.query_artcc(click_box);
             for(const auto& a : artccs)
             {
                 if(!styles.artcc_visible(a.altitude, z))
+                    continue;
+                if(!altitude_filter_allows(vis.altitude, artcc_bands(a.altitude)))
                     continue;
                 if(point_in_ring(click_lon, click_lat, a.points))
                     result.features.push_back(a);
@@ -421,20 +429,23 @@ struct layer_map::impl
             }
         }
 
-        if(vis[layer_pja])
+        if(vis[layer_pja] && vis.altitude.any())
         {
             if(styles.pja_area_visible(z))
             {
                 const auto& pjas = pick_db.query_pjas(click_box);
                 for(const auto& p : pjas)
                 {
+                    int upper = p.max_altitude_ft_msl > 0 ? p.max_altitude_ft_msl
+                                                          : altitude_filter::UNLIMITED_FT;
+                    if(!vis.altitude.overlaps(0, upper)) continue;
                     if(point_in_circle_nm(click_lon, click_lat, p.lon, p.lat, p.radius_nm))
                         result.features.push_back(p);
                 }
             }
         }
 
-        if(vis[layer_maa])
+        if(vis[layer_maa] && vis.altitude.low_enabled())
         {
             bool maa_area_vis = styles.maa_area_visible(z);
             bool maa_point_vis = styles.maa_point_visible(z);
@@ -464,12 +475,14 @@ struct layer_map::impl
         // Line features: query with pick box, test point-to-segment distance
         double pick_radius_nm = (pick_box.lat_max - pick_box.lat_min) * 0.5 * 60.0;
 
-        if(vis[layer_airways])
+        if(vis[layer_airways] && vis.altitude.any())
         {
             const auto& airways = pick_db.query_airways(pick_box);
             for(const auto& seg : airways)
             {
                 if(!styles.airway_visible(seg.awy_id, z))
+                    continue;
+                if(!altitude_filter_allows(vis.altitude, airway_bands(seg.awy_id)))
                     continue;
                 double d = point_to_segment_nm(click_lon, click_lat,
                     seg.from_lon, seg.from_lat, seg.to_lon, seg.to_lat);
@@ -478,13 +491,15 @@ struct layer_map::impl
             }
         }
 
-        if(vis[layer_mtrs])
+        if(vis[layer_mtrs] && vis.altitude.any())
         {
             if(styles.mtr_visible(z))
             {
                 const auto& mtrs = pick_db.query_mtrs(pick_box);
                 for(const auto& seg : mtrs)
                 {
+                    if(!altitude_filter_allows(vis.altitude, mtr_bands(seg.route_type_code)))
+                        continue;
                     double d = point_to_segment_nm(click_lon, click_lat,
                         seg.from_lon, seg.from_lat, seg.to_lon, seg.to_lat);
                     if(d <= pick_radius_nm)
@@ -493,7 +508,7 @@ struct layer_map::impl
             }
         }
 
-        if(vis[layer_runways])
+        if(vis[layer_runways] && vis.altitude.low_enabled())
         {
             if(styles.runway_visible(z))
             {
@@ -530,6 +545,9 @@ void layer_map::set_visibility(const nasrbrowse::layer_visibility& vis)
     pimpl->vis = vis;
     pimpl->features.set_visibility(vis);
     pimpl->needs_update = true;
+    // Kick a requery in case the altitude filter invalidated the cache —
+    // otherwise nothing re-runs until the next input event.
+    pimpl->update_tiles();
 }
 
 void layer_map::set_imgui_wants_mouse(bool wants)

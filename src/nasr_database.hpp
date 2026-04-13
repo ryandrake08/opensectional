@@ -62,6 +62,8 @@ namespace nasrbrowse
         std::string simul_voice_flag;
         std::string voice_call;
         std::string restriction_flag;
+        bool is_low;
+        bool is_high;
     };
 
     // Column order follows FIX_BASE table
@@ -76,6 +78,8 @@ namespace nasrbrowse
         std::string use_code;
         std::string artcc_id_high;
         std::string artcc_id_low;
+        bool is_low;
+        bool is_high;
     };
 
     // Column order follows AWY_SEG table
@@ -99,6 +103,7 @@ namespace nasrbrowse
     struct mtr_segment
     {
         std::string mtr_id;
+        std::string route_type_code;  // "IR" or "VR"
         std::string from_point;
         std::string to_point;
         double from_lat;
@@ -144,6 +149,8 @@ namespace nasrbrowse
         std::vector<airspace_point> points;
         std::string upper_limit;
         std::string lower_limit;
+        int upper_ft_msl = 0;
+        int lower_ft_msl = 0;
         bool is_hole = false;
         bool is_circle = false;
         double circle_lon = 0;
@@ -181,6 +188,7 @@ namespace nasrbrowse
         double lon;
         double radius_nm;
         std::string max_altitude;
+        int max_altitude_ft_msl;
     };
 
     // Column order follows ADIZ_BASE table
@@ -211,6 +219,8 @@ namespace nasrbrowse
     struct sua_segment
     {
         std::string sua_type;  // "MOA", "RA", "WA", etc.
+        int upper_ft_msl;
+        int lower_ft_msl;
         std::vector<airspace_point> points;
     };
 
@@ -222,6 +232,8 @@ namespace nasrbrowse
         double center_lon;
         double center_lat;
         double radius_nm;
+        int upper_ft_msl;
+        int lower_ft_msl;
     };
 
     // Column order follows OBS_BASE table

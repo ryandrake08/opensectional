@@ -26,6 +26,57 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 
+# Sentinel for "unlimited" altitude. Any real altitude compared against
+# this will register as below it. Stored as an INT in the DB.
+ALT_UNLIMITED_FT = 99999
+
+
+def bbox_for_circle(rowid, lon, lat, radius_nm):
+    """R-tree bbox tuple enclosing a (lon, lat, radius) circle.
+
+    Pads by the circle radius converted to degrees so the stored bbox fully
+    contains the disc — a degenerate-point pick query then matches any circle
+    covering the click. Radius 0 (or missing) degenerates to the center point.
+    """
+    r = radius_nm or 0.0
+    lat_pad = r / 60.0
+    cos_lat = math.cos(math.radians(lat))
+    lon_pad = lat_pad / max(abs(cos_lat), 0.01)
+    return (rowid, lon - lon_pad, lon + lon_pad,
+            lat - lat_pad, lat + lat_pad)
+
+
+def parse_altitude_ft_msl(text):
+    """Normalize an FAA altitude string to integer feet MSL.
+
+    Handles the forms seen across SUA, PJA, and class-airspace data:
+      "5000 FT MSL", "04500 FT MSL"  -> 4500
+      "500 FT SFC", "GND FT SFC"     -> value as-given (SFC/AGL treated
+                                        as MSL — fine for 18k band test)
+      "180 FL STD", "180 FL"         -> 18000 (flight level × 100)
+      "UNL OTHER", "UNL"             -> ALT_UNLIMITED_FT
+      "" / None                      -> None
+
+    Returns an int or None if unparseable.
+    """
+    if text is None:
+        return None
+    s = str(text).strip().upper()
+    if not s:
+        return None
+    if s.startswith("UNL"):
+        return ALT_UNLIMITED_FT
+    if s.startswith("GND") or s.startswith("SFC"):
+        return 0
+    m = re.match(r"(\d+)\s*FL", s)
+    if m:
+        return int(m.group(1)) * 100
+    m = re.match(r"(\d+)", s)
+    if m:
+        return int(m.group(1))
+    return None
+
+
 def parse_dof_dms(dms_str):
     """Parse DOF DMS format to decimal degrees.
 
@@ -246,7 +297,22 @@ def build_nav(conn, csv_zf):
         "MAG_VARN", "MAG_VARN_HEMIS",
         "FREQ", "CHAN", "PWR_OUTPUT",
         "SIMUL_VOICE_FLAG", "VOICE_CALL", "RESTRICTION_FLAG",
+        "ALT_CODE", "LOW_NAV_ON_HIGH_CHART_FLAG",
     ])
+
+    # Altitude-band classification for navaids.
+    # ALT_CODE: H=high-only, VH=both, VL/L/T/empty=low-only.
+    # LOW_NAV_ON_HIGH_CHART_FLAG=Y promotes a low navaid onto high charts.
+    conn.execute("ALTER TABLE NAV_BASE ADD COLUMN IS_LOW_NAV INTEGER")
+    conn.execute("ALTER TABLE NAV_BASE ADD COLUMN IS_HIGH_NAV INTEGER")
+    conn.execute("""
+        UPDATE NAV_BASE SET
+            IS_LOW_NAV = CASE WHEN ALT_CODE = 'H' THEN 0 ELSE 1 END,
+            IS_HIGH_NAV = CASE
+                WHEN ALT_CODE IN ('H', 'VH') THEN 1
+                WHEN LOW_NAV_ON_HIGH_CHART_FLAG = 'Y' THEN 1
+                ELSE 0 END
+    """)
 
     conn.execute("""
         CREATE VIRTUAL TABLE NAV_BASE_RTREE USING rtree(
@@ -269,8 +335,23 @@ def build_fix(conn, csv_zf):
     import_csv(conn, "FIX_BASE", csv_zf, "FIX_BASE.csv", [
         "FIX_ID", "STATE_CODE", "COUNTRY_CODE",
         "ICAO_REGION_CODE", "LAT_DECIMAL", "LONG_DECIMAL",
-        "FIX_USE_CODE", "ARTCC_ID_HIGH", "ARTCC_ID_LOW",
+        "FIX_USE_CODE", "ARTCC_ID_HIGH", "ARTCC_ID_LOW", "CHARTS",
     ])
+
+    # Altitude-band classification for fixes.
+    # CHARTS is a comma-separated list like "ENROUTE HIGH,ENROUTE LOW,IAP".
+    # A fix shown on any HIGH chart is high-relevant; anything not
+    # exclusively high (terminal/procedure fixes on IAP/STAR/SID) is low.
+    conn.execute("ALTER TABLE FIX_BASE ADD COLUMN IS_LOW_FIX INTEGER")
+    conn.execute("ALTER TABLE FIX_BASE ADD COLUMN IS_HIGH_FIX INTEGER")
+    conn.execute("""
+        UPDATE FIX_BASE SET
+            IS_HIGH_FIX = CASE WHEN CHARTS LIKE '%HIGH%' THEN 1 ELSE 0 END,
+            IS_LOW_FIX = CASE
+                WHEN CHARTS LIKE '%LOW%' THEN 1
+                WHEN CHARTS LIKE '%HIGH%' THEN 0
+                ELSE 1 END
+    """)
 
     conn.execute("""
         CREATE VIRTUAL TABLE FIX_BASE_RTREE USING rtree(
@@ -432,7 +513,9 @@ def build_pja(conn, csv_zf):
             CAST(LONG_DECIMAL AS REAL) AS LON,
             CASE WHEN PJA_RADIUS IS NOT NULL AND TRIM(PJA_RADIUS) != ''
                  THEN CAST(PJA_RADIUS AS REAL) ELSE 0.0 END AS RADIUS_NM,
-            MAX_ALTITUDE
+            MAX_ALTITUDE,
+            CASE WHEN MAX_ALTITUDE IS NOT NULL AND TRIM(MAX_ALTITUDE) != ''
+                 THEN CAST(MAX_ALTITUDE AS INTEGER) ELSE 0 END AS MAX_ALT_FT_MSL
         FROM PJA_RAW
         WHERE LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != ''
           AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''
@@ -447,11 +530,14 @@ def build_pja(conn, csv_zf):
             id, min_lon, max_lon, min_lat, max_lat
         )
     """)
-    conn.execute("""
-        INSERT INTO PJA_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat)
-        SELECT rowid, LON, LON, LAT, LAT
-        FROM PJA_BASE
-    """)
+    # Each PJA's R-tree bbox covers its full circle so pick queries with a
+    # degenerate point bbox still match when the click lands inside the disc.
+    pja_rows = conn.execute(
+        "SELECT rowid, LON, LAT, RADIUS_NM FROM PJA_BASE").fetchall()
+    conn.executemany(
+        "INSERT INTO PJA_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [bbox_for_circle(*row) for row in pja_rows])
 
 
 def build_mtr(conn, csv_zf):
@@ -472,6 +558,7 @@ def build_mtr(conn, csv_zf):
         CREATE TABLE MTR_SEG AS
         SELECT
             p1.ROUTE_TYPE_CODE || p1.ROUTE_ID AS MTR_ID,
+            p1.ROUTE_TYPE_CODE AS ROUTE_TYPE_CODE,
             COALESCE(NULLIF(p1.NAV_ID, ''), p1.ROUTE_PT_ID) AS FROM_POINT,
             COALESCE(NULLIF(p2.NAV_ID, ''), p2.ROUTE_PT_ID) AS TO_POINT,
             CAST(p1.LAT_DECIMAL AS REAL) AS FROM_LAT,
@@ -631,12 +718,13 @@ def build_maa(conn, csv_zf):
             id, min_lon, max_lon, min_lat, max_lat
         )
     """)
-    conn.execute("""
-        INSERT INTO MAA_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat)
-        SELECT rowid, LON, LON, LAT, LAT
-        FROM MAA_BASE
-        WHERE LAT != 0.0
-    """)
+    maa_point_rows = conn.execute(
+        "SELECT rowid, LON, LAT, RADIUS_NM FROM MAA_BASE WHERE LAT != 0.0"
+    ).fetchall()
+    conn.executemany(
+        "INSERT INTO MAA_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [bbox_for_circle(*row) for row in maa_point_rows])
     conn.execute("""
         INSERT INTO MAA_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat)
         SELECT b.rowid,
@@ -1745,6 +1833,8 @@ def build_sua(conn, aixm_zf):
             PART_NUM INTEGER,
             UPPER_LIMIT TEXT,
             LOWER_LIMIT TEXT,
+            UPPER_FT_MSL INTEGER,
+            LOWER_FT_MSL INTEGER,
             IS_HOLE INTEGER,
             POINT_SEQ INTEGER,
             LON_DECIMAL REAL,
@@ -1759,7 +1849,9 @@ def build_sua(conn, aixm_zf):
             PART_NUM INTEGER,
             CENTER_LON REAL,
             CENTER_LAT REAL,
-            RADIUS_NM REAL
+            RADIUS_NM REAL,
+            UPPER_FT_MSL INTEGER,
+            LOWER_FT_MSL INTEGER
         )
     """)
 
@@ -1854,7 +1946,9 @@ def build_sua(conn, aixm_zf):
                     r *= 1609.344 / 1852.0
                 elif uom != "NM":
                     r /= 1.852  # assume KM if unknown
-                circle_rows.append((sua_id, 0, ci["lon"], ci["lat"], r))
+                circle_rows.append((sua_id, 0, ci["lon"], ci["lat"], r,
+                                    parse_altitude_ft_msl(result["upper_limit"]),
+                                    parse_altitude_ft_msl(result["lower_limit"])))
 
             part_num = 0
             for part, part_upper, part_lower, is_hole in result["parts"]:
@@ -1869,8 +1963,11 @@ def build_sua(conn, aixm_zf):
                     if unique_pts < 3:
                         continue
                     total_after += len(simplified)
+                    upper_ft = parse_altitude_ft_msl(part_upper)
+                    lower_ft = parse_altitude_ft_msl(part_lower)
                     for point_seq, (lon, lat) in enumerate(simplified):
                         shp_rows.append((sua_id, part_num, part_upper, part_lower,
+                                         upper_ft, lower_ft,
                                          1 if is_hole else 0,
                                          point_seq, lon, lat))
                     part_num += 1
@@ -1910,11 +2007,11 @@ def build_sua(conn, aixm_zf):
         base_rows,
     )
     conn.executemany(
-        "INSERT INTO SUA_SHP VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_SHP VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         shp_rows,
     )
     conn.executemany(
-        "INSERT INTO SUA_CIRCLE VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_CIRCLE VALUES (?, ?, ?, ?, ?, ?, ?)",
         circle_rows,
     )
     conn.executemany(
@@ -1969,18 +2066,23 @@ def build_sua(conn, aixm_zf):
             SEG_ID INTEGER,
             SUA_ID INTEGER,
             SUA_TYPE TEXT,
+            UPPER_FT_MSL INTEGER,
+            LOWER_FT_MSL INTEGER,
             POINT_SEQ INTEGER,
             LON_DECIMAL REAL,
             LAT_DECIMAL REAL
         )
     """)
 
-    # Build lookup from (SUA_ID, PART_NUM) to ring points
+    # Build lookup from (SUA_ID, PART_NUM) to (points, upper_ft, lower_ft)
     sua_rings = {}
+    sua_ring_alts = {}
     for row in conn.execute(
-            "SELECT SUA_ID, PART_NUM, LON_DECIMAL, LAT_DECIMAL "
+            "SELECT SUA_ID, PART_NUM, LON_DECIMAL, LAT_DECIMAL, "
+            "UPPER_FT_MSL, LOWER_FT_MSL "
             "FROM SUA_SHP ORDER BY SUA_ID, PART_NUM, POINT_SEQ"):
         sua_rings.setdefault((row[0], row[1]), []).append((row[2], row[3]))
+        sua_ring_alts[(row[0], row[1])] = (row[4], row[5])
 
     # Build lookup from SUA_ID to SUA_TYPE
     sua_types = {}
@@ -1998,12 +2100,14 @@ def build_sua(conn, aixm_zf):
         if (sid, part_num) in circle_parts:
             continue
         stype = sua_types[sid]
+        upper_ft, lower_ft = sua_ring_alts.get((sid, part_num), (None, None))
         for chunk in subdivide_ring(ring):
             seg_id += 1
             for point_seq, (lon, lat) in enumerate(chunk):
-                seg_data.append((seg_id, sid, stype, point_seq, lon, lat))
+                seg_data.append((seg_id, sid, stype, upper_ft, lower_ft,
+                                 point_seq, lon, lat))
 
-    conn.executemany("INSERT INTO SUA_SEG VALUES (?, ?, ?, ?, ?, ?)", seg_data)
+    conn.executemany("INSERT INTO SUA_SEG VALUES (?, ?, ?, ?, ?, ?, ?, ?)", seg_data)
     print(f"  SUA_SEG: {seg_id} segments, {len(seg_data)} points")
 
     conn.execute("""

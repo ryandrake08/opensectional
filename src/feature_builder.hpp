@@ -35,6 +35,7 @@ namespace nasrbrowse
         double half_extent_y;
         int viewport_height;
         double zoom;
+        altitude_filter altitude;
     };
 
     // A label candidate from the feature build pass (world-space)

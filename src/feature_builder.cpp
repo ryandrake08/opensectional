@@ -327,6 +327,14 @@ namespace nasrbrowse
             return false;
         }
 
+        static bool sua_altitude_visible(const altitude_filter& af,
+                                          int upper_ft, int lower_ft)
+        {
+            if(!af.any()) return false;
+            if(lower_ft == 0 && upper_ft == 0) return true;   // unknown → visible
+            return af.overlaps(lower_ft, upper_ft);
+        }
+
         static const letter_def* maa_letter(const std::string& type)
         {
             if(type == "AEROBATIC PRACTICE") return &letter_A;
@@ -619,6 +627,7 @@ namespace nasrbrowse
                                      double mx_offset)
         {
             if(!styles.any_navaid_visible(req.zoom)) return;
+            if(!req.altitude.any()) return;
             constexpr float NAV_NDB_CIRCLE = 0.4F;
             constexpr float NAV_DME_RECT = 0.85F;
             constexpr float NAV_VORDME_WIDTH = 1.1F;
@@ -642,6 +651,10 @@ namespace nasrbrowse
                 {
                     continue;
                 }
+
+                bool keep = (nav.is_low && req.altitude.show_low)
+                         || (nav.is_high && req.altitude.show_high);
+                if(!keep) continue;
 
                 const auto& fs = styles.navaid_style(nav.nav_type);
                 line_style ls = to_line_style(fs);
@@ -711,6 +724,8 @@ namespace nasrbrowse
                     continue;
                 }
 
+                if(!altitude_filter_allows(req.altitude, airway_bands(seg.awy_id))) continue;
+
                 airway_waypoints.insert(seg.from_point);
                 airway_waypoints.insert(seg.to_point);
 
@@ -756,6 +771,7 @@ namespace nasrbrowse
                                   double mx_offset)
         {
             if(!styles.any_fix_visible(req.zoom)) return;
+            if(!req.altitude.any()) return;
             const auto& fixes = db.query_fixes(bbox);
             float radius = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_FIX);
 
@@ -765,6 +781,10 @@ namespace nasrbrowse
                 {
                     continue;
                 }
+
+                bool keep = (fix.is_low && req.altitude.show_low)
+                         || (fix.is_high && req.altitude.show_high);
+                if(!keep) continue;
 
                 const auto& fs = styles.fix_style(fix.use_code);
                 line_style ls = to_line_style(fs);
@@ -801,12 +821,15 @@ namespace nasrbrowse
             {
                 return;
             }
+            if(!req.altitude.any()) return;
 
             const auto& mtrs = db.query_mtrs(bbox);
             const auto& fs = styles.mtr_style();
 
             for(const auto& seg : mtrs)
             {
+                if(!altitude_filter_allows(req.altitude, mtr_bands(seg.route_type_code))) continue;
+
                 float x0 = static_cast<float>(lon_to_mx(seg.from_lon) + mx_offset);
                 float y0 = static_cast<float>(lat_to_my(seg.from_lat));
                 float x1 = static_cast<float>(lon_to_mx(seg.to_lon) + mx_offset);
@@ -825,6 +848,7 @@ namespace nasrbrowse
             {
                 return;
             }
+            if(!req.altitude.low_enabled()) return;
 
             const auto& runways = db.query_runways(bbox);
             const auto& fs = styles.runway_style();
@@ -846,6 +870,7 @@ namespace nasrbrowse
                                   double mx_offset)
         {
             if(!styles.any_sua_visible(req.zoom)) return;
+            if(!req.altitude.any()) return;
             auto sua_filter = styles.visible_sua_types(req.zoom);
             // Polygon rings from subdivided segments
             const auto& segs = db.query_sua_segments(bbox, sua_filter);
@@ -853,6 +878,7 @@ namespace nasrbrowse
             for(const auto& seg : segs)
             {
                 if(!styles.sua_visible(seg.sua_type, req.zoom)) continue;
+                if(!sua_altitude_visible(req.altitude, seg.upper_ft_msl, seg.lower_ft_msl)) continue;
                 auto ls = to_line_style(styles.sua_style(seg.sua_type));
 
                 append_polyline(poly[layer_sua], seg.points, ls, mx_offset);
@@ -863,6 +889,7 @@ namespace nasrbrowse
             const auto& circles = db.query_sua_circles(bbox, sua_filter);
             for(const auto& c : circles)
             {
+                if(!sua_altitude_visible(req.altitude, c.upper_ft_msl, c.lower_ft_msl)) continue;
                 auto ls = to_line_style(styles.sua_style(c.sua_type));
                 double lat_rad = c.center_lat * M_PI / 180.0;
                 float cx = static_cast<float>(lon_to_mx(c.center_lon) + mx_offset);
@@ -879,6 +906,7 @@ namespace nasrbrowse
             bool area_vis = styles.pja_area_visible(req.zoom);
             bool point_vis = styles.pja_point_visible(req.zoom);
             if(!area_vis && !point_vis) return;
+            if(!req.altitude.any()) return;
 
             constexpr double NM_TO_METERS = 1852.0;
             constexpr double SYMBOL_RADIUS_PJA = SYMBOL_RADIUS_AIRPORT;
@@ -887,6 +915,10 @@ namespace nasrbrowse
 
             for(const auto& p : pjas)
             {
+                int upper = p.max_altitude_ft_msl > 0 ? p.max_altitude_ft_msl
+                                                      : altitude_filter::UNLIMITED_FT;
+                if(!req.altitude.overlaps(0, upper)) continue;
+
                 if(p.radius_nm > 0.0 && area_vis)
                 {
                     double lat_rad = p.lat * M_PI / 180.0;
@@ -926,6 +958,7 @@ namespace nasrbrowse
             bool area_vis = styles.maa_area_visible(req.zoom);
             bool point_vis = styles.maa_point_visible(req.zoom);
             if(!area_vis && !point_vis) return;
+            if(!req.altitude.low_enabled()) return;
 
             constexpr double NM_TO_METERS = 1852.0;
 
@@ -995,12 +1028,15 @@ namespace nasrbrowse
                                     double mx_offset)
         {
             if(!styles.any_artcc_visible(req.zoom)) return;
+            if(!req.altitude.any()) return;
             const auto& segs = db.query_artcc_segments(
                 bbox);
 
             for(const auto& seg : segs)
             {
                 if(!styles.artcc_visible(seg.altitude, req.zoom)) continue;
+                if(!altitude_filter_allows(req.altitude, artcc_bands(seg.altitude))) continue;
+
                 auto ls = to_line_style(styles.artcc_style(seg.altitude));
 
                 append_polyline(poly[layer_artcc], seg.points, ls, mx_offset);
@@ -1012,6 +1048,7 @@ namespace nasrbrowse
                                        double mx_offset)
         {
             if(!styles.any_obstacle_visible(req.zoom)) return;
+            if(!req.altitude.low_enabled()) return;
             const auto& obstacles = db.query_obstacles(bbox);
             float radius = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_OBSTACLE);
 
@@ -1036,6 +1073,7 @@ namespace nasrbrowse
                                        double mx_offset)
         {
             if(!styles.any_airspace_visible(req.zoom)) return;
+            if(!req.altitude.low_enabled()) return;
             const auto& segs = db.query_class_airspace_segments(bbox,
                 styles.visible_airspace_values(req.zoom));
 
@@ -1068,6 +1106,7 @@ namespace nasrbrowse
                                   double mx_offset)
         {
             if(!styles.rco_visible(req.zoom)) return;
+            if(!req.altitude.low_enabled()) return;
             build_comm_polylines(db.query_comm_outlets(bbox),
                                  layer_rco, to_line_style(styles.rco_style()), req, mx_offset);
         }
@@ -1077,6 +1116,7 @@ namespace nasrbrowse
                                    double mx_offset)
         {
             if(!styles.awos_visible(req.zoom)) return;
+            if(!req.altitude.low_enabled()) return;
             build_comm_polylines(db.query_awos(bbox),
                                  layer_awos, to_line_style(styles.awos_style()), req, mx_offset);
         }

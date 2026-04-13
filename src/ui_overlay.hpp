@@ -2,6 +2,8 @@
 
 #include <array>
 
+#include "altitude_filter.hpp"
+
 namespace nasrbrowse
 {
 
@@ -60,6 +62,7 @@ namespace nasrbrowse
     struct layer_visibility
     {
         std::array<bool, layer_count> visible;
+        altitude_filter altitude;
 
         layer_visibility()
         {

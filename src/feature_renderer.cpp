@@ -132,6 +132,7 @@ namespace nasrbrowse
             req.half_extent_y = half_extent_y;
             req.viewport_height = viewport_height;
             req.zoom = pimpl->zoom_level();
+            req.altitude = pimpl->vis.altitude;
             pimpl->builder.request(req);
 
             // Speculatively update cache so we don't re-request next frame
@@ -191,9 +192,16 @@ namespace nasrbrowse
         {
             if(pimpl->vis[i] != vis[i]) line_vis_changed = true;
         }
+        bool altitude_changed = pimpl->vis.altitude != vis.altitude;
 
         pimpl->vis = vis;
 
+        if(altitude_changed)
+        {
+            // Altitude filter affects which features are queried, not just
+            // which cached polylines are packed. Force a full requery.
+            pimpl->has_cached_query = false;
+        }
         if(line_vis_changed)
         {
             pimpl->rebuild_sdf_lines();

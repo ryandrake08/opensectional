@@ -122,7 +122,8 @@ namespace nasrbrowse
                        LAT_DECIMAL, LONG_DECIMAL, ELEV,
                        MAG_VARN, MAG_VARN_HEMIS, FREQ,
                        CHAN, PWR_OUTPUT, SIMUL_VOICE_FLAG,
-                       VOICE_CALL, RESTRICTION_FLAG
+                       VOICE_CALL, RESTRICTION_FLAG,
+                       IS_LOW_NAV, IS_HIGH_NAV
                 FROM NAV_BASE
                 WHERE NAV_STATUS != 'SHUTDOWN'
                 AND rowid IN (
@@ -130,12 +131,13 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 21))
+            )", 23))
 
             , stmt_fixes(prepare_checked(db, R"(
                 SELECT FIX_ID, STATE_CODE, COUNTRY_CODE, ICAO_REGION_CODE,
                        LAT_DECIMAL, LONG_DECIMAL, FIX_USE_CODE,
-                       ARTCC_ID_HIGH, ARTCC_ID_LOW
+                       ARTCC_ID_HIGH, ARTCC_ID_LOW,
+                       IS_LOW_FIX, IS_HIGH_FIX
                 FROM FIX_BASE
                 WHERE FIX_USE_CODE IN ('WP', 'RP', 'VFR', 'CN', 'MR', 'MW', 'NRS')
                 AND rowid IN (
@@ -143,7 +145,7 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 9))
+            )", 11))
 
             , stmt_airways(prepare_checked(db, R"(
                 SELECT AWY_ID, AWY_LOCATION, POINT_SEQ, FROM_POINT, TO_POINT,
@@ -159,7 +161,7 @@ namespace nasrbrowse
             )", 12))
 
             , stmt_mtrs(prepare_checked(db, R"(
-                SELECT MTR_ID, FROM_POINT, TO_POINT,
+                SELECT MTR_ID, ROUTE_TYPE_CODE, FROM_POINT, TO_POINT,
                        FROM_LAT, FROM_LON, TO_LAT, TO_LON
                 FROM MTR_SEG
                 WHERE rowid IN (
@@ -167,7 +169,7 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 7))
+            )", 8))
 
             , stmt_maas(prepare_checked(db, R"(
                 SELECT MAA_ID, TYPE, NAME, LAT, LON, RADIUS_NM,
@@ -235,20 +237,23 @@ namespace nasrbrowse
 
             , stmt_sua_shape(prepare_checked(db, R"(
                 SELECT PART_NUM, UPPER_LIMIT, LOWER_LIMIT, IS_HOLE,
-                       LON_DECIMAL, LAT_DECIMAL
+                       LON_DECIMAL, LAT_DECIMAL,
+                       UPPER_FT_MSL, LOWER_FT_MSL
                 FROM SUA_SHP
                 WHERE SUA_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
-            )", 6))
+            )", 8))
 
             , stmt_sua_circle(prepare_checked(db, R"(
-                SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM
+                SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM,
+                       UPPER_FT_MSL, LOWER_FT_MSL
                 FROM SUA_CIRCLE
                 WHERE SUA_ID = ?1
-            )", 4))
+            )", 6))
 
             , stmt_sua_circles_bbox(prepare_checked(db, R"(
-                SELECT b.SUA_TYPE, c.CENTER_LON, c.CENTER_LAT, c.RADIUS_NM
+                SELECT b.SUA_TYPE, c.CENTER_LON, c.CENTER_LAT, c.RADIUS_NM,
+                       c.UPPER_FT_MSL, c.LOWER_FT_MSL
                 FROM SUA_CIRCLE c
                 JOIN SUA_BASE b ON b.SUA_ID = c.SUA_ID
                 WHERE c.SUA_ID IN (
@@ -257,7 +262,7 @@ namespace nasrbrowse
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 AND (?5 IS NULL OR b.SUA_TYPE IN (SELECT value FROM json_each(?5)))
-            )", 4))
+            )", 6))
 
             , stmt_obstacles(prepare_checked(db, R"(
                 SELECT OAS_NUM, VERIFY_STATUS, COUNTRY, STATE, CITY,
@@ -291,14 +296,15 @@ namespace nasrbrowse
             )", 2))
 
             , stmt_pjas(prepare_checked(db, R"(
-                SELECT PJA_ID, NAME, LAT, LON, RADIUS_NM, MAX_ALTITUDE
+                SELECT PJA_ID, NAME, LAT, LON, RADIUS_NM, MAX_ALTITUDE,
+                       MAX_ALT_FT_MSL
                 FROM PJA_BASE
                 WHERE rowid IN (
                     SELECT id FROM PJA_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 6))
+            )", 7))
 
             , stmt_adiz(prepare_checked(db, R"(
                 SELECT ADIZ_ID, NAME, LOCATION, WORKING_HOURS, MILITARY
@@ -403,7 +409,8 @@ namespace nasrbrowse
             )", 6))
 
             , stmt_sua_seg(prepare_checked(db, R"(
-                SELECT SEG_ID, SUA_TYPE, LON_DECIMAL, LAT_DECIMAL
+                SELECT SEG_ID, SUA_TYPE, LON_DECIMAL, LAT_DECIMAL,
+                       UPPER_FT_MSL, LOWER_FT_MSL
                 FROM SUA_SEG
                 WHERE SEG_ID IN (
                     SELECT id FROM SUA_SEG_RTREE
@@ -412,7 +419,7 @@ namespace nasrbrowse
                 )
                 AND (?5 IS NULL OR SUA_TYPE IN (SELECT value FROM json_each(?5)))
                 ORDER BY SEG_ID, POINT_SEQ
-            )", 4))
+            )", 6))
         {
             // Precompute the set of shadowed ARSP_IDs. Any class airspace
             // that has a lower-class neighbor at the same non-empty IDENT
@@ -541,7 +548,8 @@ namespace nasrbrowse
                 s.column_double(10), s.column_double(11), s.column_double(12),
                 s.column_text(13), s.column_text(14), s.column_text(15),
                 s.column_text(16), s.column_text(17), s.column_text(18),
-                s.column_text(19), s.column_text(20)};
+                s.column_text(19), s.column_text(20),
+                s.column_int(21) != 0, s.column_int(22) != 0};
         });
     }
 
@@ -554,7 +562,8 @@ namespace nasrbrowse
             return fix{
                 s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
                 s.column_double(4), s.column_double(5),
-                s.column_text(6), s.column_text(7), s.column_text(8)};
+                s.column_text(6), s.column_text(7), s.column_text(8),
+                s.column_int(9) != 0, s.column_int(10) != 0};
         });
     }
 
@@ -580,9 +589,10 @@ namespace nasrbrowse
             bbox, [](sqlite::statement& s)
         {
             return mtr_segment{
-                s.column_text(0), s.column_text(1), s.column_text(2),
-                s.column_double(3), s.column_double(4),
-                s.column_double(5), s.column_double(6)};
+                s.column_text(0), s.column_text(1),
+                s.column_text(2), s.column_text(3),
+                s.column_double(4), s.column_double(5),
+                s.column_double(6), s.column_double(7)};
         });
     }
 
@@ -694,6 +704,8 @@ namespace nasrbrowse
                     ring.upper_limit = d.stmt_sua_shape.column_text(1);
                     ring.lower_limit = d.stmt_sua_shape.column_text(2);
                     ring.is_hole = d.stmt_sua_shape.column_int(3) != 0;
+                    ring.upper_ft_msl = d.stmt_sua_shape.column_int(6);
+                    ring.lower_ft_msl = d.stmt_sua_shape.column_int(7);
                     if (part_num == circle_part)
                     {
                         ring.is_circle = true;
@@ -722,7 +734,9 @@ namespace nasrbrowse
             return sua_circle{s.column_text(0),
                               s.column_double(1),
                               s.column_double(2),
-                              s.column_double(3)};
+                              s.column_double(3),
+                              s.column_int(4),
+                              s.column_int(5)};
         });
     }
 
@@ -770,7 +784,7 @@ namespace nasrbrowse
         {
             return pja{s.column_text(0), s.column_text(1),
                        s.column_double(2), s.column_double(3), s.column_double(4),
-                       s.column_text(5)};
+                       s.column_text(5), s.column_int(6)};
         });
     }
 
@@ -932,7 +946,10 @@ namespace nasrbrowse
             int seg_id = d.stmt_sua_seg.column_int(0);
             if (seg_id != current_seg)
             {
-                d.sua_segs.push_back({d.stmt_sua_seg.column_text(1), {}});
+                d.sua_segs.push_back({d.stmt_sua_seg.column_text(1),
+                                      d.stmt_sua_seg.column_int(4),
+                                      d.stmt_sua_seg.column_int(5),
+                                      {}});
                 current_seg = seg_id;
             }
             d.sua_segs.back().points.push_back(

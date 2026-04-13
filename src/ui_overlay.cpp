@@ -88,6 +88,36 @@ namespace nasrbrowse
         }
 
         ImGui::End();
+
+        // Altitude band filter: a separate, visually distinct panel on the
+        // right side beneath the layer checkboxes. Independent of per-layer
+        // visibility — filters features by their altitude relevance.
+        ImVec2 layers_min = ImGui::GetItemRectMin();
+        (void)layers_min;
+
+        ImGui::SetNextWindowPos(
+            ImVec2(io.DisplaySize.x, ImGui::GetFrameHeightWithSpacing() * static_cast<float>(IM_ARRAYSIZE(layer_entries) + 1) + 16.0F),
+            ImGuiCond_Always,
+            ImVec2(1.0F, 0.0F));
+        ImGui::SetNextWindowBgAlpha(0.6F);
+        ImGui::Begin("Altitude", nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoNav |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoCollapse |
+            ImGuiWindowFlags_NoSavedSettings);
+
+        if(ImGui::Checkbox("Below 18,000 ft", &vis.altitude.show_low))
+        {
+            changed = true;
+        }
+        if(ImGui::Checkbox("18,000 ft and above", &vis.altitude.show_high))
+        {
+            changed = true;
+        }
+
+        ImGui::End();
         return changed;
     }
 
