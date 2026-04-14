@@ -958,7 +958,7 @@ def remove_spike_vertices(points):
             dot = max(-1.0, min(1.0, dot))
             ang = math.degrees(math.acos(dot))
             shorter = min(l1, l2)
-            if (ang > 160 and shorter < 0.01) or (ang > 175 and shorter < 0.05):
+            if (ang > 175 and shorter < 0.001) or (ang > 179 and shorter < 0.005):
                 keep[i] = False
                 any_dropped = True
         if not any_dropped:
@@ -1572,12 +1572,104 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
         if sub_polys:
             full_cover_hole_geom = unary_union(sub_polys) if len(sub_polys) > 1 else sub_polys[0]
 
+    # Pre-compute raw BASE-band union so partial-cover SUBTRs can be
+    # clipped against it before the main band loop runs.
+    base_entries_pre = bands.get(base_band, [])
+    base_raw_polys = []
+    for _, shape, _, _, _ in base_entries_pre:
+        shape = remove_spike_vertices(shape)
+        if len(shape) < 3:
+            continue
+        p = make_valid(ShapelyPolygon(shape))
+        if p.is_empty:
+            continue
+        p = set_precision(p, SNAP)
+        if not p.is_empty:
+            base_raw_polys.append(p)
+    outer_union = None
+    if base_raw_polys:
+        outer_union = (unary_union(base_raw_polys) if len(base_raw_polys) > 1
+                        else base_raw_polys[0])
+
+    # Clip every partial-cover SUBTR to the BASE outline (minus
+    # full-cover holes) and keep its altitude band. These are fed
+    # through a full 2D face overlay after the band loop so the
+    # emitted strata are 3D-disjoint: at each point in the plane, the
+    # carved altitude range is the union of every overlapping SUBTR's
+    # range, and active slices are the complement within BASE's band.
+    partial_subs_clipped = []   # [{lo_ft, up_ft, sub_upper, sub_lower, poly}]
+    partial_cover_union = None
+    if partial_cover_subs and outer_union is not None:
+        effective_outer = outer_union
+        if full_cover_hole_geom is not None:
+            effective_outer = effective_outer.difference(full_cover_hole_geom)
+        partial_cover_subs.sort(key=lambda c: c[0])
+        for _, shape, sub_upper, sub_lower in partial_cover_subs:
+            if len(shape) < 3 or effective_outer.is_empty:
+                continue
+            sub_poly = make_valid(ShapelyPolygon(shape))
+            if sub_poly.is_empty:
+                continue
+            clipped = sub_poly.intersection(effective_outer)
+            if clipped.is_empty:
+                print(f"  NOTE: {designator}: SUBTR zone lies entirely "
+                      f"outside outer boundary, skipping", file=sys.stderr)
+                continue
+            if isinstance(clipped, ShapelyMultiPolygon):
+                polys_ = list(clipped.geoms)
+            elif isinstance(clipped, ShapelyPolygon):
+                polys_ = [clipped]
+            elif hasattr(clipped, "geoms"):
+                polys_ = [g for g in clipped.geoms
+                          if isinstance(g, ShapelyPolygon) and not g.is_empty]
+                if not polys_:
+                    print(f"  NOTE: {designator}: SUBTR clip produced no "
+                          f"polygonal bits, skipping", file=sys.stderr)
+                    continue
+            else:
+                print(f"  WARN: {designator}: SUBTR intersection yielded "
+                      f"{type(clipped).__name__}, skipping", file=sys.stderr)
+                continue
+            unioned = (unary_union(polys_) if len(polys_) > 1 else polys_[0])
+            # Snap the clipped SUBTR to the same grid BASE polys use so
+            # subsequent face-overlay intersections land exactly on
+            # BASE's edge rather than drifting off by a few nm of
+            # floating-point noise.
+            unioned = set_precision(unioned, SNAP)
+            # Drop SUBTRs whose clipped footprint is a near-zero-area
+            # sliver or self-retracing path — these come from source
+            # polygons that graze BASE's boundary and become degenerate
+            # after intersection, not airspace we want to render.
+            if unioned.is_empty or unioned.area < 1e-6:
+                print(f"  NOTE: {designator}: SUBTR clipped footprint "
+                      f"degenerate (area={unioned.area:.2e}), skipping",
+                      file=sys.stderr)
+                continue
+            partial_subs_clipped.append({
+                "sub_upper": sub_upper, "sub_lower": sub_lower,
+                "lo_ft": parse_altitude_ft_msl(sub_lower),
+                "up_ft": parse_altitude_ft_msl(sub_upper),
+                "poly": unioned,
+            })
+        if partial_subs_clipped:
+            partial_cover_union = unary_union(
+                [s["poly"] for s in partial_subs_clipped])
+
+    # Combined carve-out geometry subtracted from BASE band. Anything a
+    # SUBTR covers (fully or partially) is removed from BASE so the
+    # BASE stratum only spans the unrestricted remainder.
+    base_carve = None
+    if full_cover_hole_geom is not None and partial_cover_union is not None:
+        base_carve = unary_union([full_cover_hole_geom, partial_cover_union])
+    elif full_cover_hole_geom is not None:
+        base_carve = full_cover_hole_geom
+    elif partial_cover_union is not None:
+        base_carve = partial_cover_union
+
     # strata: list of {"upper_limit", "lower_limit", "parts": [(ring, is_hole), ...]}
     # Each stratum is a separately-selectable altitude band within the SUA.
     strata = []
     result_circle_info = None
-    outer_union = None      # BASE-band union (before hole subtraction),
-                            # used for partial-cover SUBTR clipping
 
     for band_key in band_order:
         entries = bands[band_key]
@@ -1588,18 +1680,14 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
                       f"polygons, skipping", file=sys.stderr)
             continue
 
-        # Capture the raw BASE-band union before hole subtraction for
-        # partial-cover SUBTR clipping.
-        if band_key == base_band:
-            outer_union = unary_union(
-                [p for p in raw_polys if not p.is_empty])
-
-        # Apply full-cover SUBTR as a geometric difference on BASE band
-        # so interior rings come out of shapely correctly.
-        if band_key == base_band and full_cover_hole_geom is not None:
+        # Apply the combined carve-out on the BASE band so BASE's
+        # footprint is disjoint (in 3D) from every SUBTR's active
+        # slices — shapely produces interior rings for fully-enclosed
+        # SUBTRs and trims the exterior for partial-edge SUBTRs.
+        if band_key == base_band and base_carve is not None:
             diffed = []
             for p in polys:
-                d = p.difference(full_cover_hole_geom)
+                d = p.difference(base_carve)
                 if d.is_empty:
                     continue
                 if isinstance(d, ShapelyPolygon):
@@ -1613,7 +1701,7 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
             polys = diffed
             if not polys:
                 print(f"  WARN: {designator}: BASE band fully consumed "
-                      f"by full-cover SUBTR, skipping", file=sys.stderr)
+                      f"by SUBTR carve-outs, skipping", file=sys.stderr)
                 continue
 
         # Sliver filter, per-band.
@@ -1671,56 +1759,121 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
     if not strata:
         return None
 
-    # Partial-cover SUBTR: separate altitude stratum with the same
-    # footprint as a region inside BASE (different ceiling/floor). Emit
-    # as its own outer so the fill renderer groups it independently.
-    # Clip against the full-cover hole geometry too, so carve-outs like
-    # R-4812's neighboring restricted areas apply to every stratum.
-    if partial_cover_subs and outer_union is not None:
-        effective_outer = outer_union
-        if full_cover_hole_geom is not None:
-            effective_outer = effective_outer.difference(full_cover_hole_geom)
-        partial_cover_subs.sort(key=lambda c: c[0])
-        for _, shape, sub_upper, sub_lower in partial_cover_subs:
-            if len(shape) < 3 or effective_outer.is_empty:
-                continue
-            sub_poly = make_valid(ShapelyPolygon(shape))
-            if sub_poly.is_empty:
-                continue
-            clipped = sub_poly.intersection(effective_outer)
-            if clipped.is_empty:
-                print(f"  NOTE: {designator}: SUBTR zone lies entirely "
-                      f"outside outer boundary, skipping", file=sys.stderr)
-                continue
-            if isinstance(clipped, ShapelyMultiPolygon):
-                sub_polys = list(clipped.geoms)
-            elif isinstance(clipped, ShapelyPolygon):
-                sub_polys = [clipped]
-            elif hasattr(clipped, "geoms"):
-                # GeometryCollection: usually polygons + grazing edges
-                # (lines/points) when the SUBTR touches the BASE boundary.
-                # Keep the polygonal bits; discard the degenerate debris.
-                sub_polys = [g for g in clipped.geoms
-                             if isinstance(g, ShapelyPolygon) and not g.is_empty]
-                if not sub_polys:
-                    print(f"  NOTE: {designator}: SUBTR clip produced no "
-                          f"polygonal bits, skipping", file=sys.stderr)
+    # Face-overlay active-slice emission: partition the union of
+    # partial-cover SUBTR footprints into faces where each face is
+    # covered by a specific subset of SUBTRs. Within each face the
+    # carved altitude range is the union of every member SUBTR's
+    # range; active slices are [baseLo, baseUp] minus that union. All
+    # faces whose active-band list contains a given band are merged
+    # into one stratum so a band appears as a single continuous
+    # polygon regardless of which SUBTRs produced it.
+    if partial_subs_clipped and base_lo_ft is not None and base_up_ft is not None:
+        def _merge_ranges(rs):
+            rs = sorted((s, e) for s, e in rs if s is not None and e is not None and s < e)
+            out = []
+            for s, e in rs:
+                if out and s <= out[-1][1]:
+                    out[-1] = (out[-1][0], max(out[-1][1], e))
+                else:
+                    out.append((s, e))
+            return out
+
+        def _complement(rs, lo, hi):
+            merged = _merge_ranges(rs)
+            result = []
+            cur = lo
+            for s, e in merged:
+                if e <= cur:
                     continue
-            else:
-                print(f"  WARN: {designator}: SUBTR intersection yielded "
-                      f"{type(clipped).__name__}, skipping", file=sys.stderr)
+                if s > cur:
+                    result.append((cur, min(s, hi)))
+                cur = max(cur, e)
+                if cur >= hi:
+                    break
+            if cur < hi:
+                result.append((cur, hi))
+            return result
+
+        # Area threshold below which a polygon is treated as a
+        # degenerate artifact (a thin sliver from a near-miss clip, or
+        # a self-retracing near-zero-area loop that shapely still
+        # reports as valid). 1e-6 deg² ≈ 10,000 m² ≈ 0.003 NM²; real
+        # SUA features are always orders of magnitude larger.
+        FACE_AREA_MIN = 1e-6
+
+        def _collect_polys(geom):
+            if geom.is_empty:
+                return []
+            if isinstance(geom, ShapelyPolygon):
+                return [geom] if geom.area >= FACE_AREA_MIN else []
+            if isinstance(geom, ShapelyMultiPolygon):
+                return [g for g in geom.geoms
+                        if not g.is_empty and g.area >= FACE_AREA_MIN]
+            if hasattr(geom, "geoms"):
+                return [g for g in geom.geoms
+                        if isinstance(g, ShapelyPolygon)
+                        and not g.is_empty and g.area >= FACE_AREA_MIN]
+            return []
+
+        def _alt_to_str(ft, base_limit_str, base_lo, base_up):
+            if ft is None:
+                return ""
+            if ft == base_lo or ft == base_up:
+                return base_limit_str
+            if ft == 0:
+                return "GND FT SFC"
+            if ft >= ALT_UNLIMITED_FT:
+                return "UNL OTHER"
+            return f"{ft} FT MSL"
+
+        n = len(partial_subs_clipped)
+        # Collect (lo, hi) active band -> list of face polygons across
+        # the overlay. Brute-force 2^n subset enumeration; n is small
+        # in practice (<=10 across the current corpus).
+        band_to_polys = {}  # (lo_ft, hi_ft) -> [ShapelyPolygon ...]
+        for mask in range(1, 1 << n):
+            members = [i for i in range(n) if mask & (1 << i)]
+            face = partial_subs_clipped[members[0]]["poly"]
+            skip = False
+            for i in members[1:]:
+                face = face.intersection(partial_subs_clipped[i]["poly"])
+                if face.is_empty:
+                    skip = True
+                    break
+            if skip or face.is_empty:
                 continue
+            for j in range(n):
+                if mask & (1 << j):
+                    continue
+                face = face.difference(partial_subs_clipped[j]["poly"])
+                if face.is_empty:
+                    break
+            face_polys = _collect_polys(face)
+            if not face_polys:
+                continue
+            carved = [(partial_subs_clipped[i]["lo_ft"],
+                       partial_subs_clipped[i]["up_ft"]) for i in members]
+            for band in _complement(carved, base_lo_ft, base_up_ft):
+                band_to_polys.setdefault(band, []).extend(face_polys)
+
+        for (lo_ft, hi_ft), polys_ in band_to_polys.items():
+            if not polys_:
+                continue
+            merged = unary_union(polys_) if len(polys_) > 1 else polys_[0]
             stratum_parts = []
-            for poly in sub_polys:
-                if poly.is_empty:
-                    continue
-                stratum_parts.append((list(poly.exterior.coords), False))
-            if stratum_parts:
-                strata.append({
-                    "upper_limit": sub_upper,
-                    "lower_limit": sub_lower,
-                    "parts": stratum_parts,
-                })
+            for p in _collect_polys(merged):
+                stratum_parts.append((list(p.exterior.coords), False))
+                for interior in p.interiors:
+                    stratum_parts.append((list(interior.coords), True))
+            if not stratum_parts:
+                continue
+            lo_str = _alt_to_str(lo_ft, lower_limit, base_lo_ft, base_up_ft)
+            up_str = _alt_to_str(hi_ft, upper_limit, base_lo_ft, base_up_ft)
+            strata.append({
+                "upper_limit": up_str,
+                "lower_limit": lo_str,
+                "parts": stratum_parts,
+            })
 
     return {
         "designator": designator,
