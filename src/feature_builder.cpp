@@ -223,8 +223,42 @@ namespace nasrbrowse
                     emit_halo(cx, cy);
                     emit_comm_icon(out, cx, cy, r_base, to_line_style(styles.rco_style()));
                 }
-                // Other variants (class_airspace, sua, artcc, adiz, airway_segment,
-                // mtr_segment, runway) handled in later stages.
+                else if constexpr(std::is_same_v<T, airway_segment>)
+                {
+                    auto fs = styles.airway_style(f.awy_id);
+                    line_style ls = to_line_style(fs);
+                    ls.r = ls.g = ls.b = 1.0F; ls.a = 1.0F;
+                    // Widen to cover the original line's border on both sides.
+                    ls.line_width = ls.line_width + 2.0F * ls.border_width + 2.0F;
+                    ls.border_width = 0; ls.dash_length = 0; ls.gap_length = 0;
+                    for(const auto& seg : db.query_airway_by_id(f.awy_id))
+                    {
+                        float x0 = static_cast<float>(lon_to_mx(seg.from_lon));
+                        float y0 = static_cast<float>(lat_to_my(seg.from_lat));
+                        float x1 = static_cast<float>(lon_to_mx(seg.to_lon));
+                        float y1 = static_cast<float>(lat_to_my(seg.to_lat));
+                        out.polylines.push_back({{x0, y0}, {x1, y1}});
+                        out.styles.push_back(ls);
+                    }
+                }
+                else if constexpr(std::is_same_v<T, mtr_segment>)
+                {
+                    line_style ls = to_line_style(styles.mtr_style());
+                    ls.r = ls.g = ls.b = 1.0F; ls.a = 1.0F;
+                    ls.line_width = ls.line_width + 2.0F * ls.border_width + 2.0F;
+                    ls.border_width = 0; ls.dash_length = 0; ls.gap_length = 0;
+                    for(const auto& seg : db.query_mtr_by_id(f.mtr_id))
+                    {
+                        float x0 = static_cast<float>(lon_to_mx(seg.from_lon));
+                        float y0 = static_cast<float>(lat_to_my(seg.from_lat));
+                        float x1 = static_cast<float>(lon_to_mx(seg.to_lon));
+                        float y1 = static_cast<float>(lat_to_my(seg.to_lat));
+                        out.polylines.push_back({{x0, y0}, {x1, y1}});
+                        out.styles.push_back(ls);
+                    }
+                }
+                // Other variants (class_airspace, sua, artcc, adiz, runway)
+                // handled in later stages.
             }, sel);
         }
 

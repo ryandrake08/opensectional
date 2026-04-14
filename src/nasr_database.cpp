@@ -30,7 +30,9 @@ namespace nasrbrowse
         sqlite::statement stmt_navaids;
         sqlite::statement stmt_fixes;
         sqlite::statement stmt_airways;
+        sqlite::statement stmt_airway_by_id;
         sqlite::statement stmt_mtrs;
+        sqlite::statement stmt_mtr_by_id;
         sqlite::statement stmt_maas;
         sqlite::statement stmt_maa_shape;
         sqlite::statement stmt_cls_arsp;
@@ -160,6 +162,14 @@ namespace nasrbrowse
                 )
             )", 12))
 
+            , stmt_airway_by_id(prepare_checked(db, R"(
+                SELECT AWY_ID, AWY_LOCATION, POINT_SEQ, FROM_POINT, TO_POINT,
+                       FROM_LAT, FROM_LON, TO_LAT, TO_LON,
+                       AWY_SEG_GAP_FLAG, MIN_ENROUTE_ALT, MAG_COURSE_DIST
+                FROM AWY_SEG
+                WHERE AWY_SEG_GAP_FLAG != 'Y' AND AWY_ID = ?1
+            )", 12))
+
             , stmt_mtrs(prepare_checked(db, R"(
                 SELECT MTR_ID, ROUTE_TYPE_CODE, FROM_POINT, TO_POINT,
                        FROM_LAT, FROM_LON, TO_LAT, TO_LON
@@ -169,6 +179,13 @@ namespace nasrbrowse
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
+            )", 8))
+
+            , stmt_mtr_by_id(prepare_checked(db, R"(
+                SELECT MTR_ID, ROUTE_TYPE_CODE, FROM_POINT, TO_POINT,
+                       FROM_LAT, FROM_LON, TO_LAT, TO_LON
+                FROM MTR_SEG
+                WHERE MTR_ID = ?1
             )", 8))
 
             , stmt_maas(prepare_checked(db, R"(
@@ -594,6 +611,41 @@ namespace nasrbrowse
                 s.column_double(4), s.column_double(5),
                 s.column_double(6), s.column_double(7)};
         });
+    }
+
+    std::vector<airway_segment> nasr_database::query_airway_by_id(const std::string& awy_id)
+    {
+        auto& s = pimpl->stmt_airway_by_id;
+        s.reset();
+        s.bind(1, awy_id);
+        std::vector<airway_segment> out;
+        while(s.step())
+        {
+            out.push_back(airway_segment{
+                s.column_text(0), s.column_text(1), s.column_int(2),
+                s.column_text(3), s.column_text(4),
+                s.column_double(5), s.column_double(6),
+                s.column_double(7), s.column_double(8),
+                s.column_text(9), s.column_text(10), s.column_text(11)});
+        }
+        return out;
+    }
+
+    std::vector<mtr_segment> nasr_database::query_mtr_by_id(const std::string& mtr_id)
+    {
+        auto& s = pimpl->stmt_mtr_by_id;
+        s.reset();
+        s.bind(1, mtr_id);
+        std::vector<mtr_segment> out;
+        while(s.step())
+        {
+            out.push_back(mtr_segment{
+                s.column_text(0), s.column_text(1),
+                s.column_text(2), s.column_text(3),
+                s.column_double(4), s.column_double(5),
+                s.column_double(6), s.column_double(7)});
+        }
+        return out;
     }
 
     const std::vector<maa>& nasr_database::query_maas(const geo_bbox& bbox)

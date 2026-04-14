@@ -959,6 +959,7 @@ struct layer_map::impl
         info_popup.anchor_lat = alat;
         info_popup.feature = f;
         features.set_selection(f);
+        update_tiles();
         needs_update = true;
     }
 
@@ -966,6 +967,7 @@ struct layer_map::impl
     {
         info_popup.open = false;
         features.set_selection(std::nullopt);
+        update_tiles();
         needs_update = true;
     }
 

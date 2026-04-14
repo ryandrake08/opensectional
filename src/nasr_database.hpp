@@ -366,6 +366,11 @@ namespace nasrbrowse
         const std::vector<fix>& query_fixes(const geo_bbox& bbox);
         const std::vector<airway_segment>& query_airways(const geo_bbox& bbox);
         const std::vector<mtr_segment>& query_mtrs(const geo_bbox& bbox);
+
+        // Fetch every segment of one airway / MTR by identifier. Uncached;
+        // used to highlight an entire route when one segment is selected.
+        std::vector<airway_segment> query_airway_by_id(const std::string& awy_id);
+        std::vector<mtr_segment> query_mtr_by_id(const std::string& mtr_id);
         const std::vector<maa>& query_maas(const geo_bbox& bbox);
         const std::vector<class_airspace>& query_class_airspace(const geo_bbox& bbox);
         const std::vector<runway>& query_runways(const geo_bbox& bbox);
