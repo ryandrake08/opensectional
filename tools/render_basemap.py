@@ -34,17 +34,17 @@ from shapely.ops import transform as shapely_transform
 TILE_SIZE = 256
 
 # Colors (RGBA)
-COLOR_OCEAN      = (200, 220, 240, 255)   # light blue
-COLOR_LAND       = (235, 235, 230, 255)   # light warm gray
-COLOR_LAKE       = (200, 220, 240, 255)   # same as ocean
-COLOR_URBAN      = (220, 218, 213, 255)   # slightly darker gray
-COLOR_RIVER      = (170, 200, 225, 255)   # blue-gray
-COLOR_ROAD       = (190, 185, 180, 255)   # warm gray
-COLOR_RAILROAD   = (175, 170, 165, 255)   # darker warm gray
-COLOR_BORDER_0   = (140, 130, 130, 255)   # country borders — dark gray
-COLOR_BORDER_1   = (175, 170, 165, 255)   # state borders — lighter
-COLOR_LABEL      = (80, 80, 80, 255)      # dark gray text
-COLOR_LABEL_HALO = (255, 255, 255, 200)   # white halo
+COLOR_OCEAN      = (58, 65, 69, 255)
+COLOR_LAND       = (102, 102, 102, 255)
+COLOR_LAKE       = (58, 65, 69, 255)
+COLOR_URBAN      = (85, 85, 85, 255)
+COLOR_RIVER      = (58, 65, 69, 255)
+COLOR_ROAD       = (55, 55, 55, 255)
+COLOR_RAILROAD   = (55, 55, 55, 255)
+COLOR_BORDER_0   = (10, 10, 40, 255)
+COLOR_BORDER_1   = (51, 51, 51, 255)
+COLOR_LABEL      = (190, 190, 190, 255)
+COLOR_LABEL_HALO = (26, 26, 26, 200)
 
 # Line widths per zoom level (zoom -> width in pixels)
 LINE_WIDTHS = {
@@ -417,6 +417,89 @@ def draw_line(draw, geom, color, width):
         draw.line(coords, fill=color, width=max(1, int(round(width))))
 
 
+def draw_railroad(draw, geom, color, width, tick_spacing=8.0, tick_len=4.0):
+    """Draw a railroad: a main line with short perpendicular tick marks."""
+    if geom is None or geom.is_empty:
+        return
+    lines = []
+    if geom.geom_type == 'LineString':
+        lines = [geom]
+    elif geom.geom_type == 'MultiLineString':
+        lines = list(geom.geoms)
+    elif geom.geom_type == 'GeometryCollection':
+        for g in geom.geoms:
+            if g.geom_type in ('LineString', 'MultiLineString'):
+                draw_railroad(draw, g, color, width, tick_spacing, tick_len)
+        return
+    w = max(1, int(round(width)))
+    half = tick_len / 2.0
+    for line in lines:
+        coords = list(line.coords)
+        if len(coords) < 2:
+            continue
+        draw.line(coords, fill=color, width=w)
+        dist = 0.0  # cumulative arc length; drop a tick each tick_spacing
+        next_tick = tick_spacing
+        for (x0, y0), (x1, y1) in zip(coords[:-1], coords[1:]):
+            seg_dx, seg_dy = x1 - x0, y1 - y0
+            seg_len = (seg_dx * seg_dx + seg_dy * seg_dy) ** 0.5
+            if seg_len == 0:
+                continue
+            ux, uy = seg_dx / seg_len, seg_dy / seg_len
+            nx, ny = -uy, ux  # perpendicular
+            while next_tick <= dist + seg_len:
+                t = next_tick - dist
+                cx, cy = x0 + ux * t, y0 + uy * t
+                draw.line([(cx - nx * half, cy - ny * half),
+                           (cx + nx * half, cy + ny * half)],
+                          fill=color, width=w)
+                next_tick += tick_spacing
+            dist += seg_len
+
+
+def draw_dashed_line(draw, geom, color, width, dash_len):
+    """Draw a dashed Shapely line with equal dash/gap length (in pixels)."""
+    if geom is None or geom.is_empty:
+        return
+    lines = []
+    if geom.geom_type == 'LineString':
+        lines = [geom]
+    elif geom.geom_type == 'MultiLineString':
+        lines = list(geom.geoms)
+    elif geom.geom_type == 'GeometryCollection':
+        for g in geom.geoms:
+            if g.geom_type in ('LineString', 'MultiLineString'):
+                draw_dashed_line(draw, g, color, width, dash_len)
+        return
+    w = max(1, int(round(width)))
+    for line in lines:
+        coords = list(line.coords)
+        if len(coords) < 2:
+            continue
+        dist = 0.0  # position along line; alternate dash (on) / gap (off)
+        for (x0, y0), (x1, y1) in zip(coords[:-1], coords[1:]):
+            seg_dx, seg_dy = x1 - x0, y1 - y0
+            seg_len = (seg_dx * seg_dx + seg_dy * seg_dy) ** 0.5
+            if seg_len == 0:
+                continue
+            ux, uy = seg_dx / seg_len, seg_dy / seg_len
+            pos = 0.0
+            while pos < seg_len:
+                phase = dist % (2 * dash_len)
+                if phase < dash_len:
+                    remaining_in_phase = dash_len - phase
+                    end = min(pos + remaining_in_phase, seg_len)
+                    draw.line([(x0 + ux * pos, y0 + uy * pos),
+                               (x0 + ux * end, y0 + uy * end)],
+                              fill=color, width=w)
+                else:
+                    remaining_in_phase = 2 * dash_len - phase
+                    end = min(pos + remaining_in_phase, seg_len)
+                advance = end - pos
+                pos = end
+                dist += advance
+
+
 def draw_label(draw, text, x, y, font, color=COLOR_LABEL, halo_color=COLOR_LABEL_HALO):
     """Draw text with a 1px halo for readability."""
     if not text:
@@ -596,7 +679,7 @@ def render_tile(z, x, y, cache, font_cache):
                                scalerank_max=sr_max)
         for geom in geoms:
             pg = clip_to_pixels(geom, tile_box, to_pixel)
-            draw_line(draw, pg, COLOR_RAILROAD, width)
+            draw_railroad(draw, pg, COLOR_RAILROAD, width)
 
     # Country borders
     width = get_line_width('border_0', z)
@@ -612,7 +695,7 @@ def render_tile(z, x, y, cache, font_cache):
                            scalerank_field='FEATURECLA')
     for geom in geoms:
         pg = clip_to_pixels(geom, tile_box, to_pixel)
-        draw_line(draw, pg, COLOR_BORDER_1, width)
+        draw_dashed_line(draw, pg, COLOR_BORDER_1, width, dash_len=6.0)
 
     # --- Labels ---
     # Use the wider label bbox for queries so we find features whose
