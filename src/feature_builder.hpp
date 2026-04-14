@@ -29,6 +29,20 @@ namespace nasrbrowse
         }
     };
 
+    struct polygon_fill_vertex
+    {
+        glm::vec2 pos;    // world-space Mercator
+        glm::vec4 color;  // RGBA in [0,1]
+    };
+
+    // Pre-triangulated polygon fills: flat triangle list, 3 vertices per
+    // triangle, all polygons concatenated.
+    struct polygon_fill_data
+    {
+        std::vector<polygon_fill_vertex> triangles;
+        void clear() { triangles.clear(); }
+    };
+
     // Parameters the worker needs to build feature geometry
     struct feature_build_request
     {
@@ -58,6 +72,7 @@ namespace nasrbrowse
         // Primitives for the currently-selected feature (halo + re-emitted
         // icon). Rendered after all layers so the selection sits on top.
         polyline_data selection_overlay;
+        polygon_fill_data selection_fill;
     };
 
     // Background worker that builds feature polylines from the NASR database.

@@ -2887,6 +2887,10 @@ def build_artcc(conn, csv_zf):
             if len(ring) < 3:
                 continue
             for copy in handle_antimeridian(ring):
+                # Close the ring so downstream consumers get a consistent
+                # "first == last" invariant (matches class_airspace / SUA).
+                if copy[0] != copy[-1]:
+                    copy = copy + [copy[0]]
                 artcc_id = len(base_rows) + 1
                 base_rows.append((artcc_id, loc_id, name, altitude))
                 for point_seq, (lon, lat) in enumerate(copy):

@@ -6,6 +6,7 @@
 #include "render_context.hpp"
 #include "ui_overlay.hpp"
 #include <cmath>
+#include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
 #include <sdl/render_pass.hpp>
@@ -38,6 +39,12 @@ namespace nasrbrowse
         std::array<polyline_data, layer_sdf_count> poly;
         polyline_data selection_overlay;
         line_renderer sdf_lines;
+
+        // Polygon fill (triangulated concave+holes). Rendered in trianglelist_0
+        // pass before line_sdf_0 so outlines and icons sit on top.
+        std::vector<sdl::vertex_t2f_c4ub_v3f> fill_vertices;
+        std::unique_ptr<sdl::buffer> fill_buffer;
+        bool fill_needs_upload = false;
 
         // Labels from most recent build
         std::vector<label_candidate> current_labels;
@@ -162,6 +169,23 @@ namespace nasrbrowse
             pimpl->selection_overlay = std::move(result->selection_overlay);
             pimpl->current_labels = std::move(result->labels);
             pimpl->rebuild_sdf_lines();
+
+            // Translate triangulated fills into the GPU vertex format.
+            auto& src = result->selection_fill.triangles;
+            pimpl->fill_vertices.clear();
+            pimpl->fill_vertices.reserve(src.size());
+            for(const auto& v : src)
+            {
+                sdl::vertex_t2f_c4ub_v3f out{};
+                out.s = 0; out.t = 0;
+                out.r = static_cast<uint8_t>(std::clamp(v.color.r, 0.0F, 1.0F) * 255.0F);
+                out.g = static_cast<uint8_t>(std::clamp(v.color.g, 0.0F, 1.0F) * 255.0F);
+                out.b = static_cast<uint8_t>(std::clamp(v.color.b, 0.0F, 1.0F) * 255.0F);
+                out.a = static_cast<uint8_t>(std::clamp(v.color.a, 0.0F, 1.0F) * 255.0F);
+                out.x = v.pos.x; out.y = v.pos.y; out.z = 0;
+                pimpl->fill_vertices.push_back(out);
+            }
+            pimpl->fill_needs_upload = true;
             return true;
         }
         return false;
@@ -174,7 +198,7 @@ namespace nasrbrowse
 
     bool feature_renderer::needs_upload() const
     {
-        return pimpl->sdf_lines.needs_upload();
+        return pimpl->sdf_lines.needs_upload() || pimpl->fill_needs_upload;
     }
 
     void feature_renderer::copy(sdl::copy_pass& pass)
@@ -183,13 +207,37 @@ namespace nasrbrowse
         {
             pimpl->sdf_lines.copy(pass, pimpl->dev);
         }
+        if(pimpl->fill_needs_upload)
+        {
+            pimpl->fill_buffer.reset();
+            if(!pimpl->fill_vertices.empty())
+            {
+                auto buf = pass.create_and_upload_buffer(pimpl->dev,
+                    sdl::buffer_usage::vertex, pimpl->fill_vertices);
+                pimpl->fill_buffer = std::make_unique<sdl::buffer>(std::move(buf));
+            }
+            pimpl->fill_needs_upload = false;
+        }
     }
 
     void feature_renderer::render(sdl::render_pass& pass,
                                    const render_context& ctx,
                                    const glm::mat4& view_matrix) const
     {
-        if(ctx.current_pass == render_pass_id::line_sdf_0)
+        if(ctx.current_pass == render_pass_id::polygon_fill_0)
+        {
+            if(pimpl->fill_buffer && pimpl->fill_buffer->count() > 0)
+            {
+                sdl::uniform_buffer uniforms;
+                uniforms.projection_matrix = ctx.projection_matrix;
+                uniforms.view_matrix = view_matrix;
+                pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
+                pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
+                pass.bind_vertex_buffer(*pimpl->fill_buffer);
+                pass.draw(pimpl->fill_buffer->count());
+            }
+        }
+        else if(ctx.current_pass == render_pass_id::line_sdf_0)
         {
             int vw = static_cast<int>(pimpl->aspect_ratio * pimpl->viewport_height);
             pimpl->sdf_lines.render(pass, ctx.projection_matrix, view_matrix,

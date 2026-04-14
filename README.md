@@ -290,7 +290,7 @@ lib/imgui/              ImGui RAII wrapper library
 lib/sdl/                SDL3 GPU API wrapper library
 lib/sqlite/             SQLite RAII wrapper library
 shaders/                HLSL shaders (cross-compiled to Metal/SPIR-V/DXIL)
-thirdparty/             Vendored dependencies (GLM, Dear ImGui)
+thirdparty/             Vendored dependencies (see "Third-Party Components")
 tools/
   download_nasr_data.py   FAA data downloader (NASR, DOF, ADIZ)
   build_nasr_db.py        Database builder (reads downloaded data files)
@@ -304,3 +304,23 @@ tools/
 # Run database query tests (requires a built nasr.db)
 tools/env/bin/python3 tools/test_nasr_queries.py nasr.db
 ```
+
+## Third-Party Components
+
+Vendored under `thirdparty/`:
+
+| Component | Version | License | Source |
+|---|---|---|---|
+| Dear ImGui | tracked | MIT | https://github.com/ocornut/imgui |
+| GLM | 1.0.1 | MIT (or Happy Bunny) | https://github.com/g-truc/glm |
+| mapbox/earcut.hpp | tracked | ISC | https://github.com/mapbox/earcut.hpp |
+| Noto Sans (Regular) | 2022 | SIL Open Font License 1.1 | https://github.com/notofonts/latin-greek-cyrillic |
+
+License texts live next to each component:
+`thirdparty/imgui/LICENSE.txt`,
+`thirdparty/glm-1.0.1/copying.txt`,
+`thirdparty/mapbox/LICENSE`,
+`thirdparty/fonts/OFL.txt`.
+
+External runtime dependencies (not vendored): SDL3, SDL3_image, SDL3_ttf,
+SQLite3.

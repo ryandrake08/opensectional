@@ -289,6 +289,11 @@ int main(int argc, char** argv)
             load_shader(dev, shader_id::DEFAULT, sdl::shader_stage::fragment),
             sdl::primitive_type::line_list);
 
+        sdl::pipeline trianglelist_program(dev,
+            load_shader(dev, shader_id::DEFAULT, sdl::shader_stage::vertex),
+            load_shader(dev, shader_id::DEFAULT, sdl::shader_stage::fragment),
+            sdl::primitive_type::triangle_list);
+
         sdl::pipeline textured_trianglelist_program(dev,
             load_shader(dev, shader_id::TEXTURED, sdl::shader_stage::vertex),
             load_shader(dev, shader_id::TEXTURED, sdl::shader_stage::fragment, 1),
@@ -404,6 +409,11 @@ int main(int argc, char** argv)
                         // Textured triangles (tile basemap)
                         pass.bind_pipeline(textured_trianglelist_program);
                         render_ctx.current_pass = nasrbrowse::render_pass_id::textured_trianglelist_0;
+                        map_layer->render(pass, render_ctx);
+
+                        // Polygon fills (airspace/SUA highlights)
+                        pass.bind_pipeline(trianglelist_program);
+                        render_ctx.current_pass = nasrbrowse::render_pass_id::polygon_fill_0;
                         map_layer->render(pass, render_ctx);
 
                         // Lines (grid overlay)

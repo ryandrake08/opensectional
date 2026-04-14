@@ -10,10 +10,49 @@
 #include <thread>
 #include <unordered_set>
 #include <glm/glm.hpp>
+#include <mapbox/earcut.hpp>
 #include <vector>
+
+// Tell earcut how to read glm::vec2
+namespace mapbox {
+namespace util {
+    template <> struct nth<0, glm::vec2> { static float get(const glm::vec2& p) { return p.x; } };
+    template <> struct nth<1, glm::vec2> { static float get(const glm::vec2& p) { return p.y; } };
+}}
 
 namespace nasrbrowse
 {
+    // Triangulate a polygon (outer ring + optional hole rings) into a flat
+    // triangle list appended to `out`. All vertices share `color`.
+    static void triangulate_polygon(
+        const std::vector<glm::vec2>& outer,
+        const std::vector<std::vector<glm::vec2>>& holes,
+        const glm::vec4& color,
+        polygon_fill_data& out)
+    {
+        if(outer.size() < 3) return;
+
+        std::vector<std::vector<glm::vec2>> rings;
+        rings.reserve(1 + holes.size());
+        rings.push_back(outer);
+        for(const auto& h : holes) rings.push_back(h);
+
+        // earcut returns flat indices into the concatenated rings
+        std::vector<uint32_t> indices = mapbox::earcut<uint32_t>(rings);
+
+        // Build flat vertex list for lookup
+        std::vector<glm::vec2> flat;
+        flat.reserve(outer.size() + [&]{ size_t s = 0; for(auto& h : holes) s += h.size(); return s; }());
+        flat.insert(flat.end(), outer.begin(), outer.end());
+        for(const auto& h : holes) flat.insert(flat.end(), h.begin(), h.end());
+
+        out.triangles.reserve(out.triangles.size() + indices.size());
+        for(uint32_t idx : indices)
+        {
+            out.triangles.push_back({flat[idx], color});
+        }
+    }
+
     // Convert feature_style to line_style for SDF line features
     static line_style to_line_style(const feature_style& fs)
     {
@@ -100,7 +139,9 @@ namespace nasrbrowse
                 feature_build_result result;
                 result.poly = std::move(poly);
                 if(req.selection)
-                    build_selection_overlay(req, *req.selection, result.selection_overlay);
+                    build_selection_overlay(req, *req.selection,
+                                            result.selection_overlay,
+                                            result.selection_fill);
 
                 // Move raw world labels; overlap elimination happens on main thread
                 result.labels.reserve(world_labels.size());
@@ -142,7 +183,8 @@ namespace nasrbrowse
         // normal label pipeline and already render on top.
         void build_selection_overlay(const feature_build_request& req,
                                       const pick_feature& sel,
-                                      polyline_data& out)
+                                      polyline_data& out,
+                                      polygon_fill_data& fill_out)
         {
             // Halo radius = largest point-symbol radius × 1.5, same for all
             // point features so the halo is uniform regardless of feature type.
@@ -151,6 +193,58 @@ namespace nasrbrowse
             float r_base = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
             float pixels_per_world = static_cast<float>(req.viewport_height / (2.0 * req.half_extent_y));
             float halo_r = r_base * HALO_SCALE;
+
+            // Convert an airspace_point ring to Mercator glm::vec2. Skips
+            // empty input and ensures the ring is closed (last == first).
+            auto ring_to_mercator = [](const std::vector<airspace_point>& pts,
+                                        std::vector<glm::vec2>& out_ring)
+            {
+                out_ring.clear();
+                out_ring.reserve(pts.size());
+                for(const auto& p : pts)
+                {
+                    out_ring.emplace_back(
+                        static_cast<float>(lon_to_mx(p.lon)),
+                        static_cast<float>(lat_to_my(p.lat)));
+                }
+            };
+
+            // Sample a circle into a polygon ring (Mercator vec2, 48 points).
+            auto circle_to_ring = [](double center_lon, double center_lat,
+                                      double radius_nm,
+                                      std::vector<glm::vec2>& out_ring)
+            {
+                constexpr int N = 48;
+                constexpr double NM_TO_M = 1852.0;
+                double lat_rad = center_lat * M_PI / 180.0;
+                double r = radius_nm * NM_TO_M / std::cos(lat_rad);
+                double cx = lon_to_mx(center_lon);
+                double cy = lat_to_my(center_lat);
+                out_ring.clear();
+                out_ring.reserve(N + 1);
+                for(int i = 0; i <= N; i++)
+                {
+                    double a = 2.0 * M_PI * i / N;
+                    out_ring.emplace_back(
+                        static_cast<float>(cx + r * std::cos(a)),
+                        static_cast<float>(cy + r * std::sin(a)));
+                }
+            };
+
+            // Emit a closed boundary polyline (white, no border, widened to
+            // cover the feature's normal outline like the airway stage).
+            // Polygon rings in the DB are stored closed (first == last).
+            auto emit_boundary = [&](const std::vector<glm::vec2>& ring,
+                                      const line_style& base)
+            {
+                if(ring.size() < 2) return;
+                line_style ls = base;
+                ls.r = ls.g = ls.b = 1.0F; ls.a = 1.0F;
+                ls.line_width = ls.line_width + 2.0F * ls.border_width + 2.0F;
+                ls.border_width = 0; ls.dash_length = 0; ls.gap_length = 0;
+                out.polylines.push_back(ring);
+                out.styles.push_back(ls);
+            };
 
             auto emit_halo = [&](float cx, float cy)
             {
@@ -195,19 +289,46 @@ namespace nasrbrowse
                 }
                 else if constexpr(std::is_same_v<T, pja>)
                 {
-                    if(f.radius_nm > 0.0) return; // area-mode, Stage 4
-                    float cx = static_cast<float>(lon_to_mx(f.lon));
-                    float cy = static_cast<float>(lat_to_my(f.lat));
-                    emit_halo(cx, cy);
-                    emit_pja_point_icon(out, cx, cy, r_base, styles.pja_point_style());
+                    if(f.radius_nm > 0.0)
+                    {
+                        auto fs = styles.pja_area_style();
+                        line_style base = to_line_style(fs);
+                        glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+                        std::vector<glm::vec2> ring;
+                        circle_to_ring(f.lon, f.lat, f.radius_nm, ring);
+                        emit_boundary(ring, base);
+                        triangulate_polygon(ring, {}, fill_color, fill_out);
+                    }
+                    else
+                    {
+                        float cx = static_cast<float>(lon_to_mx(f.lon));
+                        float cy = static_cast<float>(lat_to_my(f.lat));
+                        emit_halo(cx, cy);
+                        emit_pja_point_icon(out, cx, cy, r_base, styles.pja_point_style());
+                    }
                 }
                 else if constexpr(std::is_same_v<T, maa>)
                 {
-                    if(!f.shape.empty() || f.radius_nm > 0.0) return; // area-mode
-                    float cx = static_cast<float>(lon_to_mx(f.lon));
-                    float cy = static_cast<float>(lat_to_my(f.lat));
-                    emit_halo(cx, cy);
-                    emit_maa_point_icon(out, cx, cy, r_base, f, styles.maa_point_style());
+                    if(!f.shape.empty() || f.radius_nm > 0.0)
+                    {
+                        auto fs = styles.maa_area_style();
+                        line_style base = to_line_style(fs);
+                        glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+                        std::vector<glm::vec2> ring;
+                        if(!f.shape.empty())
+                            ring_to_mercator(f.shape, ring);
+                        else
+                            circle_to_ring(f.lon, f.lat, f.radius_nm, ring);
+                        emit_boundary(ring, base);
+                        triangulate_polygon(ring, {}, fill_color, fill_out);
+                    }
+                    else
+                    {
+                        float cx = static_cast<float>(lon_to_mx(f.lon));
+                        float cy = static_cast<float>(lat_to_my(f.lat));
+                        emit_halo(cx, cy);
+                        emit_maa_point_icon(out, cx, cy, r_base, f, styles.maa_point_style());
+                    }
                 }
                 else if constexpr(std::is_same_v<T, awos>)
                 {
@@ -257,8 +378,83 @@ namespace nasrbrowse
                         out.styles.push_back(ls);
                     }
                 }
-                // Other variants (class_airspace, sua, artcc, adiz, runway)
-                // handled in later stages.
+                else if constexpr(std::is_same_v<T, class_airspace>)
+                {
+                    auto fs = styles.airspace_style(f.airspace_class, f.local_type);
+                    line_style base = to_line_style(fs);
+                    glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+
+                    // Group into outer + its holes, triangulate per outer.
+                    std::vector<glm::vec2> outer;
+                    std::vector<std::vector<glm::vec2>> holes;
+                    auto flush = [&]()
+                    {
+                        if(!outer.empty())
+                            triangulate_polygon(outer, holes, fill_color, fill_out);
+                        outer.clear(); holes.clear();
+                    };
+                    std::vector<glm::vec2> ring;
+                    for(const auto& part : f.parts)
+                    {
+                        ring_to_mercator(part.points, ring);
+                        emit_boundary(ring, base);
+                        if(part.is_hole) holes.push_back(ring);
+                        else { flush(); outer = ring; }
+                    }
+                    flush();
+                }
+                else if constexpr(std::is_same_v<T, sua>)
+                {
+                    auto fs = styles.sua_style(f.sua_type);
+                    line_style base = to_line_style(fs);
+                    glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+
+                    std::vector<glm::vec2> outer;
+                    std::vector<std::vector<glm::vec2>> holes;
+                    auto flush = [&]()
+                    {
+                        if(!outer.empty())
+                            triangulate_polygon(outer, holes, fill_color, fill_out);
+                        outer.clear(); holes.clear();
+                    };
+                    std::vector<glm::vec2> ring;
+                    for(const auto& part : f.parts)
+                    {
+                        if(part.is_circle)
+                            circle_to_ring(part.circle_lon, part.circle_lat,
+                                            part.circle_radius_nm, ring);
+                        else
+                            ring_to_mercator(part.points, ring);
+                        emit_boundary(ring, base);
+                        if(part.is_hole) holes.push_back(ring);
+                        else { flush(); outer = ring; }
+                    }
+                    flush();
+                }
+                else if constexpr(std::is_same_v<T, artcc>)
+                {
+                    auto fs = styles.artcc_style(f.altitude);
+                    line_style base = to_line_style(fs);
+                    glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+                    std::vector<glm::vec2> ring;
+                    ring_to_mercator(f.points, ring);
+                    emit_boundary(ring, base);
+                    triangulate_polygon(ring, {}, fill_color, fill_out);
+                }
+                else if constexpr(std::is_same_v<T, adiz>)
+                {
+                    auto fs = styles.adiz_style();
+                    line_style base = to_line_style(fs);
+                    glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+                    std::vector<glm::vec2> ring;
+                    for(const auto& part : f.parts)
+                    {
+                        ring_to_mercator(part, ring);
+                        emit_boundary(ring, base);
+                        triangulate_polygon(ring, {}, fill_color, fill_out);
+                    }
+                }
+                // Other variants (runway) handled in later stages.
             }, sel);
         }
 

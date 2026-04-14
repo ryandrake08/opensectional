@@ -14,6 +14,7 @@ namespace nasrbrowse
     {
         trianglelist_0,
         textured_trianglelist_0,
+        polygon_fill_0,
         line_sdf_0,
         text_labels_0
     };

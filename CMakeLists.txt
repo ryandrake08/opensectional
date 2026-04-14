@@ -79,6 +79,7 @@ target_compile_features(sdl_wrapper PRIVATE cxx_std_11)
 target_include_directories(sdl_wrapper PUBLIC
     ${CMAKE_SOURCE_DIR}/lib
     ${CMAKE_SOURCE_DIR}/thirdparty/glm-1.0.1
+    ${CMAKE_SOURCE_DIR}/thirdparty
 )
 target_link_libraries(sdl_wrapper PUBLIC SDL3::SDL3 SDL3_image::SDL3_image SDL3_ttf::SDL3_ttf)
 target_compile_options(sdl_wrapper PRIVATE -Wall -Wextra)
@@ -119,6 +120,7 @@ target_compile_options(sqlite_wrapper PRIVATE
 # Include directories
 target_include_directories(nasrbrowse PRIVATE
     ${CMAKE_SOURCE_DIR}/src    # For #include "layer.hpp" etc.
+    ${CMAKE_SOURCE_DIR}/thirdparty
 )
 
 # C++ standard
