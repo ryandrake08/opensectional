@@ -1272,12 +1272,70 @@ def _text(parent, tag):
     return elem.text.strip() if elem is not None and elem.text else ""
 
 
-def _parse_one_airspace(airspace):
+def _collect_additive_shapes(airspace):
+    """Extract BASE + UNION ring point lists from an AIXM Airspace.
+
+    Returns a list of (shape, upper_str, lower_str) for each additive
+    geometry component with a resolvable horizontal projection. Used
+    by the SUBTR-by-reference path when R-4812 et al. express the
+    carved-out region as `<contributorAirspace xlink:href=#...>`.
+    """
+    ts = airspace.find(f".//{{{AIXM}}}AirspaceTimeSlice")
+    if ts is None:
+        return []
+    out = []
+    for gc in ts.findall(f"{{{AIXM}}}geometryComponent"):
+        agc = gc.find(f"{{{AIXM}}}AirspaceGeometryComponent")
+        if agc is None:
+            continue
+        op = agc.find(f"{{{AIXM}}}operation")
+        if op is None or op.text not in ("BASE", "UNION"):
+            continue
+        vol = agc.find(f".//{{{AIXM}}}AirspaceVolume")
+        if vol is None:
+            continue
+        upper = vol.find(f"{{{AIXM}}}upperLimit")
+        lower = vol.find(f"{{{AIXM}}}lowerLimit")
+        uref = vol.find(f"{{{AIXM}}}upperLimitReference")
+        lref = vol.find(f"{{{AIXM}}}lowerLimitReference")
+        cu = (f"{upper.text} {upper.get('uom','')} "
+              f"{uref.text if uref is not None else ''}".strip()
+              if upper is not None and upper.text else "")
+        cl = (f"{lower.text} {lower.get('uom','')} "
+              f"{lref.text if lref is not None else ''}".strip()
+              if lower is not None and lower.text else "")
+        hp = vol.find(f".//{{{AIXM}}}horizontalProjection")
+        if hp is None:
+            continue
+        shape = []
+        ring = hp.find(f".//{{{GML}}}Ring")
+        if ring is not None:
+            shape, _ = parse_ring_points(ring)
+        else:
+            lr = hp.find(f".//{{{GML}}}LinearRing")
+            if lr is not None:
+                for pos in lr.findall(f"{{{GML}}}pos"):
+                    if pos.text is None:
+                        continue
+                    lon, lat = pos.text.strip().split()
+                    shape.append((float(lon), float(lat)))
+        if shape:
+            out.append((shape, cu, cl))
+    return out
+
+
+def _parse_one_airspace(airspace, airspace_lookup=None):
     """Parse a single AIXM Airspace element.
 
     Returns a dict with designator, name, sua_type, metadata fields,
     and parts, or None if the element has no usable geometry.
+
+    `airspace_lookup` maps gml:id → Airspace element and is used to
+    resolve cross-airspace SUBTR references (`<contributorAirspace>
+    <theAirspace xlink:href="#..."/></contributorAirspace>`).
     """
+    if airspace_lookup is None:
+        airspace_lookup = {}
     ts = airspace.find(f".//{{{AIXM}}}AirspaceTimeSlice")
     if ts is None:
         return None
@@ -1356,9 +1414,9 @@ def _parse_one_airspace(airspace):
             lower_limit = comp_lower
 
         shape = []
+        circle_info = None
         hp = vol.find(f".//{{{AIXM}}}horizontalProjection") if vol is not None else None
         if hp is not None:
-            circle_info = None
             ring = hp.find(f".//{{{GML}}}Ring")
             if ring is not None:
                 shape, circle_info = parse_ring_points(ring)
@@ -1370,6 +1428,34 @@ def _parse_one_airspace(airspace):
                             continue
                         lon, lat = pos.text.strip().split()
                         shape.append((float(lon), float(lat)))
+
+        # SUBTR-by-reference: AIXM lets a SUBTR define its region by
+        # pointing at another airspace in the same file rather than
+        # listing a polygon. Resolve the xlink and emit one SUBTR per
+        # additive component of the referenced airspace. Used by
+        # R-4812 to subtract R-4804A and R-4810.
+        if (op.text == "SUBTR" and not shape and vol is not None
+                and airspace_lookup):
+            ref_elem = vol.find(
+                f".//{{{AIXM}}}contributorAirspace/"
+                f"{{{AIXM}}}AirspaceVolumeDependency/"
+                f"{{{AIXM}}}theAirspace")
+            if ref_elem is not None:
+                href = ref_elem.get(f"{{{XLINK}}}href", "")
+                ref_id = href.lstrip("#")
+                ref_airspace = airspace_lookup.get(ref_id)
+                if ref_airspace is not None:
+                    for ref_shape, ref_up, ref_lo in _collect_additive_shapes(
+                            ref_airspace):
+                        # Blank altitudes at the reference mean "inherit
+                        # from the referenced airspace", which in practice
+                        # always covers BASE's band for these cutouts.
+                        eff_upper = comp_upper or ref_up
+                        eff_lower = comp_lower or ref_lo
+                        subtractive.append((seq_num, ref_shape,
+                                            eff_upper, eff_lower))
+                    # referenced-airspace SUBTRs handled; skip fallthrough
+                    continue
         if shape:
             if op.text == "SUBTR":
                 subtractive.append((seq_num, shape, comp_upper, comp_lower))
@@ -1588,15 +1674,20 @@ def _parse_one_airspace(airspace):
     # Partial-cover SUBTR: separate altitude stratum with the same
     # footprint as a region inside BASE (different ceiling/floor). Emit
     # as its own outer so the fill renderer groups it independently.
+    # Clip against the full-cover hole geometry too, so carve-outs like
+    # R-4812's neighboring restricted areas apply to every stratum.
     if partial_cover_subs and outer_union is not None:
+        effective_outer = outer_union
+        if full_cover_hole_geom is not None:
+            effective_outer = effective_outer.difference(full_cover_hole_geom)
         partial_cover_subs.sort(key=lambda c: c[0])
         for _, shape, sub_upper, sub_lower in partial_cover_subs:
-            if len(shape) < 3 or outer_union.is_empty:
+            if len(shape) < 3 or effective_outer.is_empty:
                 continue
             sub_poly = make_valid(ShapelyPolygon(shape))
             if sub_poly.is_empty:
                 continue
-            clipped = sub_poly.intersection(outer_union)
+            clipped = sub_poly.intersection(effective_outer)
             if clipped.is_empty:
                 print(f"  NOTE: {designator}: SUBTR zone lies entirely "
                       f"outside outer boundary, skipping", file=sys.stderr)
@@ -1886,11 +1977,19 @@ def parse_aixm_sua(xml_data):
         if href.startswith("#"):
             referenced_ids.add(href[1:])
 
+    # Index all airspaces in the file by gml:id so cross-airspace SUBTR
+    # references (contributorAirspace xlink) can be resolved.
+    airspace_lookup = {
+        a.get(f"{{{GML}}}id"): a
+        for a in root.iter(f"{{{AIXM}}}Airspace")
+        if a.get(f"{{{GML}}}id")
+    }
+
     results = []
     for airspace in root.iter(f"{{{AIXM}}}Airspace"):
         if airspace.get(f"{{{GML}}}id") in referenced_ids:
             continue
-        result = _parse_one_airspace(airspace)
+        result = _parse_one_airspace(airspace, airspace_lookup)
         if result is not None:
             result["controlling_authority"] = controlling_auth
             result["military"] = result["military"] or military
