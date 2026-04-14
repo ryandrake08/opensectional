@@ -39,6 +39,7 @@ namespace nasrbrowse
         sqlite::statement stmt_cls_arsp_shape;
         sqlite::statement stmt_runways;
         sqlite::statement stmt_sua;
+        sqlite::statement stmt_sua_strata;
         sqlite::statement stmt_sua_shape;
         sqlite::statement stmt_sua_circle;
         sqlite::statement stmt_sua_circles_bbox;
@@ -252,26 +253,33 @@ namespace nasrbrowse
                 AND (?5 IS NULL OR SUA_TYPE IN (SELECT value FROM json_each(?5)))
             )", 15))
 
-            , stmt_sua_shape(prepare_checked(db, R"(
-                SELECT PART_NUM, UPPER_LIMIT, LOWER_LIMIT, IS_HOLE,
-                       LON_DECIMAL, LAT_DECIMAL,
+            , stmt_sua_strata(prepare_checked(db, R"(
+                SELECT STRATUM_ID, STRATUM_ORDER,
+                       UPPER_LIMIT, LOWER_LIMIT,
                        UPPER_FT_MSL, LOWER_FT_MSL
-                FROM SUA_SHP
+                FROM SUA_STRATUM
                 WHERE SUA_ID = ?1
+                ORDER BY STRATUM_ORDER
+            )", 6))
+
+            , stmt_sua_shape(prepare_checked(db, R"(
+                SELECT PART_NUM, IS_HOLE, LON_DECIMAL, LAT_DECIMAL
+                FROM SUA_SHP
+                WHERE STRATUM_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
-            )", 8))
+            )", 4))
 
             , stmt_sua_circle(prepare_checked(db, R"(
-                SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM,
-                       UPPER_FT_MSL, LOWER_FT_MSL
+                SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM
                 FROM SUA_CIRCLE
-                WHERE SUA_ID = ?1
-            )", 6))
+                WHERE STRATUM_ID = ?1
+            )", 4))
 
             , stmt_sua_circles_bbox(prepare_checked(db, R"(
                 SELECT b.SUA_TYPE, c.CENTER_LON, c.CENTER_LAT, c.RADIUS_NM,
-                       c.UPPER_FT_MSL, c.LOWER_FT_MSL
+                       s.UPPER_FT_MSL, s.LOWER_FT_MSL
                 FROM SUA_CIRCLE c
+                JOIN SUA_STRATUM s ON s.STRATUM_ID = c.STRATUM_ID
                 JOIN SUA_BASE b ON b.SUA_ID = c.SUA_ID
                 WHERE c.SUA_ID IN (
                     SELECT id FROM SUA_BASE_RTREE
@@ -731,46 +739,59 @@ namespace nasrbrowse
                    s.column_text(9), s.column_text(10), s.column_text(11),
                    s.column_text(12), s.column_text(13), s.column_text(14), {}};
 
-            // Load circle metadata if this SUA is a pure circle
-            int circle_part = -1;
-            double circle_lon = 0, circle_lat = 0, circle_radius_nm = 0;
-            d.stmt_sua_circle.reset();
-            d.stmt_sua_circle.bind(1, su.sua_id);
-            if (d.stmt_sua_circle.step())
+            // Load each stratum with its parts. Strata are ordered by
+            // STRATUM_ORDER (BASE first, then UNION bands, then partial-
+            // cover SUBTR strata).
+            d.stmt_sua_strata.reset();
+            d.stmt_sua_strata.bind(1, su.sua_id);
+            while (d.stmt_sua_strata.step())
             {
-                circle_part = d.stmt_sua_circle.column_int(0);
-                circle_lon = d.stmt_sua_circle.column_double(1);
-                circle_lat = d.stmt_sua_circle.column_double(2);
-                circle_radius_nm = d.stmt_sua_circle.column_double(3);
-            }
+                sua_stratum st;
+                st.stratum_id = d.stmt_sua_strata.column_int(0);
+                st.stratum_order = d.stmt_sua_strata.column_int(1);
+                st.upper_limit = d.stmt_sua_strata.column_text(2);
+                st.lower_limit = d.stmt_sua_strata.column_text(3);
+                st.upper_ft_msl = d.stmt_sua_strata.column_int(4);
+                st.lower_ft_msl = d.stmt_sua_strata.column_int(5);
 
-            d.stmt_sua_shape.reset();
-            d.stmt_sua_shape.bind(1, su.sua_id);
-            int current_part = -1;
-            while (d.stmt_sua_shape.step())
-            {
-                int part_num = d.stmt_sua_shape.column_int(0);
-                if (part_num != current_part)
+                // Circle metadata, if this stratum is a pure circle.
+                int circle_part = -1;
+                double c_lon = 0, c_lat = 0, c_rad = 0;
+                d.stmt_sua_circle.reset();
+                d.stmt_sua_circle.bind(1, st.stratum_id);
+                if (d.stmt_sua_circle.step())
                 {
-                    sua_ring ring;
-                    ring.upper_limit = d.stmt_sua_shape.column_text(1);
-                    ring.lower_limit = d.stmt_sua_shape.column_text(2);
-                    ring.is_hole = d.stmt_sua_shape.column_int(3) != 0;
-                    ring.upper_ft_msl = d.stmt_sua_shape.column_int(6);
-                    ring.lower_ft_msl = d.stmt_sua_shape.column_int(7);
-                    if (part_num == circle_part)
-                    {
-                        ring.is_circle = true;
-                        ring.circle_lon = circle_lon;
-                        ring.circle_lat = circle_lat;
-                        ring.circle_radius_nm = circle_radius_nm;
-                    }
-                    su.parts.push_back(std::move(ring));
-                    current_part = part_num;
+                    circle_part = d.stmt_sua_circle.column_int(0);
+                    c_lon = d.stmt_sua_circle.column_double(1);
+                    c_lat = d.stmt_sua_circle.column_double(2);
+                    c_rad = d.stmt_sua_circle.column_double(3);
                 }
-                su.parts.back().points.push_back(
-                    {d.stmt_sua_shape.column_double(5),
-                     d.stmt_sua_shape.column_double(4)});
+
+                d.stmt_sua_shape.reset();
+                d.stmt_sua_shape.bind(1, st.stratum_id);
+                int current_part = -1;
+                while (d.stmt_sua_shape.step())
+                {
+                    int part_num = d.stmt_sua_shape.column_int(0);
+                    if (part_num != current_part)
+                    {
+                        sua_ring ring;
+                        ring.is_hole = d.stmt_sua_shape.column_int(1) != 0;
+                        if (part_num == circle_part)
+                        {
+                            ring.is_circle = true;
+                            ring.circle_lon = c_lon;
+                            ring.circle_lat = c_lat;
+                            ring.circle_radius_nm = c_rad;
+                        }
+                        st.parts.push_back(std::move(ring));
+                        current_part = part_num;
+                    }
+                    st.parts.back().points.push_back(
+                        {d.stmt_sua_shape.column_double(3),
+                         d.stmt_sua_shape.column_double(2)});
+                }
+                su.strata.push_back(std::move(st));
             }
             return su;
         });

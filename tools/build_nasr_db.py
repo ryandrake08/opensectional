@@ -1374,17 +1374,21 @@ def _parse_one_airspace(airspace):
             if op.text == "SUBTR":
                 subtractive.append((seq_num, shape, comp_upper, comp_lower))
             else:
-                additive.append((seq_num, shape, circle_info))
+                additive.append((seq_num, shape, circle_info,
+                                 comp_upper, comp_lower))
 
     if not additive:
         return None
 
     additive.sort(key=lambda c: c[0])
 
-    # Union additive parts (BASE + UNION) into outer rings. shapely handles
-    # both edge-sharing neighbors and arbitrary overlaps; the prior
-    # merge_shared_edges-based path failed for overlapping circles whose
-    # sampled arc vertices didn't coincide (e.g. R-4804A's "snowman").
+    # Partition additive components (BASE + UNIONs) by altitude band. A
+    # UNION whose floor/ceiling differ from BASE (e.g. W-497B seq 3 at
+    # 5000–UNL while BASE is GND–UNL) is a separate altitude stratum and
+    # must not be geometrically merged with BASE — doing so loses the
+    # altitude restriction AND creates bogus topology where the strata
+    # don't share ring vertices. Components sharing an altitude band are
+    # still unioned together (disjoint islands, edge-adjacent annex lobes).
     from shapely.geometry import Polygon as ShapelyPolygon
     from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
     from shapely.ops import unary_union
@@ -1395,100 +1399,198 @@ def _parse_one_airspace(airspace):
     # sliver holes. Airspace boundaries are not defined to sub-meter
     # precision, so this is well below any meaningful threshold.
     SNAP = 1e-5
-    additive_polys = []
-    for _, shape, _ in additive:
-        shape = remove_spike_vertices(shape)
-        if len(shape) < 3:
-            continue
-        p = make_valid(ShapelyPolygon(shape))
-        if p.is_empty:
-            continue
-        p = set_precision(p, SNAP)
-        if not p.is_empty:
-            additive_polys.append(p)
-    if not additive_polys:
-        return None
-    unioned = unary_union(additive_polys) if len(additive_polys) > 1 else additive_polys[0]
-    # Flatten to polygons. unary_union may return a GeometryCollection when
-    # the input mixes polygons with degenerate (zero-width) geometry, e.g.
-    # where snapping produced a polygon that touches another only at a
-    # point or along a line. We extract the polygons and drop any
-    # non-polygonal debris.
-    polys = []
-    def _collect(g):
-        if isinstance(g, ShapelyPolygon):
-            if not g.is_empty:
-                polys.append(g)
-        elif isinstance(g, ShapelyMultiPolygon):
-            for sub in g.geoms:
-                _collect(sub)
-        elif hasattr(g, "geoms"):
-            for sub in g.geoms:
-                _collect(sub)
-    _collect(unioned)
-    if not polys:
-        print(f"  WARN: {designator}: union yielded no polygons "
-              f"(type {type(unioned).__name__}), skipping", file=sys.stderr)
-        return None
-
-    # Filter slivers from floating-point union / make_valid artifacts.
-    # Hole slivers use an absolute threshold (real holes are much larger).
-    # Outer slivers use a *relative* threshold only when a MultiPolygon has
-    # secondary pieces vastly smaller than the main geom — we don't want to
-    # drop a legitimate small single-component SUA.
     HOLE_AREA_MIN = 1e-6       # deg² (~0.01 km²)
     OUTER_SLIVER_RATIO = 1e-3  # drop outer piece if < 0.1% of largest poly
-    outer_parts = []
-    slivers_dropped = 0
-    real_holes = 0
-    outer_slivers_dropped = 0
-    max_outer_area = max((p.area for p in polys if not p.is_empty), default=0.0)
-    for poly in polys:
-        if poly.is_empty:
-            continue
-        if (len(polys) > 1 and max_outer_area > 0
-                and poly.area < max_outer_area * OUTER_SLIVER_RATIO):
-            outer_slivers_dropped += 1
-            continue
-        outer_parts.append((list(poly.exterior.coords), False))
-        for interior in poly.interiors:
-            hole_poly = ShapelyPolygon(interior.coords)
-            if hole_poly.area < HOLE_AREA_MIN:
-                slivers_dropped += 1
+
+    base_band = (parse_altitude_ft_msl(lower_limit),
+                 parse_altitude_ft_msl(upper_limit))
+
+    # Group by normalized (lower_ft, upper_ft) band while preserving
+    # insertion order. BASE's band comes first because BASE is seq 0.
+    bands = {}  # band_key -> list of entries
+    band_order = []
+    for entry in additive:
+        _, _, _, comp_up, comp_lo = entry
+        key = (parse_altitude_ft_msl(comp_lo),
+               parse_altitude_ft_msl(comp_up))
+        if key not in bands:
+            bands[key] = []
+            band_order.append(key)
+        bands[key].append(entry)
+
+    def _union_band(entries):
+        """Union and clean a set of same-altitude polygons.
+
+        Returns (polys, raw_polys). polys is the flat list of valid
+        Shapely Polygons after union+sliver-cleanup; raw_polys is the
+        unchanged set_precision'd input polygons (needed for SUBTR
+        clipping against the full BASE-band union).
+        """
+        raw = []
+        for _, shape, _, _, _ in entries:
+            shape = remove_spike_vertices(shape)
+            if len(shape) < 3:
                 continue
-            outer_parts.append((list(interior.coords), True))
-            real_holes += 1
-    if real_holes:
-        print(f"  NOTE: {designator}: union produced {real_holes} interior "
-              f"hole(s)", file=sys.stderr)
-    if slivers_dropped:
-        print(f"  NOTE: {designator}: dropped {slivers_dropped} sliver hole(s) "
-              f"from union (floating-point artifacts)", file=sys.stderr)
-    if outer_slivers_dropped:
-        print(f"  NOTE: {designator}: dropped {outer_slivers_dropped} sliver "
-              f"outer fragment(s) from union (self-intersection repair)",
-              file=sys.stderr)
+            p = make_valid(ShapelyPolygon(shape))
+            if p.is_empty:
+                continue
+            p = set_precision(p, SNAP)
+            if not p.is_empty:
+                raw.append(p)
+        if not raw:
+            return [], []
+        unioned = unary_union(raw) if len(raw) > 1 else raw[0]
+        flat = []
+        def _collect(g):
+            if isinstance(g, ShapelyPolygon):
+                if not g.is_empty:
+                    flat.append(g)
+            elif isinstance(g, ShapelyMultiPolygon):
+                for sub in g.geoms:
+                    _collect(sub)
+            elif hasattr(g, "geoms"):
+                for sub in g.geoms:
+                    _collect(sub)
+        _collect(unioned)
+        return flat, raw
 
-    # Preserve circle_info only if the result is exactly one unchanged circle
+    # Pre-compute full-cover SUBTR geometry (SUBTRs whose altitude band
+    # ⊇ BASE's band — these become true 2D holes). They're applied as
+    # a geometric difference to the BASE band union so shapely produces
+    # proper interior rings; the existing outer-then-interiors emission
+    # then yields the ordering the renderer expects ("outer, its holes,
+    # next outer, its holes, ..."). Partial-cover SUBTRs stay as
+    # separate stratum outers emitted at the end.
+    base_lo_ft, base_up_ft = base_band
+    full_cover_subs = []
+    partial_cover_subs = []
+    for sub in subtractive:
+        _, shape, sub_upper, sub_lower = sub
+        sub_lo_ft = parse_altitude_ft_msl(sub_lower)
+        sub_up_ft = parse_altitude_ft_msl(sub_upper)
+        is_full = (
+            sub_lo_ft is not None and sub_up_ft is not None
+            and base_lo_ft is not None and base_up_ft is not None
+            and sub_lo_ft <= base_lo_ft and sub_up_ft >= base_up_ft)
+        (full_cover_subs if is_full else partial_cover_subs).append(sub)
+
+    full_cover_hole_geom = None
+    if full_cover_subs:
+        sub_polys = []
+        for _, shape, _, _ in full_cover_subs:
+            if len(shape) < 3:
+                continue
+            sp = make_valid(ShapelyPolygon(shape))
+            if not sp.is_empty:
+                sub_polys.append(sp)
+        if sub_polys:
+            full_cover_hole_geom = unary_union(sub_polys) if len(sub_polys) > 1 else sub_polys[0]
+
+    # strata: list of {"upper_limit", "lower_limit", "parts": [(ring, is_hole), ...]}
+    # Each stratum is a separately-selectable altitude band within the SUA.
+    strata = []
     result_circle_info = None
-    if (len(additive) == 1 and additive[0][2] is not None
-            and len(outer_parts) == 1 and not outer_parts[0][1]):
-        result_circle_info = additive[0][2]
+    outer_union = None      # BASE-band union (before hole subtraction),
+                            # used for partial-cover SUBTR clipping
 
-    # parts: list of (shape, upper_limit, lower_limit, is_hole)
-    # Outer rings and any union-produced holes use the BASE altitude limits
-    parts = [(ring, upper_limit, lower_limit, is_hole)
-             for ring, is_hole in outer_parts]
+    for band_key in band_order:
+        entries = bands[band_key]
+        polys, raw_polys = _union_band(entries)
+        if not polys:
+            if band_key == base_band:
+                print(f"  WARN: {designator}: BASE band union yielded no "
+                      f"polygons, skipping", file=sys.stderr)
+            continue
 
-    # SUBTR zones have their own altitude limits (not holes — airspace
-    # still exists inside, just with a different ceiling/floor).
-    # Clip each SUBTR polygon to the outer boundary since SUBTR circles
-    # often extend beyond the airspace limits.
-    if subtractive:
-        outer_union = unary_union(
-            [p for p in additive_polys if not p.is_empty])
-        subtractive.sort(key=lambda c: c[0])
-        for _, shape, sub_upper, sub_lower in subtractive:
+        # Capture the raw BASE-band union before hole subtraction for
+        # partial-cover SUBTR clipping.
+        if band_key == base_band:
+            outer_union = unary_union(
+                [p for p in raw_polys if not p.is_empty])
+
+        # Apply full-cover SUBTR as a geometric difference on BASE band
+        # so interior rings come out of shapely correctly.
+        if band_key == base_band and full_cover_hole_geom is not None:
+            diffed = []
+            for p in polys:
+                d = p.difference(full_cover_hole_geom)
+                if d.is_empty:
+                    continue
+                if isinstance(d, ShapelyPolygon):
+                    diffed.append(d)
+                elif isinstance(d, ShapelyMultiPolygon):
+                    diffed.extend(g for g in d.geoms if not g.is_empty)
+                elif hasattr(d, "geoms"):
+                    for g in d.geoms:
+                        if isinstance(g, ShapelyPolygon) and not g.is_empty:
+                            diffed.append(g)
+            polys = diffed
+            if not polys:
+                print(f"  WARN: {designator}: BASE band fully consumed "
+                      f"by full-cover SUBTR, skipping", file=sys.stderr)
+                continue
+
+        # Sliver filter, per-band.
+        outer_parts = []
+        slivers_dropped = 0
+        real_holes = 0
+        outer_slivers_dropped = 0
+        max_outer_area = max((p.area for p in polys), default=0.0)
+        for poly in polys:
+            if poly.is_empty:
+                continue
+            if (len(polys) > 1 and max_outer_area > 0
+                    and poly.area < max_outer_area * OUTER_SLIVER_RATIO):
+                outer_slivers_dropped += 1
+                continue
+            outer_parts.append((list(poly.exterior.coords), False))
+            for interior in poly.interiors:
+                hole_poly = ShapelyPolygon(interior.coords)
+                if hole_poly.area < HOLE_AREA_MIN:
+                    slivers_dropped += 1
+                    continue
+                outer_parts.append((list(interior.coords), True))
+                real_holes += 1
+        band_tag = "BASE" if band_key == base_band else f"UNION band {band_key}"
+        if real_holes:
+            print(f"  NOTE: {designator}: {band_tag} produced {real_holes} "
+                  f"interior hole(s)", file=sys.stderr)
+        if slivers_dropped:
+            print(f"  NOTE: {designator}: {band_tag} dropped {slivers_dropped} "
+                  f"sliver hole(s) (floating-point artifacts)", file=sys.stderr)
+        if outer_slivers_dropped:
+            print(f"  NOTE: {designator}: {band_tag} dropped "
+                  f"{outer_slivers_dropped} sliver outer fragment(s)",
+                  file=sys.stderr)
+
+        # Use the first entry's altitude strings as representative — all
+        # entries in this band share normalized altitude. (String form
+        # may differ slightly, e.g. "GND FT SFC" vs "0 FT SFC"; the first
+        # entry's strings are stable and what was in the source.)
+        up_str = entries[0][3]
+        lo_str = entries[0][4]
+        strata.append({
+            "upper_limit": up_str,
+            "lower_limit": lo_str,
+            "parts": list(outer_parts),
+        })
+
+        if band_key == base_band:
+            # Preserve circle_info only if the whole SUA is exactly one
+            # unchanged circle in the BASE band.
+            if (len(additive) == 1 and additive[0][2] is not None
+                    and len(outer_parts) == 1 and not outer_parts[0][1]):
+                result_circle_info = additive[0][2]
+
+    if not strata:
+        return None
+
+    # Partial-cover SUBTR: separate altitude stratum with the same
+    # footprint as a region inside BASE (different ceiling/floor). Emit
+    # as its own outer so the fill renderer groups it independently.
+    if partial_cover_subs and outer_union is not None:
+        partial_cover_subs.sort(key=lambda c: c[0])
+        for _, shape, sub_upper, sub_lower in partial_cover_subs:
             if len(shape) < 3 or outer_union.is_empty:
                 continue
             sub_poly = make_valid(ShapelyPolygon(shape))
@@ -1503,15 +1605,31 @@ def _parse_one_airspace(airspace):
                 sub_polys = list(clipped.geoms)
             elif isinstance(clipped, ShapelyPolygon):
                 sub_polys = [clipped]
+            elif hasattr(clipped, "geoms"):
+                # GeometryCollection: usually polygons + grazing edges
+                # (lines/points) when the SUBTR touches the BASE boundary.
+                # Keep the polygonal bits; discard the degenerate debris.
+                sub_polys = [g for g in clipped.geoms
+                             if isinstance(g, ShapelyPolygon) and not g.is_empty]
+                if not sub_polys:
+                    print(f"  NOTE: {designator}: SUBTR clip produced no "
+                          f"polygonal bits, skipping", file=sys.stderr)
+                    continue
             else:
                 print(f"  WARN: {designator}: SUBTR intersection yielded "
                       f"{type(clipped).__name__}, skipping", file=sys.stderr)
                 continue
+            stratum_parts = []
             for poly in sub_polys:
                 if poly.is_empty:
                     continue
-                parts.append((list(poly.exterior.coords),
-                              sub_upper, sub_lower, False))
+                stratum_parts.append((list(poly.exterior.coords), False))
+            if stratum_parts:
+                strata.append({
+                    "upper_limit": sub_upper,
+                    "lower_limit": sub_lower,
+                    "parts": stratum_parts,
+                })
 
     return {
         "designator": designator,
@@ -1527,7 +1645,7 @@ def _parse_one_airspace(airspace):
         "working_hours": working_hours,
         "compliant_icao": compliant_icao,
         "legal_note": legal_note,
-        "parts": parts,
+        "strata": strata,
         "circle_info": result_circle_info,
     }
 
@@ -1826,15 +1944,25 @@ def build_sua(conn, aixm_zf):
         )
     """)
 
+    conn.execute("DROP TABLE IF EXISTS SUA_STRATUM")
+    conn.execute("""
+        CREATE TABLE SUA_STRATUM (
+            STRATUM_ID INTEGER PRIMARY KEY,
+            SUA_ID INTEGER,
+            STRATUM_ORDER INTEGER,
+            UPPER_LIMIT TEXT,
+            LOWER_LIMIT TEXT,
+            UPPER_FT_MSL INTEGER,
+            LOWER_FT_MSL INTEGER
+        )
+    """)
+
     conn.execute("DROP TABLE IF EXISTS SUA_SHP")
     conn.execute("""
         CREATE TABLE SUA_SHP (
             SUA_ID INTEGER,
+            STRATUM_ID INTEGER,
             PART_NUM INTEGER,
-            UPPER_LIMIT TEXT,
-            LOWER_LIMIT TEXT,
-            UPPER_FT_MSL INTEGER,
-            LOWER_FT_MSL INTEGER,
             IS_HOLE INTEGER,
             POINT_SEQ INTEGER,
             LON_DECIMAL REAL,
@@ -1846,12 +1974,11 @@ def build_sua(conn, aixm_zf):
     conn.execute("""
         CREATE TABLE SUA_CIRCLE (
             SUA_ID INTEGER,
+            STRATUM_ID INTEGER,
             PART_NUM INTEGER,
             CENTER_LON REAL,
             CENTER_LAT REAL,
-            RADIUS_NM REAL,
-            UPPER_FT_MSL INTEGER,
-            LOWER_FT_MSL INTEGER
+            RADIUS_NM REAL
         )
     """)
 
@@ -1898,12 +2025,14 @@ def build_sua(conn, aixm_zf):
     total_before = 0
     total_after = 0
     base_rows = []
+    stratum_rows = []
     shp_rows = []
     circle_rows = []
     freq_rows = []
     schedule_rows = []
     service_rows = []
     skipped = 0
+    next_stratum_id = 1
 
     for xml_name in xml_files:
         results = parse_aixm_sua(inner_zf.read(xml_name))
@@ -1931,8 +2060,9 @@ def build_sua(conn, aixm_zf):
                 result["legal_note"],
             ))
 
-            # Store circle metadata if this SUA is a pure circle
+            # A pure-circle SUA: one BASE stratum, one circle part.
             ci = result.get("circle_info")
+            circle_stratum_id = None
             if ci is not None:
                 r = ci["radius"]
                 uom = ci["uom"]
@@ -1946,31 +2076,50 @@ def build_sua(conn, aixm_zf):
                     r *= 1609.344 / 1852.0
                 elif uom != "NM":
                     r /= 1.852  # assume KM if unknown
-                circle_rows.append((sua_id, 0, ci["lon"], ci["lat"], r,
-                                    parse_altitude_ft_msl(result["upper_limit"]),
-                                    parse_altitude_ft_msl(result["lower_limit"])))
+                # Allocate the BASE stratum upfront so the circle part
+                # can reference it. Matching band will find the same id.
+                circle_stratum_id = next_stratum_id
+                next_stratum_id += 1
+                stratum_rows.append((
+                    circle_stratum_id, sua_id, 0,
+                    result["upper_limit"], result["lower_limit"],
+                    parse_altitude_ft_msl(result["upper_limit"]),
+                    parse_altitude_ft_msl(result["lower_limit"]),
+                ))
+                circle_rows.append((sua_id, circle_stratum_id, 0,
+                                    ci["lon"], ci["lat"], r))
 
-            part_num = 0
-            for part, part_upper, part_lower, is_hole in result["parts"]:
-                for copy in handle_antimeridian(part):
-                    total_before += len(copy)
-                    despiked = remove_spike_vertices(copy)
-                    simplified = simplify_ring(despiked, epsilon)
-                    # Drop degenerate parts (fewer than 3 distinct vertices)
-                    # — typically a SUBTR zone that simplified down to a
-                    # filament or a single out-and-back segment.
-                    unique_pts = len({(lon, lat) for lon, lat in simplified})
-                    if unique_pts < 3:
-                        continue
-                    total_after += len(simplified)
-                    upper_ft = parse_altitude_ft_msl(part_upper)
-                    lower_ft = parse_altitude_ft_msl(part_lower)
-                    for point_seq, (lon, lat) in enumerate(simplified):
-                        shp_rows.append((sua_id, part_num, part_upper, part_lower,
-                                         upper_ft, lower_ft,
-                                         1 if is_hole else 0,
-                                         point_seq, lon, lat))
-                    part_num += 1
+            for stratum_order, stratum in enumerate(result["strata"]):
+                if stratum_order == 0 and circle_stratum_id is not None:
+                    # BASE stratum already registered as the circle's parent.
+                    stratum_id = circle_stratum_id
+                else:
+                    stratum_id = next_stratum_id
+                    next_stratum_id += 1
+                    stratum_rows.append((
+                        stratum_id, sua_id, stratum_order,
+                        stratum["upper_limit"], stratum["lower_limit"],
+                        parse_altitude_ft_msl(stratum["upper_limit"]),
+                        parse_altitude_ft_msl(stratum["lower_limit"]),
+                    ))
+                part_num = 0
+                for ring, is_hole in stratum["parts"]:
+                    for copy in handle_antimeridian(ring):
+                        total_before += len(copy)
+                        despiked = remove_spike_vertices(copy)
+                        simplified = simplify_ring(despiked, epsilon)
+                        # Drop degenerate parts (fewer than 3 distinct
+                        # vertices) — typically a SUBTR zone that
+                        # simplified down to a filament.
+                        unique_pts = len({(lon, lat) for lon, lat in simplified})
+                        if unique_pts < 3:
+                            continue
+                        total_after += len(simplified)
+                        for point_seq, (lon, lat) in enumerate(simplified):
+                            shp_rows.append((sua_id, stratum_id, part_num,
+                                             1 if is_hole else 0,
+                                             point_seq, lon, lat))
+                        part_num += 1
 
             # Frequencies
             for seq, freq in enumerate(result.get("freqs", []), 1):
@@ -2007,11 +2156,15 @@ def build_sua(conn, aixm_zf):
         base_rows,
     )
     conn.executemany(
-        "INSERT INTO SUA_SHP VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_STRATUM VALUES (?, ?, ?, ?, ?, ?, ?)",
+        stratum_rows,
+    )
+    conn.executemany(
+        "INSERT INTO SUA_SHP VALUES (?, ?, ?, ?, ?, ?, ?)",
         shp_rows,
     )
     conn.executemany(
-        "INSERT INTO SUA_CIRCLE VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_CIRCLE VALUES (?, ?, ?, ?, ?, ?)",
         circle_rows,
     )
     conn.executemany(
@@ -2029,6 +2182,7 @@ def build_sua(conn, aixm_zf):
 
     print(f"  Parsed {len(xml_files)} files, {skipped} skipped")
     print(f"  SUA_BASE: {len(base_rows)} airspaces")
+    print(f"  SUA_STRATUM: {len(stratum_rows)} strata")
     print(f"  SUA_SHP: {len(shp_rows)} shape points")
     print(f"  SUA_CIRCLE: {len(circle_rows)} circle airspaces")
     print(f"  SUA_FREQ: {len(freq_rows)} frequency entries")
@@ -2038,7 +2192,7 @@ def build_sua(conn, aixm_zf):
         print(f"  Simplified: {total_before} -> {total_after} points "
               f"({100 * total_after / total_before:.1f}%)")
 
-    # R-tree on bounding boxes
+    # R-tree on SUA-level bounding boxes (for listing all SUAs in view).
     conn.execute("""
         CREATE VIRTUAL TABLE SUA_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -2053,17 +2207,52 @@ def build_sua(conn, aixm_zf):
         GROUP BY SUA_ID
     """)
 
+    # R-tree on stratum-level bounding boxes (for per-stratum picking).
+    conn.execute("""
+        CREATE VIRTUAL TABLE SUA_STRATUM_RTREE USING rtree(
+            id, min_lon, max_lon, min_lat, max_lat
+        )
+    """)
+    conn.execute("""
+        INSERT INTO SUA_STRATUM_RTREE (id, min_lon, max_lon, min_lat, max_lat)
+        SELECT STRATUM_ID,
+               MIN(LON_DECIMAL), MAX(LON_DECIMAL),
+               MIN(LAT_DECIMAL), MAX(LAT_DECIMAL)
+        FROM SUA_SHP
+        GROUP BY STRATUM_ID
+    """)
+    # Circle strata need their bbox too — computed from center+radius.
+    # 1 NM ≈ 1/60 deg latitude; lon is approx scaled by cos(lat).
+    import math as _math
+    for row in conn.execute(
+            "SELECT s.STRATUM_ID, c.CENTER_LON, c.CENTER_LAT, c.RADIUS_NM "
+            "FROM SUA_STRATUM s JOIN SUA_CIRCLE c ON c.STRATUM_ID = s.STRATUM_ID "
+            "WHERE s.STRATUM_ID NOT IN (SELECT id FROM SUA_STRATUM_RTREE)"
+            ).fetchall():
+        sid, lon, lat, rad_nm = row
+        dlat = rad_nm / 60.0
+        dlon = rad_nm / (60.0 * max(0.01, _math.cos(_math.radians(lat))))
+        conn.execute(
+            "INSERT INTO SUA_STRATUM_RTREE (id, min_lon, max_lon, min_lat, max_lat) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (sid, lon - dlon, lon + dlon, lat - dlat, lat + dlat))
+
     conn.execute("CREATE INDEX idx_sua_shp ON SUA_SHP(SUA_ID)")
+    conn.execute("CREATE INDEX idx_sua_shp_stratum ON SUA_SHP(STRATUM_ID)")
+    conn.execute("CREATE INDEX idx_sua_stratum_sua ON SUA_STRATUM(SUA_ID)")
+    conn.execute("CREATE INDEX idx_sua_circle_stratum ON SUA_CIRCLE(STRATUM_ID)")
     conn.execute("CREATE INDEX idx_sua_freq ON SUA_FREQ(SUA_ID)")
     conn.execute("CREATE INDEX idx_sua_schedule ON SUA_SCHEDULE(SUA_ID)")
     conn.execute("CREATE INDEX idx_sua_service ON SUA_SERVICE(SUA_ID)")
 
-    # Subdivided segments for rendering (tighter R-tree bboxes)
+    # Subdivided segments for rendering (tighter R-tree bboxes).
+    # Keyed by stratum so the renderer can style per-stratum later.
     # Circles are not subdivided — they use SUA_CIRCLE directly.
     conn.execute("DROP TABLE IF EXISTS SUA_SEG")
     conn.execute("""
         CREATE TABLE SUA_SEG (
             SEG_ID INTEGER,
+            STRATUM_ID INTEGER,
             SUA_ID INTEGER,
             SUA_TYPE TEXT,
             UPPER_FT_MSL INTEGER,
@@ -2074,40 +2263,49 @@ def build_sua(conn, aixm_zf):
         )
     """)
 
-    # Build lookup from (SUA_ID, PART_NUM) to (points, upper_ft, lower_ft)
+    # Build lookup from (STRATUM_ID, PART_NUM) to ring points.
     sua_rings = {}
-    sua_ring_alts = {}
     for row in conn.execute(
-            "SELECT SUA_ID, PART_NUM, LON_DECIMAL, LAT_DECIMAL, "
-            "UPPER_FT_MSL, LOWER_FT_MSL "
-            "FROM SUA_SHP ORDER BY SUA_ID, PART_NUM, POINT_SEQ"):
+            "SELECT STRATUM_ID, PART_NUM, LON_DECIMAL, LAT_DECIMAL "
+            "FROM SUA_SHP ORDER BY STRATUM_ID, PART_NUM, POINT_SEQ"):
         sua_rings.setdefault((row[0], row[1]), []).append((row[2], row[3]))
-        sua_ring_alts[(row[0], row[1])] = (row[4], row[5])
 
-    # Build lookup from SUA_ID to SUA_TYPE
+    # Stratum metadata (sua_id, upper_ft, lower_ft).
+    stratum_meta = {}
+    for row in conn.execute(
+            "SELECT STRATUM_ID, SUA_ID, UPPER_FT_MSL, LOWER_FT_MSL "
+            "FROM SUA_STRATUM"):
+        stratum_meta[row[0]] = (row[1], row[2], row[3])
+
+    # SUA type lookup.
     sua_types = {}
     for sid, stype in conn.execute("SELECT SUA_ID, SUA_TYPE FROM SUA_BASE"):
         sua_types[sid] = stype
 
-    # Skip circle parts (they render as GPU circles, not polylines)
+    # Circle parts are rendered by SUA_CIRCLE, not as polyline segments.
     circle_parts = set()
-    for row in conn.execute("SELECT SUA_ID, PART_NUM FROM SUA_CIRCLE"):
+    for row in conn.execute("SELECT STRATUM_ID, PART_NUM FROM SUA_CIRCLE"):
         circle_parts.add((row[0], row[1]))
 
     seg_data = []
     seg_id = 0
-    for (sid, part_num), ring in sorted(sua_rings.items()):
-        if (sid, part_num) in circle_parts:
+    for (stratum_id, part_num), ring in sorted(sua_rings.items()):
+        if (stratum_id, part_num) in circle_parts:
             continue
-        stype = sua_types[sid]
-        upper_ft, lower_ft = sua_ring_alts.get((sid, part_num), (None, None))
+        meta = stratum_meta.get(stratum_id)
+        if meta is None:
+            continue
+        sid, upper_ft, lower_ft = meta
+        stype = sua_types.get(sid, "")
         for chunk in subdivide_ring(ring):
             seg_id += 1
             for point_seq, (lon, lat) in enumerate(chunk):
-                seg_data.append((seg_id, sid, stype, upper_ft, lower_ft,
+                seg_data.append((seg_id, stratum_id, sid, stype,
+                                 upper_ft, lower_ft,
                                  point_seq, lon, lat))
 
-    conn.executemany("INSERT INTO SUA_SEG VALUES (?, ?, ?, ?, ?, ?, ?, ?)", seg_data)
+    conn.executemany(
+        "INSERT INTO SUA_SEG VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", seg_data)
     print(f"  SUA_SEG: {seg_id} segments, {len(seg_data)} points")
 
     conn.execute("""

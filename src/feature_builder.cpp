@@ -409,6 +409,8 @@ namespace nasrbrowse
                     line_style base = to_line_style(fs);
                     glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
 
+                    // Each stratum is triangulated independently so
+                    // holes in one band don't bleed into another.
                     std::vector<glm::vec2> outer;
                     std::vector<std::vector<glm::vec2>> holes;
                     auto flush = [&]()
@@ -418,18 +420,21 @@ namespace nasrbrowse
                         outer.clear(); holes.clear();
                     };
                     std::vector<glm::vec2> ring;
-                    for(const auto& part : f.parts)
+                    for(const auto& stratum : f.strata)
                     {
-                        if(part.is_circle)
-                            circle_to_ring(part.circle_lon, part.circle_lat,
-                                            part.circle_radius_nm, ring);
-                        else
-                            ring_to_mercator(part.points, ring);
-                        emit_boundary(ring, base);
-                        if(part.is_hole) holes.push_back(ring);
-                        else { flush(); outer = ring; }
+                        for(const auto& part : stratum.parts)
+                        {
+                            if(part.is_circle)
+                                circle_to_ring(part.circle_lon, part.circle_lat,
+                                                part.circle_radius_nm, ring);
+                            else
+                                ring_to_mercator(part.points, ring);
+                            emit_boundary(ring, base);
+                            if(part.is_hole) holes.push_back(ring);
+                            else { flush(); outer = ring; }
+                        }
+                        flush();
                     }
-                    flush();
                 }
                 else if constexpr(std::is_same_v<T, artcc>)
                 {

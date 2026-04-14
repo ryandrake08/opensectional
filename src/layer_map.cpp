@@ -741,24 +741,32 @@ struct layer_map::impl
             {
                 if(!styles.sua_visible(s.sua_type, z))
                     continue;
-                bool inside = false;
-                bool any_ring_in_band = false;
-                for(const auto& ring : s.parts)
+                // Each stratum is independently selectable. Emit one
+                // pick result per matching stratum, each carrying that
+                // stratum alone so the info box shows its altitudes.
+                for(const auto& stratum : s.strata)
                 {
-                    if(point_in_ring(click_lon, click_lat, ring.points))
+                    if(!vis.altitude.overlaps(stratum.lower_ft_msl,
+                                              stratum.upper_ft_msl))
+                        continue;
+                    bool inside = false;
+                    for(const auto& ring : stratum.parts)
                     {
-                        if(ring.is_hole)
+                        if(point_in_ring(click_lon, click_lat, ring.points))
                         {
-                            inside = false;
-                            break;
+                            if(ring.is_hole) { inside = false; break; }
+                            inside = true;
                         }
-                        inside = true;
-                        if(vis.altitude.overlaps(ring.lower_ft_msl, ring.upper_ft_msl))
-                            any_ring_in_band = true;
                     }
+                    if(!inside)
+                        continue;
+                    sua pick = s;
+                    pick.strata.clear();
+                    pick.strata.push_back(stratum);
+                    pick.upper_limit = stratum.upper_limit;
+                    pick.lower_limit = stratum.lower_limit;
+                    result.features.push_back(std::move(pick));
                 }
-                if(inside && any_ring_in_band)
-                    result.features.push_back(s);
             }
         }
 

@@ -143,14 +143,10 @@ namespace nasrbrowse
         double end2_lon;
     };
 
-    // A polygon ring within a special use airspace, with its own altitude limits
+    // A polygon ring within a special use airspace stratum.
     struct sua_ring
     {
         std::vector<airspace_point> points;
-        std::string upper_limit;
-        std::string lower_limit;
-        int upper_ft_msl = 0;
-        int lower_ft_msl = 0;
         bool is_hole = false;
         bool is_circle = false;
         double circle_lon = 0;
@@ -158,7 +154,24 @@ namespace nasrbrowse
         double circle_radius_nm = 0;
     };
 
-    // Column order follows SUA_BASE table
+    // One altitude stratum of a SUA — independently pickable. A
+    // single-layer SUA has one stratum; multi-layer (BASE + UNIONs at
+    // different floors, or partial-cover SUBTRs) has several.
+    struct sua_stratum
+    {
+        int stratum_id = 0;
+        int stratum_order = 0;
+        std::string upper_limit;
+        std::string lower_limit;
+        int upper_ft_msl = 0;
+        int lower_ft_msl = 0;
+        std::vector<sua_ring> parts;
+    };
+
+    // Column order follows SUA_BASE table. The `upper_limit` / `lower_limit`
+    // fields summarize the BASE stratum for the one-line label. For a
+    // pick result, `strata` contains exactly the one stratum that was
+    // clicked (pick returns one `sua` per matching stratum).
     struct sua
     {
         int sua_id;
@@ -176,7 +189,7 @@ namespace nasrbrowse
         std::string working_hours;
         std::string icao_compliant;
         std::string legal_note;
-        std::vector<sua_ring> parts;
+        std::vector<sua_stratum> strata;
     };
 
     // Column order follows PJA_BASE table
