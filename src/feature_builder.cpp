@@ -544,6 +544,56 @@ namespace nasrbrowse
 
         // --- Feature build methods ---
 
+        void emit_airport_icon(polyline_data& pd, float cx, float cy,
+                                       float r, float pixels_per_world,
+                                       const airport& apt, const feature_style& cs)
+        {
+            constexpr float APT_OUTER_SCALE = 1.2F;
+            constexpr float APT_RING_WIDTH_PX = 1.0F;
+            constexpr float APT_FILL_RADIUS = 0.5F;
+
+            float symbol_r = r * APT_OUTER_SCALE;
+            float ring_geom_r = symbol_r - (APT_RING_WIDTH_PX * 0.5F) / pixels_per_world;
+            line_style ring_ls = {APT_RING_WIDTH_PX, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
+
+            bool closed = apt.arpt_status == "CI" || apt.arpt_status == "CP";
+            bool pvt = apt.facility_use_code == "PR";
+            bool mil = is_military(apt);
+            float h = ring_geom_r * LETTER_HEIGHT;
+            line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1.0F, 1.0F, 1.0F, 1.0F, 0};
+            float w = h * LETTER_ASPECT;
+
+            const letter_def* letter = nullptr;
+            if(closed)                          letter = &letter_X;
+            else if(apt.site_type_code == "H")  letter = &letter_H;
+            else if(apt.site_type_code == "C")  letter = &letter_S;
+            else if(apt.site_type_code == "U")  letter = &letter_F;
+            else if(apt.site_type_code == "G")  letter = &letter_G;
+            else if(apt.site_type_code == "B")  letter = &letter_B;
+            else if(mil)                        letter = &letter_M;
+            else if(pvt)                        letter = &letter_R;
+
+            if(apt.hard_surface)
+            {
+                float geom_r = symbol_r * APT_FILL_RADIUS;
+                float fill_px = symbol_r * pixels_per_world;
+                line_style fill_ls = {fill_px, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
+                add_circle_to(pd, cx, cy, geom_r, fill_ls);
+                if(letter) draw_letter(pd, *letter, cx, cy, w, h, white_ls);
+            }
+            else if(letter)
+            {
+                line_style filled_ring = ring_ls;
+                filled_ring.fill_width = SYMBOL_FILL_PX;
+                add_circle_to(pd, cx, cy, ring_geom_r, filled_ring);
+                draw_letter(pd, *letter, cx, cy, w, h, white_ls);
+            }
+            else
+            {
+                add_circle_to(pd, cx, cy, ring_geom_r, ring_ls);
+            }
+        }
+
         void build_airport_polylines(const geo_bbox& bbox,
                                       const feature_build_request& req,
                                       double mx_offset)
@@ -551,66 +601,19 @@ namespace nasrbrowse
             if(!styles.any_airport_visible(req.zoom)) return;
             const auto& airports = db.query_airports(bbox,
                 styles.visible_airport_classes(req.zoom));
-            constexpr float APT_OUTER_SCALE = 1.2F;
-            constexpr float APT_RING_WIDTH_PX = 1.0F;
-            constexpr float APT_FILL_RADIUS = 0.5F;
 
             float r = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
             float pixels_per_world = static_cast<float>(req.viewport_height / (2.0 * req.half_extent_y));
 
             for(const auto& apt : airports)
             {
-                if(!styles.airport_visible(apt, req.zoom))
-                {
-                    continue;
-                }
-
-                auto& pd = poly[layer_airports];
+                if(!styles.airport_visible(apt, req.zoom)) continue;
 
                 const auto& cs = styles.airport_style(apt);
                 float cx = static_cast<float>(lon_to_mx(apt.lon) + mx_offset);
                 float cy = static_cast<float>(lat_to_my(apt.lat));
 
-                float symbol_r = r * APT_OUTER_SCALE;
-                float ring_geom_r = symbol_r - (APT_RING_WIDTH_PX * 0.5F) / pixels_per_world;
-                line_style ring_ls = {APT_RING_WIDTH_PX, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
-
-                bool closed = apt.arpt_status == "CI" || apt.arpt_status == "CP";
-                bool pvt = apt.facility_use_code == "PR";
-                bool mil = is_military(apt);
-                float h = ring_geom_r * LETTER_HEIGHT;
-                line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1.0F, 1.0F, 1.0F, 1.0F, 0};
-                float w = h * LETTER_ASPECT;
-
-                const letter_def* letter = nullptr;
-                if(closed)                          letter = &letter_X;
-                else if(apt.site_type_code == "H")  letter = &letter_H;
-                else if(apt.site_type_code == "C")  letter = &letter_S;
-                else if(apt.site_type_code == "U")  letter = &letter_F;
-                else if(apt.site_type_code == "G")  letter = &letter_G;
-                else if(apt.site_type_code == "B")  letter = &letter_B;
-                else if(mil)                        letter = &letter_M;
-                else if(pvt)                        letter = &letter_R;
-
-                if(apt.hard_surface)
-                {
-                    float geom_r = symbol_r * APT_FILL_RADIUS;
-                    float fill_px = symbol_r * pixels_per_world;
-                    line_style fill_ls = {fill_px, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
-                    add_circle_to(pd, cx, cy, geom_r, fill_ls);
-                    if(letter) draw_letter(pd, *letter, cx, cy, w, h, white_ls);
-                }
-                else if(letter)
-                {
-                    line_style filled_ring = ring_ls;
-                    filled_ring.fill_width = SYMBOL_FILL_PX;
-                    add_circle_to(pd, cx, cy, ring_geom_r, filled_ring);
-                    draw_letter(pd, *letter, cx, cy, w, h, white_ls);
-                }
-                else
-                {
-                    add_circle_to(pd, cx, cy, ring_geom_r, ring_ls);
-                }
+                emit_airport_icon(poly[layer_airports], cx, cy, r, pixels_per_world, apt, cs);
 
                 // Label: prefer ICAO ID, fall back to FAA ID
                 const auto& id = apt.icao_id.empty() ? apt.arpt_id : apt.icao_id;
@@ -622,15 +625,55 @@ namespace nasrbrowse
             }
         }
 
+        void emit_navaid_icon(polyline_data& pd, float cx, float cy, float r,
+                               const navaid& nav, const feature_style& fs)
+        {
+            constexpr float NAV_NDB_CIRCLE = 0.4F;
+            constexpr float NAV_DME_RECT = 0.85F;
+            constexpr float NAV_VORDME_WIDTH = 1.1F;
+
+            line_style ls = to_line_style(fs);
+            line_style filled_ls = ls;
+            filled_ls.fill_width = SYMBOL_FILL_PX;
+
+            if(nav.nav_type == "NDB")
+            {
+                add_circle(pd, cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
+            }
+            else if(nav.nav_type == "NDB/DME")
+            {
+                add_circle(pd, cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
+                add_rect(pd, cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, ls);
+            }
+            else if(nav.nav_type == "DME")
+            {
+                add_rect(pd, cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, filled_ls);
+            }
+            else if(std::strcmp(nav.nav_type.c_str(), "VOR/DME") == 0)
+            {
+                add_hexagon(pd, cx, cy, r, filled_ls);
+                add_center_dot(pd, cx, cy, r, ls);
+                add_rect(pd, cx, cy, r * NAV_VORDME_WIDTH, r * NAV_DME_RECT, ls);
+            }
+            else if(nav.nav_type == "VORTAC" || nav.nav_type == "TACAN")
+            {
+                add_hexagon(pd, cx, cy, r, filled_ls);
+                add_center_dot(pd, cx, cy, r, ls);
+                add_caltrop(pd, cx, cy, r, ls);
+            }
+            else
+            {
+                add_hexagon(pd, cx, cy, r, filled_ls);
+                add_center_dot(pd, cx, cy, r, ls);
+            }
+        }
+
         void build_navaid_polylines(const geo_bbox& bbox,
                                      const feature_build_request& req,
                                      double mx_offset)
         {
             if(!styles.any_navaid_visible(req.zoom)) return;
             if(!req.altitude.any()) return;
-            constexpr float NAV_NDB_CIRCLE = 0.4F;
-            constexpr float NAV_DME_RECT = 0.85F;
-            constexpr float NAV_VORDME_WIDTH = 1.1F;
             constexpr float NAV_CLEARANCE = 2.0F;
 
             const auto& navaids = db.query_navaids(bbox);
@@ -647,57 +690,20 @@ namespace nasrbrowse
                     continue;
                 }
 
-                if(!styles.navaid_visible(nav.nav_type, req.zoom))
-                {
-                    continue;
-                }
+                if(!styles.navaid_visible(nav.nav_type, req.zoom)) continue;
 
                 bool keep = (nav.is_low && req.altitude.show_low)
                          || (nav.is_high && req.altitude.show_high);
                 if(!keep) continue;
 
                 const auto& fs = styles.navaid_style(nav.nav_type);
-                line_style ls = to_line_style(fs);
-                line_style filled_ls = ls;
-                filled_ls.fill_width = SYMBOL_FILL_PX;
 
                 float cx = static_cast<float>(lon_to_mx(nav.lon) + mx_offset);
                 float cy = static_cast<float>(lat_to_my(nav.lat));
 
                 navaid_positions.emplace_back(cx, cy);
 
-                auto& pd = poly[layer_navaids];
-
-                if(nav.nav_type == "NDB")
-                {
-                    add_circle(pd, cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
-                }
-                else if(nav.nav_type == "NDB/DME")
-                {
-                    add_circle(pd, cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
-                    add_rect(pd, cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, ls);
-                }
-                else if(nav.nav_type == "DME")
-                {
-                    add_rect(pd, cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, filled_ls);
-                }
-                else if(std::strcmp(nav.nav_type.c_str(), "VOR/DME") == 0)
-                {
-                    add_hexagon(pd, cx, cy, r, filled_ls);
-                    add_center_dot(pd, cx, cy, r, ls);
-                    add_rect(pd, cx, cy, r * NAV_VORDME_WIDTH, r * NAV_DME_RECT, ls);
-                }
-                else if(nav.nav_type == "VORTAC" || nav.nav_type == "TACAN")
-                {
-                    add_hexagon(pd, cx, cy, r, filled_ls);
-                    add_center_dot(pd, cx, cy, r, ls);
-                    add_caltrop(pd, cx, cy, r, ls);
-                }
-                else
-                {
-                    add_hexagon(pd, cx, cy, r, filled_ls);
-                    add_center_dot(pd, cx, cy, r, ls);
-                }
+                emit_navaid_icon(poly[layer_navaids], cx, cy, r, nav, fs);
 
                 // Label: navaid ID
                 bool is_vor = nav.nav_type.find("VOR") != std::string::npos
@@ -766,6 +772,21 @@ namespace nasrbrowse
             }
         }
 
+        void emit_fix_icon(polyline_data& pd, float cx, float cy, float r,
+                           const fix& f, const feature_style& fs)
+        {
+            line_style ls = to_line_style(fs);
+            ls.fill_width = SYMBOL_FILL_PX;
+            if(f.use_code == "RP" || f.use_code == "MR")
+            {
+                add_triangle_polyline(pd, cx, cy, r, ls);
+            }
+            else
+            {
+                add_waypoint_star_polyline(pd, cx, cy, r, ls);
+            }
+        }
+
         void build_fix_polylines(const geo_bbox& bbox,
                                   const feature_build_request& req,
                                   double mx_offset)
@@ -777,32 +798,18 @@ namespace nasrbrowse
 
             for(const auto& fix : fixes)
             {
-                if(!styles.fix_visible(fix_on_airway(fix.fix_id), req.zoom))
-                {
-                    continue;
-                }
+                if(!styles.fix_visible(fix_on_airway(fix.fix_id), req.zoom)) continue;
 
                 bool keep = (fix.is_low && req.altitude.show_low)
                          || (fix.is_high && req.altitude.show_high);
                 if(!keep) continue;
 
                 const auto& fs = styles.fix_style(fix.use_code);
-                line_style ls = to_line_style(fs);
 
                 float cx = static_cast<float>(lon_to_mx(fix.lon) + mx_offset);
                 float cy = static_cast<float>(lat_to_my(fix.lat));
 
-                line_style filled_ls = ls;
-                filled_ls.fill_width = SYMBOL_FILL_PX;
-
-                if(fix.use_code == "RP" || fix.use_code == "MR")
-                {
-                    add_triangle_polyline(poly[layer_fixes], cx, cy, radius, filled_ls);
-                }
-                else
-                {
-                    add_waypoint_star_polyline(poly[layer_fixes], cx, cy, radius, filled_ls);
-                }
+                emit_fix_icon(poly[layer_fixes], cx, cy, radius, fix, fs);
 
                 // Label: fix ID
                 bool on_airway = fix_on_airway(fix.fix_id);
@@ -899,6 +906,44 @@ namespace nasrbrowse
             }
         }
 
+        void emit_pja_point_icon(polyline_data& pd, float cx, float cy, float r,
+                                  const feature_style& fs)
+        {
+            auto ls = to_line_style(fs);
+            ls.fill_width = SYMBOL_FILL_PX;
+            pd.polylines.push_back({
+                {cx + r, cy}, {cx, cy + r}, {cx - r, cy},
+                {cx, cy - r}, {cx + r, cy},
+            });
+            pd.styles.push_back(ls);
+
+            float lh = r * LETTER_HEIGHT;
+            float lw = lh * LETTER_ASPECT;
+            line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
+            draw_letter(pd, letter_P, cx, cy, lw, lh, white_ls);
+        }
+
+        void emit_maa_point_icon(polyline_data& pd, float cx, float cy, float r,
+                                  const maa& m, const feature_style& fs)
+        {
+            auto ls = to_line_style(fs);
+            ls.fill_width = SYMBOL_FILL_PX;
+            pd.polylines.push_back({
+                {cx + r, cy}, {cx, cy + r}, {cx - r, cy},
+                {cx, cy - r}, {cx + r, cy},
+            });
+            pd.styles.push_back(ls);
+
+            const letter_def* ld = maa_letter(m.type);
+            if(ld)
+            {
+                float lh = r * LETTER_HEIGHT;
+                float lw = lh * LETTER_ASPECT;
+                line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
+                draw_letter(pd, *ld, cx, cy, lw, lh, white_ls);
+            }
+        }
+
         void build_pja_polylines(const geo_bbox& bbox,
                                   const feature_build_request& req,
                                   double mx_offset)
@@ -934,19 +979,7 @@ namespace nasrbrowse
                     float cx = static_cast<float>(lon_to_mx(p.lon) + mx_offset);
                     float cy = static_cast<float>(lat_to_my(p.lat));
                     float r = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_PJA);
-
-                    auto ls = to_line_style(styles.pja_point_style());
-                    ls.fill_width = SYMBOL_FILL_PX;
-                    poly[layer_pja].polylines.push_back({
-                        {cx + r, cy}, {cx, cy + r}, {cx - r, cy},
-                        {cx, cy - r}, {cx + r, cy},
-                    });
-                    poly[layer_pja].styles.push_back(ls);
-
-                    float lh = r * LETTER_HEIGHT;
-                    float lw = lh * LETTER_ASPECT;
-                    line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
-                    draw_letter(poly[layer_pja], letter_P, cx, cy, lw, lh, white_ls);
+                    emit_pja_point_icon(poly[layer_pja], cx, cy, r, styles.pja_point_style());
                 }
             }
         }
@@ -986,23 +1019,7 @@ namespace nasrbrowse
                     float cx = static_cast<float>(lon_to_mx(m.lon) + mx_offset);
                     float cy = static_cast<float>(lat_to_my(m.lat));
                     float r = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
-
-                    auto ls = to_line_style(styles.maa_point_style());
-                    ls.fill_width = SYMBOL_FILL_PX;
-                    poly[layer_maa].polylines.push_back({
-                        {cx + r, cy}, {cx, cy + r}, {cx - r, cy},
-                        {cx, cy - r}, {cx + r, cy},
-                    });
-                    poly[layer_maa].styles.push_back(ls);
-
-                    const letter_def* ld = maa_letter(m.type);
-                    if(ld)
-                    {
-                        float lh = r * LETTER_HEIGHT;
-                        float lw = lh * LETTER_ASPECT;
-                        line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
-                        draw_letter(poly[layer_maa], *ld, cx, cy, lw, lh, white_ls);
-                    }
+                    emit_maa_point_icon(poly[layer_maa], cx, cy, r, m, styles.maa_point_style());
                 }
             }
         }
@@ -1043,6 +1060,14 @@ namespace nasrbrowse
             }
         }
 
+        void emit_obstacle_icon(polyline_data& pd, float cx, float cy, float r,
+                                const obstacle& obs, const feature_style& fs)
+        {
+            auto ls = to_line_style(fs);
+            bool lighted = obs.lighting != "N";
+            add_obstacle_polylines(pd, cx, cy, r, obs.agl_ht >= 1000, lighted, ls);
+        }
+
         void build_obstacle_polylines(const geo_bbox& bbox,
                                        const feature_build_request& req,
                                        double mx_offset)
@@ -1054,17 +1079,12 @@ namespace nasrbrowse
 
             for(const auto& obs : obstacles)
             {
-                if(!styles.obstacle_visible(obs.agl_ht, req.zoom))
-                {
-                    continue;
-                }
+                if(!styles.obstacle_visible(obs.agl_ht, req.zoom)) continue;
 
-                auto ls = to_line_style(styles.obstacle_style(obs.agl_ht));
+                const auto& fs = styles.obstacle_style(obs.agl_ht);
                 float cx = static_cast<float>(lon_to_mx(obs.lon) + mx_offset);
                 float cy = static_cast<float>(lat_to_my(obs.lat));
-                bool lighted = obs.lighting != "N";
-                add_obstacle_polylines(poly[layer_obstacles], cx, cy, radius,
-                                       obs.agl_ht >= 1000, lighted, ls);
+                emit_obstacle_icon(poly[layer_obstacles], cx, cy, radius, obs, fs);
             }
         }
 
@@ -1086,6 +1106,12 @@ namespace nasrbrowse
             }
         }
 
+        void emit_comm_icon(polyline_data& pd, float cx, float cy, float r,
+                             const line_style& ls)
+        {
+            add_comm_symbol(pd, cx, cy, r * 0.75F, ls);
+        }
+
         template<typename T>
         void build_comm_polylines(const std::vector<T>& features,
                                    int layer_id, const line_style& ls,
@@ -1097,7 +1123,7 @@ namespace nasrbrowse
             {
                 float cx = static_cast<float>(lon_to_mx(f.lon) + mx_offset);
                 float cy = static_cast<float>(lat_to_my(f.lat));
-                add_comm_symbol(poly[layer_id], cx, cy, radius*0.75F, ls);
+                emit_comm_icon(poly[layer_id], cx, cy, radius, ls);
             }
         }
 
