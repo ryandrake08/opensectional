@@ -99,6 +99,8 @@ namespace nasrbrowse
 
                 feature_build_result result;
                 result.poly = std::move(poly);
+                if(req.selection)
+                    build_selection_overlay(req, *req.selection, result.selection_overlay);
 
                 // Move raw world labels; overlap elimination happens on main thread
                 result.labels.reserve(world_labels.size());
@@ -134,6 +136,96 @@ namespace nasrbrowse
             build_fix_polylines(bbox, req, mx_offset);
             build_runway_polylines(bbox, req, mx_offset);
             build_airspace_polylines(bbox, req, mx_offset);
+        }
+
+        // Draw order: halo first, icon body second. Labels come from the
+        // normal label pipeline and already render on top.
+        void build_selection_overlay(const feature_build_request& req,
+                                      const pick_feature& sel,
+                                      polyline_data& out)
+        {
+            // Halo radius = largest point-symbol radius × 1.5, same for all
+            // point features so the halo is uniform regardless of feature type.
+            constexpr float HALO_SCALE = 1.5F * 1.2F; // airport APT_OUTER_SCALE = 1.2
+
+            float r_base = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
+            float pixels_per_world = static_cast<float>(req.viewport_height / (2.0 * req.half_extent_y));
+            float halo_r = r_base * HALO_SCALE;
+
+            auto emit_halo = [&](float cx, float cy)
+            {
+                // Filled white disc: line at radius halo_r/2 with line_width =
+                // halo_r * pixels_per_world covers the full interior.
+                float fill_px = halo_r * pixels_per_world;
+                line_style halo_ls = {fill_px, 0, 0, 0, 1, 1, 1, 1, 0};
+                add_circle_to(out, cx, cy, halo_r * 0.5F, halo_ls);
+            };
+
+            std::visit([&](const auto& f)
+            {
+                using T = std::decay_t<decltype(f)>;
+                if constexpr(std::is_same_v<T, airport>)
+                {
+                    float cx = static_cast<float>(lon_to_mx(f.lon));
+                    float cy = static_cast<float>(lat_to_my(f.lat));
+                    emit_halo(cx, cy);
+                    emit_airport_icon(out, cx, cy, r_base, pixels_per_world,
+                                      f, styles.airport_style(f));
+                }
+                else if constexpr(std::is_same_v<T, navaid>)
+                {
+                    float cx = static_cast<float>(lon_to_mx(f.lon));
+                    float cy = static_cast<float>(lat_to_my(f.lat));
+                    emit_halo(cx, cy);
+                    emit_navaid_icon(out, cx, cy, r_base, f, styles.navaid_style(f.nav_type));
+                }
+                else if constexpr(std::is_same_v<T, fix>)
+                {
+                    float cx = static_cast<float>(lon_to_mx(f.lon));
+                    float cy = static_cast<float>(lat_to_my(f.lat));
+                    emit_halo(cx, cy);
+                    emit_fix_icon(out, cx, cy, r_base, f, styles.fix_style(f.use_code));
+                }
+                else if constexpr(std::is_same_v<T, obstacle>)
+                {
+                    float cx = static_cast<float>(lon_to_mx(f.lon));
+                    float cy = static_cast<float>(lat_to_my(f.lat));
+                    emit_halo(cx, cy);
+                    emit_obstacle_icon(out, cx, cy, r_base, f, styles.obstacle_style(f.agl_ht));
+                }
+                else if constexpr(std::is_same_v<T, pja>)
+                {
+                    if(f.radius_nm > 0.0) return; // area-mode, Stage 4
+                    float cx = static_cast<float>(lon_to_mx(f.lon));
+                    float cy = static_cast<float>(lat_to_my(f.lat));
+                    emit_halo(cx, cy);
+                    emit_pja_point_icon(out, cx, cy, r_base, styles.pja_point_style());
+                }
+                else if constexpr(std::is_same_v<T, maa>)
+                {
+                    if(!f.shape.empty() || f.radius_nm > 0.0) return; // area-mode
+                    float cx = static_cast<float>(lon_to_mx(f.lon));
+                    float cy = static_cast<float>(lat_to_my(f.lat));
+                    emit_halo(cx, cy);
+                    emit_maa_point_icon(out, cx, cy, r_base, f, styles.maa_point_style());
+                }
+                else if constexpr(std::is_same_v<T, awos>)
+                {
+                    float cx = static_cast<float>(lon_to_mx(f.lon));
+                    float cy = static_cast<float>(lat_to_my(f.lat));
+                    emit_halo(cx, cy);
+                    emit_comm_icon(out, cx, cy, r_base, to_line_style(styles.awos_style()));
+                }
+                else if constexpr(std::is_same_v<T, comm_outlet>)
+                {
+                    float cx = static_cast<float>(lon_to_mx(f.lon));
+                    float cy = static_cast<float>(lat_to_my(f.lat));
+                    emit_halo(cx, cy);
+                    emit_comm_icon(out, cx, cy, r_base, to_line_style(styles.rco_style()));
+                }
+                // Other variants (class_airspace, sua, artcc, adiz, airway_segment,
+                // mtr_segment, runway) handled in later stages.
+            }, sel);
         }
 
         void build_vertices(const feature_build_request& req)

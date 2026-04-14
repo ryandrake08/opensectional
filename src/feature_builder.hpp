@@ -1,6 +1,7 @@
 #pragma once
 
 #include "line_renderer.hpp"
+#include "pick_result.hpp"
 #include "ui_overlay.hpp"
 #include <array>
 #include <glm/glm.hpp>
@@ -36,6 +37,7 @@ namespace nasrbrowse
         int viewport_height;
         double zoom;
         altitude_filter altitude;
+        std::optional<pick_feature> selection;
     };
 
     // A label candidate from the feature build pass (world-space)
@@ -52,6 +54,10 @@ namespace nasrbrowse
     {
         std::array<polyline_data, layer_sdf_count> poly;
         std::vector<label_candidate> labels;
+
+        // Primitives for the currently-selected feature (halo + re-emitted
+        // icon). Rendered after all layers so the selection sits on top.
+        polyline_data selection_overlay;
     };
 
     // Background worker that builds feature polylines from the NASR database.

@@ -52,6 +52,10 @@ namespace nasrbrowse
 
         // Set which feature layers are visible
         void set_visibility(const layer_visibility& vis);
+
+        // Set (or clear) the currently-selected feature. The builder re-runs
+        // and emits a highlight overlay rendered on top of everything.
+        void set_selection(std::optional<pick_feature> sel);
     };
 
 } // namespace nasrbrowse

@@ -36,12 +36,14 @@ namespace nasrbrowse
 
         // Polyline data received from builder (kept for visibility toggling)
         std::array<polyline_data, layer_sdf_count> poly;
+        polyline_data selection_overlay;
         line_renderer sdf_lines;
 
         // Labels from most recent build
         std::vector<label_candidate> current_labels;
 
         layer_visibility vis;
+        std::optional<pick_feature> selection;
 
         impl(sdl::device& dev, const char* db_path, const chart_style& styles)
             : dev(dev)
@@ -94,6 +96,14 @@ namespace nasrbrowse
                     poly[i].circles.begin(), poly[i].circles.end());
             }
 
+            // Selection overlay rendered last so it sits on top of every layer.
+            all_polylines.insert(all_polylines.end(),
+                selection_overlay.polylines.begin(), selection_overlay.polylines.end());
+            all_styles.insert(all_styles.end(),
+                selection_overlay.styles.begin(), selection_overlay.styles.end());
+            all_circles.insert(all_circles.end(),
+                selection_overlay.circles.begin(), selection_overlay.circles.end());
+
             sdf_lines.set_data(std::move(all_polylines), std::move(all_styles),
                                std::move(all_circles));
         }
@@ -133,6 +143,7 @@ namespace nasrbrowse
             req.viewport_height = viewport_height;
             req.zoom = pimpl->zoom_level();
             req.altitude = pimpl->vis.altitude;
+            req.selection = pimpl->selection;
             pimpl->builder.request(req);
 
             // Speculatively update cache so we don't re-request next frame
@@ -148,6 +159,7 @@ namespace nasrbrowse
         if(result)
         {
             pimpl->poly = std::move(result->poly);
+            pimpl->selection_overlay = std::move(result->selection_overlay);
             pimpl->current_labels = std::move(result->labels);
             pimpl->rebuild_sdf_lines();
             return true;
@@ -183,6 +195,21 @@ namespace nasrbrowse
             pimpl->sdf_lines.render(pass, ctx.projection_matrix, view_matrix,
                                     vw, pimpl->viewport_height);
         }
+    }
+
+    void feature_renderer::set_selection(std::optional<pick_feature> sel)
+    {
+        pimpl->selection = std::move(sel);
+
+        // Clear the overlay immediately so stale primitives don't linger
+        // until the new build result arrives.
+        pimpl->selection_overlay.clear();
+        pimpl->rebuild_sdf_lines();
+
+        // Force the worker to rebuild so the new selection's overlay is
+        // generated. Clearing has_cached_query ensures update() resubmits
+        // a request on the next frame even if the view hasn't changed.
+        pimpl->has_cached_query = false;
     }
 
     void feature_renderer::set_visibility(const layer_visibility& vis)

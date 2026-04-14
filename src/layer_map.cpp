@@ -958,6 +958,14 @@ struct layer_map::impl
         info_popup.anchor_lon = alon;
         info_popup.anchor_lat = alat;
         info_popup.feature = f;
+        features.set_selection(f);
+        needs_update = true;
+    }
+
+    void close_info_popup()
+    {
+        info_popup.open = false;
+        features.set_selection(std::nullopt);
         needs_update = true;
     }
 
@@ -1000,7 +1008,7 @@ struct layer_map::impl
         }
 
         // Opening the selector supersedes any stale info popup.
-        info_popup.open = false;
+        close_info_popup();
         pick_popup.open = true;
         ++pick_popup.session_id;
         pick_popup.warmup_frames = 2;
@@ -1107,7 +1115,7 @@ struct layer_map::impl
         ImVec2 pos, pivot;
         if(!compute_popup_anchor(info_popup.anchor_lon, info_popup.anchor_lat, pos, pivot))
         {
-            info_popup.open = false;
+            close_info_popup();
             return false;
         }
 
@@ -1132,7 +1140,7 @@ struct layer_map::impl
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btn_w);
         if(ImGui::SmallButton("X##info_close"))
         {
-            info_popup.open = false;
+            close_info_popup();
             ImGui::End();
             return false;
         }
