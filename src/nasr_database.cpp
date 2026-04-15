@@ -41,6 +41,7 @@ namespace nasrbrowse
         sqlite::statement stmt_sua;
         sqlite::statement stmt_sua_strata;
         sqlite::statement stmt_sua_shape;
+        sqlite::statement stmt_sua_schedules;
         sqlite::statement stmt_sua_circle;
         sqlite::statement stmt_sua_circles_bbox;
         sqlite::statement stmt_obstacles;
@@ -270,6 +271,17 @@ namespace nasrbrowse
                 WHERE STRATUM_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
             )", 4))
+
+            , stmt_sua_schedules(prepare_checked(db, R"(
+                SELECT DAY_OF_WEEK, DAY_TIL,
+                       START_TIME, END_TIME,
+                       START_EVENT, END_EVENT,
+                       START_EVENT_OFFSET, END_EVENT_OFFSET,
+                       TIME_REF, TIME_OFFSET, DST_FLAG
+                FROM SUA_SCHEDULE
+                WHERE SUA_ID = ?1
+                ORDER BY SCHED_SEQ
+            )", 11))
 
             , stmt_sua_circle(prepare_checked(db, R"(
                 SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM
@@ -742,7 +754,7 @@ namespace nasrbrowse
                    s.column_text(6), s.column_text(7),
                    s.column_text(8), s.column_text(9), s.column_text(10),
                    s.column_text(11), s.column_text(12), s.column_text(13),
-                   s.column_text(14), s.column_text(15), s.column_text(16), {}};
+                   s.column_text(14), s.column_text(15), s.column_text(16), {}, {}};
 
             // Load each stratum with its parts. Strata are ordered by
             // STRATUM_ORDER (BASE first, then UNION bands, then partial-
@@ -799,6 +811,26 @@ namespace nasrbrowse
                          d.stmt_sua_shape.column_double(2)});
                 }
                 su.strata.push_back(std::move(st));
+            }
+
+            // Schedules: zero-or-more Timesheet entries.
+            d.stmt_sua_schedules.reset();
+            d.stmt_sua_schedules.bind(1, su.sua_id);
+            while (d.stmt_sua_schedules.step())
+            {
+                sua_schedule sc;
+                sc.day                = d.stmt_sua_schedules.column_text(0);
+                sc.day_til            = d.stmt_sua_schedules.column_text(1);
+                sc.start_time         = d.stmt_sua_schedules.column_text(2);
+                sc.end_time           = d.stmt_sua_schedules.column_text(3);
+                sc.start_event        = d.stmt_sua_schedules.column_text(4);
+                sc.end_event          = d.stmt_sua_schedules.column_text(5);
+                sc.start_event_offset = d.stmt_sua_schedules.column_text(6);
+                sc.end_event_offset   = d.stmt_sua_schedules.column_text(7);
+                sc.time_ref           = d.stmt_sua_schedules.column_text(8);
+                sc.time_offset        = d.stmt_sua_schedules.column_text(9);
+                sc.dst_flag           = d.stmt_sua_schedules.column_text(10);
+                su.schedules.push_back(std::move(sc));
             }
             return su;
         });

@@ -182,6 +182,27 @@ namespace nasrbrowse
     // fields summarize the BASE stratum for the one-line label. For a
     // pick result, `strata` contains exactly the one stratum that was
     // clicked (pick returns one `sua` per matching stratum).
+    // One Timesheet entry from the AIXM AirspaceUsage. A SUA may
+    // have many — e.g. one per day-of-week. Either clock times
+    // (`start_time`/`end_time`) or solar events (`start_event`/
+    // `end_event` ∈ "SR"/"SS"), optionally with `*_event_offset`
+    // minutes ("60 min before sunrise"). `day_til` makes the day
+    // a range (`day=MON, day_til=TUE` ⇒ Mon through Tue).
+    struct sua_schedule
+    {
+        std::string day;
+        std::string day_til;
+        std::string start_time;
+        std::string end_time;
+        std::string start_event;
+        std::string end_event;
+        std::string start_event_offset;
+        std::string end_event_offset;
+        std::string time_ref;       // "UTC" / "LOCAL"
+        std::string time_offset;    // e.g. "-7.0" hours
+        std::string dst_flag;
+    };
+
     struct sua
     {
         int sua_id;
@@ -202,6 +223,7 @@ namespace nasrbrowse
         std::string icao_compliant;
         std::string legal_note;
         std::vector<sua_stratum> strata;
+        std::vector<sua_schedule> schedules;
     };
 
     // Column order follows PJA_BASE table

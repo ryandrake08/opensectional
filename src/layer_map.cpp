@@ -340,6 +340,47 @@ static kv_list feature_kv(const nasrbrowse::pick_feature& f)
             rows.push_back({"Working hours",          nz(v.working_hours)});
             rows.push_back({"Status",                 nz(v.status)});
             rows.push_back({"ICAO compliant",         nz(v.icao_compliant)});
+            // Per-day Timesheet entries. Each row condenses one
+            // entry to "<DAY[-DAY_TIL]> <START> – <END>" with the
+            // start/end being either a clock time (HH:MM), a solar
+            // event token (SR/SS), or an event token with a signed
+            // minutes offset (SR-60 means "60 min before sunrise").
+            auto fmt_endpoint = [](const std::string& clock,
+                                   const std::string& event,
+                                   const std::string& offset_min)
+                -> std::string
+            {
+                if (!clock.empty()) return clock;
+                if (event.empty()) return "";
+                if (offset_min.empty()) return event;
+                // Strip a trailing ".0" decimal for readability.
+                std::string off = offset_min;
+                auto dot = off.find('.');
+                if (dot != std::string::npos) off.resize(dot);
+                if (!off.empty() && off[0] != '-' && off[0] != '+')
+                    off = "+" + off;
+                return event + off;
+            };
+            for (const auto& sc : v.schedules)
+            {
+                std::string day = sc.day;
+                if (!sc.day_til.empty()) day += "-" + sc.day_til;
+                std::string start = fmt_endpoint(sc.start_time,
+                                                 sc.start_event,
+                                                 sc.start_event_offset);
+                std::string end   = fmt_endpoint(sc.end_time,
+                                                 sc.end_event,
+                                                 sc.end_event_offset);
+                std::string val = day;
+                if (!start.empty() || !end.empty())
+                {
+                    val += " ";
+                    val += start;
+                    val += "-";
+                    val += end;
+                }
+                rows.push_back({"Schedule", val});
+            }
             rows.push_back({"Legal note",             nz(v.legal_note)});
         }
         else if constexpr(std::is_same_v<T, nasrbrowse::artcc>)

@@ -2104,8 +2104,20 @@ def _parse_timesheets(root):
 
         for timesheet in usage_ts.iter(f"{{{AIXM}}}Timesheet"):
             day = _text(timesheet, f"{{{AIXM}}}day")
+            day_til = _text(timesheet, f"{{{AIXM}}}dayTil")
             start_time = _text(timesheet, f"{{{AIXM}}}startTime")
             end_time = _text(timesheet, f"{{{AIXM}}}endTime")
+            # Event-relative activations: a Timesheet may name a
+            # solar event (SR=sunrise, SS=sunset) instead of (or in
+            # addition to) a clock time, with an optional offset in
+            # minutes ("60 min before sunrise", etc.). The render
+            # path joins event + offset into "SR-60" / "SS+60" etc.
+            start_event = _text(timesheet, f"{{{AIXM}}}startEvent")
+            end_event = _text(timesheet, f"{{{AIXM}}}endEvent")
+            start_event_offset = _text(
+                timesheet, f"{{{AIXM}}}startTimeRelativeEvent")
+            end_event_offset = _text(
+                timesheet, f"{{{AIXM}}}endTimeRelativeEvent")
             time_ref = _text(timesheet, f"{{{AIXM}}}timeReference")
 
             # UTC offset from TimesheetExtension
@@ -2117,8 +2129,13 @@ def _parse_timesheets(root):
 
             schedules.append({
                 "day": day,
+                "day_til": day_til,
                 "start_time": start_time,
                 "end_time": end_time,
+                "start_event": start_event,
+                "end_event": end_event,
+                "start_event_offset": start_event_offset,
+                "end_event_offset": end_event_offset,
                 "time_ref": time_ref,
                 "time_offset": time_offset,
                 "dst_flag": dst_flag,
@@ -2398,13 +2415,24 @@ def build_sua(conn, aixm_zf):
     """)
 
     conn.execute("DROP TABLE IF EXISTS SUA_SCHEDULE")
+    # DAY_TIL: end day of an inclusive day-of-week range (e.g. day=MON,
+    # day_til=TUE means "Mon through Tue"). Empty when a single day.
+    # START_EVENT/END_EVENT: solar event token (SR/SS) when the
+    # activation is anchored to sunrise/sunset rather than (or in
+    # addition to) a clock time. *_EVENT_OFFSET: minutes offset
+    # relative to that event (e.g. -60 = "60 min before sunrise").
     conn.execute("""
         CREATE TABLE SUA_SCHEDULE (
             SUA_ID INTEGER,
             SCHED_SEQ INTEGER,
             DAY_OF_WEEK TEXT,
+            DAY_TIL TEXT,
             START_TIME TEXT,
             END_TIME TEXT,
+            START_EVENT TEXT,
+            END_EVENT TEXT,
+            START_EVENT_OFFSET TEXT,
+            END_EVENT_OFFSET TEXT,
             TIME_REF TEXT,
             TIME_OFFSET TEXT,
             DST_FLAG TEXT,
@@ -2545,8 +2573,13 @@ def build_sua(conn, aixm_zf):
                 schedule_rows.append((
                     sua_id, seq,
                     sched["day"],
+                    sched["day_til"],
                     sched["start_time"],
                     sched["end_time"],
+                    sched["start_event"],
+                    sched["end_event"],
+                    sched["start_event_offset"],
+                    sched["end_event_offset"],
                     sched["time_ref"],
                     sched["time_offset"],
                     sched["dst_flag"],
@@ -2582,7 +2615,7 @@ def build_sua(conn, aixm_zf):
         freq_rows,
     )
     conn.executemany(
-        "INSERT INTO SUA_SCHEDULE VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_SCHEDULE VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         schedule_rows,
     )
     conn.executemany(
