@@ -334,6 +334,18 @@ static kv_list feature_kv(const nasrbrowse::pick_feature& f)
                 rows.push_back({"Min altitude",       v.min_alt_limit});
             if (!v.max_alt_limit.empty())
                 rows.push_back({"Max altitude",       v.max_alt_limit});
+            // Surface conditional-exclusion only when YES; the
+            // "NO" default is silent (most SUAs have no exclusion
+            // clause). The clause itself is in the legal note.
+            if (v.conditional_exclusion == "YES")
+                rows.push_back({"Conditional exclusion", "see legal note"});
+            // Surface trafficAllowed only when MIL — the more
+            // restrictive of the two values; "ALL" is silent.
+            if (v.traffic_allowed == "MIL")
+                rows.push_back({"Traffic allowed",       "MIL only"});
+            if (!v.time_in_advance_hr.empty())
+                rows.push_back({"NOTAM lead time",
+                                v.time_in_advance_hr + " hr"});
             rows.push_back({"Controlling authority",  nz(v.controlling_authority)});
             rows.push_back({"Admin area",             nz(v.admin_area)});
             rows.push_back({"Activity",               nz(v.activity)});
@@ -379,6 +391,7 @@ static kv_list feature_kv(const nasrbrowse::pick_feature& f)
                     flags += "uncharted";
                 }
                 if (!flags.empty()) val += " (" + flags + ")";
+                if (!f.sectors.empty()) val += " — sector " + f.sectors;
                 rows.push_back({"Frequency", val});
             }
             for (const auto& sc : v.schedules)

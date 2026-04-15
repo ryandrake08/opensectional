@@ -1345,9 +1345,17 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
         sua_type = ext.text or ""
         break
 
-    # SAA extension metadata (administrativeArea, city, legalDefinitionType)
+    # SAA extension metadata (administrativeArea, city,
+    # legalDefinitionType, conditionalExclusion).
+    # `conditionalExclusion=YES` flags an SUA whose legal definition
+    # contains a special exclusion clause (typically a corridor or
+    # carve-out described in the legal note); ~63 SUAs corpus-wide.
     admin_area = _text(ts, f"{{{SAA}}}administrativeArea")
     saa_city = _text(ts, f"{{{SAA}}}city")
+    conditional_exclusion = _text(ts, f"{{{SAA}}}conditionalExclusion")
+    # Hours of NOTAM lead time required before the SUA may be
+    # activated. Stored as the source string (uom is always HR).
+    time_in_advance = _text(ts, f"{{{SAA}}}timeInAdvance")
 
     # AIXM metadata from AirspaceActivation and related elements
     activity = _text(ts, f"{{{AIXM}}}activity")
@@ -1983,6 +1991,9 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
         "lower_limit": lower_limit,
         "min_alt_limit": min_alt_limit,
         "max_alt_limit": max_alt_limit,
+        "conditional_exclusion": conditional_exclusion,
+        "time_in_advance": time_in_advance,
+        "traffic_allowed": "",
         "admin_area": admin_area,
         "city": saa_city,
         "military": military,
@@ -2185,6 +2196,7 @@ def _parse_freq_allocations(root, channels):
         for sch in details.iter(f"{{{SAA}}}SaaRadioCommunicationChannel"):
             comm = _text(sch, f"{{{SAA}}}communicationAllowed")
             charted = _text(sch, f"{{{SAA}}}charted")
+            sectors = _text(sch, f"{{{SAA}}}sectors")
             ch_ref = sch.find(f"{{{SAA}}}associatedChannel")
             if ch_ref is None:
                 continue
@@ -2199,6 +2211,7 @@ def _parse_freq_allocations(root, channels):
             entry = ch.copy()
             entry["comm_allowed"] = comm
             entry["charted"] = charted
+            entry["sectors"] = sectors
             by_airspace.setdefault(airspace_gid, []).append(entry)
 
     # Channels not bound by any allocation: keep around for SUAs
@@ -2216,6 +2229,7 @@ def _parse_freq_allocations(root, channels):
             entry = ch.copy()
             entry["comm_allowed"] = ""
             entry["charted"] = ""
+            entry["sectors"] = ""
             fallback.append(entry)
 
     return by_airspace, fallback
@@ -2253,10 +2267,15 @@ def parse_aixm_sua(xml_data):
         elif unit["type"] == "ARTCC" and not compliant_icao:
             compliant_icao = _text(root, f"{{{AIXM}}}compliantICAO")
 
-    # Extract metadata from AirspaceUsage (activity, status, working hours)
+    # Extract metadata from AirspaceUsage (activity, status, working
+    # hours, traffic permitted). `trafficAllowed` lives nested in
+    # AirspaceLayerUsage; values observed are "ALL" (open to civil
+    # + military) and "MIL" (military-only inside the SUA when
+    # active).
     activity = ""
     status = ""
     working_hours = ""
+    traffic_allowed = ""
     for usage_ts in root.iter(f"{{{AIXM}}}AirspaceUsageTimeSlice"):
         if not activity:
             activity = _text(usage_ts, f"{{{AIXM}}}activity")
@@ -2264,6 +2283,8 @@ def parse_aixm_sua(xml_data):
             status = _text(usage_ts, f"{{{AIXM}}}statusActivation")
         if not working_hours:
             working_hours = _text(usage_ts, f"{{{AIXM}}}workingHours")
+        if not traffic_allowed:
+            traffic_allowed = _text(usage_ts, f"{{{AIXM}}}trafficAllowed")
 
     # Parse radio channels, services, and timesheets
     channels = _parse_radio_channels(root, {})
@@ -2309,6 +2330,15 @@ def parse_aixm_sua(xml_data):
         if v and v != "SUA":
             print(f"  WARN: unsupported saa:saaType={v!r} "
                   f"— pipeline only ingests SUAs", file=sys.stderr)
+    for elem in root.iter(f"{{{SAA}}}intermittent"):
+        # Lives in TimesheetExtension. Every observed value is "NO";
+        # if a future drop introduces "YES" we'd want to surface it
+        # in the info-box (the NOTAM is sometimes time-stamped to
+        # an event that may or may not occur).
+        v = (elem.text or "").strip()
+        if v and v != "NO":
+            print(f"  WARN: unsupported saa:intermittent={v!r} "
+                  f"— add display path", file=sys.stderr)
     for elem in root.iter(f"{{{AIXM}}}dependency"):
         # Inside `AirspaceVolumeDependency`. Only `HORZ_PROJECTION`
         # is observed; that's what `_collect_additive_shapes` handles
@@ -2348,6 +2378,8 @@ def parse_aixm_sua(xml_data):
             result["activity"] = result["activity"] or activity
             result["status"] = result["status"] or status
             result["working_hours"] = result["working_hours"] or working_hours
+            result["traffic_allowed"] = (result.get("traffic_allowed") or
+                                         traffic_allowed)
             # Per-airspace channel allocation: pull this airspace's
             # bound channels first; if none exist, fall back to any
             # file-scope channels (channels declared but never bound).
@@ -2384,6 +2416,14 @@ def build_sua(conn, aixm_zf):
     # maximumLimit pair from the BASE volume — terrain-clearance
     # constraints (typically "min N ft AGL") supplementing the MSL
     # band. Empty for SUAs that don't declare them (most).
+    # CONDITIONAL_EXCLUSION = "YES"/"NO"/"" — flag from
+    # saa:AirspaceExtension marking SUAs whose legal definition
+    # contains a special exclusion clause.
+    # TRAFFIC_ALLOWED = "ALL"/"MIL"/"" — from
+    # AirspaceLayerUsage; "MIL" means civil aircraft are not
+    # permitted inside the SUA when active.
+    # TIME_IN_ADVANCE_HR — NOTAM lead time required before SUA
+    # activation, in hours (raw source string, e.g. "6.0", "24.0").
     conn.execute("""
         CREATE TABLE SUA_BASE (
             SUA_ID INTEGER PRIMARY KEY,
@@ -2394,6 +2434,9 @@ def build_sua(conn, aixm_zf):
             LOWER_LIMIT TEXT,
             MIN_ALT_LIMIT TEXT,
             MAX_ALT_LIMIT TEXT,
+            CONDITIONAL_EXCLUSION TEXT,
+            TRAFFIC_ALLOWED TEXT,
+            TIME_IN_ADVANCE_HR TEXT,
             CONTROLLING_AUTHORITY TEXT,
             ADMIN_AREA TEXT,
             CITY TEXT,
@@ -2467,6 +2510,7 @@ def build_sua(conn, aixm_zf):
             RX_FREQ TEXT,
             COMM_ALLOWED TEXT,
             CHARTED TEXT,
+            SECTORS TEXT,
             PRIMARY KEY (SUA_ID, FREQ_SEQ)
         )
     """)
@@ -2539,6 +2583,9 @@ def build_sua(conn, aixm_zf):
                 result["lower_limit"],
                 result["min_alt_limit"],
                 result["max_alt_limit"],
+                result["conditional_exclusion"],
+                result["traffic_allowed"],
+                result["time_in_advance"],
                 result["controlling_authority"],
                 result["admin_area"],
                 result["city"],
@@ -2625,6 +2672,7 @@ def build_sua(conn, aixm_zf):
                     freq["rx_freq"],
                     freq.get("comm_allowed", ""),
                     freq.get("charted", ""),
+                    freq.get("sectors", ""),
                 ))
 
             # Schedules
@@ -2654,7 +2702,7 @@ def build_sua(conn, aixm_zf):
                 ))
 
     conn.executemany(
-        "INSERT INTO SUA_BASE VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_BASE VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         base_rows,
     )
     conn.executemany(
@@ -2670,7 +2718,7 @@ def build_sua(conn, aixm_zf):
         circle_rows,
     )
     conn.executemany(
-        "INSERT INTO SUA_FREQ VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_FREQ VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         freq_rows,
     )
     conn.executemany(

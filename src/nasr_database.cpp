@@ -244,6 +244,8 @@ namespace nasrbrowse
                 SELECT SUA_ID, DESIGNATOR, NAME, SUA_TYPE,
                        UPPER_LIMIT, LOWER_LIMIT,
                        MIN_ALT_LIMIT, MAX_ALT_LIMIT,
+                       CONDITIONAL_EXCLUSION, TRAFFIC_ALLOWED,
+                       TIME_IN_ADVANCE_HR,
                        CONTROLLING_AUTHORITY, ADMIN_AREA, CITY,
                        MILITARY, ACTIVITY, STATUS,
                        WORKING_HOURS, ICAO_COMPLIANT, LEGAL_NOTE
@@ -254,7 +256,7 @@ namespace nasrbrowse
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 AND (?5 IS NULL OR SUA_TYPE IN (SELECT value FROM json_each(?5)))
-            )", 17))
+            )", 20))
 
             , stmt_sua_strata(prepare_checked(db, R"(
                 SELECT STRATUM_ID, STRATUM_ORDER,
@@ -286,11 +288,11 @@ namespace nasrbrowse
 
             , stmt_sua_freqs(prepare_checked(db, R"(
                 SELECT MODE, TX_FREQ, RX_FREQ,
-                       COMM_ALLOWED, CHARTED
+                       COMM_ALLOWED, CHARTED, SECTORS
                 FROM SUA_FREQ
                 WHERE SUA_ID = ?1
                 ORDER BY FREQ_SEQ
-            )", 5))
+            )", 6))
 
             , stmt_sua_circle(prepare_checked(db, R"(
                 SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM
@@ -761,9 +763,11 @@ namespace nasrbrowse
             sua su{s.column_int(0), s.column_text(1), s.column_text(2), s.column_text(3),
                    s.column_text(4), s.column_text(5),
                    s.column_text(6), s.column_text(7),
-                   s.column_text(8), s.column_text(9), s.column_text(10),
+                   s.column_text(8), s.column_text(9),
+                   s.column_text(10),
                    s.column_text(11), s.column_text(12), s.column_text(13),
                    s.column_text(14), s.column_text(15), s.column_text(16),
+                   s.column_text(17), s.column_text(18), s.column_text(19),
                    {}, {}, {}};
 
             // Load each stratum with its parts. Strata are ordered by
@@ -854,6 +858,7 @@ namespace nasrbrowse
                 f.rx           = d.stmt_sua_freqs.column_text(2);
                 f.comm_allowed = d.stmt_sua_freqs.column_text(3);
                 f.charted      = d.stmt_sua_freqs.column_text(4);
+                f.sectors      = d.stmt_sua_freqs.column_text(5);
                 su.freqs.push_back(std::move(f));
             }
             return su;

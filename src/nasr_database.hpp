@@ -193,6 +193,7 @@ namespace nasrbrowse
         std::string rx;              // raw MHz string
         std::string comm_allowed;    // "CIVIL" / "MIL" / ""
         std::string charted;         // "YES" / "NO" / ""
+        std::string sectors;         // sector designator(s); free-form
     };
 
     // One Timesheet entry from the AIXM AirspaceUsage. A SUA may
@@ -226,6 +227,9 @@ namespace nasrbrowse
         std::string lower_limit;
         std::string min_alt_limit;
         std::string max_alt_limit;
+        std::string conditional_exclusion;
+        std::string traffic_allowed;
+        std::string time_in_advance_hr;
         std::string controlling_authority;
         std::string admin_area;
         std::string city;
@@ -455,9 +459,9 @@ namespace nasrbrowse
         const std::vector<boundary_segment>& query_artcc_segments(const geo_bbox& bbox);
         const std::vector<boundary_segment>& query_adiz_segments(const geo_bbox& bbox);
         const std::vector<airspace_segment>& query_class_airspace_segments(
-            const geo_bbox& bbox, const filter_list& class_filter = std::nullopt);
+        const geo_bbox& bbox, const filter_list& class_filter = std::nullopt);
         const std::vector<sua_segment>& query_sua_segments(
-            const geo_bbox& bbox, const filter_list& type_filter = std::nullopt);
+        const geo_bbox& bbox, const filter_list& type_filter = std::nullopt);
     };
 
 } // namespace nasrbrowse
