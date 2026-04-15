@@ -23,6 +23,13 @@ import sqlite3
 import struct
 import sys
 import xml.etree.ElementTree as ET
+from collections import defaultdict
+
+# Per-SUA instrumentation for the geometry cleanup filters. Each key is
+# a filter name; each value is a Counter {designator: hits}. After
+# build_sua runs, a summary is printed so we can see which filters still
+# earn their keep post-stratum-rework.
+SUA_FILTER_STATS = defaultdict(lambda: defaultdict(int))
 import zipfile
 
 
@@ -922,51 +929,6 @@ def build_atc(conn, csv_zf):
     conn.execute("CREATE INDEX idx_atc_svc_fac ON ATC_SVC(FACILITY_ID, FACILITY_TYPE)")
 
 
-def remove_spike_vertices(points):
-    """Drop vertices that form a near-reversal cusp.
-
-    Two cases, both near-reversal at a vertex:
-      - mild reversal (>160°) with a very short edge (<~1 km): typical
-        arc-to-line junction artifact where the arc's final sample slightly
-        overshoots the next line's declared corner.
-      - hard reversal (>175°) with any modest edge (<~5 km): out-and-back
-        "filament" produced when a union of polygons sharing an arc leaves
-        a sliver that collapses into a perpendicular spike.
-
-    Douglas-Peucker simplification does not reliably remove either pattern
-    because the perpendicular distance from the cusp vertex to the line
-    between its neighbors is non-trivial even when the spike is visually
-    obvious.
-    """
-    # Iterate until stable: removing one cusp can expose a new cusp at its
-    # neighbor (the neighbor's angle changes when its non-cusp side shifts).
-    while len(points) >= 4:
-        n = len(points)
-        keep = [True] * n
-        any_dropped = False
-        for i in range(n):
-            a = points[(i - 1) % n]
-            b = points[i]
-            c = points[(i + 1) % n]
-            v1 = (b[0] - a[0], b[1] - a[1])
-            v2 = (c[0] - b[0], c[1] - b[1])
-            l1 = math.hypot(*v1)
-            l2 = math.hypot(*v2)
-            if l1 == 0 or l2 == 0:
-                continue
-            dot = (v1[0] * v2[0] + v1[1] * v2[1]) / (l1 * l2)
-            dot = max(-1.0, min(1.0, dot))
-            ang = math.degrees(math.acos(dot))
-            shorter = min(l1, l2)
-            if (ang > 175 and shorter < 0.001) or (ang > 179 and shorter < 0.005):
-                keep[i] = False
-                any_dropped = True
-        if not any_dropped:
-            break
-        points = [p for p, k in zip(points, keep) if k]
-    return points
-
-
 def simplify_ring(points, epsilon):
     """Simplify a polygon ring using Shapely's GEOS-backed RDP.
 
@@ -1485,8 +1447,14 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
     # sliver holes. Airspace boundaries are not defined to sub-meter
     # precision, so this is well below any meaningful threshold.
     SNAP = 1e-5
-    HOLE_AREA_MIN = 1e-6       # deg² (~0.01 km²)
-    OUTER_SLIVER_RATIO = 1e-3  # drop outer piece if < 0.1% of largest poly
+    # Drop outer polygon pieces below this absolute area in deg² —
+    # 1e-5 ≈ 0.03 NM². Empirically, floating-point fragments from
+    # `unary_union` on overlapping sampled circles fall in 1e-8…5e-6;
+    # the smallest real disconnected airspace component in the corpus
+    # (WARRIOR 1 LOW's eastern protrusion severed by a SUBTR) is
+    # ~3.9e-4, well above. A prior ratio-based filter (< 0.1% of the
+    # main piece) wrongly dropped that legitimate region.
+    OUTER_SLIVER_AREA_MIN = 1e-5
 
     base_band = (parse_altitude_ft_msl(lower_limit),
                  parse_altitude_ft_msl(upper_limit))
@@ -1514,7 +1482,6 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
         """
         raw = []
         for _, shape, _, _, _ in entries:
-            shape = remove_spike_vertices(shape)
             if len(shape) < 3:
                 continue
             p = make_valid(ShapelyPolygon(shape))
@@ -1577,7 +1544,6 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
     base_entries_pre = bands.get(base_band, [])
     base_raw_polys = []
     for _, shape, _, _, _ in base_entries_pre:
-        shape = remove_spike_vertices(shape)
         if len(shape) < 3:
             continue
         p = make_valid(ShapelyPolygon(shape))
@@ -1644,6 +1610,7 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
                 print(f"  NOTE: {designator}: SUBTR clipped footprint "
                       f"degenerate (area={unioned.area:.2e}), skipping",
                       file=sys.stderr)
+                SUA_FILTER_STATS["SUBTR clipped degenerate (area<1e-6)"][designator] += 1
                 continue
             partial_subs_clipped.append({
                 "sub_upper": sub_upper, "sub_lower": sub_lower,
@@ -1704,34 +1671,29 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
                       f"by SUBTR carve-outs, skipping", file=sys.stderr)
                 continue
 
-        # Sliver filter, per-band.
+        # Sliver filter, per-band. Absolute-area threshold: drop outer
+        # polygon pieces smaller than ~0.003 NM². Real disconnected
+        # airspace regions (e.g. a protrusion severed by a SUBTR)
+        # remain well above this; floating-point fragments from
+        # `unary_union` on overlapping sampled circles fall below.
         outer_parts = []
-        slivers_dropped = 0
         real_holes = 0
         outer_slivers_dropped = 0
-        max_outer_area = max((p.area for p in polys), default=0.0)
         for poly in polys:
             if poly.is_empty:
                 continue
-            if (len(polys) > 1 and max_outer_area > 0
-                    and poly.area < max_outer_area * OUTER_SLIVER_RATIO):
+            if len(polys) > 1 and poly.area < OUTER_SLIVER_AREA_MIN:
                 outer_slivers_dropped += 1
+                SUA_FILTER_STATS["OUTER_SLIVER_AREA_MIN (outer piece dropped)"][designator] += 1
                 continue
             outer_parts.append((list(poly.exterior.coords), False))
             for interior in poly.interiors:
-                hole_poly = ShapelyPolygon(interior.coords)
-                if hole_poly.area < HOLE_AREA_MIN:
-                    slivers_dropped += 1
-                    continue
                 outer_parts.append((list(interior.coords), True))
                 real_holes += 1
         band_tag = "BASE" if band_key == base_band else f"UNION band {band_key}"
         if real_holes:
             print(f"  NOTE: {designator}: {band_tag} produced {real_holes} "
                   f"interior hole(s)", file=sys.stderr)
-        if slivers_dropped:
-            print(f"  NOTE: {designator}: {band_tag} dropped {slivers_dropped} "
-                  f"sliver hole(s) (floating-point artifacts)", file=sys.stderr)
         if outer_slivers_dropped:
             print(f"  NOTE: {designator}: {band_tag} dropped "
                   f"{outer_slivers_dropped} sliver outer fragment(s)",
@@ -1805,14 +1767,30 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
             if geom.is_empty:
                 return []
             if isinstance(geom, ShapelyPolygon):
-                return [geom] if geom.area >= FACE_AREA_MIN else []
+                if geom.area >= FACE_AREA_MIN:
+                    return [geom]
+                SUA_FILTER_STATS["FACE_AREA_MIN (overlay sliver)"][designator] += 1
+                return []
             if isinstance(geom, ShapelyMultiPolygon):
-                return [g for g in geom.geoms
-                        if not g.is_empty and g.area >= FACE_AREA_MIN]
+                out = []
+                for g in geom.geoms:
+                    if g.is_empty:
+                        continue
+                    if g.area >= FACE_AREA_MIN:
+                        out.append(g)
+                    else:
+                        SUA_FILTER_STATS["FACE_AREA_MIN (overlay sliver)"][designator] += 1
+                return out
             if hasattr(geom, "geoms"):
-                return [g for g in geom.geoms
-                        if isinstance(g, ShapelyPolygon)
-                        and not g.is_empty and g.area >= FACE_AREA_MIN]
+                out = []
+                for g in geom.geoms:
+                    if not isinstance(g, ShapelyPolygon) or g.is_empty:
+                        continue
+                    if g.area >= FACE_AREA_MIN:
+                        out.append(g)
+                    else:
+                        SUA_FILTER_STATS["FACE_AREA_MIN (overlay sliver)"][designator] += 1
+                return out
             return []
 
         def _alt_to_str(ft, base_limit_str, base_lo, base_up):
@@ -2358,13 +2336,16 @@ def build_sua(conn, aixm_zf):
                 for ring, is_hole in stratum["parts"]:
                     for copy in handle_antimeridian(ring):
                         total_before += len(copy)
-                        despiked = remove_spike_vertices(copy)
-                        simplified = simplify_ring(despiked, epsilon)
+                        _n_pre_simp = len(copy)
+                        simplified = simplify_ring(copy, epsilon)
+                        if len(simplified) != _n_pre_simp:
+                            SUA_FILTER_STATS["simplify_ring (Douglas-Peucker)"][result["designator"]] += (_n_pre_simp - len(simplified))
                         # Drop degenerate parts (fewer than 3 distinct
                         # vertices) — typically a SUBTR zone that
                         # simplified down to a filament.
                         unique_pts = len({(lon, lat) for lon, lat in simplified})
                         if unique_pts < 3:
+                            SUA_FILTER_STATS["unique_pts<3 (degenerate part dropped)"][result["designator"]] += 1
                             continue
                         total_after += len(simplified)
                         for point_seq, (lon, lat) in enumerate(simplified):
@@ -2559,6 +2540,20 @@ def build_sua(conn, aixm_zf):
     conn.executemany(
         "INSERT INTO SUA_SEG VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", seg_data)
     print(f"  SUA_SEG: {seg_id} segments, {len(seg_data)} points")
+
+    # Cleanup-filter instrumentation summary: report how often each
+    # geometry filter actually changes output, so we can decide which
+    # are still earning their keep post-stratum rework.
+    print("  --- SUA geometry cleanup filter hit counts ---")
+    if not SUA_FILTER_STATS:
+        print("    (no filter activity — all filters are dead code)")
+    for name in sorted(SUA_FILTER_STATS):
+        hits = SUA_FILTER_STATS[name]
+        total = sum(hits.values())
+        n_suas = len(hits)
+        top = sorted(hits.items(), key=lambda kv: -kv[1])[:5]
+        top_str = ", ".join(f"{d}:{c}" for d, c in top)
+        print(f"    {name}: total={total}, SUAs={n_suas}  top: {top_str}")
 
     conn.execute("""
         CREATE VIRTUAL TABLE SUA_SEG_RTREE USING rtree(
