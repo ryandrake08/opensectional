@@ -285,7 +285,7 @@ namespace nasrbrowse
             )", 11))
 
             , stmt_sua_freqs(prepare_checked(db, R"(
-                SELECT MODE, TX_FREQ_MHZ, RX_FREQ_MHZ,
+                SELECT MODE, TX_FREQ, RX_FREQ,
                        COMM_ALLOWED, CHARTED
                 FROM SUA_FREQ
                 WHERE SUA_ID = ?1
@@ -850,8 +850,8 @@ namespace nasrbrowse
             {
                 sua_freq f;
                 f.mode         = d.stmt_sua_freqs.column_text(0);
-                f.tx_mhz       = d.stmt_sua_freqs.column_double(1);
-                f.rx_mhz       = d.stmt_sua_freqs.column_double(2);
+                f.tx           = d.stmt_sua_freqs.column_text(1);
+                f.rx           = d.stmt_sua_freqs.column_text(2);
                 f.comm_allowed = d.stmt_sua_freqs.column_text(3);
                 f.charted      = d.stmt_sua_freqs.column_text(4);
                 su.freqs.push_back(std::move(f));

@@ -362,17 +362,13 @@ static kv_list feature_kv(const nasrbrowse::pick_feature& f)
                 return event + off;
             };
             // Frequencies — one row per allocated channel. Format
-            // "<MHZ> [MODE] (CIVIL/MIL[, CHARTED])". TX==RX is the
-            // common case; if they differ, show "TX/RX".
+            // "<TX> [MODE] (CIVIL/MIL[, uncharted])"; show "TX/RX"
+            // if they differ. Frequency strings come straight from
+            // the source AIXM (already MHz like "122.95").
             for (const auto& f : v.freqs)
             {
-                char buf[64];
-                if (f.tx_mhz == f.rx_mhz)
-                    std::snprintf(buf, sizeof(buf), "%.3f", f.tx_mhz);
-                else
-                    std::snprintf(buf, sizeof(buf), "%.3f/%.3f",
-                                  f.tx_mhz, f.rx_mhz);
-                std::string val = buf;
+                std::string val = (f.tx == f.rx || f.rx.empty())
+                                  ? f.tx : (f.tx + "/" + f.rx);
                 if (!f.mode.empty() && f.mode != "OTHER")
                     val += " " + f.mode;
                 std::string flags;

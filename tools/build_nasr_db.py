@@ -2013,10 +2013,13 @@ def _parse_radio_channels(root, gml_id_map):
         mode = _text(ts, f"{{{AIXM}}}mode")
         tx = _text(ts, f"{{{AIXM}}}frequencyTransmission")
         rx = _text(ts, f"{{{AIXM}}}frequencyReception")
+        # AIXM declares MHz in `uom` on these elements; the FAA
+        # corpus is consistently MHz, so we keep the source text
+        # as-is and don't read the uom.
         channels[gid] = {
             "mode": mode,
-            "tx_freq": float(tx) if tx else None,
-            "rx_freq": float(rx) if rx else None,
+            "tx_freq": tx,
+            "rx_freq": rx,
         }
     return channels
 
@@ -2438,6 +2441,10 @@ def build_sua(conn, aixm_zf):
     """)
 
     conn.execute("DROP TABLE IF EXISTS SUA_FREQ")
+    # Frequencies stored as raw source text (matches the convention
+    # used by NAV_BASE.FREQ, ILS_BASE.LOC_FREQ, FRQ.FREQ, etc.).
+    # We never compare or do arithmetic on them in this app — only
+    # display — so a string round-trips without any precision loss.
     # COMM_ALLOWED: "CIVIL"/"MIL"/"" (from the per-airspace
     # RadioCommunicationChannelAllocation block).
     # CHARTED: "YES"/"NO"/"" — whether the channel is published on
@@ -2447,8 +2454,8 @@ def build_sua(conn, aixm_zf):
             SUA_ID INTEGER,
             FREQ_SEQ INTEGER,
             MODE TEXT,
-            TX_FREQ_MHZ REAL,
-            RX_FREQ_MHZ REAL,
+            TX_FREQ TEXT,
+            RX_FREQ TEXT,
             COMM_ALLOWED TEXT,
             CHARTED TEXT,
             PRIMARY KEY (SUA_ID, FREQ_SEQ)

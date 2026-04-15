@@ -189,8 +189,8 @@ namespace nasrbrowse
     struct sua_freq
     {
         std::string mode;            // "VHF" / "UHF" / "OTHER"
-        double tx_mhz = 0;
-        double rx_mhz = 0;
+        std::string tx;              // raw MHz string ("122.95")
+        std::string rx;              // raw MHz string
         std::string comm_allowed;    // "CIVIL" / "MIL" / ""
         std::string charted;         // "YES" / "NO" / ""
     };
