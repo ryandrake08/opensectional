@@ -2300,6 +2300,15 @@ def parse_aixm_sua(xml_data):
         if v and v != "BETWEEN":
             print(f"  WARN: unsupported altitudeInterpretation={v!r} "
                   f"— pipeline assumes BETWEEN", file=sys.stderr)
+    for elem in root.iter(f"{{{SAA}}}saaType"):
+        # Every Airspace in the SAA Subscriber File carries `SUA`.
+        # ATCAA-typed airspaces ship in a separate FAA distribution
+        # we don't ingest. Warn if we ever see a different value
+        # so we know the data scope has changed.
+        v = (elem.text or "").strip()
+        if v and v != "SUA":
+            print(f"  WARN: unsupported saa:saaType={v!r} "
+                  f"— pipeline only ingests SUAs", file=sys.stderr)
     for elem in root.iter(f"{{{AIXM}}}dependency"):
         # Inside `AirspaceVolumeDependency`. Only `HORZ_PROJECTION`
         # is observed; that's what `_collect_additive_shapes` handles
