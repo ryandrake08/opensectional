@@ -2240,6 +2240,44 @@ def parse_aixm_sua(xml_data):
         if a.get(f"{{{GML}}}id")
     }
 
+    # Source-data assumption checks. Every entry asserts a value the
+    # rest of the pipeline relies on; if a future data drop ever
+    # introduces a different value, we want a loud warning instead
+    # of silently mis-interpreting the source.
+    for elem in root.iter(f"{{{AIXM}}}altitudeInterpretation"):
+        # `BETWEEN` means lower ≤ altitude ≤ upper. Anything else
+        # would require new combination logic.
+        v = (elem.text or "").strip()
+        if v and v != "BETWEEN":
+            print(f"  WARN: unsupported altitudeInterpretation={v!r} "
+                  f"— pipeline assumes BETWEEN", file=sys.stderr)
+    for elem in root.iter(f"{{{AIXM}}}dependency"):
+        # Inside `AirspaceVolumeDependency`. Only `HORZ_PROJECTION`
+        # is observed; that's what `_collect_additive_shapes` handles
+        # via the xlink-resolution path (R-4812).
+        v = (elem.text or "").strip()
+        if v and v != "HORZ_PROJECTION":
+            print(f"  WARN: unsupported AirspaceVolumeDependency dependency="
+                  f"{v!r} — pipeline only handles HORZ_PROJECTION",
+                  file=sys.stderr)
+    for elem in root.iter(f"{{{AIXM}}}Surface"):
+        # Coordinates are stored as raw lon/lat with no projection
+        # step. Anything other than CRS84 (WGS84 lon/lat) would put
+        # geometry in the wrong place.
+        v = (elem.get("srsName") or "").strip()
+        if v and v.upper() != "URN:OGC:DEF:CRS:OGC:1.3:CRS84":
+            print(f"  WARN: unsupported Surface srsName={v!r} "
+                  f"— pipeline assumes WGS84 lon/lat (CRS84)",
+                  file=sys.stderr)
+    for tag in ("ArcByCenterPoint", "CircleByCenterPoint"):
+        # `parse_ring_points` samples a single arc per element; the
+        # multi-arc case would need a different traversal.
+        for elem in root.iter(f"{{{GML}}}{tag}"):
+            v = (elem.get("numArc") or "").strip()
+            if v and v != "1":
+                print(f"  WARN: gml:{tag} numArc={v!r} — pipeline "
+                      f"assumes a single arc per element", file=sys.stderr)
+
     results = []
     for airspace in root.iter(f"{{{AIXM}}}Airspace"):
         if airspace.get(f"{{{GML}}}id") in referenced_ids:
