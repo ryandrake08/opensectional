@@ -693,24 +693,289 @@ struct layer_map::impl
                         aspect_ratio());
     }
 
+    // Bundles the inputs shared by every pick_<feature> adapter: database,
+    // style/visibility predicates, the click location in several forms, and
+    // the point-feature pick radius. Built once per click by pick_at().
+    struct pick_context
+    {
+        nasrbrowse::nasr_database& db;
+        const nasrbrowse::chart_style& styles;
+        const nasrbrowse::layer_visibility& vis;
+        double zoom;
+        double click_lon;
+        double click_lat;
+        nasrbrowse::geo_bbox pick_box;   // padded around click for point features
+        nasrbrowse::geo_bbox click_box;  // degenerate — click point only
+        double pick_radius_nm;           // half-diagonal of pick_box, for line hits
+    };
+
+    // True if (click_lon, click_lat) is inside the given multi-ring polygon.
+    // Holes reverse the inside/outside state of the containing ring.
+    static bool point_in_multi_ring(
+        double lon, double lat,
+        const std::vector<nasrbrowse::polygon_ring>& rings)
+    {
+        bool inside = false;
+        for(const auto& ring : rings)
+        {
+            if(point_in_ring(lon, lat, ring.points))
+            {
+                if(ring.is_hole) { inside = false; break; }
+                inside = true;
+            }
+        }
+        return inside;
+    }
+
+    static void pick_airports(const pick_context& ctx,
+                               std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_airports]) return;
+        for(const auto& apt : ctx.db.query_airports(ctx.pick_box))
+            if(ctx.styles.airport_visible(apt, ctx.zoom))
+                out.push_back(apt);
+    }
+
+    static void pick_navaids(const pick_context& ctx,
+                              std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_navaids] || !ctx.vis.altitude.any()) return;
+        for(const auto& nav : ctx.db.query_navaids(ctx.pick_box))
+        {
+            if(!ctx.styles.navaid_visible(nav.nav_type, ctx.zoom)) continue;
+            bool keep = (nav.is_low && ctx.vis.altitude.show_low)
+                     || (nav.is_high && ctx.vis.altitude.show_high);
+            if(keep) out.push_back(nav);
+        }
+    }
+
+    static void pick_fixes(const pick_context& ctx,
+                            std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_fixes] || !ctx.vis.altitude.any()) return;
+        if(!ctx.styles.fix_visible(true, ctx.zoom) &&
+           !ctx.styles.fix_visible(false, ctx.zoom)) return;
+        for(const auto& f : ctx.db.query_fixes(ctx.pick_box))
+        {
+            bool keep = (f.is_low && ctx.vis.altitude.show_low)
+                     || (f.is_high && ctx.vis.altitude.show_high);
+            if(keep) out.push_back(f);
+        }
+    }
+
+    static void pick_obstacles(const pick_context& ctx,
+                                std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_obstacles] ||
+           !ctx.vis.altitude.low_enabled()) return;
+        for(const auto& obs : ctx.db.query_obstacles(ctx.pick_box))
+            if(ctx.styles.obstacle_visible(obs.agl_ht, ctx.zoom))
+                out.push_back(obs);
+    }
+
+    static void pick_comm_outlets(const pick_context& ctx,
+                                   std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_rco] ||
+           !ctx.vis.altitude.low_enabled() ||
+           !ctx.styles.rco_visible(ctx.zoom)) return;
+        for(const auto& c : ctx.db.query_comm_outlets(ctx.pick_box))
+            out.push_back(c);
+    }
+
+    static void pick_awos(const pick_context& ctx,
+                           std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_awos] ||
+           !ctx.vis.altitude.low_enabled() ||
+           !ctx.styles.awos_visible(ctx.zoom)) return;
+        for(const auto& a : ctx.db.query_awos(ctx.pick_box))
+            out.push_back(a);
+    }
+
+    static void pick_class_airspace(const pick_context& ctx,
+                                     std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_airspace] ||
+           !ctx.vis.altitude.low_enabled()) return;
+        for(const auto& a : ctx.db.query_class_airspace(ctx.click_box))
+        {
+            if(!ctx.styles.airspace_visible(a.airspace_class, a.local_type, ctx.zoom))
+                continue;
+            if(point_in_multi_ring(ctx.click_lon, ctx.click_lat, a.parts))
+                out.push_back(a);
+        }
+    }
+
+    static void pick_sua(const pick_context& ctx,
+                          std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_sua] || !ctx.vis.altitude.any()) return;
+        for(const auto& s : ctx.db.query_sua(ctx.click_box))
+        {
+            if(!ctx.styles.sua_visible(s.sua_type, ctx.zoom)) continue;
+            // Each stratum is independently selectable. Emit one pick per
+            // matching stratum so the info box shows its altitudes.
+            for(const auto& stratum : s.strata)
+            {
+                if(!ctx.vis.altitude.overlaps(stratum.lower_ft_val, stratum.lower_ft_ref,
+                                               stratum.upper_ft_val, stratum.upper_ft_ref))
+                    continue;
+                bool inside = false;
+                for(const auto& ring : stratum.parts)
+                {
+                    if(point_in_ring(ctx.click_lon, ctx.click_lat, ring.points))
+                    {
+                        if(ring.is_hole) { inside = false; break; }
+                        inside = true;
+                    }
+                }
+                if(!inside) continue;
+                nasrbrowse::sua pick = s;
+                pick.strata.clear();
+                pick.strata.push_back(stratum);
+                pick.upper_limit = stratum.upper_limit;
+                pick.lower_limit = stratum.lower_limit;
+                out.push_back(std::move(pick));
+            }
+        }
+    }
+
+    static void pick_artcc(const pick_context& ctx,
+                            std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_artcc] || !ctx.vis.altitude.any()) return;
+        for(const auto& a : ctx.db.query_artcc(ctx.click_box))
+        {
+            if(!ctx.styles.artcc_visible(a.altitude, ctx.zoom)) continue;
+            if(!altitude_filter_allows(ctx.vis.altitude, nasrbrowse::artcc_bands(a.altitude)))
+                continue;
+            if(point_in_ring(ctx.click_lon, ctx.click_lat, a.points))
+                out.push_back(a);
+        }
+    }
+
+    static void pick_adiz(const pick_context& ctx,
+                           std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_adiz] || !ctx.styles.adiz_visible(ctx.zoom)) return;
+        for(const auto& a : ctx.db.query_adiz(ctx.click_box))
+        {
+            for(const auto& part : a.parts)
+            {
+                if(point_in_ring(ctx.click_lon, ctx.click_lat, part))
+                {
+                    out.push_back(a);
+                    break;
+                }
+            }
+        }
+    }
+
+    static void pick_pja(const pick_context& ctx,
+                          std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_pja] || !ctx.vis.altitude.any()) return;
+        bool area_vis = ctx.styles.pja_area_visible(ctx.zoom);
+        bool point_vis = ctx.styles.pja_point_visible(ctx.zoom);
+        if(!area_vis && !point_vis) return;
+        // Query with the pick box so point PJAs (radius_nm == 0) whose
+        // R-tree bbox is degenerate still come back.
+        for(const auto& p : ctx.db.query_pjas(ctx.pick_box))
+        {
+            int upper = p.max_altitude_ft_msl > 0 ? p.max_altitude_ft_msl
+                                                   : nasrbrowse::altitude_filter::UNLIMITED_FT;
+            if(!ctx.vis.altitude.overlaps(0, upper)) continue;
+            bool is_point = (p.radius_nm <= 0);
+            if(is_point ? !point_vis : !area_vis) continue;
+            bool hit = is_point
+                ? (p.lon >= ctx.pick_box.lon_min && p.lon <= ctx.pick_box.lon_max
+                && p.lat >= ctx.pick_box.lat_min && p.lat <= ctx.pick_box.lat_max)
+                : point_in_circle_nm(ctx.click_lon, ctx.click_lat, p.lon, p.lat, p.radius_nm);
+            if(hit) out.push_back(p);
+        }
+    }
+
+    static void pick_maa(const pick_context& ctx,
+                          std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_maa] || !ctx.vis.altitude.low_enabled()) return;
+        bool area_vis = ctx.styles.maa_area_visible(ctx.zoom);
+        bool point_vis = ctx.styles.maa_point_visible(ctx.zoom);
+        if(!area_vis && !point_vis) return;
+        for(const auto& m : ctx.db.query_maas(ctx.click_box))
+        {
+            if(!m.shape.empty() && area_vis)
+            {
+                if(point_in_ring(ctx.click_lon, ctx.click_lat, m.shape))
+                    out.push_back(m);
+            }
+            else if(m.radius_nm > 0)
+            {
+                bool is_area = m.shape.empty();
+                if(is_area ? area_vis : point_vis)
+                    if(point_in_circle_nm(ctx.click_lon, ctx.click_lat, m.lon, m.lat, m.radius_nm))
+                        out.push_back(m);
+            }
+        }
+    }
+
+    static void pick_airways(const pick_context& ctx,
+                              std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_airways] || !ctx.vis.altitude.any()) return;
+        for(const auto& seg : ctx.db.query_airways(ctx.pick_box))
+        {
+            if(!ctx.styles.airway_visible(seg.awy_id, ctx.zoom)) continue;
+            if(!altitude_filter_allows(ctx.vis.altitude, nasrbrowse::airway_bands(seg.awy_id))) continue;
+            double d = point_to_segment_nm(ctx.click_lon, ctx.click_lat,
+                seg.from_lon, seg.from_lat, seg.to_lon, seg.to_lat);
+            if(d <= ctx.pick_radius_nm) out.push_back(seg);
+        }
+    }
+
+    static void pick_mtrs(const pick_context& ctx,
+                           std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_mtrs] || !ctx.vis.altitude.any() ||
+           !ctx.styles.mtr_visible(ctx.zoom)) return;
+        for(const auto& seg : ctx.db.query_mtrs(ctx.pick_box))
+        {
+            if(!altitude_filter_allows(ctx.vis.altitude, nasrbrowse::mtr_bands(seg.route_type_code)))
+                continue;
+            double d = point_to_segment_nm(ctx.click_lon, ctx.click_lat,
+                seg.from_lon, seg.from_lat, seg.to_lon, seg.to_lat);
+            if(d <= ctx.pick_radius_nm) out.push_back(seg);
+        }
+    }
+
+    static void pick_runways(const pick_context& ctx,
+                              std::vector<nasrbrowse::pick_feature>& out)
+    {
+        if(!ctx.vis[nasrbrowse::layer_runways] || !ctx.vis.altitude.low_enabled() ||
+           !ctx.styles.runway_visible(ctx.zoom)) return;
+        for(const auto& rwy : ctx.db.query_runways(ctx.pick_box))
+        {
+            double d = point_to_segment_nm(ctx.click_lon, ctx.click_lat,
+                rwy.end1_lon, rwy.end1_lat, rwy.end2_lon, rwy.end2_lat);
+            if(d <= ctx.pick_radius_nm) out.push_back(rwy);
+        }
+    }
+
     nasrbrowse::pick_result pick_at(double ndc_x, double ndc_y)
     {
         using namespace nasrbrowse;
 
-        double z = view.zoom_level(viewport_height);
-
-        // NDC to Web Mercator meters
+        // NDC → Web Mercator → lon/lat, wrapping lon to [-180, 180] for DB.
         double world_x = ndc_x * 2.0 * view.half_extent_y + view.center_x;
         double world_y = ndc_y * 2.0 * view.half_extent_y + view.center_y;
         double click_lon = mx_to_lon(world_x);
         double click_lat = my_to_lat(world_y);
-
-        // Wrap longitude into [-180, 180] for database queries
         click_lon = std::fmod(click_lon + 180.0, 360.0);
         if(click_lon < 0) click_lon += 360.0;
         click_lon -= 180.0;
 
-        // Point-feature pick box: convert pixel half-size to world coords
+        // Point-feature pick box: pixel half-size → world coords.
         double pick_half_ndc = (PICK_BOX_SIZE_PIXELS * 0.5) / viewport_height;
         double box_world_half = pick_half_ndc * 2.0 * view.half_extent_y;
         double box_lon_half = mx_to_lon(box_world_half);
@@ -721,278 +986,31 @@ struct layer_map::impl
             my_to_lat(world_y + box_world_half)};
         geo_bbox click_box{click_lon, click_lat, click_lon, click_lat};
 
+        pick_context ctx{
+            pick_db, styles, vis,
+            view.zoom_level(viewport_height),
+            click_lon, click_lat,
+            pick_box, click_box,
+            (pick_box.lat_max - pick_box.lat_min) * 0.5 * 60.0};
+
         pick_result result;
         result.lon = click_lon;
         result.lat = click_lat;
-
-        // Point features: query with pick box, all results are hits
-        if(vis[layer_airports])
-        {
-            const auto& airports = pick_db.query_airports(pick_box);
-            for(const auto& apt : airports)
-            {
-                if(styles.airport_visible(apt, z))
-                    result.features.push_back(apt);
-            }
-        }
-
-        if(vis[layer_navaids] && vis.altitude.any())
-        {
-            const auto& navaids = pick_db.query_navaids(pick_box);
-            for(const auto& nav : navaids)
-            {
-                if(!styles.navaid_visible(nav.nav_type, z)) continue;
-                bool keep = (nav.is_low && vis.altitude.show_low)
-                         || (nav.is_high && vis.altitude.show_high);
-                if(keep) result.features.push_back(nav);
-            }
-        }
-
-        if(vis[layer_fixes] && vis.altitude.any())
-        {
-            const auto& fixes = pick_db.query_fixes(pick_box);
-            for(const auto& f : fixes)
-            {
-                if(!(styles.fix_visible(true, z) || styles.fix_visible(false, z))) continue;
-                bool keep = (f.is_low && vis.altitude.show_low)
-                         || (f.is_high && vis.altitude.show_high);
-                if(keep) result.features.push_back(f);
-            }
-        }
-
-        if(vis[layer_obstacles] && vis.altitude.low_enabled())
-        {
-            const auto& obstacles = pick_db.query_obstacles(pick_box);
-            for(const auto& obs : obstacles)
-            {
-                if(styles.obstacle_visible(obs.agl_ht, z))
-                    result.features.push_back(obs);
-            }
-        }
-
-        if(vis[layer_rco] && vis.altitude.low_enabled())
-        {
-            if(styles.rco_visible(z))
-            {
-                const auto& outlets = pick_db.query_comm_outlets(pick_box);
-                for(const auto& c : outlets)
-                    result.features.push_back(c);
-            }
-        }
-
-        if(vis[layer_awos] && vis.altitude.low_enabled())
-        {
-            if(styles.awos_visible(z))
-            {
-                const auto& stations = pick_db.query_awos(pick_box);
-                for(const auto& a : stations)
-                    result.features.push_back(a);
-            }
-        }
-
-        // Area features: query with click point as degenerate bbox, then test containment
-        if(vis[layer_airspace] && vis.altitude.low_enabled())
-        {
-            const auto& airspaces = pick_db.query_class_airspace(click_box);
-            for(const auto& a : airspaces)
-            {
-                if(!styles.airspace_visible(a.airspace_class, a.local_type, z))
-                    continue;
-                bool inside = false;
-                for(const auto& ring : a.parts)
-                {
-                    if(point_in_ring(click_lon, click_lat, ring.points))
-                    {
-                        if(ring.is_hole)
-                        {
-                            inside = false;
-                            break;
-                        }
-                        inside = true;
-                    }
-                }
-                if(inside)
-                    result.features.push_back(a);
-            }
-        }
-
-        if(vis[layer_sua] && vis.altitude.any())
-        {
-            const auto& suas = pick_db.query_sua(click_box);
-            for(const auto& s : suas)
-            {
-                if(!styles.sua_visible(s.sua_type, z))
-                    continue;
-                // Each stratum is independently selectable. Emit one
-                // pick result per matching stratum, each carrying that
-                // stratum alone so the info box shows its altitudes.
-                for(const auto& stratum : s.strata)
-                {
-                    if(!vis.altitude.overlaps(stratum.lower_ft_val,
-                                              stratum.lower_ft_ref,
-                                              stratum.upper_ft_val,
-                                              stratum.upper_ft_ref))
-                        continue;
-                    bool inside = false;
-                    for(const auto& ring : stratum.parts)
-                    {
-                        if(point_in_ring(click_lon, click_lat, ring.points))
-                        {
-                            if(ring.is_hole) { inside = false; break; }
-                            inside = true;
-                        }
-                    }
-                    if(!inside)
-                        continue;
-                    sua pick = s;
-                    pick.strata.clear();
-                    pick.strata.push_back(stratum);
-                    pick.upper_limit = stratum.upper_limit;
-                    pick.lower_limit = stratum.lower_limit;
-                    result.features.push_back(std::move(pick));
-                }
-            }
-        }
-
-        if(vis[layer_artcc] && vis.altitude.any())
-        {
-            const auto& artccs = pick_db.query_artcc(click_box);
-            for(const auto& a : artccs)
-            {
-                if(!styles.artcc_visible(a.altitude, z))
-                    continue;
-                if(!altitude_filter_allows(vis.altitude, artcc_bands(a.altitude)))
-                    continue;
-                if(point_in_ring(click_lon, click_lat, a.points))
-                    result.features.push_back(a);
-            }
-        }
-
-        if(vis[layer_adiz])
-        {
-            if(styles.adiz_visible(z))
-            {
-                const auto& adizs = pick_db.query_adiz(click_box);
-                for(const auto& a : adizs)
-                {
-                    for(const auto& part : a.parts)
-                    {
-                        if(point_in_ring(click_lon, click_lat, part))
-                        {
-                            result.features.push_back(a);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        if(vis[layer_pja] && vis.altitude.any())
-        {
-            bool pja_area_vis = styles.pja_area_visible(z);
-            bool pja_point_vis = styles.pja_point_visible(z);
-            if(pja_area_vis || pja_point_vis)
-            {
-                // Query with the pick box so point PJAs (radius_nm == 0)
-                // whose R-tree bbox is degenerate still come back.
-                const auto& pjas = pick_db.query_pjas(pick_box);
-                for(const auto& p : pjas)
-                {
-                    int upper = p.max_altitude_ft_msl > 0 ? p.max_altitude_ft_msl
-                                                          : altitude_filter::UNLIMITED_FT;
-                    if(!vis.altitude.overlaps(0, upper)) continue;
-                    bool is_point = (p.radius_nm <= 0);
-                    if(is_point ? !pja_point_vis : !pja_area_vis) continue;
-                    bool hit;
-                    if(is_point)
-                        hit = (p.lon >= pick_box.lon_min && p.lon <= pick_box.lon_max
-                            && p.lat >= pick_box.lat_min && p.lat <= pick_box.lat_max);
-                    else
-                        hit = point_in_circle_nm(click_lon, click_lat, p.lon, p.lat, p.radius_nm);
-                    if(hit)
-                        result.features.push_back(p);
-                }
-            }
-        }
-
-        if(vis[layer_maa] && vis.altitude.low_enabled())
-        {
-            bool maa_area_vis = styles.maa_area_visible(z);
-            bool maa_point_vis = styles.maa_point_visible(z);
-            if(maa_area_vis || maa_point_vis)
-            {
-                const auto& maas = pick_db.query_maas(click_box);
-                for(const auto& m : maas)
-                {
-                    if(!m.shape.empty() && maa_area_vis)
-                    {
-                        if(point_in_ring(click_lon, click_lat, m.shape))
-                            result.features.push_back(m);
-                    }
-                    else if(m.radius_nm > 0)
-                    {
-                        bool is_area = (m.radius_nm > 0 && m.shape.empty());
-                        if(is_area ? maa_area_vis : maa_point_vis)
-                        {
-                            if(point_in_circle_nm(click_lon, click_lat, m.lon, m.lat, m.radius_nm))
-                                result.features.push_back(m);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Line features: query with pick box, test point-to-segment distance
-        double pick_radius_nm = (pick_box.lat_max - pick_box.lat_min) * 0.5 * 60.0;
-
-        if(vis[layer_airways] && vis.altitude.any())
-        {
-            const auto& airways = pick_db.query_airways(pick_box);
-            for(const auto& seg : airways)
-            {
-                if(!styles.airway_visible(seg.awy_id, z))
-                    continue;
-                if(!altitude_filter_allows(vis.altitude, airway_bands(seg.awy_id)))
-                    continue;
-                double d = point_to_segment_nm(click_lon, click_lat,
-                    seg.from_lon, seg.from_lat, seg.to_lon, seg.to_lat);
-                if(d <= pick_radius_nm)
-                    result.features.push_back(seg);
-            }
-        }
-
-        if(vis[layer_mtrs] && vis.altitude.any())
-        {
-            if(styles.mtr_visible(z))
-            {
-                const auto& mtrs = pick_db.query_mtrs(pick_box);
-                for(const auto& seg : mtrs)
-                {
-                    if(!altitude_filter_allows(vis.altitude, mtr_bands(seg.route_type_code)))
-                        continue;
-                    double d = point_to_segment_nm(click_lon, click_lat,
-                        seg.from_lon, seg.from_lat, seg.to_lon, seg.to_lat);
-                    if(d <= pick_radius_nm)
-                        result.features.push_back(seg);
-                }
-            }
-        }
-
-        if(vis[layer_runways] && vis.altitude.low_enabled())
-        {
-            if(styles.runway_visible(z))
-            {
-                const auto& runways = pick_db.query_runways(pick_box);
-                for(const auto& rwy : runways)
-                {
-                    double d = point_to_segment_nm(click_lon, click_lat,
-                        rwy.end1_lon, rwy.end1_lat, rwy.end2_lon, rwy.end2_lat);
-                    if(d <= pick_radius_nm)
-                        result.features.push_back(rwy);
-                }
-            }
-        }
-
+        pick_airports(ctx, result.features);
+        pick_navaids(ctx, result.features);
+        pick_fixes(ctx, result.features);
+        pick_obstacles(ctx, result.features);
+        pick_comm_outlets(ctx, result.features);
+        pick_awos(ctx, result.features);
+        pick_class_airspace(ctx, result.features);
+        pick_sua(ctx, result.features);
+        pick_artcc(ctx, result.features);
+        pick_adiz(ctx, result.features);
+        pick_pja(ctx, result.features);
+        pick_maa(ctx, result.features);
+        pick_airways(ctx, result.features);
+        pick_mtrs(ctx, result.features);
+        pick_runways(ctx, result.features);
         return result;
     }
 
