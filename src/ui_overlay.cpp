@@ -1,15 +1,48 @@
 #include "ui_overlay.hpp"
+#include "ui_sectioned_list.hpp"
+
+#include <array>
 #include <cstdio>
 #include <imgui.h>
 
 namespace nasrbrowse
 {
 
-    ui_overlay::ui_overlay() = default;
+    namespace
+    {
+        constexpr int SEARCH_INPUT_WIDTH_PX = 240;
+    }
 
-    bool ui_overlay::draw(float last_render_ms, double zoom_level)
+    struct ui_overlay::impl
+    {
+        layer_visibility vis;
+        char search_buf[64] = {0};
+        std::vector<search_hit> hits;
+    };
+
+    ui_overlay::ui_overlay() : pimpl(new impl) {}
+    ui_overlay::~ui_overlay() = default;
+
+    void ui_overlay::set_search_results(std::vector<search_hit> hits)
+    {
+        pimpl->hits = std::move(hits);
+    }
+
+    const std::vector<search_hit>& ui_overlay::search_results() const
+    {
+        return pimpl->hits;
+    }
+
+    const layer_visibility& ui_overlay::visibility() const
+    {
+        return pimpl->vis;
+    }
+
+    ui_overlay_result ui_overlay::draw(float last_render_ms, double zoom_level)
     {
         ImGuiIO& io = ImGui::GetIO();
+        ui_overlay_result result;
+        auto& d = *pimpl;
 
         // Zoom level overlay in the bottom-left corner
         ImGui::SetNextWindowPos(
@@ -60,7 +93,6 @@ namespace nasrbrowse
             ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoSavedSettings);
 
-        // Measure the widest label
         float max_label_w = 0;
         for(const auto& e : layer_entries)
         {
@@ -69,7 +101,7 @@ namespace nasrbrowse
         }
 
         float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
-        bool changed = false;
+        bool& changed = result.visibility_changed;
 
         for(const auto& e : layer_entries)
         {
@@ -80,8 +112,8 @@ namespace nasrbrowse
             ImGui::SameLine(0, spacing);
 
             char id[32];
-            snprintf(id, sizeof(id), "##%s", e.label);
-            if(ImGui::Checkbox(id, &vis[e.id]))
+            std::snprintf(id, sizeof(id), "##%s", e.label);
+            if(ImGui::Checkbox(id, &d.vis[e.id]))
             {
                 changed = true;
             }
@@ -89,12 +121,7 @@ namespace nasrbrowse
 
         ImGui::End();
 
-        // Altitude band filter: a separate, visually distinct panel on the
-        // right side beneath the layer checkboxes. Independent of per-layer
-        // visibility — filters features by their altitude relevance.
-        ImVec2 layers_min = ImGui::GetItemRectMin();
-        (void)layers_min;
-
+        // Altitude band filter beneath the layer checkboxes.
         ImGui::SetNextWindowPos(
             ImVec2(io.DisplaySize.x, ImGui::GetFrameHeightWithSpacing() * static_cast<float>(IM_ARRAYSIZE(layer_entries) + 1) + 16.0F),
             ImGuiCond_Always,
@@ -108,22 +135,84 @@ namespace nasrbrowse
             ImGuiWindowFlags_NoCollapse |
             ImGuiWindowFlags_NoSavedSettings);
 
-        if(ImGui::Checkbox("Below 18,000 ft", &vis.altitude.show_low))
-        {
+        if(ImGui::Checkbox("Below 18,000 ft", &d.vis.altitude.show_low))
             changed = true;
+        if(ImGui::Checkbox("18,000 ft and above", &d.vis.altitude.show_high))
+            changed = true;
+
+        ImGui::End();
+
+        // Search box in the top-left corner.
+        ImGui::SetNextWindowPos(
+            ImVec2(0, 0), ImGuiCond_Always, ImVec2(0.0F, 0.0F));
+        ImGui::SetNextWindowBgAlpha(0.85F);
+        ImGui::Begin("##search", nullptr,
+            ImGuiWindowFlags_NoDecoration |
+            ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoNav |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoSavedSettings);
+
+        ImGui::SetNextItemWidth(static_cast<float>(SEARCH_INPUT_WIDTH_PX));
+        ImGui::InputTextWithHint("##search_input", "Search",
+                                  d.search_buf, sizeof(d.search_buf));
+        bool input_focused = ImGui::IsItemFocused();
+        result.search_query = d.search_buf;
+
+        bool enter_pressed = input_focused &&
+                             ImGui::IsKeyPressed(ImGuiKey_Enter, false);
+
+        // Group hits by entity_type into the shared feature section list.
+        std::vector<ui_section> sections(FEATURE_SECTION_COUNT);
+        std::vector<std::vector<int>> section_hit_index(FEATURE_SECTION_COUNT);
+        for(std::size_t s = 0; s < FEATURE_SECTION_COUNT; ++s)
+            sections[s].header = FEATURE_SECTIONS[s].header;
+
+        for(int i = 0; i < static_cast<int>(d.hits.size()); ++i)
+        {
+            const auto& h = d.hits[i];
+            int s = feature_section_index(h.entity_type.c_str());
+            if(s < 0) continue;
+
+            std::string label;
+            if(!h.ids.empty() && !h.name.empty())
+                label = h.ids + "  " + h.name;
+            else if(!h.ids.empty())
+                label = h.ids;
+            else
+                label = h.name;
+
+            sections[s].items.push_back(std::move(label));
+            section_hit_index[s].push_back(i);
         }
-        if(ImGui::Checkbox("18,000 ft and above", &vis.altitude.show_high))
+
+        auto picked = draw_sectioned_selectable_list(sections);
+
+        // Enter accepts the first visible hit across all sections.
+        std::optional<int> selected_flat;
+        if(picked)
+            selected_flat = section_hit_index[picked->first][picked->second];
+        else if(enter_pressed && !d.hits.empty())
         {
-            changed = true;
+            for(std::size_t s = 0; s < FEATURE_SECTION_COUNT; ++s)
+            {
+                if(!section_hit_index[s].empty())
+                {
+                    selected_flat = section_hit_index[s][0];
+                    break;
+                }
+            }
+        }
+
+        if(selected_flat)
+        {
+            result.selected_hit_index = *selected_flat;
+            d.search_buf[0] = '\0';
+            result.search_query.clear();
         }
 
         ImGui::End();
-        return changed;
-    }
-
-    const layer_visibility& ui_overlay::visibility() const
-    {
-        return vis;
+        return result;
     }
 
 } // namespace nasrbrowse

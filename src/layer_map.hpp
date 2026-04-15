@@ -15,7 +15,9 @@ namespace sdl
 namespace nasrbrowse
 {
     struct layer_visibility;
+    struct search_hit;
     class chart_style;
+    class nasr_database;
 }
 
 class layer_map : public layer
@@ -25,6 +27,7 @@ class layer_map : public layer
 
 public:
     layer_map(sdl::device& dev, const char* tile_path, const char* db_path,
+              nasrbrowse::nasr_database& db,
               const nasrbrowse::chart_style& cs,
               sdl::text_engine& text_engine, sdl::font& font,
               sdl::font& outline_font,
@@ -32,6 +35,9 @@ public:
     ~layer_map() override;
 
     void set_visibility(const nasrbrowse::layer_visibility& vis);
+
+    // Recenter the map on a search hit and zoom to fit.
+    void focus_on_hit(const nasrbrowse::search_hit& hit);
     void set_imgui_wants_mouse(bool wants);
     double zoom_level() const;
 

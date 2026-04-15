@@ -58,6 +58,7 @@ namespace nasrbrowse
         sqlite::statement stmt_adiz_seg;
         sqlite::statement stmt_cls_arsp_seg;
         sqlite::statement stmt_sua_seg;
+        sqlite::statement stmt_search;
 
         std::vector<airport> airports;
         std::vector<navaid> navaids;
@@ -472,6 +473,15 @@ namespace nasrbrowse
                 AND (?5 IS NULL OR SUA_TYPE IN (SELECT value FROM json_each(?5)))
                 ORDER BY SEG_ID, POINT_SEQ
             )", 8))
+
+            , stmt_search(prepare_checked(db, R"(
+                SELECT entity_type, entity_rowid, ids, name,
+                       bm25(search_fts, 0, 0, 10.0, 3.0, 1.0) AS rank
+                FROM search_fts
+                WHERE search_fts MATCH ?1
+                ORDER BY rank
+                LIMIT ?2
+            )", 5))
         {
             // Precompute the set of shadowed ARSP_IDs. Any class airspace
             // that has a lower-class neighbor at the same non-empty IDENT
@@ -1102,6 +1112,106 @@ namespace nasrbrowse
                  d.stmt_sua_seg.column_double(2)});
         }
         return d.sua_segs;
+    }
+
+    std::vector<search_hit> nasr_database::search(const std::string& query, int limit)
+    {
+        // Build an FTS5 MATCH expression from the user query. Split on
+        // whitespace; for each token keep only alphanumerics (FTS5 rejects
+        // unescaped hyphens, apostrophes, etc.), then append '*' for prefix
+        // matching. Tokens are space-separated (implicit AND).
+        std::string expr;
+        std::string tok;
+        auto flush = [&]()
+        {
+            if(tok.empty()) return;
+            if(!expr.empty()) expr.push_back(' ');
+            expr.append(tok);
+            expr.push_back('*');
+            tok.clear();
+        };
+        for(char c : query)
+        {
+            if((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+               (c >= '0' && c <= '9'))
+                tok.push_back(c);
+            else
+                flush();
+        }
+        flush();
+
+        std::vector<search_hit> hits;
+        if(expr.empty()) return hits;
+
+        auto& d = *pimpl;
+        d.stmt_search.reset();
+        d.stmt_search.bind(1, expr);
+        d.stmt_search.bind(2, limit);
+        while(d.stmt_search.step())
+        {
+            hits.push_back(search_hit{
+                d.stmt_search.column_text(0),
+                d.stmt_search.column_int(1),
+                d.stmt_search.column_text(2),
+                d.stmt_search.column_text(3)});
+        }
+        return hits;
+    }
+
+    std::optional<geo_bbox> nasr_database::get_hit_bbox(const search_hit& hit)
+    {
+        const std::string& entity_type = hit.entity_type;
+        int entity_rowid = hit.entity_rowid;
+        // Per-type SQL. Point entities return a degenerate bbox built from
+        // the source table's lat/lon columns; areal entities read their
+        // BASE_RTREE; line entities (AWY/MTR) aggregate over their segment
+        // tables. Prepared on demand — search navigation happens at click
+        // rate, so compile cost is negligible.
+        const char* sql = nullptr;
+        if(entity_type == "APT")
+            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM APT_BASE WHERE rowid = ?1";
+        else if(entity_type == "NAV")
+            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM NAV_BASE WHERE rowid = ?1";
+        else if(entity_type == "FIX")
+            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM FIX_BASE WHERE rowid = ?1";
+        else if(entity_type == "FSS")
+            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM FSS_BASE WHERE rowid = ?1";
+        else if(entity_type == "AWOS")
+            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM AWOS WHERE rowid = ?1";
+        else if(entity_type == "COM")
+            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM COM WHERE rowid = ?1";
+        else if(entity_type == "PJA")
+            sql = "SELECT LON, LON, LAT, LAT FROM PJA_BASE WHERE rowid = ?1";
+        else if(entity_type == "SUA")
+            sql = "SELECT min_lon, max_lon, min_lat, max_lat FROM SUA_BASE_RTREE WHERE id = ?1";
+        else if(entity_type == "CLS")
+            sql = "SELECT min_lon, max_lon, min_lat, max_lat FROM CLS_ARSP_BASE_RTREE WHERE id = ?1";
+        else if(entity_type == "ARTCC")
+            sql = "SELECT min_lon, max_lon, min_lat, max_lat FROM ARTCC_BASE_RTREE WHERE id = ?1";
+        else if(entity_type == "ADIZ")
+            sql = "SELECT min_lon, max_lon, min_lat, max_lat FROM ADIZ_BASE_RTREE WHERE id = ?1";
+        else if(entity_type == "AWY")
+            sql = "SELECT MIN(FROM_LON), MAX(FROM_LON), MIN(FROM_LAT), MAX(FROM_LAT) "
+                  "FROM AWY_SEG WHERE AWY_ID = (SELECT AWY_ID FROM AWY_BASE WHERE rowid = ?1)";
+        else if(entity_type == "MTR")
+            sql = "SELECT MIN(FROM_LON), MAX(FROM_LON), MIN(FROM_LAT), MAX(FROM_LAT) "
+                  "FROM MTR_SEG WHERE MTR_ID = (SELECT ROUTE_ID FROM MTR_BASE WHERE rowid = ?1)";
+
+        if(!sql) return std::nullopt;
+
+        auto& d = *pimpl;
+        auto stmt = d.db.prepare(sql);
+        stmt.bind(1, entity_rowid);
+        if(!stmt.step()) return std::nullopt;
+
+        geo_bbox bb;
+        bb.lon_min = stmt.column_double(0);
+        bb.lon_max = stmt.column_double(1);
+        bb.lat_min = stmt.column_double(2);
+        bb.lat_max = stmt.column_double(3);
+        if(bb.lon_min == 0 && bb.lon_max == 0 && bb.lat_min == 0 && bb.lat_max == 0)
+            return std::nullopt;  // null/missing coords
+        return bb;
     }
 
 } // namespace nasrbrowse

@@ -1,4 +1,5 @@
 #include "layer_map.hpp"
+#include "nasr_database.hpp"
 #include "render_context.hpp"
 #include "ui_overlay.hpp"
 #include "chart_style.hpp"
@@ -328,9 +329,13 @@ int main(int argc, char** argv)
         // Load chart style (hardcoded VFR defaults, overridden by INI if present)
         nasrbrowse::chart_style chart_styles(conf_path, nasrbrowse::chart_mode::vfr);
 
+        // NASR database used for picks, info popup, and search. Owned here
+        // and borrowed by layer_map (and by the UI search path below).
+        nasrbrowse::nasr_database nasr_db(db_path);
+
         // Create map layer
         auto map_layer = std::make_shared<layer_map>(
-            dev, tile_path, db_path, chart_styles,
+            dev, tile_path, db_path, nasr_db, chart_styles,
             text_engine, label_font, outline_font, text_sampler);
         event_mgr.add_listener(map_layer);
 
@@ -339,6 +344,11 @@ int main(int argc, char** argv)
 
         // UI overlay (FPS display + layer checkboxes)
         nasrbrowse::ui_overlay ui;
+
+        // Cached search state: the query whose results are currently in
+        // ui.search_results(), so we re-run the FTS query only when the text changes.
+        std::string last_search_query;
+        constexpr int SEARCH_RESULT_LIMIT = 12;
 
         // Main loop
         bool needs_render = true;
@@ -365,9 +375,32 @@ int main(int argc, char** argv)
             // click) even when the map hasn't changed
             imgui_ctx.new_frame();
 
-            if(ui.draw(last_render_ms, map_layer->zoom_level()))
+            auto ui_result = ui.draw(last_render_ms, map_layer->zoom_level());
+            if(ui_result.visibility_changed)
             {
                 map_layer->set_visibility(ui.visibility());
+                needs_render = true;
+            }
+            // Handle selection before reacting to query-text changes: picking
+            // a hit also clears the search box, and we must resolve the hit
+            // against the current results before those results get replaced.
+            if(ui_result.selected_hit_index)
+            {
+                int idx = *ui_result.selected_hit_index;
+                if(idx >= 0 && idx < static_cast<int>(ui.search_results().size()))
+                    map_layer->focus_on_hit(ui.search_results()[idx]);
+                ui.set_search_results({});
+                last_search_query.clear();
+                needs_render = true;
+            }
+            else if(ui_result.search_query != last_search_query)
+            {
+                last_search_query = ui_result.search_query;
+                ui.set_search_results(
+                    last_search_query.empty()
+                        ? std::vector<nasrbrowse::search_hit>{}
+                        : nasr_db.search(
+                              last_search_query, SEARCH_RESULT_LIMIT));
                 needs_render = true;
             }
 

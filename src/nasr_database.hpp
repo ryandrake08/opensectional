@@ -414,6 +414,17 @@ namespace nasrbrowse
         std::vector<polygon_ring> parts;
     };
 
+    // One row from full-text search over top-level features.
+    // `entity_rowid` is the rowid in the source table for `entity_type`;
+    // the caller resolves this to a full feature via a per-type lookup.
+    struct search_hit
+    {
+        std::string entity_type;  // "APT","NAV","FIX","AWY","SUA","CLS","ARTCC","FSS","AWOS","COM","MTR","PJA","ADIZ"
+        int entity_rowid;
+        std::string ids;
+        std::string name;
+    };
+
     class nasr_database
     {
         struct impl;
@@ -462,6 +473,18 @@ namespace nasrbrowse
         const geo_bbox& bbox, const filter_list& class_filter = std::nullopt);
         const std::vector<sua_segment>& query_sua_segments(
         const geo_bbox& bbox, const filter_list& type_filter = std::nullopt);
+
+        // Full-text search across the search_fts index. Tokens are split on
+        // whitespace; each token is sanitized (alphanumerics only) and given
+        // a `*` suffix for prefix matching. Tokens are ANDed. Results are
+        // ranked by bm25 with ids weighted higher than name. Returns at most
+        // `limit` hits.
+        std::vector<search_hit> search(const std::string& query, int limit);
+
+        // Geographic bounding box for a search hit. Point features return a
+        // degenerate bbox (min == max). Returns nullopt if the hit cannot be
+        // resolved (missing coords, unknown entity_type, stale rowid).
+        std::optional<geo_bbox> get_hit_bbox(const search_hit& hit);
     };
 
 } // namespace nasrbrowse

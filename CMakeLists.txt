@@ -47,7 +47,7 @@ add_executable(nasrbrowse
     src/chart_style.cpp
     src/tile_renderer.cpp
     src/ui_overlay.cpp
-
+    src/ui_sectioned_list.cpp
 )
 
 # SDL C++ wrapper library

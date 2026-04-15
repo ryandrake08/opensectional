@@ -7,6 +7,7 @@
 #include "render_context.hpp"
 #include "tile_renderer.hpp"
 #include "ui_overlay.hpp"
+#include "ui_sectioned_list.hpp"
 #include "chart_style.hpp"
 #include <cmath>
 #include <glm/ext/matrix_transform.hpp>
@@ -90,28 +91,29 @@ static double point_to_segment_nm(double px, double py,
 }
 
 
-// Pick-feature classification and formatting helpers.
-// NEARBY = point features; AIRWAYS = line features; AIRSPACE = area features.
-enum pick_bucket { BUCKET_NEARBY, BUCKET_AIRWAYS, BUCKET_AIRSPACE, BUCKET_COUNT };
-
-static pick_bucket feature_bucket(const nasrbrowse::pick_feature& f)
+// Maps a pick_feature to the shared feature-section tag used by
+// FEATURE_SECTIONS in ui_sectioned_list.
+static const char* feature_section_tag(const nasrbrowse::pick_feature& f)
 {
-    return std::visit([](const auto& v) -> pick_bucket
+    return std::visit([](const auto& v) -> const char*
     {
         using T = std::decay_t<decltype(v)>;
-        if constexpr(std::is_same_v<T, nasrbrowse::airport>
-                  || std::is_same_v<T, nasrbrowse::navaid>
-                  || std::is_same_v<T, nasrbrowse::fix>
-                  || std::is_same_v<T, nasrbrowse::obstacle>
-                  || std::is_same_v<T, nasrbrowse::awos>
-                  || std::is_same_v<T, nasrbrowse::comm_outlet>
-                  || std::is_same_v<T, nasrbrowse::runway>)
-            return BUCKET_NEARBY;
-        else if constexpr(std::is_same_v<T, nasrbrowse::airway_segment>
-                       || std::is_same_v<T, nasrbrowse::mtr_segment>)
-            return BUCKET_AIRWAYS;
-        else
-            return BUCKET_AIRSPACE;
+        if constexpr(std::is_same_v<T, nasrbrowse::airport>)         return "APT";
+        else if constexpr(std::is_same_v<T, nasrbrowse::navaid>)     return "NAV";
+        else if constexpr(std::is_same_v<T, nasrbrowse::fix>)        return "FIX";
+        else if constexpr(std::is_same_v<T, nasrbrowse::obstacle>)   return "OBS";
+        else if constexpr(std::is_same_v<T, nasrbrowse::awos>)       return "AWOS";
+        else if constexpr(std::is_same_v<T, nasrbrowse::comm_outlet>) return "COM";
+        else if constexpr(std::is_same_v<T, nasrbrowse::runway>)     return "RWY";
+        else if constexpr(std::is_same_v<T, nasrbrowse::airway_segment>) return "AWY";
+        else if constexpr(std::is_same_v<T, nasrbrowse::mtr_segment>) return "MTR";
+        else if constexpr(std::is_same_v<T, nasrbrowse::class_airspace>) return "CLS";
+        else if constexpr(std::is_same_v<T, nasrbrowse::sua>)        return "SUA";
+        else if constexpr(std::is_same_v<T, nasrbrowse::maa>)        return "MAA";
+        else if constexpr(std::is_same_v<T, nasrbrowse::pja>)        return "PJA";
+        else if constexpr(std::is_same_v<T, nasrbrowse::adiz>)       return "ADIZ";
+        else if constexpr(std::is_same_v<T, nasrbrowse::artcc>)      return "ARTCC";
+        else                                                         return "";
     }, f);
 }
 
@@ -544,8 +546,9 @@ struct layer_map::impl
     nasrbrowse::label_renderer labels;
     const sdl::sampler& text_sampler;
 
-    // Pick state
-    nasrbrowse::nasr_database pick_db;
+    // Pick state. The database is owned by main() — layer_map borrows it
+    // for click-time picks and search-result navigation.
+    nasrbrowse::nasr_database& pick_db;
     nasrbrowse::chart_style styles;
     nasrbrowse::layer_visibility vis;
     double cursor_ndc_x;
@@ -557,6 +560,7 @@ struct layer_map::impl
     info_popup_state info_popup;
 
     impl(sdl::device& dev, const char* tile_path, const char* db_path,
+         nasrbrowse::nasr_database& pick_db,
          const nasrbrowse::chart_style& cs,
          sdl::text_engine& text_engine, sdl::font& font,
          sdl::font& outline_font,
@@ -570,7 +574,7 @@ struct layer_map::impl
         , features(dev, db_path, cs)
         , labels(dev, text_engine, font, outline_font)
         , text_sampler(text_sampler)
-        , pick_db(db_path)
+        , pick_db(pick_db)
         , styles(cs)
         , cursor_ndc_x(0)
         , cursor_ndc_y(0)
@@ -1153,34 +1157,26 @@ struct layer_map::impl
         {
             ImGui::Separator();
 
-            const char* headers[BUCKET_COUNT] = {"NEARBY", "AIRWAYS", "AIRSPACE"};
-            const nasrbrowse::pick_feature* selected = nullptr;
-
-            for(int b = 0; b < BUCKET_COUNT; ++b)
+            // Group pick features by their canonical feature-section tag.
+            std::vector<nasrbrowse::ui_section> sections(nasrbrowse::FEATURE_SECTION_COUNT);
+            std::vector<std::vector<int>> section_feature_index(nasrbrowse::FEATURE_SECTION_COUNT);
+            for(std::size_t s = 0; s < nasrbrowse::FEATURE_SECTION_COUNT; ++s)
+                sections[s].header = nasrbrowse::FEATURE_SECTIONS[s].header;
+            for(int i = 0; i < static_cast<int>(pick_popup.features.size()); ++i)
             {
-                bool any = false;
-                for(const auto& f : pick_popup.features)
-                    if(feature_bucket(f) == b) { any = true; break; }
-                if(!any) continue;
-
-                ImGui::TextDisabled("%s", headers[b]);
-                int idx = 0;
-                for(const auto& f : pick_popup.features)
-                {
-                    if(feature_bucket(f) != b) continue;
-                    std::string summary = feature_summary(f);
-                    char id[32];
-                    std::snprintf(id, sizeof(id), "##pick_item_%d_%d", b, idx++);
-                    ImGui::PushID(id);
-                    if(ImGui::Selectable(summary.c_str(), false))
-                        selected = &f;
-                    ImGui::PopID();
-                }
+                int s = nasrbrowse::feature_section_index(
+                    feature_section_tag(pick_popup.features[i]));
+                if(s < 0) continue;
+                sections[s].items.push_back(feature_summary(pick_popup.features[i]));
+                section_feature_index[s].push_back(i);
             }
 
-            if(selected)
+            auto picked = nasrbrowse::draw_sectioned_selectable_list(sections);
+            if(picked)
             {
-                open_info_popup(*selected, pick_popup.click_lon, pick_popup.click_lat);
+                int fi = section_feature_index[picked->first][picked->second];
+                open_info_popup(pick_popup.features[fi],
+                                pick_popup.click_lon, pick_popup.click_lat);
                 pick_popup.open = false;
                 pick_popup.features.clear();
             }
@@ -1287,12 +1283,13 @@ struct layer_map::impl
 };
 
 layer_map::layer_map(sdl::device& dev, const char* tile_path, const char* db_path,
+                     nasrbrowse::nasr_database& db,
                      const nasrbrowse::chart_style& cs,
                      sdl::text_engine& text_engine, sdl::font& font,
                      sdl::font& outline_font,
                      const sdl::sampler& text_sampler)
     : layer()
-    , pimpl(new impl(dev, tile_path, db_path, cs, text_engine, font, outline_font, text_sampler))
+    , pimpl(new impl(dev, tile_path, db_path, db, cs, text_engine, font, outline_font, text_sampler))
 {
 }
 
@@ -1307,6 +1304,49 @@ void layer_map::set_visibility(const nasrbrowse::layer_visibility& vis)
     // Kick a requery in case the altitude filter invalidated the cache —
     // otherwise nothing re-runs until the next input event.
     pimpl->update_tiles();
+}
+
+void layer_map::focus_on_hit(const nasrbrowse::search_hit& hit)
+{
+    auto bbox = pimpl->pick_db.get_hit_bbox(hit);
+    if(!bbox) return;
+
+    auto& d = *pimpl;
+    double cx = (bbox->lon_min + bbox->lon_max) * 0.5;
+    double cy = (bbox->lat_min + bbox->lat_max) * 0.5;
+    d.view.center_x = nasrbrowse::lon_to_mx(cx);
+    d.view.center_y = nasrbrowse::lat_to_my(cy);
+
+    // Degenerate bbox (point entity) → use a fixed close-in zoom level so
+    // the feature is guaranteed visible under chart_style's per-type
+    // min_zoom thresholds (navaids appear by ~z9, airports by ~z7, fixes
+    // by ~z10 — zoom 12 covers all of them comfortably).
+    constexpr int POINT_FOCUS_ZOOM = 12;
+    bool is_point = (bbox->lon_min == bbox->lon_max &&
+                     bbox->lat_min == bbox->lat_max);
+    if(is_point)
+    {
+        d.view.zoom_to_level(d.viewport_height, POINT_FOCUS_ZOOM);
+    }
+    else
+    {
+        // Fit the bbox with 20% padding. Use the larger of the required
+        // vertical / horizontal extents (the latter scaled by aspect ratio).
+        double half_height_m =
+            (nasrbrowse::lat_to_my(bbox->lat_max) -
+             nasrbrowse::lat_to_my(bbox->lat_min)) * 0.5;
+        double half_width_m =
+            (nasrbrowse::lon_to_mx(bbox->lon_max) -
+             nasrbrowse::lon_to_mx(bbox->lon_min)) * 0.5;
+        double needed = std::max(half_height_m,
+                                  half_width_m / d.aspect_ratio());
+        d.view.half_extent_y = needed * 1.2;
+        // Force clamp by setting same extent through zoom(1.0).
+        d.view.zoom(1.0, d.viewport_height);
+    }
+
+    d.needs_update = true;
+    d.update_tiles();
 }
 
 void layer_map::set_imgui_wants_mouse(bool wants)
