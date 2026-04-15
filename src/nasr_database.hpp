@@ -182,6 +182,19 @@ namespace nasrbrowse
     // fields summarize the BASE stratum for the one-line label. For a
     // pick result, `strata` contains exactly the one stratum that was
     // clicked (pick returns one `sua` per matching stratum).
+    // One radio channel allocated to a SUA. The
+    // RadioCommunicationChannelAllocation block in AIXM binds each
+    // channel to a specific airspace with civil/mil and charted
+    // flags; older or unbound channels carry empty flag strings.
+    struct sua_freq
+    {
+        std::string mode;            // "VHF" / "UHF" / "OTHER"
+        double tx_mhz = 0;
+        double rx_mhz = 0;
+        std::string comm_allowed;    // "CIVIL" / "MIL" / ""
+        std::string charted;         // "YES" / "NO" / ""
+    };
+
     // One Timesheet entry from the AIXM AirspaceUsage. A SUA may
     // have many — e.g. one per day-of-week. Either clock times
     // (`start_time`/`end_time`) or solar events (`start_event`/
@@ -224,6 +237,7 @@ namespace nasrbrowse
         std::string legal_note;
         std::vector<sua_stratum> strata;
         std::vector<sua_schedule> schedules;
+        std::vector<sua_freq> freqs;
     };
 
     // Column order follows PJA_BASE table

@@ -2145,48 +2145,77 @@ def _parse_timesheets(root):
 
 
 def _parse_freq_allocations(root, channels):
-    """Parse frequency allocations from InformationService extensions.
+    """Resolve per-airspace channel allocations.
 
-    Each InformationService may have a RadioCommunicationChannelAllocation
-    that links a channel to an airspace with charted/communicationAllowed
-    metadata. Also captures direct channel references.
-
-    Returns a list of freq dicts with mode, tx/rx freq, and allocation info.
+    Returns `(by_airspace, fallback)` where:
+      `by_airspace` — dict {airspace_gml_id → [freq_dict, ...]} from
+                      `RadioCommunicationChannelAllocation` blocks.
+                      Each freq_dict carries `comm_allowed` and
+                      `charted` flags from the allocation.
+      `fallback`    — list of freq_dicts for channels that no
+                      allocation references; legacy "file-scope"
+                      channels that fall back to all SUAs.
     """
-    freqs = []
-    seen = set()  # avoid duplicates from both direct ref and allocation
+    # Per-airspace mapping: airspace gml:id → list of freq dicts.
+    # `RadioCommunicationChannelAllocation` blocks pin each channel
+    # to a specific airspace via `<associatedAirspace xlink:href>`,
+    # along with `communicationAllowed` (CIVIL/MIL) and `charted`
+    # (YES/NO) flags. In multi-airspace files (e.g. R-4812) this is
+    # the only correct way to determine which channels belong to
+    # which airspace.
+    by_airspace = {}      # gml_id → [freq_dict, ...]
+    seen_per_airspace = {}  # gml_id → set of channel hrefs seen
+    fallback = []         # channels with no allocation block at all
 
-    for svc in root.iter(f"{{{AIXM}}}InformationService"):
-        ts = svc.find(f".//{{{AIXM}}}InformationServiceTimeSlice")
-        if ts is None:
+    for alloc in root.iter(
+            f"{{{SAA}}}RadioCommunicationChannelAllocation"):
+        airspace_ref = alloc.find(f"{{{SAA}}}associatedAirspace")
+        if airspace_ref is None:
             continue
-
-        # Direct channel reference
-        rc = ts.find(f"{{{AIXM}}}radioCommunication")
-        if rc is not None:
-            href = rc.get(f"{{{XLINK}}}href", "")
-            ch = _resolve_href(href, channels)
-            if ch and href not in seen:
-                seen.add(href)
-                freqs.append(ch.copy())
-
-        # Channel allocations from extension
-        for alloc in ts.iter(f"{{{SAA}}}SaaRadioCommunicationChannel"):
-            ref = alloc.find(f"{{{SAA}}}associatedChannel")
-            if ref is None:
+        airspace_href = airspace_ref.get(f"{{{XLINK}}}href", "")
+        airspace_gid = airspace_href.lstrip("#")
+        if not airspace_gid:
+            continue
+        details = alloc.find(f"{{{SAA}}}allocatedChannelDetails")
+        if details is None:
+            continue
+        for sch in details.iter(f"{{{SAA}}}SaaRadioCommunicationChannel"):
+            comm = _text(sch, f"{{{SAA}}}communicationAllowed")
+            charted = _text(sch, f"{{{SAA}}}charted")
+            ch_ref = sch.find(f"{{{SAA}}}associatedChannel")
+            if ch_ref is None:
                 continue
-            href = ref.get(f"{{{XLINK}}}href", "")
-            ch = _resolve_href(href, channels)
-            if ch and href not in seen:
-                seen.add(href)
-                freqs.append(ch.copy())
+            ch_href = ch_ref.get(f"{{{XLINK}}}href", "")
+            ch = _resolve_href(ch_href, channels)
+            if ch is None:
+                continue
+            seen = seen_per_airspace.setdefault(airspace_gid, set())
+            if ch_href in seen:
+                continue
+            seen.add(ch_href)
+            entry = ch.copy()
+            entry["comm_allowed"] = comm
+            entry["charted"] = charted
+            by_airspace.setdefault(airspace_gid, []).append(entry)
 
-    # Also include any channels not referenced by services (standalone)
+    # Channels not bound by any allocation: keep around for SUAs
+    # that have no per-airspace allocation but still reference
+    # channels via InformationService.radioCommunication. These
+    # are file-scope rather than airspace-scope.
+    referenced = set()
+    for href in (e.get(f"{{{XLINK}}}href", "")
+                 for alloc in root.iter(
+                     f"{{{SAA}}}RadioCommunicationChannelAllocation")
+                 for e in alloc.iter(f"{{{SAA}}}associatedChannel")):
+        referenced.add(href.lstrip("#"))
     for gid, ch in channels.items():
-        if f"#{gid}" not in seen and gid not in seen:
-            freqs.append(ch.copy())
+        if gid not in referenced:
+            entry = ch.copy()
+            entry["comm_allowed"] = ""
+            entry["charted"] = ""
+            fallback.append(entry)
 
-    return freqs
+    return by_airspace, fallback
 
 
 def parse_aixm_sua(xml_data):
@@ -2237,7 +2266,7 @@ def parse_aixm_sua(xml_data):
     channels = _parse_radio_channels(root, {})
     services = _parse_services(root, units, channels)
     timesheets = _parse_timesheets(root)
-    freqs = _parse_freq_allocations(root, channels)
+    freqs_by_airspace, freqs_fallback = _parse_freq_allocations(root, channels)
 
     # A file's canonical Airspace is the one not referenced by any
     # <theAirspace xlink:href="#..."> within the file. Other <Airspace>
@@ -2307,8 +2336,14 @@ def parse_aixm_sua(xml_data):
             result["activity"] = result["activity"] or activity
             result["status"] = result["status"] or status
             result["working_hours"] = result["working_hours"] or working_hours
-            # Attach per-file detail data (shared across all airspaces in file)
-            result["freqs"] = freqs
+            # Per-airspace channel allocation: pull this airspace's
+            # bound channels first; if none exist, fall back to any
+            # file-scope channels (channels declared but never bound).
+            ag = airspace.get(f"{{{GML}}}id", "")
+            airspace_freqs = list(freqs_by_airspace.get(ag, []))
+            if not airspace_freqs:
+                airspace_freqs = list(freqs_fallback)
+            result["freqs"] = airspace_freqs
             result["services"] = services
             result["schedules"] = timesheets
             results.append(result)
@@ -2403,6 +2438,10 @@ def build_sua(conn, aixm_zf):
     """)
 
     conn.execute("DROP TABLE IF EXISTS SUA_FREQ")
+    # COMM_ALLOWED: "CIVIL"/"MIL"/"" (from the per-airspace
+    # RadioCommunicationChannelAllocation block).
+    # CHARTED: "YES"/"NO"/"" — whether the channel is published on
+    # the chart for this airspace.
     conn.execute("""
         CREATE TABLE SUA_FREQ (
             SUA_ID INTEGER,
@@ -2410,6 +2449,8 @@ def build_sua(conn, aixm_zf):
             MODE TEXT,
             TX_FREQ_MHZ REAL,
             RX_FREQ_MHZ REAL,
+            COMM_ALLOWED TEXT,
+            CHARTED TEXT,
             PRIMARY KEY (SUA_ID, FREQ_SEQ)
         )
     """)
@@ -2566,6 +2607,8 @@ def build_sua(conn, aixm_zf):
                     freq["mode"],
                     freq["tx_freq"],
                     freq["rx_freq"],
+                    freq.get("comm_allowed", ""),
+                    freq.get("charted", ""),
                 ))
 
             # Schedules
@@ -2611,7 +2654,7 @@ def build_sua(conn, aixm_zf):
         circle_rows,
     )
     conn.executemany(
-        "INSERT INTO SUA_FREQ VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_FREQ VALUES (?, ?, ?, ?, ?, ?, ?)",
         freq_rows,
     )
     conn.executemany(

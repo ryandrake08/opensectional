@@ -361,6 +361,30 @@ static kv_list feature_kv(const nasrbrowse::pick_feature& f)
                     off = "+" + off;
                 return event + off;
             };
+            // Frequencies — one row per allocated channel. Format
+            // "<MHZ> [MODE] (CIVIL/MIL[, CHARTED])". TX==RX is the
+            // common case; if they differ, show "TX/RX".
+            for (const auto& f : v.freqs)
+            {
+                char buf[64];
+                if (f.tx_mhz == f.rx_mhz)
+                    std::snprintf(buf, sizeof(buf), "%.3f", f.tx_mhz);
+                else
+                    std::snprintf(buf, sizeof(buf), "%.3f/%.3f",
+                                  f.tx_mhz, f.rx_mhz);
+                std::string val = buf;
+                if (!f.mode.empty() && f.mode != "OTHER")
+                    val += " " + f.mode;
+                std::string flags;
+                if (!f.comm_allowed.empty()) flags = f.comm_allowed;
+                if (!f.charted.empty() && f.charted != "YES")
+                {
+                    if (!flags.empty()) flags += ", ";
+                    flags += "uncharted";
+                }
+                if (!flags.empty()) val += " (" + flags + ")";
+                rows.push_back({"Frequency", val});
+            }
             for (const auto& sc : v.schedules)
             {
                 std::string day = sc.day;

@@ -42,6 +42,7 @@ namespace nasrbrowse
         sqlite::statement stmt_sua_strata;
         sqlite::statement stmt_sua_shape;
         sqlite::statement stmt_sua_schedules;
+        sqlite::statement stmt_sua_freqs;
         sqlite::statement stmt_sua_circle;
         sqlite::statement stmt_sua_circles_bbox;
         sqlite::statement stmt_obstacles;
@@ -282,6 +283,14 @@ namespace nasrbrowse
                 WHERE SUA_ID = ?1
                 ORDER BY SCHED_SEQ
             )", 11))
+
+            , stmt_sua_freqs(prepare_checked(db, R"(
+                SELECT MODE, TX_FREQ_MHZ, RX_FREQ_MHZ,
+                       COMM_ALLOWED, CHARTED
+                FROM SUA_FREQ
+                WHERE SUA_ID = ?1
+                ORDER BY FREQ_SEQ
+            )", 5))
 
             , stmt_sua_circle(prepare_checked(db, R"(
                 SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM
@@ -754,7 +763,8 @@ namespace nasrbrowse
                    s.column_text(6), s.column_text(7),
                    s.column_text(8), s.column_text(9), s.column_text(10),
                    s.column_text(11), s.column_text(12), s.column_text(13),
-                   s.column_text(14), s.column_text(15), s.column_text(16), {}, {}};
+                   s.column_text(14), s.column_text(15), s.column_text(16),
+                   {}, {}, {}};
 
             // Load each stratum with its parts. Strata are ordered by
             // STRATUM_ORDER (BASE first, then UNION bands, then partial-
@@ -831,6 +841,20 @@ namespace nasrbrowse
                 sc.time_offset        = d.stmt_sua_schedules.column_text(9);
                 sc.dst_flag           = d.stmt_sua_schedules.column_text(10);
                 su.schedules.push_back(std::move(sc));
+            }
+
+            // Frequencies allocated to this SUA.
+            d.stmt_sua_freqs.reset();
+            d.stmt_sua_freqs.bind(1, su.sua_id);
+            while (d.stmt_sua_freqs.step())
+            {
+                sua_freq f;
+                f.mode         = d.stmt_sua_freqs.column_text(0);
+                f.tx_mhz       = d.stmt_sua_freqs.column_double(1);
+                f.rx_mhz       = d.stmt_sua_freqs.column_double(2);
+                f.comm_allowed = d.stmt_sua_freqs.column_text(3);
+                f.charted      = d.stmt_sua_freqs.column_text(4);
+                su.freqs.push_back(std::move(f));
             }
             return su;
         });
