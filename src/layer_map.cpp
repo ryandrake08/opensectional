@@ -330,6 +330,10 @@ static kv_list feature_kv(const nasrbrowse::pick_feature& f)
             rows.push_back({"Type",                   nz(v.sua_type)});
             rows.push_back({"Upper",                  nz(v.upper_limit)});
             rows.push_back({"Lower",                  nz(v.lower_limit)});
+            if (!v.min_alt_limit.empty())
+                rows.push_back({"Min altitude",       v.min_alt_limit});
+            if (!v.max_alt_limit.empty())
+                rows.push_back({"Max altitude",       v.max_alt_limit});
             rows.push_back({"Controlling authority",  nz(v.controlling_authority)});
             rows.push_back({"Admin area",             nz(v.admin_area)});
             rows.push_back({"Activity",               nz(v.activity)});

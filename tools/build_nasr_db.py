@@ -1372,6 +1372,8 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
     # Collect geometry from all components, ordered by sequence
     upper_limit = ""
     lower_limit = ""
+    min_alt_limit = ""
+    max_alt_limit = ""
     additive = []   # BASE + UNION components (merged into outer rings)
     subtractive = []  # SUBTR components (altitude restriction zones)
     for gc in ts.findall(f"{{{AIXM}}}geometryComponent"):
@@ -1406,6 +1408,28 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
         if op.text == "BASE":
             upper_limit = comp_upper
             lower_limit = comp_lower
+            # AIXM lets the BASE volume carry minimumLimit /
+            # maximumLimit pair — terrain-clearance constraints
+            # supplementing the MSL band (typical pattern: MOA
+            # declared as "11000 MSL → FL180" with min 3000 SFC,
+            # meaning ops must remain ≥ 3000 ft AGL inside that
+            # MSL slab). Used by ~15 alpine SUAs in the corpus.
+            min_lim_e = vol.find(f"{{{AIXM}}}minimumLimit") if vol is not None else None
+            max_lim_e = vol.find(f"{{{AIXM}}}maximumLimit") if vol is not None else None
+            min_ref_e = vol.find(f"{{{AIXM}}}minimumLimitReference") if vol is not None else None
+            max_ref_e = vol.find(f"{{{AIXM}}}maximumLimitReference") if vol is not None else None
+            if min_lim_e is not None and min_lim_e.text:
+                min_uom = min_lim_e.get("uom", "")
+                min_ref = min_ref_e.text if min_ref_e is not None else ""
+                min_alt_limit = f"{min_lim_e.text} {min_uom} {min_ref}".strip()
+            else:
+                min_alt_limit = ""
+            if max_lim_e is not None and max_lim_e.text:
+                max_uom = max_lim_e.get("uom", "")
+                max_ref = max_ref_e.text if max_ref_e is not None else ""
+                max_alt_limit = f"{max_lim_e.text} {max_uom} {max_ref}".strip()
+            else:
+                max_alt_limit = ""
 
         shape = []
         circle_info = None
@@ -1957,6 +1981,8 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
         "sua_type": sua_type,
         "upper_limit": upper_limit,
         "lower_limit": lower_limit,
+        "min_alt_limit": min_alt_limit,
+        "max_alt_limit": max_alt_limit,
         "admin_area": admin_area,
         "city": saa_city,
         "military": military,
@@ -2252,6 +2278,10 @@ def build_sua(conn, aixm_zf):
         return
 
     conn.execute("DROP TABLE IF EXISTS SUA_BASE")
+    # MIN_ALT_LIMIT / MAX_ALT_LIMIT carry the AIXM minimumLimit /
+    # maximumLimit pair from the BASE volume — terrain-clearance
+    # constraints (typically "min N ft AGL") supplementing the MSL
+    # band. Empty for SUAs that don't declare them (most).
     conn.execute("""
         CREATE TABLE SUA_BASE (
             SUA_ID INTEGER PRIMARY KEY,
@@ -2260,6 +2290,8 @@ def build_sua(conn, aixm_zf):
             SUA_TYPE TEXT,
             UPPER_LIMIT TEXT,
             LOWER_LIMIT TEXT,
+            MIN_ALT_LIMIT TEXT,
+            MAX_ALT_LIMIT TEXT,
             CONTROLLING_AUTHORITY TEXT,
             ADMIN_AREA TEXT,
             CITY TEXT,
@@ -2382,6 +2414,8 @@ def build_sua(conn, aixm_zf):
                 result["sua_type"],
                 result["upper_limit"],
                 result["lower_limit"],
+                result["min_alt_limit"],
+                result["max_alt_limit"],
                 result["controlling_authority"],
                 result["admin_area"],
                 result["city"],
@@ -2490,7 +2524,7 @@ def build_sua(conn, aixm_zf):
                 ))
 
     conn.executemany(
-        "INSERT INTO SUA_BASE VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_BASE VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         base_rows,
     )
     conn.executemany(

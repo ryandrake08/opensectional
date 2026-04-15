@@ -190,6 +190,8 @@ namespace nasrbrowse
         std::string sua_type;  // "MOA", "RA", "WA", "AA", "PA", "NSA"
         std::string upper_limit;
         std::string lower_limit;
+        std::string min_alt_limit;
+        std::string max_alt_limit;
         std::string controlling_authority;
         std::string admin_area;
         std::string city;

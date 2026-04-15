@@ -241,6 +241,7 @@ namespace nasrbrowse
             , stmt_sua(prepare_checked(db, R"(
                 SELECT SUA_ID, DESIGNATOR, NAME, SUA_TYPE,
                        UPPER_LIMIT, LOWER_LIMIT,
+                       MIN_ALT_LIMIT, MAX_ALT_LIMIT,
                        CONTROLLING_AUTHORITY, ADMIN_AREA, CITY,
                        MILITARY, ACTIVITY, STATUS,
                        WORKING_HOURS, ICAO_COMPLIANT, LEGAL_NOTE
@@ -251,7 +252,7 @@ namespace nasrbrowse
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 AND (?5 IS NULL OR SUA_TYPE IN (SELECT value FROM json_each(?5)))
-            )", 15))
+            )", 17))
 
             , stmt_sua_strata(prepare_checked(db, R"(
                 SELECT STRATUM_ID, STRATUM_ORDER,
@@ -738,9 +739,10 @@ namespace nasrbrowse
         {
             sua su{s.column_int(0), s.column_text(1), s.column_text(2), s.column_text(3),
                    s.column_text(4), s.column_text(5),
-                   s.column_text(6), s.column_text(7), s.column_text(8),
-                   s.column_text(9), s.column_text(10), s.column_text(11),
-                   s.column_text(12), s.column_text(13), s.column_text(14), {}};
+                   s.column_text(6), s.column_text(7),
+                   s.column_text(8), s.column_text(9), s.column_text(10),
+                   s.column_text(11), s.column_text(12), s.column_text(13),
+                   s.column_text(14), s.column_text(15), s.column_text(16), {}};
 
             // Load each stratum with its parts. Strata are ordered by
             // STRATUM_ORDER (BASE first, then UNION bands, then partial-
