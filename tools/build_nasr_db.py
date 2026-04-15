@@ -53,35 +53,67 @@ def bbox_for_circle(rowid, lon, lat, radius_nm):
             lat - lat_pad, lat + lat_pad)
 
 
-def parse_altitude_ft_msl(text):
-    """Normalize an FAA altitude string to integer feet MSL.
+def parse_altitude(text):
+    """Parse an FAA altitude string into a (value_ft, ref) pair.
 
-    Handles the forms seen across SUA, PJA, and class-airspace data:
-      "5000 FT MSL", "04500 FT MSL"  -> 4500
-      "500 FT SFC", "GND FT SFC"     -> value as-given (SFC/AGL treated
-                                        as MSL — fine for 18k band test)
-      "180 FL STD", "180 FL"         -> 18000 (flight level × 100)
-      "UNL OTHER", "UNL"             -> ALT_UNLIMITED_FT
-      "" / None                      -> None
+    Returns one of these refs:
+      "MSL"   — value is feet above mean sea level.
+      "SFC"   — value is feet above ground level (AGL).
+      "STD"   — value is a flight level (pressure altitude in
+                hundreds of ft); stored as the equivalent ft number
+                (FL180 → 18000) but the STD ref preserves the
+                pressure-altitude semantics.
+      "OTHER" — no meaningful numeric (UNL/unlimited); value is
+                ALT_UNLIMITED_FT as a sentinel.
 
-    Returns an int or None if unparseable.
+    Examples (input → (value, ref)):
+      "5000 FT MSL"     → (5000,  "MSL")
+      "GND FT SFC"      → (0,     "SFC")
+      "1500 FT SFC"     → (1500,  "SFC")
+      "180 FL STD"      → (18000, "STD")
+      "UNL OTHER", "UNL"→ (ALT_UNLIMITED_FT, "OTHER")
+      "" / None         → (None, None)
+
+    Two altitudes may be compared numerically only when their refs
+    match. The conversion of SFC → MSL requires knowing the ground
+    elevation, which we deliberately do not have; comparisons across
+    references should be guarded by `same_ref` checks.
     """
     if text is None:
-        return None
+        return (None, None)
     s = str(text).strip().upper()
     if not s:
-        return None
+        return (None, None)
     if s.startswith("UNL"):
-        return ALT_UNLIMITED_FT
+        return (ALT_UNLIMITED_FT, "OTHER")
     if s.startswith("GND") or s.startswith("SFC"):
-        return 0
+        return (0, "SFC")
     m = re.match(r"(\d+)\s*FL", s)
     if m:
-        return int(m.group(1)) * 100
+        return (int(m.group(1)) * 100, "STD")
     m = re.match(r"(\d+)", s)
     if m:
-        return int(m.group(1))
-    return None
+        # Numeric without explicit ref — disambiguate via the trailing
+        # word. Default to MSL for backward compat with strings that
+        # lack a reference token (rare; mainly historical data).
+        v = int(m.group(1))
+        if "SFC" in s or "AGL" in s:
+            return (v, "SFC")
+        if "STD" in s or " FL" in s.replace("FT FL", " FL"):
+            return (v, "STD")
+        return (v, "MSL")
+    return (None, None)
+
+
+def parse_altitude_ft_msl(text):
+    """Backward-compat wrapper: returns the int part of `parse_altitude`.
+
+    Loses the reference; only safe to use where the caller already
+    accepts the MSL-conflation semantics (e.g. as a sort key or for
+    legacy fields). Prefer `parse_altitude` when the reference matters.
+    """
+    v, _ = parse_altitude(text)
+    return v
 
 
 def parse_dof_dms(dms_str):
@@ -1456,17 +1488,21 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
     # main piece) wrongly dropped that legitimate region.
     OUTER_SLIVER_AREA_MIN = 1e-5
 
-    base_band = (parse_altitude_ft_msl(lower_limit),
-                 parse_altitude_ft_msl(upper_limit))
+    # Altitude bands are now (value, ref) tuples for each of (lower,
+    # upper). Two bands are equal only when both value AND reference
+    # match — otherwise we have no way to compare them without a DEM,
+    # so they stay as distinct strata.
+    base_lo_alt = parse_altitude(lower_limit)   # (value, ref)
+    base_up_alt = parse_altitude(upper_limit)
+    base_band = (base_lo_alt, base_up_alt)
 
-    # Group by normalized (lower_ft, upper_ft) band while preserving
-    # insertion order. BASE's band comes first because BASE is seq 0.
+    # Group by full (lower, upper) altitude band — same value AND
+    # same reference. BASE's band comes first because BASE is seq 0.
     bands = {}  # band_key -> list of entries
     band_order = []
     for entry in additive:
         _, _, _, comp_up, comp_lo = entry
-        key = (parse_altitude_ft_msl(comp_lo),
-               parse_altitude_ft_msl(comp_up))
+        key = (parse_altitude(comp_lo), parse_altitude(comp_up))
         if key not in bands:
             bands[key] = []
             band_order.append(key)
@@ -1507,24 +1543,39 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
         _collect(unioned)
         return flat, raw
 
-    # Pre-compute full-cover SUBTR geometry (SUBTRs whose altitude band
-    # ⊇ BASE's band — these become true 2D holes). They're applied as
-    # a geometric difference to the BASE band union so shapely produces
-    # proper interior rings; the existing outer-then-interiors emission
-    # then yields the ordering the renderer expects ("outer, its holes,
-    # next outer, its holes, ..."). Partial-cover SUBTRs stay as
-    # separate stratum outers emitted at the end.
-    base_lo_ft, base_up_ft = base_band
+    # Classify each SUBTR by its altitude band relative to BASE:
+    #
+    #   full_cover  — SUBTR's lower≤BASE.lower AND upper≥BASE.upper, AND
+    #                 both lower-ref and upper-ref match BASE's. Becomes
+    #                 a true 2D hole in BASE.
+    #   partial_cover — refs match BASE's on both sides but the band is
+    #                 a proper subset. Goes through face-overlay logic
+    #                 to produce active-slice strata.
+    #   standalone — refs do not all match BASE's. Without a DEM we
+    #                cannot compare an AGL value to an MSL value, so
+    #                we emit the SUBTR as its own stratum (footprint
+    #                clipped to BASE outline) without any merging,
+    #                subset elimination, or active-slice math.
+    base_lo_val, base_lo_ref = base_lo_alt
+    base_up_val, base_up_ref = base_up_alt
     full_cover_subs = []
     partial_cover_subs = []
+    standalone_subs = []
     for sub in subtractive:
         _, shape, sub_upper, sub_lower = sub
-        sub_lo_ft = parse_altitude_ft_msl(sub_lower)
-        sub_up_ft = parse_altitude_ft_msl(sub_upper)
+        sub_lo = parse_altitude(sub_lower)
+        sub_up = parse_altitude(sub_upper)
+        sub_lo_val, sub_lo_ref = sub_lo
+        sub_up_val, sub_up_ref = sub_up
+        refs_match = (sub_lo_ref == base_lo_ref and sub_up_ref == base_up_ref
+                      and sub_lo_ref is not None and sub_up_ref is not None)
+        if not refs_match:
+            standalone_subs.append(sub)
+            continue
         is_full = (
-            sub_lo_ft is not None and sub_up_ft is not None
-            and base_lo_ft is not None and base_up_ft is not None
-            and sub_lo_ft <= base_lo_ft and sub_up_ft >= base_up_ft)
+            sub_lo_val is not None and sub_up_val is not None
+            and base_lo_val is not None and base_up_val is not None
+            and sub_lo_val <= base_lo_val and sub_up_val >= base_up_val)
         (full_cover_subs if is_full else partial_cover_subs).append(sub)
 
     full_cover_hole_geom = None
@@ -1612,10 +1663,12 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
                       file=sys.stderr)
                 SUA_FILTER_STATS["SUBTR clipped degenerate (area<1e-6)"][designator] += 1
                 continue
+            # All partial-cover SUBTRs already match BASE's ref on
+            # both sides, so integer comparison is sound here.
             partial_subs_clipped.append({
                 "sub_upper": sub_upper, "sub_lower": sub_lower,
-                "lo_ft": parse_altitude_ft_msl(sub_lower),
-                "up_ft": parse_altitude_ft_msl(sub_upper),
+                "lo_ft": parse_altitude(sub_lower)[0],
+                "up_ft": parse_altitude(sub_upper)[0],
                 "poly": unioned,
             })
         if partial_subs_clipped:
@@ -1677,27 +1730,15 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
         # remain well above this; floating-point fragments from
         # `unary_union` on overlapping sampled circles fall below.
         outer_parts = []
-        real_holes = 0
-        outer_slivers_dropped = 0
         for poly in polys:
             if poly.is_empty:
                 continue
             if len(polys) > 1 and poly.area < OUTER_SLIVER_AREA_MIN:
-                outer_slivers_dropped += 1
                 SUA_FILTER_STATS["OUTER_SLIVER_AREA_MIN (outer piece dropped)"][designator] += 1
                 continue
             outer_parts.append((list(poly.exterior.coords), False))
             for interior in poly.interiors:
                 outer_parts.append((list(interior.coords), True))
-                real_holes += 1
-        band_tag = "BASE" if band_key == base_band else f"UNION band {band_key}"
-        if real_holes:
-            print(f"  NOTE: {designator}: {band_tag} produced {real_holes} "
-                  f"interior hole(s)", file=sys.stderr)
-        if outer_slivers_dropped:
-            print(f"  NOTE: {designator}: {band_tag} dropped "
-                  f"{outer_slivers_dropped} sliver outer fragment(s)",
-                  file=sys.stderr)
 
         # Use the first entry's altitude strings as representative — all
         # entries in this band share normalized altitude. (String form
@@ -1729,7 +1770,7 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
     # faces whose active-band list contains a given band are merged
     # into one stratum so a band appears as a single continuous
     # polygon regardless of which SUBTRs produced it.
-    if partial_subs_clipped and base_lo_ft is not None and base_up_ft is not None:
+    if partial_subs_clipped and base_lo_val is not None and base_up_val is not None:
         def _merge_ranges(rs):
             rs = sorted((s, e) for s, e in rs if s is not None and e is not None and s < e)
             out = []
@@ -1793,16 +1834,31 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
                 return out
             return []
 
-        def _alt_to_str(ft, base_limit_str, base_lo, base_up):
+        # Synthesize the altitude string for one bound of an active
+        # slice. The slice's bounds come from BASE.lower/BASE.upper or
+        # from SUBTR.lower/SUBTR.upper (partial-cover SUBTRs share
+        # BASE's refs, so SUBTR.upper has base_up_ref and SUBTR.lower
+        # has base_lo_ref). `is_lower` selects which side we're
+        # synthesizing — for the slice's lower bound, the value is
+        # either base_lo_val (use base_lo_ref) or a SUBTR.upper
+        # (use base_up_ref). For the upper bound, the value is either
+        # base_up_val (use base_up_ref) or a SUBTR.lower (use base_lo_ref).
+        def _alt_to_str(ft, is_lower):
             if ft is None:
                 return ""
-            if ft == base_lo or ft == base_up:
-                return base_limit_str
-            if ft == 0:
+            if is_lower:
+                if ft == base_lo_val:
+                    return lower_limit
+                ref = base_up_ref  # came from a SUBTR.upper
+            else:
+                if ft == base_up_val:
+                    return upper_limit
+                ref = base_lo_ref  # came from a SUBTR.lower
+            if ft == 0 and ref == "SFC":
                 return "GND FT SFC"
             if ft >= ALT_UNLIMITED_FT:
                 return "UNL OTHER"
-            return f"{ft} FT MSL"
+            return f"{ft} FT {ref}"
 
         n = len(partial_subs_clipped)
         # Collect (lo, hi) active band -> list of face polygons across
@@ -1831,7 +1887,7 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
                 continue
             carved = [(partial_subs_clipped[i]["lo_ft"],
                        partial_subs_clipped[i]["up_ft"]) for i in members]
-            for band in _complement(carved, base_lo_ft, base_up_ft):
+            for band in _complement(carved, base_lo_val, base_up_val):
                 band_to_polys.setdefault(band, []).extend(face_polys)
 
         for (lo_ft, hi_ft), polys_ in band_to_polys.items():
@@ -1845,13 +1901,55 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
                     stratum_parts.append((list(interior.coords), True))
             if not stratum_parts:
                 continue
-            lo_str = _alt_to_str(lo_ft, lower_limit, base_lo_ft, base_up_ft)
-            up_str = _alt_to_str(hi_ft, upper_limit, base_lo_ft, base_up_ft)
+            lo_str = _alt_to_str(lo_ft, is_lower=True)
+            up_str = _alt_to_str(hi_ft, is_lower=False)
             strata.append({
                 "upper_limit": up_str,
                 "lower_limit": lo_str,
                 "parts": stratum_parts,
             })
+
+    # Standalone SUBTRs (altitude reference does not match BASE's, so
+    # we cannot compare values without terrain). Each is emitted as a
+    # single stratum with its raw altitude band, footprint clipped to
+    # the BASE outline. No subtraction from BASE, no overlay math —
+    # the user sees both the BASE region and this overlapping stratum.
+    if standalone_subs and outer_union is not None and not outer_union.is_empty:
+        standalone_subs.sort(key=lambda c: c[0])
+        for _, shape, sub_upper, sub_lower in standalone_subs:
+            if len(shape) < 3:
+                continue
+            sub_poly = make_valid(ShapelyPolygon(shape))
+            if sub_poly.is_empty:
+                continue
+            clipped = sub_poly.intersection(outer_union)
+            if clipped.is_empty:
+                print(f"  NOTE: {designator}: standalone SUBTR (mixed-ref) "
+                      f"lies outside BASE, skipping", file=sys.stderr)
+                continue
+            if isinstance(clipped, ShapelyMultiPolygon):
+                polys_ = [g for g in clipped.geoms if not g.is_empty]
+            elif isinstance(clipped, ShapelyPolygon):
+                polys_ = [clipped]
+            elif hasattr(clipped, "geoms"):
+                polys_ = [g for g in clipped.geoms
+                          if isinstance(g, ShapelyPolygon) and not g.is_empty]
+            else:
+                continue
+            stratum_parts = []
+            for p in polys_:
+                if p.is_empty or p.area < 1e-6:
+                    continue
+                stratum_parts.append((list(p.exterior.coords), False))
+                for interior in p.interiors:
+                    stratum_parts.append((list(interior.coords), True))
+            if stratum_parts:
+                strata.append({
+                    "upper_limit": sub_upper,
+                    "lower_limit": sub_lower,
+                    "parts": stratum_parts,
+                })
+                SUA_FILTER_STATS["standalone SUBTR (mixed-ref)"][designator] += 1
 
     return {
         "designator": designator,
@@ -2175,6 +2273,9 @@ def build_sua(conn, aixm_zf):
     """)
 
     conn.execute("DROP TABLE IF EXISTS SUA_STRATUM")
+    # `*_FT_VAL` is feet (or hundreds-of-feet for STD/FL); `*_FT_REF`
+    # is one of MSL/SFC/STD/OTHER. Two altitudes may be compared
+    # numerically only when their refs match.
     conn.execute("""
         CREATE TABLE SUA_STRATUM (
             STRATUM_ID INTEGER PRIMARY KEY,
@@ -2182,8 +2283,10 @@ def build_sua(conn, aixm_zf):
             STRATUM_ORDER INTEGER,
             UPPER_LIMIT TEXT,
             LOWER_LIMIT TEXT,
-            UPPER_FT_MSL INTEGER,
-            LOWER_FT_MSL INTEGER
+            UPPER_FT_VAL INTEGER,
+            UPPER_FT_REF TEXT,
+            LOWER_FT_VAL INTEGER,
+            LOWER_FT_REF TEXT
         )
     """)
 
@@ -2310,11 +2413,12 @@ def build_sua(conn, aixm_zf):
                 # can reference it. Matching band will find the same id.
                 circle_stratum_id = next_stratum_id
                 next_stratum_id += 1
+                _ulim_v, _ulim_r = parse_altitude(result["upper_limit"])
+                _llim_v, _llim_r = parse_altitude(result["lower_limit"])
                 stratum_rows.append((
                     circle_stratum_id, sua_id, 0,
                     result["upper_limit"], result["lower_limit"],
-                    parse_altitude_ft_msl(result["upper_limit"]),
-                    parse_altitude_ft_msl(result["lower_limit"]),
+                    _ulim_v, _ulim_r, _llim_v, _llim_r,
                 ))
                 circle_rows.append((sua_id, circle_stratum_id, 0,
                                     ci["lon"], ci["lat"], r))
@@ -2326,11 +2430,12 @@ def build_sua(conn, aixm_zf):
                 else:
                     stratum_id = next_stratum_id
                     next_stratum_id += 1
+                    _ulim_v, _ulim_r = parse_altitude(stratum["upper_limit"])
+                    _llim_v, _llim_r = parse_altitude(stratum["lower_limit"])
                     stratum_rows.append((
                         stratum_id, sua_id, stratum_order,
                         stratum["upper_limit"], stratum["lower_limit"],
-                        parse_altitude_ft_msl(stratum["upper_limit"]),
-                        parse_altitude_ft_msl(stratum["lower_limit"]),
+                        _ulim_v, _ulim_r, _llim_v, _llim_r,
                     ))
                 part_num = 0
                 for ring, is_hole in stratum["parts"]:
@@ -2389,7 +2494,7 @@ def build_sua(conn, aixm_zf):
         base_rows,
     )
     conn.executemany(
-        "INSERT INTO SUA_STRATUM VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO SUA_STRATUM VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         stratum_rows,
     )
     conn.executemany(
@@ -2488,8 +2593,10 @@ def build_sua(conn, aixm_zf):
             STRATUM_ID INTEGER,
             SUA_ID INTEGER,
             SUA_TYPE TEXT,
-            UPPER_FT_MSL INTEGER,
-            LOWER_FT_MSL INTEGER,
+            UPPER_FT_VAL INTEGER,
+            UPPER_FT_REF TEXT,
+            LOWER_FT_VAL INTEGER,
+            LOWER_FT_REF TEXT,
             POINT_SEQ INTEGER,
             LON_DECIMAL REAL,
             LAT_DECIMAL REAL
@@ -2503,12 +2610,13 @@ def build_sua(conn, aixm_zf):
             "FROM SUA_SHP ORDER BY STRATUM_ID, PART_NUM, POINT_SEQ"):
         sua_rings.setdefault((row[0], row[1]), []).append((row[2], row[3]))
 
-    # Stratum metadata (sua_id, upper_ft, lower_ft).
+    # Stratum metadata (sua_id, upper_ft_val, upper_ft_ref,
+    # lower_ft_val, lower_ft_ref).
     stratum_meta = {}
     for row in conn.execute(
-            "SELECT STRATUM_ID, SUA_ID, UPPER_FT_MSL, LOWER_FT_MSL "
-            "FROM SUA_STRATUM"):
-        stratum_meta[row[0]] = (row[1], row[2], row[3])
+            "SELECT STRATUM_ID, SUA_ID, UPPER_FT_VAL, UPPER_FT_REF, "
+            "LOWER_FT_VAL, LOWER_FT_REF FROM SUA_STRATUM"):
+        stratum_meta[row[0]] = (row[1], row[2], row[3], row[4], row[5])
 
     # SUA type lookup.
     sua_types = {}
@@ -2528,32 +2636,18 @@ def build_sua(conn, aixm_zf):
         meta = stratum_meta.get(stratum_id)
         if meta is None:
             continue
-        sid, upper_ft, lower_ft = meta
+        sid, upper_v, upper_r, lower_v, lower_r = meta
         stype = sua_types.get(sid, "")
         for chunk in subdivide_ring(ring):
             seg_id += 1
             for point_seq, (lon, lat) in enumerate(chunk):
                 seg_data.append((seg_id, stratum_id, sid, stype,
-                                 upper_ft, lower_ft,
+                                 upper_v, upper_r, lower_v, lower_r,
                                  point_seq, lon, lat))
 
     conn.executemany(
-        "INSERT INTO SUA_SEG VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", seg_data)
+        "INSERT INTO SUA_SEG VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", seg_data)
     print(f"  SUA_SEG: {seg_id} segments, {len(seg_data)} points")
-
-    # Cleanup-filter instrumentation summary: report how often each
-    # geometry filter actually changes output, so we can decide which
-    # are still earning their keep post-stratum rework.
-    print("  --- SUA geometry cleanup filter hit counts ---")
-    if not SUA_FILTER_STATS:
-        print("    (no filter activity — all filters are dead code)")
-    for name in sorted(SUA_FILTER_STATS):
-        hits = SUA_FILTER_STATS[name]
-        total = sum(hits.values())
-        n_suas = len(hits)
-        top = sorted(hits.items(), key=lambda kv: -kv[1])[:5]
-        top_str = ", ".join(f"{d}:{c}" for d, c in top)
-        print(f"    {name}: total={total}, SUAs={n_suas}  top: {top_str}")
 
     conn.execute("""
         CREATE VIRTUAL TABLE SUA_SEG_RTREE USING rtree(

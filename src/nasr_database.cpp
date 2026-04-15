@@ -256,11 +256,12 @@ namespace nasrbrowse
             , stmt_sua_strata(prepare_checked(db, R"(
                 SELECT STRATUM_ID, STRATUM_ORDER,
                        UPPER_LIMIT, LOWER_LIMIT,
-                       UPPER_FT_MSL, LOWER_FT_MSL
+                       UPPER_FT_VAL, UPPER_FT_REF,
+                       LOWER_FT_VAL, LOWER_FT_REF
                 FROM SUA_STRATUM
                 WHERE SUA_ID = ?1
                 ORDER BY STRATUM_ORDER
-            )", 6))
+            )", 8))
 
             , stmt_sua_shape(prepare_checked(db, R"(
                 SELECT PART_NUM, IS_HOLE, LON_DECIMAL, LAT_DECIMAL
@@ -277,7 +278,8 @@ namespace nasrbrowse
 
             , stmt_sua_circles_bbox(prepare_checked(db, R"(
                 SELECT b.SUA_TYPE, c.CENTER_LON, c.CENTER_LAT, c.RADIUS_NM,
-                       s.UPPER_FT_MSL, s.LOWER_FT_MSL
+                       s.UPPER_FT_VAL, s.UPPER_FT_REF,
+                       s.LOWER_FT_VAL, s.LOWER_FT_REF
                 FROM SUA_CIRCLE c
                 JOIN SUA_STRATUM s ON s.STRATUM_ID = c.STRATUM_ID
                 JOIN SUA_BASE b ON b.SUA_ID = c.SUA_ID
@@ -287,7 +289,7 @@ namespace nasrbrowse
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 AND (?5 IS NULL OR b.SUA_TYPE IN (SELECT value FROM json_each(?5)))
-            )", 6))
+            )", 8))
 
             , stmt_obstacles(prepare_checked(db, R"(
                 SELECT OAS_NUM, VERIFY_STATUS, COUNTRY, STATE, CITY,
@@ -435,7 +437,8 @@ namespace nasrbrowse
 
             , stmt_sua_seg(prepare_checked(db, R"(
                 SELECT SEG_ID, SUA_TYPE, LON_DECIMAL, LAT_DECIMAL,
-                       UPPER_FT_MSL, LOWER_FT_MSL
+                       UPPER_FT_VAL, UPPER_FT_REF,
+                       LOWER_FT_VAL, LOWER_FT_REF
                 FROM SUA_SEG
                 WHERE SEG_ID IN (
                     SELECT id FROM SUA_SEG_RTREE
@@ -444,7 +447,7 @@ namespace nasrbrowse
                 )
                 AND (?5 IS NULL OR SUA_TYPE IN (SELECT value FROM json_each(?5)))
                 ORDER BY SEG_ID, POINT_SEQ
-            )", 6))
+            )", 8))
         {
             // Precompute the set of shadowed ARSP_IDs. Any class airspace
             // that has a lower-class neighbor at the same non-empty IDENT
@@ -751,8 +754,10 @@ namespace nasrbrowse
                 st.stratum_order = d.stmt_sua_strata.column_int(1);
                 st.upper_limit = d.stmt_sua_strata.column_text(2);
                 st.lower_limit = d.stmt_sua_strata.column_text(3);
-                st.upper_ft_msl = d.stmt_sua_strata.column_int(4);
-                st.lower_ft_msl = d.stmt_sua_strata.column_int(5);
+                st.upper_ft_val = d.stmt_sua_strata.column_int(4);
+                st.upper_ft_ref = d.stmt_sua_strata.column_text(5);
+                st.lower_ft_val = d.stmt_sua_strata.column_int(6);
+                st.lower_ft_ref = d.stmt_sua_strata.column_text(7);
 
                 // Circle metadata, if this stratum is a pure circle.
                 int circle_part = -1;
@@ -809,7 +814,9 @@ namespace nasrbrowse
                               s.column_double(2),
                               s.column_double(3),
                               s.column_int(4),
-                              s.column_int(5)};
+                              s.column_text(5),
+                              s.column_int(6),
+                              s.column_text(7)};
         });
     }
 
@@ -1021,7 +1028,9 @@ namespace nasrbrowse
             {
                 d.sua_segs.push_back({d.stmt_sua_seg.column_text(1),
                                       d.stmt_sua_seg.column_int(4),
-                                      d.stmt_sua_seg.column_int(5),
+                                      d.stmt_sua_seg.column_text(5),
+                                      d.stmt_sua_seg.column_int(6),
+                                      d.stmt_sua_seg.column_text(7),
                                       {}});
                 current_seg = seg_id;
             }

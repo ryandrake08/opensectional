@@ -32,6 +32,33 @@ struct altitude_filter
         return (show_low && reaches_low) || (show_high && reaches_high);
     }
 
+    // Reference-aware variant for SUA strata. Each bound is (value,
+    // ref) where ref ∈ {"MSL","SFC","STD","OTHER"}. We classify each
+    // bound's reach into low/high without a DEM:
+    //   MSL  — direct compare against the 18,000 ft divider.
+    //   STD  — same (FL180 ≈ 18,000 by chart convention).
+    //   SFC  — AGL value: in practice always low-band-only (max US
+    //          terrain plus typical SFC ceilings stays below FL180).
+    //   OTHER (UNL) — unbounded; treat as both low and high.
+    // The lower bound determines whether the feature "reaches low";
+    // the upper bound determines whether it "reaches high".
+    bool overlaps(int lower_ft, const std::string& lower_ref,
+                  int upper_ft, const std::string& upper_ref) const
+    {
+        if (!any()) return false;
+        bool reaches_low;
+        if (lower_ref == "OTHER") reaches_low = true;
+        else if (lower_ref == "SFC") reaches_low = true;  // AGL → always low
+        else /* MSL or STD */       reaches_low = lower_ft < DIVIDER_FT;
+
+        bool reaches_high;
+        if (upper_ref == "OTHER") reaches_high = true;
+        else if (upper_ref == "SFC") reaches_high = false; // AGL ceilings rarely cross FL180
+        else /* MSL or STD */        reaches_high = upper_ft >= DIVIDER_FT;
+
+        return (show_low && reaches_low) || (show_high && reaches_high);
+    }
+
     // Convenience for features classified by sub-type rather than range.
     bool low_enabled() const { return show_low; }
     bool high_enabled() const { return show_high; }

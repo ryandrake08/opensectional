@@ -655,11 +655,14 @@ namespace nasrbrowse
         }
 
         static bool sua_altitude_visible(const altitude_filter& af,
-                                          int upper_ft, int lower_ft)
+                                          int upper_ft, const std::string& upper_ref,
+                                          int lower_ft, const std::string& lower_ref)
         {
             if(!af.any()) return false;
-            if(lower_ft == 0 && upper_ft == 0) return true;   // unknown → visible
-            return af.overlaps(lower_ft, upper_ft);
+            if(lower_ft == 0 && upper_ft == 0
+                    && lower_ref.empty() && upper_ref.empty())
+                return true;   // unknown → visible
+            return af.overlaps(lower_ft, lower_ref, upper_ft, upper_ref);
         }
 
         static const letter_def* maa_letter(const std::string& type)
@@ -1212,7 +1215,9 @@ namespace nasrbrowse
             for(const auto& seg : segs)
             {
                 if(!styles.sua_visible(seg.sua_type, req.zoom)) continue;
-                if(!sua_altitude_visible(req.altitude, seg.upper_ft_msl, seg.lower_ft_msl)) continue;
+                if(!sua_altitude_visible(req.altitude,
+                                          seg.upper_ft_val, seg.upper_ft_ref,
+                                          seg.lower_ft_val, seg.lower_ft_ref)) continue;
                 auto ls = to_line_style(styles.sua_style(seg.sua_type));
 
                 append_polyline(poly[layer_sua], seg.points, ls, mx_offset);
@@ -1223,7 +1228,9 @@ namespace nasrbrowse
             const auto& circles = db.query_sua_circles(bbox, sua_filter);
             for(const auto& c : circles)
             {
-                if(!sua_altitude_visible(req.altitude, c.upper_ft_msl, c.lower_ft_msl)) continue;
+                if(!sua_altitude_visible(req.altitude,
+                                          c.upper_ft_val, c.upper_ft_ref,
+                                          c.lower_ft_val, c.lower_ft_ref)) continue;
                 auto ls = to_line_style(styles.sua_style(c.sua_type));
                 double lat_rad = c.center_lat * M_PI / 180.0;
                 float cx = static_cast<float>(lon_to_mx(c.center_lon) + mx_offset);

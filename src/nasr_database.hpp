@@ -157,14 +157,24 @@ namespace nasrbrowse
     // One altitude stratum of a SUA — independently pickable. A
     // single-layer SUA has one stratum; multi-layer (BASE + UNIONs at
     // different floors, or partial-cover SUBTRs) has several.
+    //
+    // Each altitude bound is (value, ref) where ref is one of:
+    //   "MSL"   — feet above mean sea level.
+    //   "SFC"   — feet above ground level (AGL); value=0 means GND.
+    //   "STD"   — pressure altitude in feet (FL × 100).
+    //   "OTHER" — UNL/unlimited (value is a sentinel).
+    // Two altitudes may be compared numerically only when their refs
+    // match; cross-ref comparisons would require terrain elevation.
     struct sua_stratum
     {
         int stratum_id = 0;
         int stratum_order = 0;
         std::string upper_limit;
         std::string lower_limit;
-        int upper_ft_msl = 0;
-        int lower_ft_msl = 0;
+        int upper_ft_val = 0;
+        std::string upper_ft_ref;
+        int lower_ft_val = 0;
+        std::string lower_ft_ref;
         std::vector<sua_ring> parts;
     };
 
@@ -232,8 +242,10 @@ namespace nasrbrowse
     struct sua_segment
     {
         std::string sua_type;  // "MOA", "RA", "WA", etc.
-        int upper_ft_msl;
-        int lower_ft_msl;
+        int upper_ft_val;
+        std::string upper_ft_ref;
+        int lower_ft_val;
+        std::string lower_ft_ref;
         std::vector<airspace_point> points;
     };
 
@@ -245,8 +257,10 @@ namespace nasrbrowse
         double center_lon;
         double center_lat;
         double radius_nm;
-        int upper_ft_msl;
-        int lower_ft_msl;
+        int upper_ft_val;
+        std::string upper_ft_ref;
+        int lower_ft_val;
+        std::string lower_ft_ref;
     };
 
     // Column order follows OBS_BASE table

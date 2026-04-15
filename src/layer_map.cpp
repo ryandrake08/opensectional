@@ -746,8 +746,10 @@ struct layer_map::impl
                 // stratum alone so the info box shows its altitudes.
                 for(const auto& stratum : s.strata)
                 {
-                    if(!vis.altitude.overlaps(stratum.lower_ft_msl,
-                                              stratum.upper_ft_msl))
+                    if(!vis.altitude.overlaps(stratum.lower_ft_val,
+                                              stratum.lower_ft_ref,
+                                              stratum.upper_ft_val,
+                                              stratum.upper_ft_ref))
                         continue;
                     bool inside = false;
                     for(const auto& ring : stratum.parts)
