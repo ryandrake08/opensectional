@@ -1,4 +1,5 @@
 #include "layer_map.hpp"
+#include "feature_type.hpp"
 #include "feature_renderer.hpp"
 #include "label_renderer.hpp"
 #include "map_view.hpp"
@@ -35,493 +36,34 @@ constexpr float PICK_POPUP_ANCHOR_PADDING = 12.0F;
 // SDL left mouse button value
 constexpr uint8_t BUTTON_LEFT = 1;
 
-// Ray-casting point-in-polygon test
-static bool point_in_ring(double px, double py,
-                          const std::vector<nasrbrowse::airspace_point>& ring)
+namespace
 {
-    bool inside = false;
-    for(size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++)
+    // Selector-popup state. Lives in layer_map::impl.
+    struct pick_popup_state
     {
-        double yi = ring[i].lat, yj = ring[j].lat;
-        double xi = ring[i].lon, xj = ring[j].lon;
-        if(((yi > py) != (yj > py)) &&
-           (px < (xj - xi) * (py - yi) / (yj - yi) + xi))
-        {
-            inside = !inside;
-        }
-    }
-    return inside;
-}
+        bool open = false;
+        int session_id = 0;
+        int warmup_frames = 0;  // ImGui hides a freshly-created auto-resize
+                                // window for its first frame while it measures
+                                // content. Force a couple of extra renders so
+                                // the popup actually appears without needing a
+                                // subsequent mouse event to wake the main loop.
+        double click_lon = 0.0;
+        double click_lat = 0.0;
+        std::vector<nasrbrowse::feature> features;
+    };
 
-// Equirectangular distance check for circle features (PJA, MAA)
-static bool point_in_circle_nm(double px, double py,
-                                double cx, double cy, double radius_nm)
-{
-    double dlat = (py - cy) * 60.0;
-    double dlon = (px - cx) * 60.0 * std::cos(cy * M_PI / 180.0);
-    return (dlat * dlat + dlon * dlon) <= (radius_nm * radius_nm);
-}
-
-// Equirectangular distance from a point to the nearest point on a segment, in NM
-static double point_to_segment_nm(double px, double py,
-                                   double ax, double ay,
-                                   double bx, double by)
-{
-    double cos_lat = std::cos(py * M_PI / 180.0);
-    double ax_nm = (ax - px) * 60.0 * cos_lat;
-    double ay_nm = (ay - py) * 60.0;
-    double bx_nm = (bx - px) * 60.0 * cos_lat;
-    double by_nm = (by - py) * 60.0;
-
-    double dx = bx_nm - ax_nm;
-    double dy = by_nm - ay_nm;
-    double len2 = dx * dx + dy * dy;
-
-    double t = 0;
-    if(len2 > 0)
+    // Info-popup state: details for a single selected feature.
+    struct info_popup_state
     {
-        t = -(ax_nm * dx + ay_nm * dy) / len2;
-        if(t < 0) t = 0;
-        else if(t > 1) t = 1;
-    }
-
-    double cx = ax_nm + t * dx;
-    double cy = ay_nm + t * dy;
-    return std::sqrt(cx * cx + cy * cy);
+        bool open = false;
+        int session_id = 0;
+        int warmup_frames = 0;
+        double anchor_lon = 0.0;
+        double anchor_lat = 0.0;
+        nasrbrowse::feature feature{nasrbrowse::airport{}};
+    };
 }
-
-
-// Maps a pick_feature to the shared feature-section tag used by
-// FEATURE_SECTIONS in ui_sectioned_list.
-static const char* feature_section_tag(const nasrbrowse::pick_feature& f)
-{
-    return std::visit([](const auto& v) -> const char*
-    {
-        using T = std::decay_t<decltype(v)>;
-        if constexpr(std::is_same_v<T, nasrbrowse::airport>)         return "APT";
-        else if constexpr(std::is_same_v<T, nasrbrowse::navaid>)     return "NAV";
-        else if constexpr(std::is_same_v<T, nasrbrowse::fix>)        return "FIX";
-        else if constexpr(std::is_same_v<T, nasrbrowse::obstacle>)   return "OBS";
-        else if constexpr(std::is_same_v<T, nasrbrowse::awos>)       return "AWOS";
-        else if constexpr(std::is_same_v<T, nasrbrowse::comm_outlet>) return "COM";
-        else if constexpr(std::is_same_v<T, nasrbrowse::runway>)     return "RWY";
-        else if constexpr(std::is_same_v<T, nasrbrowse::airway_segment>) return "AWY";
-        else if constexpr(std::is_same_v<T, nasrbrowse::mtr_segment>) return "MTR";
-        else if constexpr(std::is_same_v<T, nasrbrowse::class_airspace>) return "CLS";
-        else if constexpr(std::is_same_v<T, nasrbrowse::sua>)        return "SUA";
-        else if constexpr(std::is_same_v<T, nasrbrowse::maa>)        return "MAA";
-        else if constexpr(std::is_same_v<T, nasrbrowse::pja>)        return "PJA";
-        else if constexpr(std::is_same_v<T, nasrbrowse::adiz>)       return "ADIZ";
-        else if constexpr(std::is_same_v<T, nasrbrowse::artcc>)      return "ARTCC";
-        else                                                         return "";
-    }, f);
-}
-
-// True if the feature is rendered as a single point on the map (so exact-point
-// short-circuit applies). Area features (including pja/maa circles and ring
-// airspace) are not "points" here even though they have a center coordinate.
-static bool feature_is_point(const nasrbrowse::pick_feature& f)
-{
-    return std::visit([](const auto& v) -> bool
-    {
-        using T = std::decay_t<decltype(v)>;
-        return std::is_same_v<T, nasrbrowse::airport>
-            || std::is_same_v<T, nasrbrowse::navaid>
-            || std::is_same_v<T, nasrbrowse::fix>
-            || std::is_same_v<T, nasrbrowse::obstacle>
-            || std::is_same_v<T, nasrbrowse::awos>
-            || std::is_same_v<T, nasrbrowse::comm_outlet>;
-    }, f);
-}
-
-// Lon/lat of a point feature (only valid when feature_is_point is true).
-static void feature_point_lonlat(const nasrbrowse::pick_feature& f,
-                                  double& lon, double& lat)
-{
-    std::visit([&](const auto& v)
-    {
-        using T = std::decay_t<decltype(v)>;
-        if constexpr(std::is_same_v<T, nasrbrowse::airport>
-                  || std::is_same_v<T, nasrbrowse::navaid>
-                  || std::is_same_v<T, nasrbrowse::fix>
-                  || std::is_same_v<T, nasrbrowse::obstacle>
-                  || std::is_same_v<T, nasrbrowse::awos>
-                  || std::is_same_v<T, nasrbrowse::comm_outlet>)
-        { lon = v.lon; lat = v.lat; }
-        else
-        { lon = 0.0; lat = 0.0; }
-    }, f);
-}
-
-// One-line human-readable summary of a picked feature.
-static std::string feature_summary(const nasrbrowse::pick_feature& f)
-{
-    std::ostringstream os;
-    std::visit([&os](const auto& v)
-    {
-        using T = std::decay_t<decltype(v)>;
-        if constexpr(std::is_same_v<T, nasrbrowse::airport>)
-            os << "Airport: " << v.arpt_id << " " << v.arpt_name;
-        else if constexpr(std::is_same_v<T, nasrbrowse::navaid>)
-            os << "Navaid: " << v.nav_id << " " << v.name;
-        else if constexpr(std::is_same_v<T, nasrbrowse::fix>)
-            os << "Fix: " << v.fix_id;
-        else if constexpr(std::is_same_v<T, nasrbrowse::obstacle>)
-            os << "Obstacle: " << v.oas_num << " " << v.agl_ht << "ft AGL";
-        else if constexpr(std::is_same_v<T, nasrbrowse::class_airspace>)
-            os << "Airspace: Class " << v.airspace_class << " " << v.name;
-        else if constexpr(std::is_same_v<T, nasrbrowse::sua>)
-            os << "SUA: " << v.sua_type << " " << v.name;
-        else if constexpr(std::is_same_v<T, nasrbrowse::artcc>)
-            os << "ARTCC: " << v.location_id << " " << v.name;
-        else if constexpr(std::is_same_v<T, nasrbrowse::adiz>)
-            os << "ADIZ: " << v.name;
-        else if constexpr(std::is_same_v<T, nasrbrowse::maa>)
-        {
-            os << "MAA: " << (!v.name.empty() ? v.name : v.maa_id);
-            if(!v.type.empty()) os << " [" << v.type << "]";
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::pja>)
-            os << "PJA: " << (!v.name.empty() ? v.name : v.pja_id);
-        else if constexpr(std::is_same_v<T, nasrbrowse::awos>)
-            os << "AWOS: " << v.id << " " << v.type;
-        else if constexpr(std::is_same_v<T, nasrbrowse::comm_outlet>)
-            os << v.comm_type << ": " << v.outlet_name << " (" << v.facility_name << ")";
-        else if constexpr(std::is_same_v<T, nasrbrowse::airway_segment>)
-            os << "Airway: " << v.awy_id << " " << v.from_point << "-" << v.to_point;
-        else if constexpr(std::is_same_v<T, nasrbrowse::mtr_segment>)
-            os << "MTR: " << v.mtr_id << " " << v.from_point << "-" << v.to_point;
-        else if constexpr(std::is_same_v<T, nasrbrowse::runway>)
-            os << "Runway: " << v.rwy_id;
-    }, f);
-    return os.str();
-}
-
-// Anchor lon/lat for a feature's info popup. Point features and
-// circle-based area features use their own coord; line and polygon
-// areas fall back to the click coord so the popup sits near where the
-// user actually aimed.
-static void feature_anchor_lonlat(const nasrbrowse::pick_feature& f,
-                                   double click_lon, double click_lat,
-                                   double& lon, double& lat)
-{
-    std::visit([&](const auto& v)
-    {
-        using T = std::decay_t<decltype(v)>;
-        if constexpr(std::is_same_v<T, nasrbrowse::airport>
-                  || std::is_same_v<T, nasrbrowse::navaid>
-                  || std::is_same_v<T, nasrbrowse::fix>
-                  || std::is_same_v<T, nasrbrowse::obstacle>
-                  || std::is_same_v<T, nasrbrowse::awos>
-                  || std::is_same_v<T, nasrbrowse::comm_outlet>)
-        { lon = v.lon; lat = v.lat; }
-        else if constexpr(std::is_same_v<T, nasrbrowse::pja>)
-        { lon = v.lon; lat = v.lat; }
-        else if constexpr(std::is_same_v<T, nasrbrowse::maa>)
-        {
-            // Point/circle MAAs have a center; shape-only MAAs don't.
-            if(v.shape.empty()) { lon = v.lon; lat = v.lat; }
-            else                { lon = click_lon; lat = click_lat; }
-        }
-        else
-        { lon = click_lon; lat = click_lat; }
-    }, f);
-}
-
-// Missing source fields stay empty; draw_info_imgui filters them out.
-// Any substitution here would conflict with real values like "N/A" that
-// might genuinely appear in NASR data.
-static std::string nz(const std::string& s)
-{
-    return s;
-}
-
-static std::string fmt_int(int v)
-{
-    std::ostringstream os; os << v; return os.str();
-}
-
-static std::string fmt_dbl(double v, int prec)
-{
-    std::ostringstream os;
-    os.setf(std::ios::fixed);
-    os.precision(prec);
-    os << v;
-    return os.str();
-}
-
-using kv_pair = std::pair<const char*, std::string>;
-using kv_list = std::vector<kv_pair>;
-
-// Key/value rows to display for each feature variant. Fields come
-// directly from the already-fetched pick_feature; no extra JOINs.
-static kv_list feature_kv(const nasrbrowse::pick_feature& f)
-{
-    kv_list rows;
-    std::visit([&rows](const auto& v)
-    {
-        using T = std::decay_t<decltype(v)>;
-        if constexpr(std::is_same_v<T, nasrbrowse::airport>)
-        {
-            rows.push_back({"ID",              nz(v.arpt_id)});
-            rows.push_back({"Name",            nz(v.arpt_name)});
-            rows.push_back({"City",            nz(v.city)});
-            rows.push_back({"State",           nz(v.state_code)});
-            rows.push_back({"Elevation",       fmt_dbl(v.elev, 0) + " ft"});
-            rows.push_back({"TPA",             nz(v.tpa)});
-            rows.push_back({"Airspace class",  nz(v.airspace_class)});
-            rows.push_back({"Tower type",      nz(v.twr_type_code)});
-            rows.push_back({"ICAO ID",         nz(v.icao_id)});
-            rows.push_back({"Ownership",       nz(v.ownership_type_code)});
-            rows.push_back({"Facility use",    nz(v.facility_use_code)});
-            rows.push_back({"Status",          nz(v.arpt_status)});
-            rows.push_back({"Fuel types",      nz(v.fuel_types)});
-            rows.push_back({"Mag var",         v.mag_varn.empty() ? std::string() : v.mag_varn + v.mag_hemis});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::navaid>)
-        {
-            rows.push_back({"ID",         nz(v.nav_id)});
-            rows.push_back({"Name",       nz(v.name)});
-            rows.push_back({"Type",       nz(v.nav_type)});
-            rows.push_back({"City",       nz(v.city)});
-            rows.push_back({"State",      nz(v.state_code)});
-            rows.push_back({"Elevation",  fmt_dbl(v.elev, 0) + " ft"});
-            rows.push_back({"Frequency",  nz(v.freq)});
-            rows.push_back({"Channel",    nz(v.chan)});
-            rows.push_back({"Power",      nz(v.pwr_output)});
-            rows.push_back({"Hours",      nz(v.oper_hours)});
-            rows.push_back({"Status",     nz(v.nav_status)});
-            rows.push_back({"Low ARTCC",  nz(v.low_alt_artcc_id)});
-            rows.push_back({"High ARTCC", nz(v.high_alt_artcc_id)});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::fix>)
-        {
-            rows.push_back({"ID",          nz(v.fix_id)});
-            rows.push_back({"State",       nz(v.state_code)});
-            rows.push_back({"ICAO region", nz(v.icao_region_code)});
-            rows.push_back({"Use code",    nz(v.use_code)});
-            rows.push_back({"Low ARTCC",   nz(v.artcc_id_low)});
-            rows.push_back({"High ARTCC",  nz(v.artcc_id_high)});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::obstacle>)
-        {
-            rows.push_back({"OAS number",    nz(v.oas_num)});
-            rows.push_back({"Type",          nz(v.obstacle_type)});
-            rows.push_back({"Quantity",      fmt_int(v.quantity)});
-            rows.push_back({"AGL height",    fmt_int(v.agl_ht) + " ft"});
-            rows.push_back({"MSL height",    fmt_int(v.amsl_ht) + " ft"});
-            rows.push_back({"Lighting",      nz(v.lighting)});
-            rows.push_back({"Marking",       nz(v.marking)});
-            rows.push_back({"City",          nz(v.city)});
-            rows.push_back({"State",         nz(v.state)});
-            rows.push_back({"Verify status", nz(v.verify_status)});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::class_airspace>)
-        {
-            rows.push_back({"Name",       nz(v.name)});
-            rows.push_back({"Class",      nz(v.airspace_class)});
-            rows.push_back({"Local type", nz(v.local_type)});
-            rows.push_back({"Ident",      nz(v.ident)});
-            rows.push_back({"Sector",     nz(v.sector)});
-            rows.push_back({"Upper",      v.upper_val.empty() && v.upper_desc.empty() ? std::string() : v.upper_desc + " " + v.upper_val});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::sua>)
-        {
-            rows.push_back({"Designator",             nz(v.designator)});
-            rows.push_back({"Name",                   nz(v.name)});
-            rows.push_back({"Type",                   nz(v.sua_type)});
-            rows.push_back({"Upper",                  nz(v.upper_limit)});
-            rows.push_back({"Lower",                  nz(v.lower_limit)});
-            if (!v.min_alt_limit.empty())
-                rows.push_back({"Min altitude",       v.min_alt_limit});
-            if (!v.max_alt_limit.empty())
-                rows.push_back({"Max altitude",       v.max_alt_limit});
-            // Surface conditional-exclusion only when YES; the
-            // "NO" default is silent (most SUAs have no exclusion
-            // clause). The clause itself is in the legal note.
-            if (v.conditional_exclusion == "YES")
-                rows.push_back({"Conditional exclusion", "see legal note"});
-            // Surface trafficAllowed only when MIL — the more
-            // restrictive of the two values; "ALL" is silent.
-            if (v.traffic_allowed == "MIL")
-                rows.push_back({"Traffic allowed",       "MIL only"});
-            if (!v.time_in_advance_hr.empty())
-                rows.push_back({"NOTAM lead time",
-                                v.time_in_advance_hr + " hr"});
-            rows.push_back({"Controlling authority",  nz(v.controlling_authority)});
-            rows.push_back({"Admin area",             nz(v.admin_area)});
-            rows.push_back({"Activity",               nz(v.activity)});
-            rows.push_back({"Working hours",          nz(v.working_hours)});
-            rows.push_back({"Status",                 nz(v.status)});
-            rows.push_back({"ICAO compliant",         nz(v.icao_compliant)});
-            // Per-day Timesheet entries. Each row condenses one
-            // entry to "<DAY[-DAY_TIL]> <START> – <END>" with the
-            // start/end being either a clock time (HH:MM), a solar
-            // event token (SR/SS), or an event token with a signed
-            // minutes offset (SR-60 means "60 min before sunrise").
-            auto fmt_endpoint = [](const std::string& clock,
-                                   const std::string& event,
-                                   const std::string& offset_min)
-                -> std::string
-            {
-                if (!clock.empty()) return clock;
-                if (event.empty()) return "";
-                if (offset_min.empty()) return event;
-                // Strip a trailing ".0" decimal for readability.
-                std::string off = offset_min;
-                auto dot = off.find('.');
-                if (dot != std::string::npos) off.resize(dot);
-                if (!off.empty() && off[0] != '-' && off[0] != '+')
-                    off = "+" + off;
-                return event + off;
-            };
-            // Frequencies — one row per allocated channel. Format
-            // "<TX> [MODE] (CIVIL/MIL[, uncharted])"; show "TX/RX"
-            // if they differ. Frequency strings come straight from
-            // the source AIXM (already MHz like "122.95").
-            for (const auto& f : v.freqs)
-            {
-                std::string val = (f.tx == f.rx || f.rx.empty())
-                                  ? f.tx : (f.tx + "/" + f.rx);
-                if (!f.mode.empty() && f.mode != "OTHER")
-                    val += " " + f.mode;
-                std::string flags;
-                if (!f.comm_allowed.empty()) flags = f.comm_allowed;
-                if (!f.charted.empty() && f.charted != "YES")
-                {
-                    if (!flags.empty()) flags += ", ";
-                    flags += "uncharted";
-                }
-                if (!flags.empty()) val += " (" + flags + ")";
-                if (!f.sectors.empty()) val += " — sector " + f.sectors;
-                rows.push_back({"Frequency", val});
-            }
-            for (const auto& sc : v.schedules)
-            {
-                std::string day = sc.day;
-                if (!sc.day_til.empty()) day += "-" + sc.day_til;
-                std::string start = fmt_endpoint(sc.start_time,
-                                                 sc.start_event,
-                                                 sc.start_event_offset);
-                std::string end   = fmt_endpoint(sc.end_time,
-                                                 sc.end_event,
-                                                 sc.end_event_offset);
-                std::string val = day;
-                if (!start.empty() || !end.empty())
-                {
-                    val += " ";
-                    val += start;
-                    val += "-";
-                    val += end;
-                }
-                rows.push_back({"Schedule", val});
-            }
-            rows.push_back({"Legal note",             nz(v.legal_note)});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::artcc>)
-        {
-            rows.push_back({"Location ID",   nz(v.location_id)});
-            rows.push_back({"Name",          nz(v.name)});
-            rows.push_back({"Altitude band", nz(v.altitude)});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::adiz>)
-        {
-            rows.push_back({"Name",          nz(v.name)});
-            rows.push_back({"Location",      nz(v.location)});
-            rows.push_back({"Working hours", nz(v.working_hours)});
-            rows.push_back({"Military",      nz(v.military)});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::maa>)
-        {
-            rows.push_back({"ID",      nz(v.maa_id)});
-            rows.push_back({"Name",    nz(v.name)});
-            rows.push_back({"Type",    nz(v.type)});
-            rows.push_back({"Min alt", nz(v.min_alt)});
-            rows.push_back({"Max alt", nz(v.max_alt)});
-            rows.push_back({"Radius",  fmt_dbl(v.radius_nm, 1) + " NM"});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::pja>)
-        {
-            rows.push_back({"ID",           nz(v.pja_id)});
-            rows.push_back({"Name",         nz(v.name)});
-            rows.push_back({"Max altitude", nz(v.max_altitude)});
-            rows.push_back({"Radius",       fmt_dbl(v.radius_nm, 1) + " NM"});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::awos>)
-        {
-            rows.push_back({"ID",            nz(v.id)});
-            rows.push_back({"Type",          nz(v.type)});
-            rows.push_back({"City",          nz(v.city)});
-            rows.push_back({"State",         nz(v.state_code)});
-            rows.push_back({"Elevation",     fmt_dbl(v.elev, 0) + " ft"});
-            rows.push_back({"Phone",         nz(v.phone_no)});
-            rows.push_back({"Second phone",  nz(v.second_phone_no)});
-            rows.push_back({"Commissioned",  nz(v.commissioned_date)});
-            rows.push_back({"Remark",        nz(v.remark)});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::comm_outlet>)
-        {
-            rows.push_back({"Outlet name",   nz(v.outlet_name)});
-            rows.push_back({"Type",          nz(v.comm_type)});
-            rows.push_back({"Facility ID",   nz(v.facility_id)});
-            rows.push_back({"Facility name", nz(v.facility_name)});
-            rows.push_back({"Hours",         nz(v.opr_hrs)});
-            rows.push_back({"Status",        nz(v.comm_status_code)});
-            rows.push_back({"City",          nz(v.city)});
-            rows.push_back({"State",         nz(v.state_code)});
-            rows.push_back({"Remark",        nz(v.remark)});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::airway_segment>)
-        {
-            rows.push_back({"ID",            nz(v.awy_id)});
-            rows.push_back({"Location",      nz(v.awy_location)});
-            rows.push_back({"From",          nz(v.from_point)});
-            rows.push_back({"To",            nz(v.to_point)});
-            rows.push_back({"MEA",           nz(v.min_enroute_alt)});
-            rows.push_back({"Mag crs/dist", nz(v.mag_course_dist)});
-            rows.push_back({"Gap flag",      nz(v.gap_flag)});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::mtr_segment>)
-        {
-            rows.push_back({"ID",         nz(v.mtr_id)});
-            rows.push_back({"Route type", nz(v.route_type_code)});
-            rows.push_back({"From",       nz(v.from_point)});
-            rows.push_back({"To",         nz(v.to_point)});
-        }
-        else if constexpr(std::is_same_v<T, nasrbrowse::runway>)
-        {
-            rows.push_back({"ID",      nz(v.rwy_id)});
-            rows.push_back({"Site no", nz(v.site_no)});
-        }
-    }, f);
-    return rows;
-}
-
-// Selector-popup state. Lives in layer_map::impl.
-struct pick_popup_state
-{
-    bool open = false;
-    int session_id = 0;
-    int warmup_frames = 0;  // ImGui hides a freshly-created auto-resize
-                            // window for its first frame while it measures
-                            // content. Force a couple of extra renders so
-                            // the popup actually appears without needing a
-                            // subsequent mouse event to wake the main loop.
-    double click_lon = 0.0;
-    double click_lat = 0.0;
-    std::vector<nasrbrowse::pick_feature> features;
-};
-
-// Info-popup state: details for a single selected feature.
-struct info_popup_state
-{
-    bool open = false;
-    int session_id = 0;
-    int warmup_frames = 0;
-    double anchor_lon = 0.0;
-    double anchor_lat = 0.0;
-    nasrbrowse::pick_feature feature{nasrbrowse::airport{}};
-};
 
 struct layer_map::impl
 {
@@ -559,6 +101,10 @@ struct layer_map::impl
     pick_popup_state pick_popup;
     info_popup_state info_popup;
 
+    // All toggleable feature_types. Built once at construction; pick_at
+    // and the UI iterate this vector. See feature_type.hpp.
+    std::vector<std::unique_ptr<nasrbrowse::feature_type>> feature_types;
+
     impl(sdl::device& dev, const char* tile_path, const char* db_path,
          nasrbrowse::nasr_database& pick_db,
          const nasrbrowse::chart_style& cs,
@@ -580,6 +126,7 @@ struct layer_map::impl
         , cursor_ndc_y(0)
         , dragged(false)
         , imgui_wants_mouse(false)
+        , feature_types(nasrbrowse::make_feature_types())
     {
     }
 
@@ -693,275 +240,6 @@ struct layer_map::impl
                         aspect_ratio());
     }
 
-    // Bundles the inputs shared by every pick_<feature> adapter: database,
-    // style/visibility predicates, the click location in several forms, and
-    // the point-feature pick radius. Built once per click by pick_at().
-    struct pick_context
-    {
-        nasrbrowse::nasr_database& db;
-        const nasrbrowse::chart_style& styles;
-        const nasrbrowse::layer_visibility& vis;
-        double zoom;
-        double click_lon;
-        double click_lat;
-        nasrbrowse::geo_bbox pick_box;   // padded around click for point features
-        nasrbrowse::geo_bbox click_box;  // degenerate — click point only
-        double pick_radius_nm;           // half-diagonal of pick_box, for line hits
-    };
-
-    // True if (click_lon, click_lat) is inside the given multi-ring polygon.
-    // Holes reverse the inside/outside state of the containing ring.
-    static bool point_in_multi_ring(
-        double lon, double lat,
-        const std::vector<nasrbrowse::polygon_ring>& rings)
-    {
-        bool inside = false;
-        for(const auto& ring : rings)
-        {
-            if(point_in_ring(lon, lat, ring.points))
-            {
-                if(ring.is_hole) { inside = false; break; }
-                inside = true;
-            }
-        }
-        return inside;
-    }
-
-    static void pick_airports(const pick_context& ctx,
-                               std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_airports]) return;
-        for(const auto& apt : ctx.db.query_airports(ctx.pick_box))
-            if(ctx.styles.airport_visible(apt, ctx.zoom))
-                out.push_back(apt);
-    }
-
-    static void pick_navaids(const pick_context& ctx,
-                              std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_navaids] || !ctx.vis.altitude.any()) return;
-        for(const auto& nav : ctx.db.query_navaids(ctx.pick_box))
-        {
-            if(!ctx.styles.navaid_visible(nav.nav_type, ctx.zoom)) continue;
-            bool keep = (nav.is_low && ctx.vis.altitude.show_low)
-                     || (nav.is_high && ctx.vis.altitude.show_high);
-            if(keep) out.push_back(nav);
-        }
-    }
-
-    static void pick_fixes(const pick_context& ctx,
-                            std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_fixes] || !ctx.vis.altitude.any()) return;
-        if(!ctx.styles.fix_visible(true, ctx.zoom) &&
-           !ctx.styles.fix_visible(false, ctx.zoom)) return;
-        for(const auto& f : ctx.db.query_fixes(ctx.pick_box))
-        {
-            bool keep = (f.is_low && ctx.vis.altitude.show_low)
-                     || (f.is_high && ctx.vis.altitude.show_high);
-            if(keep) out.push_back(f);
-        }
-    }
-
-    static void pick_obstacles(const pick_context& ctx,
-                                std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_obstacles] ||
-           !ctx.vis.altitude.low_enabled()) return;
-        for(const auto& obs : ctx.db.query_obstacles(ctx.pick_box))
-            if(ctx.styles.obstacle_visible(obs.agl_ht, ctx.zoom))
-                out.push_back(obs);
-    }
-
-    static void pick_comm_outlets(const pick_context& ctx,
-                                   std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_rco] ||
-           !ctx.vis.altitude.low_enabled() ||
-           !ctx.styles.rco_visible(ctx.zoom)) return;
-        for(const auto& c : ctx.db.query_comm_outlets(ctx.pick_box))
-            out.push_back(c);
-    }
-
-    static void pick_awos(const pick_context& ctx,
-                           std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_awos] ||
-           !ctx.vis.altitude.low_enabled() ||
-           !ctx.styles.awos_visible(ctx.zoom)) return;
-        for(const auto& a : ctx.db.query_awos(ctx.pick_box))
-            out.push_back(a);
-    }
-
-    static void pick_class_airspace(const pick_context& ctx,
-                                     std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_airspace] ||
-           !ctx.vis.altitude.low_enabled()) return;
-        for(const auto& a : ctx.db.query_class_airspace(ctx.click_box))
-        {
-            if(!ctx.styles.airspace_visible(a.airspace_class, a.local_type, ctx.zoom))
-                continue;
-            if(point_in_multi_ring(ctx.click_lon, ctx.click_lat, a.parts))
-                out.push_back(a);
-        }
-    }
-
-    static void pick_sua(const pick_context& ctx,
-                          std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_sua] || !ctx.vis.altitude.any()) return;
-        for(const auto& s : ctx.db.query_sua(ctx.click_box))
-        {
-            if(!ctx.styles.sua_visible(s.sua_type, ctx.zoom)) continue;
-            // Each stratum is independently selectable. Emit one pick per
-            // matching stratum so the info box shows its altitudes.
-            for(const auto& stratum : s.strata)
-            {
-                if(!ctx.vis.altitude.overlaps(stratum.lower_ft_val, stratum.lower_ft_ref,
-                                               stratum.upper_ft_val, stratum.upper_ft_ref))
-                    continue;
-                bool inside = false;
-                for(const auto& ring : stratum.parts)
-                {
-                    if(point_in_ring(ctx.click_lon, ctx.click_lat, ring.points))
-                    {
-                        if(ring.is_hole) { inside = false; break; }
-                        inside = true;
-                    }
-                }
-                if(!inside) continue;
-                nasrbrowse::sua pick = s;
-                pick.strata.clear();
-                pick.strata.push_back(stratum);
-                pick.upper_limit = stratum.upper_limit;
-                pick.lower_limit = stratum.lower_limit;
-                out.push_back(std::move(pick));
-            }
-        }
-    }
-
-    static void pick_artcc(const pick_context& ctx,
-                            std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_artcc] || !ctx.vis.altitude.any()) return;
-        for(const auto& a : ctx.db.query_artcc(ctx.click_box))
-        {
-            if(!ctx.styles.artcc_visible(a.altitude, ctx.zoom)) continue;
-            if(!altitude_filter_allows(ctx.vis.altitude, nasrbrowse::artcc_bands(a.altitude)))
-                continue;
-            if(point_in_ring(ctx.click_lon, ctx.click_lat, a.points))
-                out.push_back(a);
-        }
-    }
-
-    static void pick_adiz(const pick_context& ctx,
-                           std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_adiz] || !ctx.styles.adiz_visible(ctx.zoom)) return;
-        for(const auto& a : ctx.db.query_adiz(ctx.click_box))
-        {
-            for(const auto& part : a.parts)
-            {
-                if(point_in_ring(ctx.click_lon, ctx.click_lat, part))
-                {
-                    out.push_back(a);
-                    break;
-                }
-            }
-        }
-    }
-
-    static void pick_pja(const pick_context& ctx,
-                          std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_pja] || !ctx.vis.altitude.any()) return;
-        bool area_vis = ctx.styles.pja_area_visible(ctx.zoom);
-        bool point_vis = ctx.styles.pja_point_visible(ctx.zoom);
-        if(!area_vis && !point_vis) return;
-        // Query with the pick box so point PJAs (radius_nm == 0) whose
-        // R-tree bbox is degenerate still come back.
-        for(const auto& p : ctx.db.query_pjas(ctx.pick_box))
-        {
-            int upper = p.max_altitude_ft_msl > 0 ? p.max_altitude_ft_msl
-                                                   : nasrbrowse::altitude_filter::UNLIMITED_FT;
-            if(!ctx.vis.altitude.overlaps(0, upper)) continue;
-            bool is_point = (p.radius_nm <= 0);
-            if(is_point ? !point_vis : !area_vis) continue;
-            bool hit = is_point
-                ? (p.lon >= ctx.pick_box.lon_min && p.lon <= ctx.pick_box.lon_max
-                && p.lat >= ctx.pick_box.lat_min && p.lat <= ctx.pick_box.lat_max)
-                : point_in_circle_nm(ctx.click_lon, ctx.click_lat, p.lon, p.lat, p.radius_nm);
-            if(hit) out.push_back(p);
-        }
-    }
-
-    static void pick_maa(const pick_context& ctx,
-                          std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_maa] || !ctx.vis.altitude.low_enabled()) return;
-        bool area_vis = ctx.styles.maa_area_visible(ctx.zoom);
-        bool point_vis = ctx.styles.maa_point_visible(ctx.zoom);
-        if(!area_vis && !point_vis) return;
-        for(const auto& m : ctx.db.query_maas(ctx.click_box))
-        {
-            if(!m.shape.empty() && area_vis)
-            {
-                if(point_in_ring(ctx.click_lon, ctx.click_lat, m.shape))
-                    out.push_back(m);
-            }
-            else if(m.radius_nm > 0)
-            {
-                bool is_area = m.shape.empty();
-                if(is_area ? area_vis : point_vis)
-                    if(point_in_circle_nm(ctx.click_lon, ctx.click_lat, m.lon, m.lat, m.radius_nm))
-                        out.push_back(m);
-            }
-        }
-    }
-
-    static void pick_airways(const pick_context& ctx,
-                              std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_airways] || !ctx.vis.altitude.any()) return;
-        for(const auto& seg : ctx.db.query_airways(ctx.pick_box))
-        {
-            if(!ctx.styles.airway_visible(seg.awy_id, ctx.zoom)) continue;
-            if(!altitude_filter_allows(ctx.vis.altitude, nasrbrowse::airway_bands(seg.awy_id))) continue;
-            double d = point_to_segment_nm(ctx.click_lon, ctx.click_lat,
-                seg.from_lon, seg.from_lat, seg.to_lon, seg.to_lat);
-            if(d <= ctx.pick_radius_nm) out.push_back(seg);
-        }
-    }
-
-    static void pick_mtrs(const pick_context& ctx,
-                           std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_mtrs] || !ctx.vis.altitude.any() ||
-           !ctx.styles.mtr_visible(ctx.zoom)) return;
-        for(const auto& seg : ctx.db.query_mtrs(ctx.pick_box))
-        {
-            if(!altitude_filter_allows(ctx.vis.altitude, nasrbrowse::mtr_bands(seg.route_type_code)))
-                continue;
-            double d = point_to_segment_nm(ctx.click_lon, ctx.click_lat,
-                seg.from_lon, seg.from_lat, seg.to_lon, seg.to_lat);
-            if(d <= ctx.pick_radius_nm) out.push_back(seg);
-        }
-    }
-
-    static void pick_runways(const pick_context& ctx,
-                              std::vector<nasrbrowse::pick_feature>& out)
-    {
-        if(!ctx.vis[nasrbrowse::layer_runways] || !ctx.vis.altitude.low_enabled() ||
-           !ctx.styles.runway_visible(ctx.zoom)) return;
-        for(const auto& rwy : ctx.db.query_runways(ctx.pick_box))
-        {
-            double d = point_to_segment_nm(ctx.click_lon, ctx.click_lat,
-                rwy.end1_lon, rwy.end1_lat, rwy.end2_lon, rwy.end2_lat);
-            if(d <= ctx.pick_radius_nm) out.push_back(rwy);
-        }
-    }
-
     nasrbrowse::pick_result pick_at(double ndc_x, double ndc_y)
     {
         using namespace nasrbrowse;
@@ -986,7 +264,7 @@ struct layer_map::impl
             my_to_lat(world_y + box_world_half)};
         geo_bbox click_box{click_lon, click_lat, click_lon, click_lat};
 
-        pick_context ctx{
+        nasrbrowse::pick_context ctx{
             pick_db, styles, vis,
             view.zoom_level(viewport_height),
             click_lon, click_lat,
@@ -996,21 +274,9 @@ struct layer_map::impl
         pick_result result;
         result.lon = click_lon;
         result.lat = click_lat;
-        pick_airports(ctx, result.features);
-        pick_navaids(ctx, result.features);
-        pick_fixes(ctx, result.features);
-        pick_obstacles(ctx, result.features);
-        pick_comm_outlets(ctx, result.features);
-        pick_awos(ctx, result.features);
-        pick_class_airspace(ctx, result.features);
-        pick_sua(ctx, result.features);
-        pick_artcc(ctx, result.features);
-        pick_adiz(ctx, result.features);
-        pick_pja(ctx, result.features);
-        pick_maa(ctx, result.features);
-        pick_airways(ctx, result.features);
-        pick_mtrs(ctx, result.features);
-        pick_runways(ctx, result.features);
+        for(const auto& obj : feature_types)
+            if(vis[obj->layer_id()])
+                obj->pick(ctx, result.features);
         return result;
     }
 
@@ -1057,11 +323,11 @@ struct layer_map::impl
     }
 
     // Open (or replace) the info popup showing details for a selected feature.
-    void open_info_popup(const nasrbrowse::pick_feature& f,
+    void open_info_popup(const nasrbrowse::feature& f,
                           double click_lon, double click_lat)
     {
-        double alon, alat;
-        feature_anchor_lonlat(f, click_lon, click_lat, alon, alat);
+        auto [alon, alat] = nasrbrowse::find_feature_type(feature_types, f)
+                              .anchor_lonlat(f, click_lon, click_lat);
         info_popup.open = true;
         ++info_popup.session_id;
         info_popup.warmup_frames = 2;
@@ -1095,14 +361,13 @@ struct layer_map::impl
         // exact-pick pixel radius of the click.
         const double exact_threshold_px = PICK_BOX_EXACT_SIZE_PIXELS;
         int exact_count = 0;
-        const nasrbrowse::pick_feature* exact_hit = nullptr;
+        const nasrbrowse::feature* exact_hit = nullptr;
         for(const auto& f : result.features)
         {
-            if(!feature_is_point(f)) continue;
-            double flon, flat;
-            feature_point_lonlat(f, flon, flat);
+            auto coord = nasrbrowse::find_feature_type(feature_types, f).point_coord(f);
+            if(!coord) continue;
             float fx, fy;
-            world_to_pixel(flon, flat, fx, fy);
+            world_to_pixel(coord->first, coord->second, fx, fy);
             float cx, cy;
             world_to_pixel(result.lon, result.lat, cx, cy);
             double dx = fx - cx, dy = fy - cy;
@@ -1182,10 +447,11 @@ struct layer_map::impl
                 sections[s].header = nasrbrowse::FEATURE_SECTIONS[s].header;
             for(int i = 0; i < static_cast<int>(pick_popup.features.size()); ++i)
             {
-                int s = nasrbrowse::feature_section_index(
-                    feature_section_tag(pick_popup.features[i]));
+                const auto& f = pick_popup.features[i];
+                const auto& t = nasrbrowse::find_feature_type(feature_types, f);
+                int s = nasrbrowse::feature_section_index(t.section_tag());
                 if(s < 0) continue;
-                sections[s].items.push_back(feature_summary(pick_popup.features[i]));
+                sections[s].items.push_back(t.summary(f));
                 section_feature_index[s].push_back(i);
             }
 
@@ -1235,7 +501,8 @@ struct layer_map::impl
             ImGuiWindowFlags_NoTitleBar);
 
         // Title row: feature summary on the left, [X] on the right.
-        std::string title = feature_summary(info_popup.feature);
+        const auto& L = nasrbrowse::find_feature_type(feature_types, info_popup.feature);
+        std::string title = L.summary(info_popup.feature);
         ImGui::TextUnformatted(title.c_str());
         ImGui::SameLine();
         float btn_w = ImGui::GetFrameHeight();
@@ -1253,7 +520,7 @@ struct layer_map::impl
         // Two-column layout: fixed-width keys (auto-fit) + fixed-width
         // wrapped values. Using an ImGui table gives us per-cell wrapping
         // while keeping the key column aligned.
-        kv_list rows = feature_kv(info_popup.feature);
+        nasrbrowse::kv_list rows = L.info_kv(info_popup.feature);
         const ImGuiTableFlags flags =
             ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX;
         if(ImGui::BeginTable("info_kv", 2, flags))
@@ -1375,6 +642,12 @@ void layer_map::set_imgui_wants_mouse(bool wants)
 double layer_map::zoom_level() const
 {
     return pimpl->view.zoom_level(pimpl->viewport_height);
+}
+
+const std::vector<std::unique_ptr<nasrbrowse::feature_type>>&
+layer_map::feature_types() const
+{
+    return pimpl->feature_types;
 }
 
 void layer_map::on_button_input(sdl::input_button_t button, sdl::input_action_t action, sdl::input_mod_t)

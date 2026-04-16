@@ -51,7 +51,7 @@ namespace nasrbrowse
         int viewport_height;
         double zoom;
         altitude_filter altitude;
-        std::optional<pick_feature> selection;
+        std::optional<feature> selection;
     };
 
     // A label candidate from the feature build pass (world-space)

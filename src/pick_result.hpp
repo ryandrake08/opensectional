@@ -6,7 +6,7 @@
 
 namespace nasrbrowse
 {
-    using pick_feature = std::variant<
+    using feature = std::variant<
         airport,
         navaid,
         fix,
@@ -28,7 +28,7 @@ namespace nasrbrowse
     {
         double lon;
         double lat;
-        std::vector<pick_feature> features;
+        std::vector<feature> features;
     };
 
 } // namespace nasrbrowse

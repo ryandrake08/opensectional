@@ -37,6 +37,7 @@ add_executable(nasrbrowse
     src/layer.cpp
     src/layer_map.cpp
     src/feature_builder.cpp
+    src/feature_type.cpp
     src/feature_renderer.cpp
     src/label_renderer.cpp
     src/line_renderer.cpp

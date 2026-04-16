@@ -1,4 +1,5 @@
 #include "ui_overlay.hpp"
+#include "feature_type.hpp"
 #include "ui_sectioned_list.hpp"
 
 #include <array>
@@ -38,7 +39,9 @@ namespace nasrbrowse
         return pimpl->vis;
     }
 
-    ui_overlay_result ui_overlay::draw(float last_render_ms, double zoom_level)
+    ui_overlay_result ui_overlay::draw(
+        float last_render_ms, double zoom_level,
+        const std::vector<std::unique_ptr<feature_type>>& feature_types)
     {
         ImGuiIO& io = ImGui::GetIO();
         ui_overlay_result result;
@@ -93,37 +96,44 @@ namespace nasrbrowse
             ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoSavedSettings);
 
+        // Row = (label, layer_id). Basemap sits at the top, then each
+        // feature_type in registration order.
+        struct row { const char* label; int id; };
+        std::vector<row> rows;
+        rows.reserve(feature_types.size() + 1);
+        rows.push_back({"Basemap", layer_basemap});
+        for(const auto& obj : feature_types)
+            rows.push_back({obj->label(), obj->layer_id()});
+
         float max_label_w = 0;
-        for(const auto& e : layer_entries)
+        for(const auto& r : rows)
         {
-            float w = ImGui::CalcTextSize(e.label).x;
+            float w = ImGui::CalcTextSize(r.label).x;
             if(w > max_label_w) max_label_w = w;
         }
 
         float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
         bool& changed = result.visibility_changed;
 
-        for(const auto& e : layer_entries)
+        for(const auto& r : rows)
         {
-            float label_w = ImGui::CalcTextSize(e.label).x;
+            float label_w = ImGui::CalcTextSize(r.label).x;
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + max_label_w - label_w);
             ImGui::AlignTextToFramePadding();
-            ImGui::Text("%s", e.label);
+            ImGui::Text("%s", r.label);
             ImGui::SameLine(0, spacing);
 
             char id[32];
-            std::snprintf(id, sizeof(id), "##%s", e.label);
-            if(ImGui::Checkbox(id, &d.vis[e.id]))
-            {
+            std::snprintf(id, sizeof(id), "##%s", r.label);
+            if(ImGui::Checkbox(id, &d.vis[r.id]))
                 changed = true;
-            }
         }
 
         ImGui::End();
 
         // Altitude band filter beneath the layer checkboxes.
         ImGui::SetNextWindowPos(
-            ImVec2(io.DisplaySize.x, ImGui::GetFrameHeightWithSpacing() * static_cast<float>(IM_ARRAYSIZE(layer_entries) + 1) + 16.0F),
+            ImVec2(io.DisplaySize.x, ImGui::GetFrameHeightWithSpacing() * static_cast<float>(rows.size() + 1) + 16.0F),
             ImGuiCond_Always,
             ImVec2(1.0F, 0.0F));
         ImGui::SetNextWindowBgAlpha(0.6F);

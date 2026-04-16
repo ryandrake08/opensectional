@@ -50,7 +50,7 @@ namespace nasrbrowse
         std::vector<label_candidate> current_labels;
 
         layer_visibility vis;
-        std::optional<pick_feature> selection;
+        std::optional<feature> selection;
 
         impl(sdl::device& dev, const char* db_path, const chart_style& styles)
             : dev(dev)
@@ -245,7 +245,7 @@ namespace nasrbrowse
         }
     }
 
-    void feature_renderer::set_selection(std::optional<pick_feature> sel)
+    void feature_renderer::set_selection(std::optional<feature> sel)
     {
         pimpl->selection = std::move(sel);
 

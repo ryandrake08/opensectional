@@ -11,6 +11,7 @@
 
 namespace nasrbrowse
 {
+    class feature_type;
 
     // Layer identifiers. The SDF layers are ordered back-to-front for rendering.
     enum layer
@@ -36,32 +37,6 @@ namespace nasrbrowse
         // Non-SDF layers
         layer_basemap = layer_sdf_count,
         layer_count
-    };
-
-    struct layer_info
-    {
-        const char* label;
-        int id;
-    };
-
-    // UI display order for checkboxes
-    inline constexpr layer_info layer_entries[] = {
-        {"Basemap",      layer_basemap},
-        {"Airports",     layer_airports},
-        {"Runways",      layer_runways},
-        {"Navaids",      layer_navaids},
-        {"Fixes",        layer_fixes},
-        {"Airways",      layer_airways},
-        {"MTRs",         layer_mtrs},
-        {"PJA",          layer_pja},
-        {"MAA",          layer_maa},
-        {"Airspace",     layer_airspace},
-        {"SUA",          layer_sua},
-        {"ADIZ",         layer_adiz},
-        {"ARTCC",        layer_artcc},
-        {"Obstacles",    layer_obstacles},
-        {"RCO",          layer_rco},
-        {"AWOS",         layer_awos},
     };
 
     struct layer_visibility
@@ -107,7 +82,11 @@ namespace nasrbrowse
         const std::vector<search_hit>& search_results() const;
 
         // Draw FPS display, zoom level, layer checkboxes, and the search box.
-        ui_overlay_result draw(float last_render_ms, double zoom_level);
+        // `feature_types` supplies the labels+ids for the feature-layer
+        // checkboxes (the basemap row is always prepended).
+        ui_overlay_result draw(
+            float last_render_ms, double zoom_level,
+            const std::vector<std::unique_ptr<feature_type>>& feature_types);
 
         // Access the list of visible/invisible layers
         const layer_visibility& visibility() const;

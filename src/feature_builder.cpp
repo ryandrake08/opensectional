@@ -182,7 +182,7 @@ namespace nasrbrowse
         // Draw order: halo first, icon body second. Labels come from the
         // normal label pipeline and already render on top.
         void build_selection_overlay(const feature_build_request& req,
-                                      const pick_feature& sel,
+                                      const feature& sel,
                                       polyline_data& out,
                                       polygon_fill_data& fill_out)
         {

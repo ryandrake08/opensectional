@@ -1,6 +1,7 @@
 #pragma once
 #include "layer.hpp"
 #include <memory>
+#include <vector>
 
 namespace sdl
 {
@@ -18,6 +19,7 @@ namespace nasrbrowse
     struct search_hit;
     class chart_style;
     class nasr_database;
+    class feature_type;
 }
 
 class layer_map : public layer
@@ -38,6 +40,10 @@ public:
 
     // Recenter the map on a search hit and zoom to fit.
     void focus_on_hit(const nasrbrowse::search_hit& hit);
+
+    // The ordered list of toggleable feature_types. Used by the UI
+    // overlay to build its layer-visibility checkboxes.
+    const std::vector<std::unique_ptr<nasrbrowse::feature_type>>& feature_types() const;
     void set_imgui_wants_mouse(bool wants);
     double zoom_level() const;
 

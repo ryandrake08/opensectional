@@ -55,7 +55,7 @@ namespace nasrbrowse
 
         // Set (or clear) the currently-selected feature. The builder re-runs
         // and emits a highlight overlay rendered on top of everything.
-        void set_selection(std::optional<pick_feature> sel);
+        void set_selection(std::optional<feature> sel);
     };
 
 } // namespace nasrbrowse

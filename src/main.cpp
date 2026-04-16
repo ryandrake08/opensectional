@@ -375,7 +375,8 @@ int main(int argc, char** argv)
             // click) even when the map hasn't changed
             imgui_ctx.new_frame();
 
-            auto ui_result = ui.draw(last_render_ms, map_layer->zoom_level());
+            auto ui_result = ui.draw(last_render_ms, map_layer->zoom_level(),
+                                      map_layer->feature_types());
             if(ui_result.visibility_changed)
             {
                 map_layer->set_visibility(ui.visibility());
