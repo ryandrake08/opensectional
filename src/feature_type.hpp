@@ -9,6 +9,7 @@
 // Stage 1 only exposes pick() + metadata. Later stages will add
 // build/render, info_kv, summary, and variant-visitor helpers.
 
+#include "feature_builder.hpp"   // build_context, polyline_data, polygon_fill_data
 #include "geo_types.hpp"
 #include "nasr_database.hpp"
 #include "pick_result.hpp"
@@ -99,6 +100,20 @@ namespace nasrbrowse
             if(auto c = point_coord(f)) return *c;
             return {click_lon, click_lat};
         }
+
+        // Emit vertex geometry into ctx.poly[layer_id] (and labels into
+        // ctx.labels) for every instance of this feature_type visible in
+        // ctx.req's bbox / zoom / altitude filter.
+        virtual void build(const build_context& ctx) const = 0;
+
+        // Emit the selection-overlay geometry (halo + re-drawn icon/outline)
+        // for the given feature. Called only when `f` was produced by
+        // this feature_type's pick(). Subclasses with no highlight (e.g.
+        // runway_type) override with an empty body.
+        virtual void build_selection(const build_context& ctx,
+                                      const feature& f,
+                                      polyline_data& out,
+                                      polygon_fill_data& fill_out) const = 0;
     };
 
     // Build the canonical ordered list of feature_types. Order controls

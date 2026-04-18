@@ -711,6 +711,31 @@ def build_maa(conn, csv_zf):
         conn.execute("UPDATE MAA_SHP SET POINT_SEQ = -POINT_SEQ WHERE POINT_SEQ < 0")
         print(f"  MAA_SHP: reordered {len(reorder_updates)} points into convex hull order")
 
+    # Close each ring by appending the first point at the end so
+    # downstream renderers don't need a special "close" flag.
+    close_inserts = []
+    for maa_id, pts in by_id.items():
+        if len(pts) < 3:
+            continue
+        max_seq = len(pts)
+        first = conn.execute(
+            "SELECT LAT_DECIMAL, LON_DECIMAL FROM MAA_SHP "
+            "WHERE MAA_ID = ? ORDER BY POINT_SEQ LIMIT 1",
+            (maa_id,)).fetchone()
+        last = conn.execute(
+            "SELECT LAT_DECIMAL, LON_DECIMAL FROM MAA_SHP "
+            "WHERE MAA_ID = ? ORDER BY POINT_SEQ DESC LIMIT 1",
+            (maa_id,)).fetchone()
+        if first and last and (first[0] != last[0] or first[1] != last[1]):
+            close_inserts.append((maa_id, max_seq + 1, first[0], first[1]))
+
+    if close_inserts:
+        conn.executemany(
+            "INSERT INTO MAA_SHP (MAA_ID, POINT_SEQ, LAT_DECIMAL, LON_DECIMAL) "
+            "VALUES (?, ?, ?, ?)",
+            close_inserts)
+        print(f"  MAA_SHP: closed {len(close_inserts)} rings")
+
     conn.execute("CREATE INDEX idx_maa_shp ON MAA_SHP(MAA_ID)")
 
     # Build MAA_BASE with parsed coordinates

@@ -2,18 +2,218 @@
 
 #include "altitude_filter.hpp"
 #include "chart_style.hpp"
+#include "map_view.hpp"
+#include "nasr_database.hpp"
 #include "ui_overlay.hpp"  // for the layer enum
 
 #include <cmath>
 #include <cstring>
+#include <glm/glm.hpp>
+#include <mapbox/earcut.hpp>
 #include <sstream>
 #include <stdexcept>
 #include <variant>
+
+namespace mapbox {
+namespace util {
+    template <> struct nth<0, glm::vec2> { static float get(const glm::vec2& p) { return p.x; } };
+    template <> struct nth<1, glm::vec2> { static float get(const glm::vec2& p) { return p.y; } };
+}}
 
 namespace nasrbrowse
 {
     namespace
     {
+        // -- Dimensional constants ---------------------------------------------
+
+        constexpr double SYMBOL_RADIUS_AIRPORT  = 0.012;
+        constexpr double SYMBOL_RADIUS_FIX      = 0.012;
+        constexpr double SYMBOL_RADIUS_OBSTACLE = 0.012;
+        constexpr double SYMBOL_RADIUS_COMM     = 0.012;
+
+        constexpr float LETTER_HEIGHT   = 0.385F;
+        constexpr float LETTER_ASPECT   = 0.7F;
+        constexpr float LETTER_WIDTH_PX = 2.0F;
+        constexpr float SYMBOL_FILL_PX  = 50.0F;
+
+        // -- Polyline geometry helpers -----------------------------------------
+
+        void triangulate_polygon(
+            const std::vector<glm::vec2>& outer,
+            const std::vector<std::vector<glm::vec2>>& holes,
+            const glm::vec4& color,
+            polygon_fill_data& out)
+        {
+            if(outer.size() < 3) return;
+            std::vector<std::vector<glm::vec2>> rings;
+            rings.reserve(1 + holes.size());
+            rings.push_back(outer);
+            for(const auto& h : holes) rings.push_back(h);
+            std::vector<uint32_t> indices = mapbox::earcut<uint32_t>(rings);
+            std::vector<glm::vec2> flat;
+            flat.reserve(outer.size() + [&] {
+                size_t s = 0; for(auto& h : holes) s += h.size(); return s;
+            }());
+            flat.insert(flat.end(), outer.begin(), outer.end());
+            for(const auto& h : holes) flat.insert(flat.end(), h.begin(), h.end());
+            out.triangles.reserve(out.triangles.size() + indices.size());
+            for(uint32_t idx : indices)
+                out.triangles.push_back({flat[idx], color});
+        }
+
+        void add_circle(polyline_data& pd, float cx, float cy, float r,
+                        const line_style& ls)
+        {
+            const int n = 16;
+            std::vector<glm::vec2> pts;
+            for(int i = 0; i < n; i++)
+            {
+                float angle = 2.0F * static_cast<float>(M_PI) * i / n;
+                pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
+            }
+            pts.push_back(pts.front());
+            pd.polylines.push_back(std::move(pts));
+            pd.styles.push_back(ls);
+        }
+
+        void add_circle_to(polyline_data& pd, float cx, float cy, float r,
+                           const line_style& ls, int n = 24)
+        {
+            std::vector<glm::vec2> pts;
+            for(int i = 0; i < n; i++)
+            {
+                float angle = 2.0F * static_cast<float>(M_PI) * i / n;
+                pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
+            }
+            pts.push_back(pts.front());
+            pd.polylines.push_back(std::move(pts));
+            pd.styles.push_back(ls);
+        }
+
+        void add_seg_to(polyline_data& pd, float x0, float y0,
+                        float x1, float y1, const line_style& ls)
+        {
+            pd.polylines.push_back({glm::vec2(x0, y0), glm::vec2(x1, y1)});
+            pd.styles.push_back(ls);
+        }
+
+        void add_hexagon(polyline_data& pd, float cx, float cy, float r,
+                         const line_style& ls)
+        {
+            std::vector<glm::vec2> pts;
+            for(int i = 0; i < 6; i++)
+            {
+                float angle = glm::radians(60.0F * i);
+                pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
+            }
+            pts.push_back(pts.front());
+            pd.polylines.push_back(std::move(pts));
+            pd.styles.push_back(ls);
+        }
+
+        void add_rect(polyline_data& pd, float cx, float cy, float hw, float hh,
+                      const line_style& ls)
+        {
+            pd.polylines.push_back({
+                {cx - hw, cy - hh}, {cx + hw, cy - hh},
+                {cx + hw, cy + hh}, {cx - hw, cy + hh}, {cx - hw, cy - hh}
+            });
+            pd.styles.push_back(ls);
+        }
+
+        void add_center_dot(polyline_data& pd, float cx, float cy, float r,
+                            const line_style& ls)
+        {
+            float d = r * 0.15F;
+            pd.polylines.push_back({
+                {cx - d, cy}, {cx, cy + d}, {cx + d, cy}, {cx, cy - d}, {cx - d, cy}
+            });
+            pd.styles.push_back(ls);
+        }
+
+        void add_caltrop(polyline_data& pd, float cx, float cy, float hex_r,
+                         const line_style& ls)
+        {
+            float vx[6], vy[6];
+            for(int i = 0; i < 6; i++)
+            {
+                float angle = glm::radians(60.0F * i);
+                vx[i] = cx + hex_r * std::cos(angle);
+                vy[i] = cy + hex_r * std::sin(angle);
+            }
+            int edges[][2] = {{0, 1}, {2, 3}, {4, 5}};
+            float normal_angles[] = {30.0F, 150.0F, 270.0F};
+            float h = hex_r * 0.5F;
+            for(int e = 0; e < 3; e++)
+            {
+                int a = edges[e][0], b = edges[e][1];
+                float na = glm::radians(normal_angles[e]);
+                float nx = std::cos(na) * h;
+                float ny = std::sin(na) * h;
+                pd.polylines.push_back({
+                    {vx[a], vy[a]}, {vx[b], vy[b]},
+                    {vx[b] + nx, vy[b] + ny}, {vx[a] + nx, vy[a] + ny},
+                    {vx[a], vy[a]},
+                });
+                pd.styles.push_back(ls);
+            }
+        }
+
+        void add_comm_symbol(polyline_data& pd, float cx, float cy,
+                              float radius, const line_style& ls)
+        {
+            add_circle_to(pd, cx, cy, radius, ls);
+            float dot_r = radius * 0.2F;
+            add_circle_to(pd, cx, cy, dot_r, ls, 8);
+        }
+
+        void add_polyline(polyline_data& pd,
+                          const std::vector<airspace_point>& points,
+                          const line_style& ls,
+                          double mx_offset)
+        {
+            if(points.size() < 2) return;
+            std::vector<glm::vec2> polyline;
+            polyline.reserve(points.size());
+            for(const auto& pt : points)
+            {
+                polyline.emplace_back(
+                    static_cast<float>(lon_to_mx(pt.lon) + mx_offset),
+                    static_cast<float>(lat_to_my(pt.lat)));
+            }
+            pd.polylines.push_back(std::move(polyline));
+            pd.styles.push_back(ls);
+        }
+
+        // --- Vector letters ---
+        // clang-format off
+        const std::vector<float> letter_H = {-1,-1, -1,1,  1,-1, 1,1,  -1,.1f, 1,.1f};
+        const std::vector<float> letter_F = {-1,-1, -1,1,  -1,1, 1,1,  -1,.1f, .6f,.1f};
+        const std::vector<float> letter_G = {1,1, -1,1,  -1,1, -1,-1,  -1,-1, 1,-1,  1,-1, 1,.1f,  1,.1f, 0,.1f};
+        const std::vector<float> letter_S = {1,1, -1,1,  -1,1, -1,.1f,  -1,.1f, 1,.1f,  1,.1f, 1,-1,  1,-1, -1,-1};
+        const std::vector<float> letter_B = {-1,-1, -1,1,  -1,1, 1,1,  1,1, 1,.1f,  1,.1f, -1,.1f,  -1,-1, 1,-1,  1,-1, 1,.1f};
+        const std::vector<float> letter_X = {-1,-1, 1,1,  -1,1, 1,-1};
+        const std::vector<float> letter_M = {-1,-1, -1,1,  -1,1, 0,.1f,  0,.1f, 1,1,  1,1, 1,-1};
+        const std::vector<float> letter_R = {-1,-1, -1,1,  -1,1, 1,1,  1,1, 1,.1f,  1,.1f, -1,.1f,  0,.1f, 1,-1};
+        const std::vector<float> letter_P = {-1,-1, -1,1,  -1,1, 1,1,  1,1, 1,.1f,  1,.1f, -1,.1f};
+        const std::vector<float> letter_A = {-1,-1, 0,1,  0,1, 1,-1,  -0.5f,.1f, 0.5f,.1f};
+        const std::vector<float> letter_U = {-1,1, -1,-1,  -1,-1, 1,-1,  1,-1, 1,1};
+        // clang-format on
+
+        void add_letter(polyline_data& pd, const std::vector<float>& segs,
+                         float cx, float cy, float w, float h,
+                         const line_style& ls)
+        {
+            for(size_t i = 0; i + 3 < segs.size(); i += 4)
+            {
+                float x0 = cx + segs[i + 0] * w;
+                float y0 = cy + segs[i + 1] * h;
+                float x1 = cx + segs[i + 2] * w;
+                float y1 = cy + segs[i + 3] * h;
+                add_seg_to(pd, x0, y0, x1, y1, ls);
+            }
+        }
+
         // -- Geometry picking helpers -------------------------------------------
 
         bool point_in_ring(double px, double py,
@@ -80,6 +280,24 @@ namespace nasrbrowse
             return std::sqrt(cx * cx + cy * cy);
         }
 
+        line_style to_line_style(const feature_style& fs)
+        {
+            return {fs.line_width, fs.border_width, fs.dash_length, fs.gap_length,
+                    fs.r, fs.g, fs.b, fs.a, 0};
+        }
+
+        // True if a SUA stratum's altitude bounds pass the active filter.
+        // Missing bounds (all zero + empty refs) are treated as visible.
+        bool sua_altitude_visible(const altitude_filter& af,
+                                   int upper_ft, const std::string& upper_ref,
+                                   int lower_ft, const std::string& lower_ref)
+        {
+            if(!af.any()) return false;
+            if(lower_ft == 0 && upper_ft == 0 && lower_ref.empty() && upper_ref.empty())
+                return true;
+            return af.overlaps(lower_ft, lower_ref, upper_ft, upper_ref);
+        }
+
         // -- Formatting helpers for info_kv -------------------------------------
 
         std::string fmt_int(int v)
@@ -125,7 +343,10 @@ namespace nasrbrowse
             bool owns(const feature& f) const override { return std::holds_alternative<feature_t>(f); } \
             void pick(const pick_context&, std::vector<feature>&) const override; \
             std::string summary(const feature& f) const override; \
-            kv_list info_kv(const feature& f) const override;
+            kv_list info_kv(const feature& f) const override; \
+            void build(const build_context& ctx) const override; \
+            void build_selection(const build_context& ctx, const feature& f, \
+                                  polyline_data& out, polygon_fill_data& fill_out) const override;
 
         #define DECLARE_AREA_FEATURE_TYPE(Class, LBL, ID, TAG, FType) \
             class Class : public feature_type { \
@@ -734,6 +955,1029 @@ namespace nasrbrowse
             };
         }
 
+        // -- Icon emitters --------------------------------------------------
+
+        // Label placement priorities (higher = placed first in overlap pass).
+        constexpr int LABEL_PRIORITY_AIRPORT_TOWERED   = 100;
+        constexpr int LABEL_PRIORITY_AIRPORT_UNTOWERED = 80;
+        constexpr int LABEL_PRIORITY_NAVAID_VOR        = 60;
+        constexpr int LABEL_PRIORITY_NAVAID_NDB        = 40;
+        constexpr int LABEL_PRIORITY_FIX_AIRWAY        = 30;
+        constexpr int LABEL_PRIORITY_FIX_OTHER         = 20;
+
+        bool is_military_apt(const airport& apt)
+        {
+            return apt.ownership_type_code == "MA" ||
+                   apt.ownership_type_code == "MR" ||
+                   apt.ownership_type_code == "MN" ||
+                   apt.ownership_type_code == "CG";
+        }
+
+        void emit_airport_icon(polyline_data& pd, float cx, float cy,
+                                float r, float pixels_per_world,
+                                const airport& apt, const feature_style& cs)
+        {
+            constexpr float APT_OUTER_SCALE = 1.2F;
+            constexpr float APT_RING_WIDTH_PX = 1.0F;
+            constexpr float APT_FILL_RADIUS = 0.5F;
+
+            float symbol_r = r * APT_OUTER_SCALE;
+            float ring_geom_r = symbol_r - (APT_RING_WIDTH_PX * 0.5F) / pixels_per_world;
+            line_style ring_ls = {APT_RING_WIDTH_PX, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
+
+            bool closed = apt.arpt_status == "CI" || apt.arpt_status == "CP";
+            bool pvt = apt.facility_use_code == "PR";
+            bool mil = is_military_apt(apt);
+            float h = ring_geom_r * LETTER_HEIGHT;
+            line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1.0F, 1.0F, 1.0F, 1.0F, 0};
+            float w = h * LETTER_ASPECT;
+
+            const std::vector<float>* letter = nullptr;
+            if(closed)                          letter = &letter_X;
+            else if(apt.site_type_code == "H")  letter = &letter_H;
+            else if(apt.site_type_code == "C")  letter = &letter_S;
+            else if(apt.site_type_code == "U")  letter = &letter_F;
+            else if(apt.site_type_code == "G")  letter = &letter_G;
+            else if(apt.site_type_code == "B")  letter = &letter_B;
+            else if(mil)                        letter = &letter_M;
+            else if(pvt)                        letter = &letter_R;
+
+            if(apt.hard_surface)
+            {
+                float geom_r = symbol_r * APT_FILL_RADIUS;
+                float fill_px = symbol_r * pixels_per_world;
+                line_style fill_ls = {fill_px, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
+                add_circle_to(pd, cx, cy, geom_r, fill_ls);
+                if(letter) add_letter(pd, *letter, cx, cy, w, h, white_ls);
+            }
+            else if(letter)
+            {
+                line_style filled_ring = ring_ls;
+                filled_ring.fill_width = SYMBOL_FILL_PX;
+                add_circle_to(pd, cx, cy, ring_geom_r, filled_ring);
+                add_letter(pd, *letter, cx, cy, w, h, white_ls);
+            }
+            else
+            {
+                add_circle_to(pd, cx, cy, ring_geom_r, ring_ls);
+            }
+        }
+
+        void emit_navaid_icon(polyline_data& pd, float cx, float cy, float r,
+                               const navaid& nav, const feature_style& fs)
+        {
+            constexpr float NAV_NDB_CIRCLE = 0.4F;
+            constexpr float NAV_DME_RECT = 0.85F;
+            constexpr float NAV_VORDME_WIDTH = 1.1F;
+
+            line_style ls = to_line_style(fs);
+            line_style filled_ls = ls;
+            filled_ls.fill_width = SYMBOL_FILL_PX;
+
+            if(nav.nav_type == "NDB")
+                add_circle(pd, cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
+            else if(nav.nav_type == "NDB/DME")
+            {
+                add_circle(pd, cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
+                add_rect(pd, cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, ls);
+            }
+            else if(nav.nav_type == "DME")
+                add_rect(pd, cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, filled_ls);
+            else if(nav.nav_type == "VOR/DME")
+            {
+                add_hexagon(pd, cx, cy, r, filled_ls);
+                add_center_dot(pd, cx, cy, r, ls);
+                add_rect(pd, cx, cy, r * NAV_VORDME_WIDTH, r * NAV_DME_RECT, ls);
+            }
+            else if(nav.nav_type == "VORTAC" || nav.nav_type == "TACAN")
+            {
+                add_hexagon(pd, cx, cy, r, filled_ls);
+                add_center_dot(pd, cx, cy, r, ls);
+                add_caltrop(pd, cx, cy, r, ls);
+            }
+            else
+            {
+                add_hexagon(pd, cx, cy, r, filled_ls);
+                add_center_dot(pd, cx, cy, r, ls);
+            }
+        }
+
+        // --- Fix-specific icon shapes ---
+
+        void add_triangle_polyline(polyline_data& pd, float cx, float cy,
+                                    float r, const line_style& ls)
+        {
+            constexpr float SQRT3_2 = 0.866F;
+            float h = r * SQRT3_2;
+            pd.polylines.push_back({
+                {cx, cy + r}, {cx - h, cy - r * 0.5F},
+                {cx + h, cy - r * 0.5F}, {cx, cy + r},
+            });
+            pd.styles.push_back(ls);
+        }
+
+        void add_waypoint_star_polyline(polyline_data& pd,
+                                         float cx, float cy, float r,
+                                         const line_style& ls)
+        {
+            constexpr int ARC_SEGS = 3;
+            constexpr float PI = 3.14159265F;
+            constexpr float SQRT2_M1 = 0.41421356F;
+
+            struct arc_def { float acx, acy; float start_angle; };
+            const arc_def arcs[4] = {
+                { r,  r, -PI / 2}, {-r,  r,  0},
+                {-r, -r,  PI / 2}, { r, -r,  PI},
+            };
+
+            std::vector<glm::vec2> star_pts;
+            for(int q = 0; q < 4; q++)
+            {
+                float acx_off = arcs[q].acx;
+                float acy_off = arcs[q].acy;
+                float a0 = arcs[q].start_angle;
+                for(int i = 0; i <= ARC_SEGS; i++)
+                {
+                    float t = static_cast<float>(i) / ARC_SEGS;
+                    float angle = a0 - t * (PI / 2);
+                    float px = cx + acx_off + r * std::cos(angle);
+                    float py = cy + acy_off + r * std::sin(angle);
+                    star_pts.push_back({px, py});
+                }
+            }
+            star_pts.push_back(star_pts[0]);
+            pd.polylines.push_back(std::move(star_pts));
+            pd.styles.push_back(ls);
+
+            constexpr int CIRCLE_SEGS = 8;
+            float cr = r * SQRT2_M1;
+            std::vector<glm::vec2> circle_pts;
+            for(int i = 0; i <= CIRCLE_SEGS; i++)
+            {
+                float angle = 2 * PI * static_cast<float>(i) / CIRCLE_SEGS;
+                circle_pts.push_back({cx + cr * std::cos(angle),
+                                      cy + cr * std::sin(angle)});
+            }
+            pd.polylines.push_back(std::move(circle_pts));
+            pd.styles.push_back(ls);
+        }
+
+        void emit_fix_icon(polyline_data& pd, float cx, float cy, float r,
+                           const fix& f, const feature_style& fs)
+        {
+            line_style ls = to_line_style(fs);
+            ls.fill_width = SYMBOL_FILL_PX;
+            if(f.use_code == "RP" || f.use_code == "MR")
+                add_triangle_polyline(pd, cx, cy, r, ls);
+            else
+                add_waypoint_star_polyline(pd, cx, cy, r, ls);
+        }
+
+        // --- Obstacle icon ---
+
+        void add_obstacle_polylines(polyline_data& pd, float cx, float cy,
+                                     float radius, bool tall, bool lighted,
+                                     const line_style& ls)
+        {
+            float dot_r = radius * 0.2F;
+            float half_w = radius * 0.7F;
+            float leg_y = cy - dot_r;
+            float apex_y = leg_y + radius * 1.6F;
+            float mast_top = tall ? apex_y + radius * 0.8F : apex_y;
+
+            if(tall)
+            {
+                pd.polylines.push_back({
+                    glm::vec2(cx - half_w, leg_y),
+                    glm::vec2(cx, apex_y), glm::vec2(cx, mast_top),
+                    glm::vec2(cx, apex_y), glm::vec2(cx + half_w, leg_y),
+                });
+            }
+            else
+            {
+                pd.polylines.push_back({
+                    glm::vec2(cx - half_w, leg_y), glm::vec2(cx, apex_y),
+                    glm::vec2(cx + half_w, leg_y),
+                });
+            }
+            pd.styles.push_back(ls);
+
+            add_circle_to(pd, cx, cy, dot_r, ls, 8);
+
+            if(lighted)
+            {
+                float gap = radius * 0.4F;
+                float ray_len = radius * 0.15F;
+                constexpr float DEG_TO_RAD = static_cast<float>(M_PI) / 180.0F;
+                float angles[] = {-120, -60, 0, 60, 120};
+                for(float deg : angles)
+                {
+                    float rad = (90.0F - deg) * DEG_TO_RAD;
+                    float dx = std::cos(rad);
+                    float dy = std::sin(rad);
+                    float x0 = cx + dx * gap;
+                    float y0 = mast_top + dy * gap;
+                    float x1 = cx + dx * (gap + ray_len);
+                    float y1 = mast_top + dy * (gap + ray_len);
+                    add_seg_to(pd, x0, y0, x1, y1, ls);
+                }
+            }
+        }
+
+        void emit_obstacle_icon(polyline_data& pd, float cx, float cy, float r,
+                                 const obstacle& obs, const feature_style& fs)
+        {
+            auto ls = to_line_style(fs);
+            bool lighted = obs.lighting != "N";
+            add_obstacle_polylines(pd, cx, cy, r, obs.agl_ht >= 1000, lighted, ls);
+        }
+
+        // --- PJA / MAA point icons (diamond with a letter) ---
+
+        void emit_pja_point_icon(polyline_data& pd, float cx, float cy, float r,
+                                  const feature_style& fs)
+        {
+            auto ls = to_line_style(fs);
+            ls.fill_width = SYMBOL_FILL_PX;
+            pd.polylines.push_back({
+                {cx + r, cy}, {cx, cy + r}, {cx - r, cy},
+                {cx, cy - r}, {cx + r, cy},
+            });
+            pd.styles.push_back(ls);
+
+            float lh = r * LETTER_HEIGHT;
+            float lw = lh * LETTER_ASPECT;
+            line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
+            add_letter(pd, letter_P, cx, cy, lw, lh, white_ls);
+        }
+
+        void emit_maa_point_icon(polyline_data& pd, float cx, float cy, float r,
+                                  const maa& m, const feature_style& fs)
+        {
+            auto ls = to_line_style(fs);
+            ls.fill_width = SYMBOL_FILL_PX;
+            pd.polylines.push_back({
+                {cx + r, cy}, {cx, cy + r}, {cx - r, cy},
+                {cx, cy - r}, {cx + r, cy},
+            });
+            pd.styles.push_back(ls);
+
+            // Every MAA type in the current NASR data has a glyph. If
+            // a future release adds a new category, fail loudly so we
+            // pick a glyph instead of silently rendering a naked diamond.
+            const std::vector<float>& ld = [&]() -> const std::vector<float>& {
+                if(m.type == "AEROBATIC PRACTICE") return letter_A;
+                if(m.type == "GLIDER")             return letter_G;
+                if(m.type == "HANG GLIDER")        return letter_H;
+                if(m.type == "ULTRALIGHT")         return letter_U;
+                if(m.type == "SPACE LAUNCH")       return letter_S;
+                throw std::runtime_error("Unknown MAA type: " + m.type);
+            }();
+
+            float lh = r * LETTER_HEIGHT;
+            float lw = lh * LETTER_ASPECT;
+            line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
+            add_letter(pd, ld, cx, cy, lw, lh, white_ls);
+        }
+
+        void emit_comm_icon(polyline_data& pd, float cx, float cy, float r,
+                             const line_style& ls)
+        {
+            add_comm_symbol(pd, cx, cy, r * 0.75F, ls);
+        }
+
+        // -- build() bodies -------------------------------------------------
+
+        void airport_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.any_airport_visible(ctx.req.zoom)) return;
+            const auto& airports = ctx.db.query_airports(
+                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max},
+                ctx.styles.visible_airport_classes(ctx.req.zoom));
+
+            float r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
+            float pixels_per_world = static_cast<float>(
+                ctx.req.viewport_height / (2.0 * ctx.req.half_extent_y));
+
+            for(const auto& apt : airports)
+            {
+                if(!ctx.styles.airport_visible(apt, ctx.req.zoom)) continue;
+
+                const auto& cs = ctx.styles.airport_style(apt);
+                float cx = static_cast<float>(lon_to_mx(apt.lon) + ctx.mx_offset);
+                float cy = static_cast<float>(lat_to_my(apt.lat));
+
+                emit_airport_icon(ctx.poly[layer_airports], cx, cy, r,
+                                   pixels_per_world, apt, cs);
+
+                const auto& id = apt.icao_id.empty() ? apt.arpt_id : apt.icao_id;
+                bool towered = apt.twr_type_code.find("ATCT") != std::string::npos;
+                ctx.labels.push_back({id,
+                    lon_to_mx(apt.lon) + ctx.mx_offset, lat_to_my(apt.lat),
+                    towered ? LABEL_PRIORITY_AIRPORT_TOWERED
+                            : LABEL_PRIORITY_AIRPORT_UNTOWERED,
+                    layer_airports});
+            }
+        }
+
+        void runway_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.runway_visible(ctx.req.zoom)) return;
+            if(!ctx.req.altitude.low_enabled()) return;
+
+            const auto& runways = ctx.db.query_runways(
+                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+            const auto& fs = ctx.styles.runway_style();
+
+            for(const auto& rwy : runways)
+            {
+                float x0 = static_cast<float>(lon_to_mx(rwy.end1_lon) + ctx.mx_offset);
+                float y0 = static_cast<float>(lat_to_my(rwy.end1_lat));
+                float x1 = static_cast<float>(lon_to_mx(rwy.end2_lon) + ctx.mx_offset);
+                float y1 = static_cast<float>(lat_to_my(rwy.end2_lat));
+                ctx.poly[layer_runways].polylines.push_back(
+                    {glm::vec2(x0, y0), glm::vec2(x1, y1)});
+                ctx.poly[layer_runways].styles.push_back(to_line_style(fs));
+            }
+        }
+
+        void navaid_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.any_navaid_visible(ctx.req.zoom)) return;
+            if(!ctx.req.altitude.any()) return;
+            constexpr float NAV_CLEARANCE = 2.0F;
+
+            const auto& navaids = ctx.db.query_navaids(
+                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+            float r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
+
+            ctx.state.navaid_positions.clear();
+            ctx.state.navaid_clearance = r * NAV_CLEARANCE;
+
+            for(const auto& nav : navaids)
+            {
+                if(nav.nav_type == "VOT" || nav.nav_type == "FAN MARKER" ||
+                   nav.nav_type == "MARINE NDB") continue;
+                if(!ctx.styles.navaid_visible(nav.nav_type, ctx.req.zoom)) continue;
+
+                bool keep = (nav.is_low && ctx.req.altitude.show_low)
+                         || (nav.is_high && ctx.req.altitude.show_high);
+                if(!keep) continue;
+
+                const auto& fs = ctx.styles.navaid_style(nav.nav_type);
+                float cx = static_cast<float>(lon_to_mx(nav.lon) + ctx.mx_offset);
+                float cy = static_cast<float>(lat_to_my(nav.lat));
+
+                ctx.state.navaid_positions.emplace_back(cx, cy);
+                emit_navaid_icon(ctx.poly[layer_navaids], cx, cy, r, nav, fs);
+
+                bool is_vor = nav.nav_type.find("VOR") != std::string::npos
+                           || nav.nav_type == "TACAN" || nav.nav_type == "VORTAC";
+                ctx.labels.push_back({nav.nav_id,
+                    lon_to_mx(nav.lon) + ctx.mx_offset, lat_to_my(nav.lat),
+                    is_vor ? LABEL_PRIORITY_NAVAID_VOR : LABEL_PRIORITY_NAVAID_NDB,
+                    layer_navaids});
+            }
+        }
+
+        void airway_type::build(const build_context& ctx) const
+        {
+            ctx.state.airway_waypoints.clear();
+            if(!ctx.styles.any_airway_visible(ctx.req.zoom)) return;
+            const auto& airways = ctx.db.query_airways(
+                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+
+            for(const auto& seg : airways)
+            {
+                if(!ctx.styles.airway_visible(seg.awy_id, ctx.req.zoom)) continue;
+                if(!altitude_filter_allows(ctx.req.altitude, airway_bands(seg.awy_id)))
+                    continue;
+
+                ctx.state.airway_waypoints.insert(seg.from_point);
+                ctx.state.airway_waypoints.insert(seg.to_point);
+
+                const auto& fs = ctx.styles.airway_style(seg.awy_id);
+
+                float x0 = static_cast<float>(lon_to_mx(seg.from_lon) + ctx.mx_offset);
+                float y0 = static_cast<float>(lat_to_my(seg.from_lat));
+                float x1 = static_cast<float>(lon_to_mx(seg.to_lon) + ctx.mx_offset);
+                float y1 = static_cast<float>(lat_to_my(seg.to_lat));
+
+                float dx = x1 - x0;
+                float dy = y1 - y0;
+                float len = std::sqrt(dx * dx + dy * dy);
+                if(len > 0.0F)
+                {
+                    float ux = dx / len;
+                    float uy = dy / len;
+                    if(ctx.is_at_navaid(x0, y0))
+                    {
+                        x0 += ux * ctx.state.navaid_clearance;
+                        y0 += uy * ctx.state.navaid_clearance;
+                    }
+                    if(ctx.is_at_navaid(x1, y1))
+                    {
+                        x1 -= ux * ctx.state.navaid_clearance;
+                        y1 -= uy * ctx.state.navaid_clearance;
+                    }
+                }
+                if((x1 - x0) * dx + (y1 - y0) * dy <= 0.0F) continue;
+
+                ctx.poly[layer_airways].polylines.push_back(
+                    {glm::vec2(x0, y0), glm::vec2(x1, y1)});
+                ctx.poly[layer_airways].styles.push_back(to_line_style(fs));
+            }
+        }
+
+        void fix_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.any_fix_visible(ctx.req.zoom)) return;
+            if(!ctx.req.altitude.any()) return;
+            const auto& fixes = ctx.db.query_fixes(
+                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+            float radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_FIX);
+
+            for(const auto& f : fixes)
+            {
+                if(!ctx.styles.fix_visible(ctx.fix_on_airway(f.fix_id), ctx.req.zoom))
+                    continue;
+                bool keep = (f.is_low && ctx.req.altitude.show_low)
+                         || (f.is_high && ctx.req.altitude.show_high);
+                if(!keep) continue;
+
+                const auto& fs = ctx.styles.fix_style(f.use_code);
+                float cx = static_cast<float>(lon_to_mx(f.lon) + ctx.mx_offset);
+                float cy = static_cast<float>(lat_to_my(f.lat));
+
+                emit_fix_icon(ctx.poly[layer_fixes], cx, cy, radius, f, fs);
+
+                bool on_airway = ctx.fix_on_airway(f.fix_id);
+                ctx.labels.push_back({f.fix_id,
+                    lon_to_mx(f.lon) + ctx.mx_offset, lat_to_my(f.lat),
+                    on_airway ? LABEL_PRIORITY_FIX_AIRWAY : LABEL_PRIORITY_FIX_OTHER,
+                    layer_fixes});
+            }
+        }
+
+        void mtr_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.mtr_visible(ctx.req.zoom)) return;
+            if(!ctx.req.altitude.any()) return;
+
+            const auto& mtrs = ctx.db.query_mtrs(
+                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+            const auto& fs = ctx.styles.mtr_style();
+
+            for(const auto& seg : mtrs)
+            {
+                if(!altitude_filter_allows(ctx.req.altitude, mtr_bands(seg.route_type_code)))
+                    continue;
+                float x0 = static_cast<float>(lon_to_mx(seg.from_lon) + ctx.mx_offset);
+                float y0 = static_cast<float>(lat_to_my(seg.from_lat));
+                float x1 = static_cast<float>(lon_to_mx(seg.to_lon) + ctx.mx_offset);
+                float y1 = static_cast<float>(lat_to_my(seg.to_lat));
+                ctx.poly[layer_mtrs].polylines.push_back(
+                    {glm::vec2(x0, y0), glm::vec2(x1, y1)});
+                ctx.poly[layer_mtrs].styles.push_back(to_line_style(fs));
+            }
+        }
+
+        void sua_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.any_sua_visible(ctx.req.zoom)) return;
+            if(!ctx.req.altitude.any()) return;
+            auto sua_filter = ctx.styles.visible_sua_types(ctx.req.zoom);
+            geo_bbox bbox{ctx.req.lon_min, ctx.req.lat_min,
+                          ctx.req.lon_max, ctx.req.lat_max};
+
+            const auto& segs = ctx.db.query_sua_segments(bbox, sua_filter);
+            for(const auto& seg : segs)
+            {
+                if(!ctx.styles.sua_visible(seg.sua_type, ctx.req.zoom)) continue;
+                if(!sua_altitude_visible(ctx.req.altitude,
+                                          seg.upper_ft_val, seg.upper_ft_ref,
+                                          seg.lower_ft_val, seg.lower_ft_ref))
+                    continue;
+                auto ls = to_line_style(ctx.styles.sua_style(seg.sua_type));
+                add_polyline(ctx.poly[layer_sua], seg.points, ls, ctx.mx_offset);
+            }
+
+            const auto& circles = ctx.db.query_sua_circles(bbox, sua_filter);
+            for(const auto& c : circles)
+            {
+                if(!sua_altitude_visible(ctx.req.altitude,
+                                          c.upper_ft_val, c.upper_ft_ref,
+                                          c.lower_ft_val, c.lower_ft_ref))
+                    continue;
+                auto ls = to_line_style(ctx.styles.sua_style(c.sua_type));
+                double lat_rad = c.center_lat * M_PI / 180.0;
+                float cx = static_cast<float>(lon_to_mx(c.center_lon) + ctx.mx_offset);
+                float cy = static_cast<float>(lat_to_my(c.center_lat));
+                float r = static_cast<float>(c.radius_nm * 1852.0 / std::cos(lat_rad));
+                ctx.poly[layer_sua].circles.push_back({{cx, cy}, r, ls});
+            }
+        }
+
+        void pja_type::build(const build_context& ctx) const
+        {
+            bool area_vis = ctx.styles.pja_area_visible(ctx.req.zoom);
+            bool point_vis = ctx.styles.pja_point_visible(ctx.req.zoom);
+            if(!area_vis && !point_vis) return;
+            if(!ctx.req.altitude.any()) return;
+
+            constexpr double NM_TO_METERS = 1852.0;
+            constexpr double SYMBOL_RADIUS_PJA = SYMBOL_RADIUS_AIRPORT;
+
+            const auto& pjas = ctx.db.query_pjas(
+                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+
+            for(const auto& p : pjas)
+            {
+                int upper = p.max_altitude_ft_msl > 0 ? p.max_altitude_ft_msl
+                                                        : altitude_filter::UNLIMITED_FT;
+                if(!ctx.req.altitude.overlaps(0, upper)) continue;
+
+                if(p.radius_nm > 0.0 && area_vis)
+                {
+                    double lat_rad = p.lat * M_PI / 180.0;
+                    float cx = static_cast<float>(lon_to_mx(p.lon) + ctx.mx_offset);
+                    float cy = static_cast<float>(lat_to_my(p.lat));
+                    float r = static_cast<float>(p.radius_nm * NM_TO_METERS / std::cos(lat_rad));
+                    auto ls = to_line_style(ctx.styles.pja_area_style());
+                    ctx.poly[layer_pja].circles.push_back({{cx, cy}, r, ls});
+                }
+                else if(p.radius_nm <= 0.0 && point_vis)
+                {
+                    float cx = static_cast<float>(lon_to_mx(p.lon) + ctx.mx_offset);
+                    float cy = static_cast<float>(lat_to_my(p.lat));
+                    float r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_PJA);
+                    emit_pja_point_icon(ctx.poly[layer_pja], cx, cy, r,
+                                         ctx.styles.pja_point_style());
+                }
+            }
+        }
+
+        void maa_type::build(const build_context& ctx) const
+        {
+            bool area_vis = ctx.styles.maa_area_visible(ctx.req.zoom);
+            bool point_vis = ctx.styles.maa_point_visible(ctx.req.zoom);
+            if(!area_vis && !point_vis) return;
+            if(!ctx.req.altitude.low_enabled()) return;
+
+            constexpr double NM_TO_METERS = 1852.0;
+
+            const auto& maas = ctx.db.query_maas(
+                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+
+            for(const auto& m : maas)
+            {
+                if(!m.shape.empty() && area_vis)
+                {
+                    auto ls = to_line_style(ctx.styles.maa_area_style());
+                    add_polyline(ctx.poly[layer_maa], m.shape, ls, ctx.mx_offset);
+                }
+                else if(m.radius_nm > 0.0 && area_vis)
+                {
+                    double lat_rad = m.lat * M_PI / 180.0;
+                    float cx = static_cast<float>(lon_to_mx(m.lon) + ctx.mx_offset);
+                    float cy = static_cast<float>(lat_to_my(m.lat));
+                    float r = static_cast<float>(m.radius_nm * NM_TO_METERS / std::cos(lat_rad));
+                    auto ls = to_line_style(ctx.styles.maa_area_style());
+                    ctx.poly[layer_maa].circles.push_back({{cx, cy}, r, ls});
+                }
+                else if(m.lat != 0.0 && point_vis)
+                {
+                    float cx = static_cast<float>(lon_to_mx(m.lon) + ctx.mx_offset);
+                    float cy = static_cast<float>(lat_to_my(m.lat));
+                    float r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
+                    emit_maa_point_icon(ctx.poly[layer_maa], cx, cy, r, m,
+                                         ctx.styles.maa_point_style());
+                }
+            }
+        }
+
+        void adiz_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.adiz_visible(ctx.req.zoom)) return;
+            const auto& segs = ctx.db.query_adiz_segments(
+                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+            auto ls = to_line_style(ctx.styles.adiz_style());
+            for(const auto& seg : segs)
+                add_polyline(ctx.poly[layer_adiz], seg.points, ls, ctx.mx_offset);
+        }
+
+        void artcc_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.any_artcc_visible(ctx.req.zoom)) return;
+            if(!ctx.req.altitude.any()) return;
+            const auto& segs = ctx.db.query_artcc_segments(
+                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+            for(const auto& seg : segs)
+            {
+                if(!ctx.styles.artcc_visible(seg.altitude, ctx.req.zoom)) continue;
+                if(!altitude_filter_allows(ctx.req.altitude, artcc_bands(seg.altitude)))
+                    continue;
+                auto ls = to_line_style(ctx.styles.artcc_style(seg.altitude));
+                add_polyline(ctx.poly[layer_artcc], seg.points, ls, ctx.mx_offset);
+            }
+        }
+
+        void obstacle_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.any_obstacle_visible(ctx.req.zoom)) return;
+            if(!ctx.req.altitude.low_enabled()) return;
+            const auto& obstacles = ctx.db.query_obstacles(
+                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+            float radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_OBSTACLE);
+
+            for(const auto& obs : obstacles)
+            {
+                if(!ctx.styles.obstacle_visible(obs.agl_ht, ctx.req.zoom)) continue;
+                const auto& fs = ctx.styles.obstacle_style(obs.agl_ht);
+                float cx = static_cast<float>(lon_to_mx(obs.lon) + ctx.mx_offset);
+                float cy = static_cast<float>(lat_to_my(obs.lat));
+                emit_obstacle_icon(ctx.poly[layer_obstacles], cx, cy, radius, obs, fs);
+            }
+        }
+
+        void airspace_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.any_airspace_visible(ctx.req.zoom)) return;
+            if(!ctx.req.altitude.low_enabled()) return;
+            const auto& segs = ctx.db.query_class_airspace_segments(
+                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max},
+                ctx.styles.visible_airspace_values(ctx.req.zoom));
+            for(const auto& seg : segs)
+            {
+                if(!ctx.styles.airspace_visible(seg.airspace_class, seg.local_type,
+                                                 ctx.req.zoom)) continue;
+                auto ls = to_line_style(ctx.styles.airspace_style(
+                    seg.airspace_class, seg.local_type));
+                add_polyline(ctx.poly[layer_airspace], seg.points, ls, ctx.mx_offset);
+            }
+        }
+
+        template<typename Query>
+        void build_comm_impl(const build_context& ctx, int layer_id,
+                              const line_style& ls, Query&& q)
+        {
+            float radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_COMM);
+            for(const auto& f : q)
+            {
+                float cx = static_cast<float>(lon_to_mx(f.lon) + ctx.mx_offset);
+                float cy = static_cast<float>(lat_to_my(f.lat));
+                emit_comm_icon(ctx.poly[layer_id], cx, cy, radius, ls);
+            }
+        }
+
+        void comm_outlet_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.rco_visible(ctx.req.zoom)) return;
+            if(!ctx.req.altitude.low_enabled()) return;
+            build_comm_impl(ctx, layer_rco, to_line_style(ctx.styles.rco_style()),
+                             ctx.db.query_comm_outlets(
+                                 {ctx.req.lon_min, ctx.req.lat_min,
+                                  ctx.req.lon_max, ctx.req.lat_max}));
+        }
+
+        void awos_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.awos_visible(ctx.req.zoom)) return;
+            if(!ctx.req.altitude.low_enabled()) return;
+            build_comm_impl(ctx, layer_awos, to_line_style(ctx.styles.awos_style()),
+                             ctx.db.query_awos(
+                                 {ctx.req.lon_min, ctx.req.lat_min,
+                                  ctx.req.lon_max, ctx.req.lat_max}));
+        }
+
+        // -- build_selection() bodies ---------------------------------------
+
+        // Halo scale used for the filled-disc glow behind a selected point
+        // feature: airport_outer (1.2) × 1.5.
+        constexpr float HALO_SCALE = 1.8F;
+
+        void emit_halo(polyline_data& out, float cx, float cy,
+                        float r_base, float pixels_per_world)
+        {
+            float halo_r = r_base * HALO_SCALE;
+            float fill_px = halo_r * pixels_per_world;
+            line_style halo_ls = {fill_px, 0, 0, 0, 1, 1, 1, 1, 0};
+            add_circle_to(out, cx, cy, halo_r * 0.5F, halo_ls);
+        }
+
+        // Convert a polygon ring to Mercator vec2s.
+        void ring_to_mercator(const std::vector<airspace_point>& pts,
+                                std::vector<glm::vec2>& out_ring)
+        {
+            out_ring.clear();
+            out_ring.reserve(pts.size());
+            for(const auto& p : pts)
+                out_ring.emplace_back(static_cast<float>(lon_to_mx(p.lon)),
+                                      static_cast<float>(lat_to_my(p.lat)));
+        }
+
+        void circle_to_ring(double center_lon, double center_lat,
+                              double radius_nm,
+                              std::vector<glm::vec2>& out_ring)
+        {
+            constexpr int N = 48;
+            constexpr double NM_TO_M = 1852.0;
+            double lat_rad = center_lat * M_PI / 180.0;
+            double r = radius_nm * NM_TO_M / std::cos(lat_rad);
+            double cx = lon_to_mx(center_lon);
+            double cy = lat_to_my(center_lat);
+            out_ring.clear();
+            out_ring.reserve(N + 1);
+            for(int i = 0; i <= N; i++)
+            {
+                double a = 2.0 * M_PI * i / N;
+                out_ring.emplace_back(
+                    static_cast<float>(cx + r * std::cos(a)),
+                    static_cast<float>(cy + r * std::sin(a)));
+            }
+        }
+
+        // Emit a white widened outline on top of an area feature. Same
+        // line width as the normal outline plus 2×border + 2px padding.
+        void emit_selection_boundary(polyline_data& out,
+                                       const std::vector<glm::vec2>& ring,
+                                       const line_style& base)
+        {
+            if(ring.size() < 2) return;
+            line_style ls = base;
+            ls.r = ls.g = ls.b = 1.0F; ls.a = 1.0F;
+            ls.line_width = ls.line_width + 2.0F * ls.border_width + 2.0F;
+            ls.border_width = 0; ls.dash_length = 0; ls.gap_length = 0;
+            out.polylines.push_back(ring);
+            out.styles.push_back(ls);
+        }
+
+        // Convert an airway/MTR line_style into its widened "selection"
+        // variant used for highlighting a full route.
+        line_style selection_line_style(const feature_style& fs)
+        {
+            line_style ls = to_line_style(fs);
+            ls.r = ls.g = ls.b = 1.0F; ls.a = 1.0F;
+            ls.line_width = ls.line_width + 2.0F * ls.border_width + 2.0F;
+            ls.border_width = 0; ls.dash_length = 0; ls.gap_length = 0;
+            return ls;
+        }
+
+        // Common setup for a point-feature selection overlay: compute the
+        // center + halo + icon scaling parameters shared by airport, navaid,
+        // fix, obstacle, comm, awos overrides.
+        struct point_selection_geom
+        {
+            float cx;
+            float cy;
+            float r_base;
+            float pixels_per_world;
+        };
+
+        template<typename T>
+        point_selection_geom point_selection_geom_for(const T& v,
+                                                        const feature_build_request& req)
+        {
+            point_selection_geom g;
+            g.cx = static_cast<float>(lon_to_mx(v.lon));
+            g.cy = static_cast<float>(lat_to_my(v.lat));
+            g.r_base = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
+            g.pixels_per_world = static_cast<float>(
+                req.viewport_height / (2.0 * req.half_extent_y));
+            return g;
+        }
+
+        void airport_type::build_selection(const build_context& ctx, const feature& f,
+                                             polyline_data& out, polygon_fill_data&) const
+        {
+            const auto& v = std::get<airport>(f);
+            auto g = point_selection_geom_for(v, ctx.req);
+            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_airport_icon(out, g.cx, g.cy, g.r_base, g.pixels_per_world,
+                                v, ctx.styles.airport_style(v));
+        }
+
+        void navaid_type::build_selection(const build_context& ctx, const feature& f,
+                                            polyline_data& out, polygon_fill_data&) const
+        {
+            const auto& v = std::get<navaid>(f);
+            auto g = point_selection_geom_for(v, ctx.req);
+            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_navaid_icon(out, g.cx, g.cy, g.r_base, v,
+                               ctx.styles.navaid_style(v.nav_type));
+        }
+
+        void fix_type::build_selection(const build_context& ctx, const feature& f,
+                                         polyline_data& out, polygon_fill_data&) const
+        {
+            const auto& v = std::get<fix>(f);
+            auto g = point_selection_geom_for(v, ctx.req);
+            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_fix_icon(out, g.cx, g.cy, g.r_base, v, ctx.styles.fix_style(v.use_code));
+        }
+
+        void obstacle_type::build_selection(const build_context& ctx, const feature& f,
+                                              polyline_data& out, polygon_fill_data&) const
+        {
+            const auto& v = std::get<obstacle>(f);
+            auto g = point_selection_geom_for(v, ctx.req);
+            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_obstacle_icon(out, g.cx, g.cy, g.r_base, v, ctx.styles.obstacle_style(v.agl_ht));
+        }
+
+        void awos_type::build_selection(const build_context& ctx, const feature& f,
+                                          polyline_data& out, polygon_fill_data&) const
+        {
+            const auto& v = std::get<awos>(f);
+            auto g = point_selection_geom_for(v, ctx.req);
+            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_comm_icon(out, g.cx, g.cy, g.r_base, to_line_style(ctx.styles.awos_style()));
+        }
+
+        void comm_outlet_type::build_selection(const build_context& ctx, const feature& f,
+                                                  polyline_data& out, polygon_fill_data&) const
+        {
+            const auto& v = std::get<comm_outlet>(f);
+            auto g = point_selection_geom_for(v, ctx.req);
+            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_comm_icon(out, g.cx, g.cy, g.r_base, to_line_style(ctx.styles.rco_style()));
+        }
+
+        void runway_type::build_selection(const build_context&, const feature&,
+                                            polyline_data&, polygon_fill_data&) const
+        {
+            // Runways have no selection overlay in the original code.
+        }
+
+        void pja_type::build_selection(const build_context& ctx, const feature& f,
+                                         polyline_data& out, polygon_fill_data& fill_out) const
+        {
+            const auto& v = std::get<pja>(f);
+            if(v.radius_nm > 0.0)
+            {
+                auto fs = ctx.styles.pja_area_style();
+                line_style base = to_line_style(fs);
+                glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+                std::vector<glm::vec2> ring;
+                circle_to_ring(v.lon, v.lat, v.radius_nm, ring);
+                emit_selection_boundary(out, ring, base);
+                triangulate_polygon(ring, {}, fill_color, fill_out);
+            }
+            else
+            {
+                auto g = point_selection_geom_for(v, ctx.req);
+                emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+                emit_pja_point_icon(out, g.cx, g.cy, g.r_base,
+                                     ctx.styles.pja_point_style());
+            }
+        }
+
+        void maa_type::build_selection(const build_context& ctx, const feature& f,
+                                         polyline_data& out, polygon_fill_data& fill_out) const
+        {
+            const auto& v = std::get<maa>(f);
+            if(!v.shape.empty() || v.radius_nm > 0.0)
+            {
+                auto fs = ctx.styles.maa_area_style();
+                line_style base = to_line_style(fs);
+                glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+                std::vector<glm::vec2> ring;
+                if(!v.shape.empty()) ring_to_mercator(v.shape, ring);
+                else                  circle_to_ring(v.lon, v.lat, v.radius_nm, ring);
+                emit_selection_boundary(out, ring, base);
+                triangulate_polygon(ring, {}, fill_color, fill_out);
+            }
+            else
+            {
+                auto g = point_selection_geom_for(v, ctx.req);
+                emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+                emit_maa_point_icon(out, g.cx, g.cy, g.r_base, v,
+                                     ctx.styles.maa_point_style());
+            }
+        }
+
+        void airway_type::build_selection(const build_context& ctx, const feature& f,
+                                            polyline_data& out, polygon_fill_data&) const
+        {
+            const auto& v = std::get<airway_segment>(f);
+            line_style ls = selection_line_style(ctx.styles.airway_style(v.awy_id));
+            for(const auto& seg : ctx.db.query_airway_by_id(v.awy_id))
+            {
+                float x0 = static_cast<float>(lon_to_mx(seg.from_lon));
+                float y0 = static_cast<float>(lat_to_my(seg.from_lat));
+                float x1 = static_cast<float>(lon_to_mx(seg.to_lon));
+                float y1 = static_cast<float>(lat_to_my(seg.to_lat));
+                out.polylines.push_back({{x0, y0}, {x1, y1}});
+                out.styles.push_back(ls);
+            }
+        }
+
+        void mtr_type::build_selection(const build_context& ctx, const feature& f,
+                                         polyline_data& out, polygon_fill_data&) const
+        {
+            const auto& v = std::get<mtr_segment>(f);
+            line_style ls = selection_line_style(ctx.styles.mtr_style());
+            for(const auto& seg : ctx.db.query_mtr_by_id(v.mtr_id))
+            {
+                float x0 = static_cast<float>(lon_to_mx(seg.from_lon));
+                float y0 = static_cast<float>(lat_to_my(seg.from_lat));
+                float x1 = static_cast<float>(lon_to_mx(seg.to_lon));
+                float y1 = static_cast<float>(lat_to_my(seg.to_lat));
+                out.polylines.push_back({{x0, y0}, {x1, y1}});
+                out.styles.push_back(ls);
+            }
+        }
+
+        void airspace_type::build_selection(const build_context& ctx, const feature& f,
+                                              polyline_data& out, polygon_fill_data& fill_out) const
+        {
+            const auto& v = std::get<class_airspace>(f);
+            auto fs = ctx.styles.airspace_style(v.airspace_class, v.local_type);
+            line_style base = to_line_style(fs);
+            glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+
+            std::vector<glm::vec2> outer;
+            std::vector<std::vector<glm::vec2>> holes;
+            auto flush = [&]()
+            {
+                if(!outer.empty())
+                    triangulate_polygon(outer, holes, fill_color, fill_out);
+                outer.clear(); holes.clear();
+            };
+            std::vector<glm::vec2> ring;
+            for(const auto& part : v.parts)
+            {
+                ring_to_mercator(part.points, ring);
+                emit_selection_boundary(out, ring, base);
+                if(part.is_hole) holes.push_back(ring);
+                else { flush(); outer = ring; }
+            }
+            flush();
+        }
+
+        void sua_type::build_selection(const build_context& ctx, const feature& f,
+                                         polyline_data& out, polygon_fill_data& fill_out) const
+        {
+            const auto& v = std::get<sua>(f);
+            auto fs = ctx.styles.sua_style(v.sua_type);
+            line_style base = to_line_style(fs);
+            glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+
+            std::vector<glm::vec2> outer;
+            std::vector<std::vector<glm::vec2>> holes;
+            auto flush = [&]()
+            {
+                if(!outer.empty())
+                    triangulate_polygon(outer, holes, fill_color, fill_out);
+                outer.clear(); holes.clear();
+            };
+            std::vector<glm::vec2> ring;
+            for(const auto& stratum : v.strata)
+            {
+                for(const auto& part : stratum.parts)
+                {
+                    if(part.is_circle)
+                        circle_to_ring(part.circle_lon, part.circle_lat,
+                                        part.circle_radius_nm, ring);
+                    else
+                        ring_to_mercator(part.points, ring);
+                    emit_selection_boundary(out, ring, base);
+                    if(part.is_hole) holes.push_back(ring);
+                    else { flush(); outer = ring; }
+                }
+                flush();
+            }
+        }
+
+        void artcc_type::build_selection(const build_context& ctx, const feature& f,
+                                           polyline_data& out, polygon_fill_data& fill_out) const
+        {
+            const auto& v = std::get<artcc>(f);
+            auto fs = ctx.styles.artcc_style(v.altitude);
+            line_style base = to_line_style(fs);
+            glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+            std::vector<glm::vec2> ring;
+            ring_to_mercator(v.points, ring);
+            emit_selection_boundary(out, ring, base);
+            triangulate_polygon(ring, {}, fill_color, fill_out);
+        }
+
+        void adiz_type::build_selection(const build_context& ctx, const feature& f,
+                                          polyline_data& out, polygon_fill_data& fill_out) const
+        {
+            const auto& v = std::get<adiz>(f);
+            auto fs = ctx.styles.adiz_style();
+            line_style base = to_line_style(fs);
+            glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+            std::vector<glm::vec2> ring;
+            for(const auto& part : v.parts)
+            {
+                ring_to_mercator(part, ring);
+                emit_selection_boundary(out, ring, base);
+                triangulate_polygon(ring, {}, fill_color, fill_out);
+            }
+        }
+
         // PJA layer anchors to its center (when known) rather than the click.
         class pja_type_anchored : public pja_type {
         public:
@@ -766,11 +2010,15 @@ namespace nasrbrowse
         // Order controls z-priority of pick results and checkbox order.
         std::vector<std::unique_ptr<feature_type>> v;
         v.reserve(15);
+        // Order also determines build dependency order: navaid populates
+        // navaid_positions (used by airway clearance), airway populates
+        // airway_waypoints (used by fix on-airway test). So: navaid ->
+        // airway -> fix.
         v.push_back(std::make_unique<airport_type>());
         v.push_back(std::make_unique<runway_type>());
         v.push_back(std::make_unique<navaid_type>());
-        v.push_back(std::make_unique<fix_type>());
         v.push_back(std::make_unique<airway_type>());
+        v.push_back(std::make_unique<fix_type>());
         v.push_back(std::make_unique<mtr_type>());
         v.push_back(std::make_unique<pja_type_anchored>());
         v.push_back(std::make_unique<maa_type_anchored>());

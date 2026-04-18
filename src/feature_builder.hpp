@@ -8,11 +8,13 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace nasrbrowse
 {
     class chart_style;
+    class nasr_database;
 
     // Geometry data for a single feature layer
     struct polyline_data
@@ -61,6 +63,41 @@ namespace nasrbrowse
         double mx, my;              // World-space Mercator meters
         int priority;               // Higher = placed first
         int layer;                  // layer_id for visibility filtering
+    };
+
+    // Cross-feature scratch state shared across a single build pass.
+    // `navaid_positions` is populated by the navaid builder and consumed
+    // by the airway builder (for pull-away-from-navaid clearance).
+    // `airway_waypoints` is populated by the airway builder and consumed
+    // by the fix builder (for the on-airway visibility test).
+    struct feature_build_state
+    {
+        std::vector<glm::vec2> navaid_positions;
+        float navaid_clearance = 0;
+        std::unordered_set<std::string> airway_waypoints;
+    };
+
+    // Inputs bundled for feature_type::build(). One instance is built per
+    // antimeridian copy by feature_builder and passed to every feature_type.
+    struct build_context
+    {
+        nasr_database& db;
+        const chart_style& styles;
+        const feature_build_request& req;
+        double mx_offset;
+        std::array<polyline_data, layer_sdf_count>& poly;
+        std::vector<label_candidate>& labels;
+        feature_build_state& state;
+
+        // Test whether (x, y) is at (or very close to) a previously-rendered
+        // navaid; used by the airway builder to pull airway endpoints away
+        // from navaid icons so the navaid graphic stays readable.
+        bool is_at_navaid(float x, float y) const;
+
+        // True if the fix with the given id is an endpoint of some rendered
+        // airway segment — drives the "fix_airway" vs "fix_noairway"
+        // visibility bucket.
+        bool fix_on_airway(const std::string& fix_id) const;
     };
 
     // Completed feature geometry from the worker
