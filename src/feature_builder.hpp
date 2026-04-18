@@ -63,6 +63,7 @@ namespace nasrbrowse
         double mx, my;              // World-space Mercator meters
         int priority;               // Higher = placed first
         int layer;                  // layer_id for visibility filtering
+        float angle = 0.0F;         // Rotation in radians (0 = horizontal above point)
     };
 
     // Cross-feature scratch state shared across a single build pass.

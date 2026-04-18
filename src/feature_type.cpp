@@ -7,12 +7,15 @@
 #include "nasr_database.hpp"
 #include "ui_overlay.hpp"  // for the layer enum
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <glm/glm.hpp>
 #include <mapbox/earcut.hpp>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 #include <variant>
 
 namespace mapbox {
@@ -1044,6 +1047,7 @@ namespace nasrbrowse
         constexpr int LABEL_PRIORITY_AIRPORT_UNTOWERED = 80;
         constexpr int LABEL_PRIORITY_NAVAID_VOR        = 60;
         constexpr int LABEL_PRIORITY_NAVAID_NDB        = 40;
+        constexpr int LABEL_PRIORITY_AIRWAY              = 50;
         constexpr int LABEL_PRIORITY_FIX_AIRWAY        = 30;
         constexpr int LABEL_PRIORITY_FIX_OTHER         = 20;
 
@@ -1422,12 +1426,36 @@ namespace nasrbrowse
             }
         }
 
+        // Heading angle from Mercator dx/dy, normalized to [-pi/2, pi/2]
+        // so text reads left-to-right with up-vector toward screen-up.
+        static float segment_angle(float dx, float dy)
+        {
+            float a = std::atan2(dy, dx);
+            if(a > static_cast<float>(M_PI_2))
+                a -= static_cast<float>(M_PI);
+            else if(a < static_cast<float>(-M_PI_2))
+                a += static_cast<float>(M_PI);
+            return a;
+        }
+
+        constexpr float AIRWAY_LABEL_ANGLE_THRESHOLD = 30.0F * static_cast<float>(M_PI) / 180.0F;
+        constexpr int AIRWAY_LABEL_INTERVAL = 6;
+
         void airway_type::build(const build_context& ctx) const
         {
             ctx.state.airway_waypoints.clear();
             if(!ctx.styles.any_airway_visible(ctx.req.zoom)) return;
             const auto& airways = ctx.db.query_airways(
                 {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+
+            // Visible segment info for label placement
+            struct seg_info
+            {
+                int point_seq;
+                double mid_mx, mid_my;
+                float dx, dy;
+            };
+            std::unordered_map<std::string, std::vector<seg_info>> label_groups;
 
             for(const auto& seg : airways)
             {
@@ -1439,6 +1467,11 @@ namespace nasrbrowse
                 ctx.state.airway_waypoints.insert(seg.to_point);
 
                 const auto& fs = ctx.styles.airway_style(seg.awy_id);
+
+                double from_mx = lon_to_mx(seg.from_lon) + ctx.mx_offset;
+                double from_my = lat_to_my(seg.from_lat);
+                double to_mx = lon_to_mx(seg.to_lon) + ctx.mx_offset;
+                double to_my = lat_to_my(seg.to_lat);
 
                 auto arc = geodesic_interpolate(
                     seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon);
@@ -1473,8 +1506,69 @@ namespace nasrbrowse
                 if((back.x - front.x) * dx + (back.y - front.y) * dy <= 0.0F)
                     continue;
 
+                label_groups[seg.awy_id].push_back({
+                    seg.point_seq,
+                    (from_mx + to_mx) * 0.5,
+                    (from_my + to_my) * 0.5,
+                    static_cast<float>(to_mx - from_mx),
+                    static_cast<float>(to_my - from_my),
+                });
+
                 ctx.poly[layer_airways].polylines.push_back(std::move(polyline));
                 ctx.poly[layer_airways].styles.push_back(to_line_style(fs));
+            }
+
+            // Emit labels at regular intervals along each airway,
+            // plus extras at significant direction changes.
+            for(auto& [awy_id, segs] : label_groups)
+            {
+                std::sort(segs.begin(), segs.end(),
+                    [](const seg_info& a, const seg_info& b)
+                    { return a.point_seq < b.point_seq; });
+
+                // Place labels every AIRWAY_LABEL_INTERVAL segments,
+                // centered within each group.
+                size_t n = segs.size();
+                size_t start = (n % AIRWAY_LABEL_INTERVAL) / 2;
+                std::unordered_set<size_t> labeled;
+                for(size_t i = start; i < n; i += AIRWAY_LABEL_INTERVAL)
+                {
+                    labeled.insert(i);
+                    const auto& s = segs[i];
+                    ctx.labels.push_back({
+                        awy_id, s.mid_mx, s.mid_my,
+                        LABEL_PRIORITY_AIRWAY, layer_airways,
+                        segment_angle(s.dx, s.dy),
+                    });
+                }
+                // Always emit at least one label
+                if(labeled.empty())
+                {
+                    const auto& s = segs[n / 2];
+                    labeled.insert(n / 2);
+                    ctx.labels.push_back({
+                        awy_id, s.mid_mx, s.mid_my,
+                        LABEL_PRIORITY_AIRWAY, layer_airways,
+                        segment_angle(s.dx, s.dy),
+                    });
+                }
+
+                // Additional labels at significant direction changes
+                for(size_t i = 1; i < n; i++)
+                {
+                    if(labeled.count(i)) continue;
+                    float a0 = segment_angle(segs[i - 1].dx, segs[i - 1].dy);
+                    float a1 = segment_angle(segs[i].dx, segs[i].dy);
+                    if(std::abs(a1 - a0) > AIRWAY_LABEL_ANGLE_THRESHOLD)
+                    {
+                        const auto& s = segs[i];
+                        ctx.labels.push_back({
+                            awy_id, s.mid_mx, s.mid_my,
+                            LABEL_PRIORITY_AIRWAY, layer_airways,
+                            segment_angle(s.dx, s.dy),
+                        });
+                    }
+                }
             }
         }
 
@@ -1517,10 +1611,23 @@ namespace nasrbrowse
                 {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
             const auto& fs = ctx.styles.mtr_style();
 
+            struct seg_info
+            {
+                double mid_mx, mid_my;
+                float dx, dy;
+            };
+            std::unordered_map<std::string, std::vector<seg_info>> label_groups;
+
             for(const auto& seg : mtrs)
             {
                 if(!altitude_filter_allows(ctx.req.altitude, mtr_bands(seg.route_type_code)))
                     continue;
+
+                double from_mx = lon_to_mx(seg.from_lon) + ctx.mx_offset;
+                double from_my = lat_to_my(seg.from_lat);
+                double to_mx = lon_to_mx(seg.to_lon) + ctx.mx_offset;
+                double to_my = lat_to_my(seg.to_lat);
+
                 auto arc = geodesic_interpolate(
                     seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon);
                 std::vector<glm::vec2> polyline;
@@ -1529,8 +1636,27 @@ namespace nasrbrowse
                     polyline.emplace_back(
                         static_cast<float>(lon_to_mx(p.lon) + ctx.mx_offset),
                         static_cast<float>(lat_to_my(p.lat)));
+
+                label_groups[seg.mtr_id].push_back({
+                    (from_mx + to_mx) * 0.5,
+                    (from_my + to_my) * 0.5,
+                    static_cast<float>(to_mx - from_mx),
+                    static_cast<float>(to_my - from_my),
+                });
+
                 ctx.poly[layer_mtrs].polylines.push_back(std::move(polyline));
                 ctx.poly[layer_mtrs].styles.push_back(to_line_style(fs));
+            }
+
+            for(const auto& [mtr_id, segs] : label_groups)
+            {
+                size_t median = segs.size() / 2;
+                const auto& ms = segs[median];
+                ctx.labels.push_back({
+                    mtr_id, ms.mid_mx, ms.mid_my,
+                    LABEL_PRIORITY_AIRWAY, layer_mtrs,
+                    segment_angle(ms.dx, ms.dy),
+                });
             }
         }
 

@@ -1,6 +1,7 @@
 #include "label_renderer.hpp"
 #include "render_context.hpp"
 #include <algorithm>
+#include <cmath>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
@@ -32,6 +33,8 @@ namespace nasrbrowse
         sdl::text outline;
         double mx, my;
         float width;
+        float height;
+        float angle;
         int priority;
         int layer;
     };
@@ -90,14 +93,17 @@ namespace nasrbrowse
         for(const auto& lc : candidates)
         {
             sdl::text fill(pimpl->engine, pimpl->font, lc.text.c_str());
-            float width = fill.get_bounds().width();
-            pimpl->labels.push_back({
-                std::move(fill),
-                sdl::text(pimpl->engine, pimpl->outline_font, lc.text.c_str()),
-                lc.mx, lc.my,
-                width,
-                lc.priority,
-                lc.layer
+            auto bounds = fill.get_bounds();
+            pimpl->labels.push_back(cached_label{
+                .fill = std::move(fill),
+                .outline = sdl::text(pimpl->engine, pimpl->outline_font, lc.text.c_str()),
+                .mx = lc.mx,
+                .my = lc.my,
+                .width = bounds.width(),
+                .height = bounds.height(),
+                .angle = lc.angle,
+                .priority = lc.priority,
+                .layer = lc.layer,
             });
         }
     }
@@ -148,15 +154,39 @@ namespace nasrbrowse
             float sy = static_cast<float>(
                 screen_cy - (lbl.my - center_y) * scale);
 
-            // Label dimensions and position (above symbol, centered)
-            float lx = sx - lbl.width * 0.5F;
-            float ly = sy - LABEL_OFFSET_Y - LABEL_HEIGHT;
+            float x0, y0, x1, y1;
+            glm::vec3 pos;
 
-            // Bounding box with padding
-            float x0 = lx - LABEL_PAD_X;
-            float y0 = ly - LABEL_PAD_Y;
-            float x1 = lx + lbl.width + LABEL_PAD_X;
-            float y1 = ly + LABEL_HEIGHT + LABEL_PAD_Y;
+            if(lbl.angle == 0.0F)
+            {
+                // Point label: centered horizontally, offset above symbol
+                float lx = sx - lbl.width * 0.5F;
+                float ly = sy - LABEL_OFFSET_Y - LABEL_HEIGHT;
+
+                x0 = lx - LABEL_PAD_X;
+                y0 = ly - LABEL_PAD_Y;
+                x1 = lx + lbl.width + LABEL_PAD_X;
+                y1 = ly + LABEL_HEIGHT + LABEL_PAD_Y;
+
+                float proj_y = static_cast<float>(viewport_height) - (sy - LABEL_OFFSET_Y);
+                pos = {lx, proj_y, 0.0F};
+            }
+            else
+            {
+                // Line label: centered on the line, rotated
+                float abs_cos = std::abs(std::cos(lbl.angle));
+                float abs_sin = std::abs(std::sin(lbl.angle));
+                float aabb_w = lbl.width * abs_cos + lbl.height * abs_sin;
+                float aabb_h = lbl.width * abs_sin + lbl.height * abs_cos;
+
+                x0 = sx - (aabb_w * 0.5F + LABEL_PAD_X);
+                y0 = sy - (aabb_h * 0.5F + LABEL_PAD_Y);
+                x1 = sx + (aabb_w * 0.5F + LABEL_PAD_X);
+                y1 = sy + (aabb_h * 0.5F + LABEL_PAD_Y);
+
+                float proj_y = static_cast<float>(viewport_height) - sy;
+                pos = {sx, proj_y, 0.0F};
+            }
 
             // Skip if off-screen
             if(x1 < 0 || x0 > viewport_width || y1 < 0 || y0 > viewport_height)
@@ -178,11 +208,8 @@ namespace nasrbrowse
 
             placed.push_back({x0, y0, x1, y1});
 
-            // Convert to projection Y-up
-            float proj_y = static_cast<float>(viewport_height) - (sy - LABEL_OFFSET_Y);
-
             pimpl->visible.push_back(idx);
-            pimpl->positions.emplace_back(lx, proj_y, 0.0F);
+            pimpl->positions.push_back(pos);
         }
 
         // Rebuild vertex/index geometry from cached text objects
@@ -195,16 +222,32 @@ namespace nasrbrowse
         {
             size_t idx = pimpl->visible[i];
             const auto& pos = pimpl->positions[i];
+            const auto& lbl = pimpl->labels[idx];
 
-            float ofs = static_cast<float>(pimpl->outline_font.get_outline() * 2);
-            glm::vec3 opos(pos.x - ofs, pos.y + ofs, 0.0F);
-            pimpl->labels[idx].outline.append_geometry(
-                pimpl->outline_vertices, pimpl->outline_indices, opos,
-                OUTLINE_R, OUTLINE_G, OUTLINE_B, OUTLINE_A);
+            if(lbl.angle == 0.0F)
+            {
+                float ofs = static_cast<float>(pimpl->outline_font.get_outline() * 2);
+                glm::vec3 opos(pos.x - ofs, pos.y + ofs, 0.0F);
+                lbl.outline.append_geometry(
+                    pimpl->outline_vertices, pimpl->outline_indices, opos,
+                    OUTLINE_R, OUTLINE_G, OUTLINE_B, OUTLINE_A);
 
-            pimpl->labels[idx].fill.append_geometry(
-                pimpl->fill_vertices, pimpl->fill_indices, pos,
-                FILL_R, FILL_G, FILL_B, FILL_A);
+                lbl.fill.append_geometry(
+                    pimpl->fill_vertices, pimpl->fill_indices, pos,
+                    FILL_R, FILL_G, FILL_B, FILL_A);
+            }
+            else
+            {
+                lbl.outline.append_geometry(
+                    pimpl->outline_vertices, pimpl->outline_indices,
+                    pos, lbl.angle,
+                    OUTLINE_R, OUTLINE_G, OUTLINE_B, OUTLINE_A);
+
+                lbl.fill.append_geometry(
+                    pimpl->fill_vertices, pimpl->fill_indices,
+                    pos, lbl.angle,
+                    FILL_R, FILL_G, FILL_B, FILL_A);
+            }
         }
 
         pimpl->dirty = true;

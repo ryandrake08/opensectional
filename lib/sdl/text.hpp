@@ -123,6 +123,17 @@ namespace sdl
             std::vector<int>& indices,
             const glm::vec3& position,
             unsigned char r, unsigned char g, unsigned char b, unsigned char a) const;
+
+        /**
+         * Append rotated text geometry. Position is the center of the text.
+         * Vertices are rotated by angle (radians) around the text center.
+         */
+        void append_geometry(
+            std::vector<vertex_t2f_c4ub_v3f>& vertices,
+            std::vector<int>& indices,
+            const glm::vec3& center,
+            float angle,
+            unsigned char r, unsigned char g, unsigned char b, unsigned char a) const;
     };
 
 } // namespace sdl
