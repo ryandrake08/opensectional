@@ -10,7 +10,6 @@
 #include "ui_overlay.hpp"
 #include "ui_sectioned_list.hpp"
 #include "chart_style.hpp"
-#include <cmath>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_projection.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -359,8 +358,6 @@ struct map_widget::impl
         // Latitude lines (horizontal, non-uniform spacing in Mercator)
         double lat_min = nasrbrowse::my_to_lat(vy_min);
         double lat_max = nasrbrowse::my_to_lat(vy_max);
-        if(lat_min < -nasrbrowse::MAX_LATITUDE) lat_min = -nasrbrowse::MAX_LATITUDE;
-        if(lat_max > nasrbrowse::MAX_LATITUDE) lat_max = nasrbrowse::MAX_LATITUDE;
         double lat_start = std::floor(lat_min / lat_step) * lat_step;
         for(double lat = lat_start; lat <= lat_max; lat += lat_step)
         {
