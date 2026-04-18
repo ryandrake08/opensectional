@@ -1,6 +1,6 @@
 # NASRBrowse
 
-A desktop application for visualizing FAA NASR (National Airspace System Resource) data on an interactive map. Displays airports, navaids, fixes, airways, and airspace boundaries as vector overlays on georeferenced FAA raster chart tiles.
+A desktop application for visualizing FAA NASR (National Airspace System Resource) data on an interactive map. Displays airports, navaids, fixes, airways, airspace boundaries, TFRs, military training routes, obstacles, weather stations, and communication outlets as vector overlays on a raster basemap. Geographic features use spherical geometry (great-circle arcs, geodesic circles).
 
 ## Quick Start
 
@@ -271,29 +271,39 @@ executable (installer layout), then from the current working directory. The
 basemap layer is skipped if no basemap is found; the database is required.
 
 Layer visibility (basemap, airports, runways, navaids, fixes, airways, MTRs,
-airspace, SUA, ADIZ, ARTCC, obstacles) is controlled via checkbox panel in the
-top-right corner.
+airspace, SUA, ADIZ, ARTCC, PJA, MAA, TFR, obstacles, AWOS, RCO) is controlled
+via checkbox panel in the top-right corner.
 
 ## Project Structure
 
 ```
-src/                    Application sources
-  main.cpp              Entry point, SDL init, main loop
-  layer_map.cpp         Map layer (tiles + features + grid)
-  tile_renderer.cpp     XYZ tile loading with LRU GPU cache
-  feature_renderer.cpp  Vector feature rendering (airports, airways, airspace, obstacles)
-  nasr_database.cpp     SQLite query interface with R-tree spatial queries
-  map_view.hpp          Web Mercator viewport, pan/zoom state
-  render_context.cpp    Render state (projection matrix, sampler)
-  ui_overlay.cpp        ImGui UI (FPS display + layer visibility checkboxes)
-lib/imgui/              ImGui RAII wrapper library
-lib/sdl/                SDL3 GPU API wrapper library
-lib/sqlite/             SQLite RAII wrapper library
-shaders/                HLSL shaders (cross-compiled to Metal/SPIR-V/DXIL)
-thirdparty/             Vendored dependencies (see "Third-Party Components")
+src/                      Application sources
+  main.cpp                Entry point, SDL init, main loop
+  map_widget.cpp          Map container: pipelines, input, grid, render orchestration
+  map_view.cpp            Web Mercator viewport, pan/zoom, coordinate conversions
+  geo_math.cpp            Spherical geometry (geodesic circles, great-circle interpolation)
+  tile_renderer.cpp       XYZ tile loading with LRU GPU cache
+  feature_renderer.cpp    Feature layer: query scheduling, SDF line packing, GPU upload
+  feature_builder.cpp     Background worker: builds polyline geometry from DB results
+  feature_type.cpp        Per-feature-type build/pick/selection logic (polymorphic)
+  line_renderer.cpp       SDF polyline rendering (lines, dashes, borders, circles)
+  label_renderer.cpp      Text label placement and rendering
+  nasr_database.cpp       SQLite query interface with R-tree spatial queries
+  chart_style.cpp         INI-based zoom-dependent feature styling
+  tile_loader.cpp         Background tile I/O
+  ui_overlay.cpp          ImGui UI (FPS, layer checkboxes, search, altitude filter)
+  ui_sectioned_list.cpp   Grouped selectable list widget (pick popup, search results)
+  render_context.cpp      Render state (projection matrix, sampler)
+  ini_config.cpp          INI file parser
+lib/imgui/                ImGui RAII wrapper library
+lib/sdl/                  SDL3 GPU API wrapper library
+lib/sqlite/               SQLite RAII wrapper library
+shaders/                  HLSL shaders (cross-compiled to Metal/SPIR-V/DXIL)
+thirdparty/               Vendored dependencies (see "Third-Party Components")
 tools/
   download_nasr_data.py   FAA data downloader (NASR, DOF, ADIZ)
   build_nasr_db.py        Database builder (reads downloaded data files)
+  render_basemap.py       Natural Earth basemap tile renderer
   build-mingw-deps.sh     Cross-compile Windows dependencies
   test_nasr_queries.py    Database query correctness and performance tests
 ```
