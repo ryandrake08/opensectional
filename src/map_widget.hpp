@@ -1,45 +1,36 @@
 #pragma once
 #include <memory>
 #include <sdl/event.hpp>
+#include <string>
 #include <vector>
 
 namespace sdl
 {
+    class command_buffer;
     class device;
-    class font;
-    class render_pass;
-    class copy_pass;
-    class sampler;
-    class text_engine;
+    class texture;
 }
 
 namespace nasrbrowse
 {
     struct layer_visibility;
     struct search_hit;
-    struct render_context;
-    class chart_style;
-    class nasr_database;
     class feature_type;
 }
 
 // The main map widget: owns the tile renderer, feature renderer, label
-// renderer, pick/info popups, and map view (pan/zoom). Handles all
-// user input and dispatches render passes.
+// renderer, pick/info popups, GPU pipelines, and map view (pan/zoom).
+// Handles all user input and dispatches render passes.
 class map_widget : public sdl::event_listener
 {
     struct impl;
     std::unique_ptr<impl> pimpl;
 
 public:
-    // `db` is borrowed for picks and search navigation (owned by main).
     // `tile_path` may be null if no basemap is available.
-    map_widget(sdl::device& dev, const char* tile_path, const char* db_path,
-              nasrbrowse::nasr_database& db,
-              const nasrbrowse::chart_style& cs,
-              sdl::text_engine& text_engine, sdl::font& font,
-              sdl::font& outline_font,
-              const sdl::sampler& text_sampler);
+    // `conf_path` is the chart style INI.
+    map_widget(sdl::device& dev, const char* tile_path,
+               const char* db_path, const char* conf_path);
     ~map_widget() override;
 
     // Apply per-layer and altitude-band visibility from the UI overlay.
@@ -51,6 +42,9 @@ public:
     // The ordered list of toggleable feature_types. Used by the UI
     // overlay to build its layer-visibility checkboxes.
     const std::vector<std::unique_ptr<nasrbrowse::feature_type>>& feature_types() const;
+
+    // Run a full-text search against the NASR database.
+    std::vector<nasrbrowse::search_hit> search(const std::string& query, int limit);
 
     // Tell the map whether ImGui is consuming the mouse this frame
     // (suppresses pick on click when true).
@@ -71,8 +65,11 @@ public:
     void scroll_event(double xoffset, double yoffset) override;
     void framebuffer_size_event(int width, int height) override;
 
-    // Render pipeline: drain async results, upload GPU data, draw.
+    // Drain async results and check if rendering is needed.
     bool update();
-    void copy(sdl::copy_pass& pass);
-    void render(sdl::render_pass& pass, nasrbrowse::render_context& ctx) const;
+
+    // Execute one full render frame: copy (GPU upload) + all render
+    // passes (tiles, fills, grid, SDF lines, labels). ImGui rendering
+    // is NOT included — caller handles that separately.
+    void render_frame(sdl::command_buffer& cmd, sdl::texture& swapchain);
 };
