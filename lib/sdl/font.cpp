@@ -11,24 +11,24 @@ namespace sdl
     {
         TTF_Font* handle; // Owning
 
-        impl(const char* path, int ptsize) : handle(nullptr)
+        static TTF_Font* load_from_path(const char* path, int ptsize)
         {
             if(!path)
             {
                 throw error("Cannot load font: path is null");
             }
 
-            handle = TTF_OpenFont(path, ptsize);
-            if(!handle)
+            TTF_Font* font = TTF_OpenFont(path, ptsize);
+            if(!font)
             {
                 throw error(std::string("Failed to load font '") + path);
             }
 
-            // Log font loading information
             SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Font loaded: %s (%dpt)", path, ptsize);
+            return font;
         }
 
-        impl(const void* data, size_t size, int ptsize) : handle(nullptr)
+        static TTF_Font* load_from_memory(const void* data, size_t size, int ptsize)
         {
             SDL_IOStream* io = SDL_IOFromConstMem(data, size);
             if(!io)
@@ -36,14 +36,18 @@ namespace sdl
                 throw error("Failed to create IOStream from font data");
             }
 
-            handle = TTF_OpenFontIO(io, true, static_cast<float>(ptsize));
-            if(!handle)
+            TTF_Font* font = TTF_OpenFontIO(io, true, static_cast<float>(ptsize));
+            if(!font)
             {
                 throw error("Failed to load embedded font");
             }
 
             SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Font loaded from memory (%dpt)", ptsize);
+            return font;
         }
+
+        impl(const char* path, int ptsize) : handle(load_from_path(path, ptsize)) {}
+        impl(const void* data, size_t size, int ptsize) : handle(load_from_memory(data, size, ptsize)) {}
 
         ~impl() noexcept
         {

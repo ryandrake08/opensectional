@@ -11,23 +11,21 @@ namespace sdl
         SDL_Window* window;
         SDL_GPUDevice* handle;
 
-        impl(SDL_Window* win, bool vsync, const char* preferred_driver) : window(win), handle(nullptr)
+        static SDL_GPUDevice* create_device(SDL_Window* win, bool vsync, const char* preferred_driver)
         {
-            // Create GPU device
             if(preferred_driver)
             {
                 SDL_SetHint(SDL_HINT_GPU_DRIVER, preferred_driver);
             }
-            handle = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_DXIL, false, nullptr);
-            if(!handle)
+            SDL_GPUDevice* dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_DXIL, false, nullptr);
+            if(!dev)
             {
                 throw error("Failed to create GPU device");
             }
 
-            // Claim window for rendering
-            if(!SDL_ClaimWindowForGPUDevice(handle, window))
+            if(!SDL_ClaimWindowForGPUDevice(dev, win))
             {
-                SDL_DestroyGPUDevice(handle);
+                SDL_DestroyGPUDevice(dev);
                 throw error("Failed to claim window for GPU device");
             }
 
@@ -45,34 +43,31 @@ namespace sdl
 
             if(!vsync)
             {
-                if(SDL_WindowSupportsGPUPresentMode(handle, window, SDL_GPU_PRESENTMODE_IMMEDIATE))
+                if(SDL_WindowSupportsGPUPresentMode(dev, win, SDL_GPU_PRESENTMODE_IMMEDIATE))
                 {
                     swapchainPresentation = SDL_GPU_PRESENTMODE_IMMEDIATE;
                     presentationName = "IMMEDIATE";
                 }
-                else if(SDL_WindowSupportsGPUPresentMode(handle, window, SDL_GPU_PRESENTMODE_MAILBOX))
+                else if(SDL_WindowSupportsGPUPresentMode(dev, win, SDL_GPU_PRESENTMODE_MAILBOX))
                 {
                     swapchainPresentation = SDL_GPU_PRESENTMODE_MAILBOX;
                     presentationName = "MAILBOX";
                 }
             }
 
-            // Configure swapchain
-            if(!SDL_SetGPUSwapchainParameters(handle, window, swapchainComposition, swapchainPresentation))
+            if(!SDL_SetGPUSwapchainParameters(dev, win, swapchainComposition, swapchainPresentation))
             {
-                SDL_ReleaseWindowFromGPUDevice(handle, window);
-                SDL_DestroyGPUDevice(handle);
+                SDL_ReleaseWindowFromGPUDevice(dev, win);
+                SDL_DestroyGPUDevice(dev);
                 throw error("Failed to set swapchain parameters");
             }
 
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  Swapchain composition: %s, present mode: %s", compositionName, presentationName);
 
-            // Log GPU backend information
-            const char* backend_name = SDL_GetGPUDeviceDriver(handle);
+            const char* backend_name = SDL_GetGPUDeviceDriver(dev);
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GPU device created: %s", backend_name ? backend_name : "Unknown");
 
-            // Log supported shader formats
-            SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(handle);
+            SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(dev);
             std::string format_list;
             if(formats & SDL_GPU_SHADERFORMAT_METALLIB)
             {
@@ -94,7 +89,11 @@ namespace sdl
             {
                 SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "  Supported shader formats: %s", format_list.c_str());
             }
+
+            return dev;
         }
+
+        impl(SDL_Window* win, bool vsync, const char* preferred_driver) : window(win), handle(create_device(win, vsync, preferred_driver)) {}
 
         ~impl() noexcept
         {
