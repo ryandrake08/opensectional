@@ -121,9 +121,7 @@ int main(int argc, char** argv)
     try
     {
         sdl::instance sdl_ctx(verbosity);
-        auto win_flags = sdl::window_flags_t(
-            static_cast<uint64_t>(sdl::window_flags::resizable) |
-            static_cast<uint64_t>(sdl::window_flags::high_pixel_density));
+        auto win_flags = sdl::window_flags::resizable | sdl::window_flags::high_pixel_density;
         sdl::window win(sdl_ctx, "NASRBrowse", 1280, 1024, win_flags);
 
         const char* default_driver = "vulkan";

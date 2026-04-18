@@ -23,7 +23,7 @@ namespace sdl
             // Auto-detect format if not specified
             if(format == SDL_GPU_SHADERFORMAT_INVALID)
             {
-                format = static_cast<SDL_GPUShaderFormat>(dev.get_shader_format());
+                format = static_cast<SDL_GPUShaderFormat>(dev.get_shader_format().value);
             }
 
             // Create shader info
@@ -79,8 +79,8 @@ namespace sdl
                                                        static_cast<const void*>(code_array),
                                                        code_len,
                                                        entrypoint,
-                                                       static_cast<SDL_GPUShaderStage>(static_cast<uint32_t>(stage)),
-                                                       static_cast<SDL_GPUShaderFormat>(static_cast<uint32_t>(format)),
+                                                       static_cast<SDL_GPUShaderStage>(stage.value),
+                                                       static_cast<SDL_GPUShaderFormat>(format.value),
                                                        num_samplers,
                                                        num_storage_buffers))
     {

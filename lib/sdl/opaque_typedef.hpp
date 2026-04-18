@@ -8,7 +8,6 @@ struct opaque_type
 {
     T value;
     explicit opaque_type(T v) : value(v) {}
-    explicit operator T() const { return value; }
     friend bool operator==(opaque_type a, opaque_type b) { return a.value == b.value; }
     friend bool operator!=(opaque_type a, opaque_type b) { return a.value != b.value; }
     friend bool operator<(opaque_type a, opaque_type b) { return a.value < b.value; }

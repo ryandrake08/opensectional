@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bitflags.hpp"
 #include "opaque_typedef.hpp"
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -45,10 +46,10 @@ struct TTF_Text;
 namespace sdl
 {
     // ========================================================================
-    // GPU Buffer Usage Flags (opaque typedef)
+    // GPU Buffer Usage Flags (bitflags)
     // ========================================================================
 
-    opaque_typedef(uint32_t, buffer_usage_t);
+    bitflags_typedef(uint32_t, buffer_usage_t);
 
     namespace buffer_usage
     {
@@ -98,10 +99,10 @@ namespace sdl
     }
 
     // ========================================================================
-    // GPU Shader Format (opaque typedef)
+    // GPU Shader Format (bitflags)
     // ========================================================================
 
-    opaque_typedef(uint32_t, shader_format_t);
+    bitflags_typedef(uint32_t, shader_format_t);
 
     namespace shader_format
     {
@@ -145,10 +146,10 @@ namespace sdl
     }
 
     // ========================================================================
-    // Window Flags (opaque typedef)
+    // Window Flags (bitflags)
     // ========================================================================
 
-    opaque_typedef(uint64_t, window_flags_t);
+    bitflags_typedef(uint64_t, window_flags_t);
 
     namespace window_flags
     {
@@ -181,7 +182,7 @@ namespace sdl
     opaque_typedef(int32_t, input_key_t);
     opaque_typedef(uint8_t, input_button_t);
     opaque_typedef(int, input_action_t);
-    opaque_typedef(uint16_t, input_mod_t);
+    bitflags_typedef(uint16_t, input_mod_t);
 
     namespace input_action
     {

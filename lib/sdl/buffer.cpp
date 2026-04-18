@@ -39,7 +39,7 @@ namespace sdl
     };
 
     buffer::buffer(const device& dev, buffer_usage_t usage, uint32_t num, uint32_t size) : pimpl(new impl(dev.get(),
-                                                                                                          static_cast<SDL_GPUBufferUsageFlags>(usage),
+                                                                                                          static_cast<SDL_GPUBufferUsageFlags>(usage.value),
                                                                                                           static_cast<Uint32>(num),
                                                                                                           static_cast<Uint32>(size)))
     {

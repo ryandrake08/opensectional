@@ -31,7 +31,7 @@ namespace sdl
         }
     };
 
-    window::window(const instance& /* inst */, const char* title, int width, int height, window_flags_t flags) : pimpl(new impl(title, width, height, static_cast<SDL_WindowFlags>(static_cast<uint64_t>(flags))))
+    window::window(const instance& /* inst */, const char* title, int width, int height, window_flags_t flags) : pimpl(new impl(title, width, height, static_cast<SDL_WindowFlags>(flags.value)))
     {
     }
 

@@ -782,10 +782,10 @@ void map_widget::button_event(sdl::input_button_t button, sdl::input_action_t ac
     else
         pimpl->buttons_down.insert(button);
 
-    if(static_cast<uint8_t>(button) != BUTTON_LEFT)
+    if(button.value != BUTTON_LEFT)
         return;
 
-    if(static_cast<int>(action) != 0) // press
+    if(action.value != 0) // press
     {
         pimpl->dragged = false;
     }
@@ -840,7 +840,7 @@ void map_widget::key_event(sdl::input_key_t key, sdl::input_action_t action, sdl
 {
     if(action != sdl::input_action::release)
     {
-        switch(static_cast<int>(key))
+        switch(key.value)
         {
         case 'w':
         case 'W':

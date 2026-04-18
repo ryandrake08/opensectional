@@ -59,9 +59,9 @@ namespace sdl
         filter_t min_filter,
         filter_t mag_filter,
         sampler_address_mode_t address_mode) : pimpl(new impl(dev.get(),
-                                                              static_cast<SDL_GPUFilter>(static_cast<uint32_t>(min_filter)),
-                                                              static_cast<SDL_GPUFilter>(static_cast<uint32_t>(mag_filter)),
-                                                              static_cast<SDL_GPUSamplerAddressMode>(static_cast<uint32_t>(address_mode))))
+                                                              static_cast<SDL_GPUFilter>(min_filter.value),
+                                                              static_cast<SDL_GPUFilter>(mag_filter.value),
+                                                              static_cast<SDL_GPUSamplerAddressMode>(address_mode.value)))
     {
     }
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "types.hpp"
-#include <SDL3/SDL_gpu.h>
 #include <memory>
 
 namespace sdl
@@ -54,7 +53,7 @@ namespace sdl
          *
          * @return Depth texture format
          */
-        SDL_GPUTextureFormat format() const;
+        texture_format_t format() const;
 
         /**
          * Sets the dimensions of depth texture.

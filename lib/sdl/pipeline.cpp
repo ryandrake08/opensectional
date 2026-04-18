@@ -157,9 +157,9 @@ namespace sdl
         bool vertex_input) : pimpl(new impl(dev.get(),
                                             std::move(vertex_shader),
                                             std::move(fragment_shader),
-                                            static_cast<SDL_GPUTextureFormat>(static_cast<uint32_t>(dev.get_swapchain_format())),
-                                            static_cast<SDL_GPUPrimitiveType>(static_cast<uint32_t>(topology)),
-                                            static_cast<SDL_GPUTextureFormat>(static_cast<uint32_t>(depth_format)),
+                                            static_cast<SDL_GPUTextureFormat>(dev.get_swapchain_format().value),
+                                            static_cast<SDL_GPUPrimitiveType>(topology.value),
+                                            static_cast<SDL_GPUTextureFormat>(depth_format.value),
                                             vertex_input))
     {
     }

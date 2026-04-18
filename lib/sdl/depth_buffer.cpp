@@ -30,18 +30,21 @@ namespace sdl
         }
 
         impl(SDL_GPUDevice* dev,
-             unsigned w,
-             unsigned h,
-             texture_format_t format) : device(dev),
-                                        fmt(static_cast<SDL_GPUTextureFormat>(static_cast<uint32_t>(format))),
-                                        width(w),
-                                        height(h),
-                                        tex(create_texture(dev, fmt, w, h))
+             Uint32 w,
+             Uint32 h,
+             SDL_GPUTextureFormat format) : device(dev),
+                                            fmt(format),
+                                            width(w),
+                                            height(h),
+                                            tex(create_texture(dev, fmt, width, height))
         {
         }
     };
 
-    depth_buffer::depth_buffer(device& dev, unsigned width, unsigned height, texture_format_t format) : pimpl(new impl(dev.get(), width, height, format))
+    depth_buffer::depth_buffer(device& dev, unsigned width, unsigned height, texture_format_t format) : pimpl(new impl(dev.get(),
+                                                                                                                        static_cast<Uint32>(width),
+                                                                                                                        static_cast<Uint32>(height),
+                                                                                                                        static_cast<SDL_GPUTextureFormat>(format.value)))
     {
     }
 
@@ -65,21 +68,24 @@ namespace sdl
         return pimpl->tex;
     }
 
-    SDL_GPUTextureFormat depth_buffer::format() const
+    texture_format_t depth_buffer::format() const
     {
-        return pimpl->fmt;
+        return texture_format_t(pimpl->fmt);
     }
 
     void depth_buffer::set_size(unsigned width, unsigned height)
     {
-        if(pimpl->width == width && pimpl->height == height)
+        Uint32 w = static_cast<Uint32>(width);
+        Uint32 h = static_cast<Uint32>(height);
+
+        if(pimpl->width == w && pimpl->height == h)
         {
             return;
         }
 
-        pimpl->width = width;
-        pimpl->height = height;
-        pimpl->tex = impl::create_texture(pimpl->device, pimpl->fmt, width, height);
+        pimpl->width = w;
+        pimpl->height = h;
+        pimpl->tex = impl::create_texture(pimpl->device, pimpl->fmt, w, h);
     }
 
 } // namespace sdl
