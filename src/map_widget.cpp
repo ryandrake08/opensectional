@@ -1,4 +1,4 @@
-#include "layer_map.hpp"
+#include "map_widget.hpp"
 #include "feature_type.hpp"
 #include "feature_renderer.hpp"
 #include "label_renderer.hpp"
@@ -11,7 +11,10 @@
 #include "ui_sectioned_list.hpp"
 #include "chart_style.hpp"
 #include <cmath>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_projection.hpp>
 #include <glm/ext/matrix_transform.hpp>
+#include <unordered_set>
 #include <imgui.h>
 #include <iostream>
 #include <sdl/buffer.hpp>
@@ -38,7 +41,7 @@ constexpr uint8_t BUTTON_LEFT = 1;
 
 namespace
 {
-    // Selector-popup state. Lives in layer_map::impl.
+    // Selector-popup state. Lives in map_widget::impl.
     struct pick_popup_state
     {
         bool open = false;
@@ -65,12 +68,10 @@ namespace
     };
 }
 
-struct layer_map::impl
+struct map_widget::impl
 {
     nasrbrowse::map_view view;
     sdl::device& dev;
-    int viewport_width;
-    int viewport_height;
     bool needs_update;
     bool show_tiles;
 
@@ -88,7 +89,7 @@ struct layer_map::impl
     nasrbrowse::label_renderer labels;
     const sdl::sampler& text_sampler;
 
-    // Pick state. The database is owned by main() — layer_map borrows it
+    // Pick state. The database is owned by main() — map_widget borrows it
     // for click-time picks and search-result navigation.
     nasrbrowse::nasr_database& pick_db;
     nasrbrowse::chart_style styles;
@@ -105,6 +106,14 @@ struct layer_map::impl
     // and the UI iterate this vector. See feature_type.hpp.
     std::vector<std::unique_ptr<nasrbrowse::feature_type>> feature_types;
 
+    // Event dispatch state (was in layer base class).
+    glm::mat4 projection_matrix{1.0F};
+    float normalized_viewport_width = 1.0F;
+    glm::vec4 viewport_vec{0.0F};
+    std::unordered_set<sdl::input_button_t> buttons_down;
+    double cursor_last_x = 0;
+    double cursor_last_y = 0;
+
     impl(sdl::device& dev, const char* tile_path, const char* db_path,
          nasrbrowse::nasr_database& pick_db,
          const nasrbrowse::chart_style& cs,
@@ -112,8 +121,6 @@ struct layer_map::impl
          sdl::font& outline_font,
          const sdl::sampler& text_sampler)
         : dev(dev)
-        , viewport_width(0)
-        , viewport_height(0)
         , needs_update(true)
         , show_tiles(true)
         , tiles(tile_path ? std::unique_ptr<nasrbrowse::tile_renderer>(new nasrbrowse::tile_renderer(dev, tile_path)) : nullptr)
@@ -130,20 +137,12 @@ struct layer_map::impl
     {
     }
 
-    double aspect_ratio() const
-    {
-        return static_cast<double>(viewport_width) / viewport_height;
-    }
-
-    double view_x_min() const { return view.center_x - view.half_extent_y * aspect_ratio(); }
-    double view_x_max() const { return view.center_x + view.half_extent_y * aspect_ratio(); }
-
     void rebuild_grid()
     {
         grid_vertices.clear();
 
-        double vx_min = view_x_min();
-        double vx_max = view_x_max();
+        double vx_min = view.view_x_min();
+        double vx_max = view.view_x_max();
         double vy_min = view.view_y_min();
         double vy_max = view.view_y_max();
         double range_x = vx_max - vx_min;
@@ -152,7 +151,7 @@ struct layer_map::impl
         // Normalize coordinates to -0.5..0.5 for rendering
         auto to_ndc_x = [&](double mx) -> float
         {
-            return static_cast<float>((mx - vx_min) / range_x - 0.5) * aspect_ratio();
+            return static_cast<float>((mx - vx_min) / range_x - 0.5) * view.aspect_ratio();
         };
         auto to_ndc_y = [&](double my) -> float
         {
@@ -161,7 +160,7 @@ struct layer_map::impl
 
         // Draw grid lines at regular lat/lon intervals
         // Choose interval based on zoom level
-        double approx_zoom = view.zoom_level(viewport_height);
+        double approx_zoom = view.zoom_level();
         double lon_step, lat_step;
         if(approx_zoom < 3)
         {
@@ -229,15 +228,15 @@ struct layer_map::impl
     {
         if(tiles)
         {
-            tiles->update(view_x_min(), view.view_y_min(),
-                          view_x_max(), view.view_y_max(),
-                          view.half_extent_y, viewport_height,
-                          aspect_ratio());
+            tiles->update(view.view_x_min(), view.view_y_min(),
+                          view.view_x_max(), view.view_y_max(),
+                          view.half_extent_y, view.viewport_height,
+                          view.aspect_ratio());
         }
-        features.update(view_x_min(), view.view_y_min(),
-                        view_x_max(), view.view_y_max(),
-                        view.half_extent_y, viewport_height,
-                        aspect_ratio());
+        features.update(view.view_x_min(), view.view_y_min(),
+                        view.view_x_max(), view.view_y_max(),
+                        view.half_extent_y, view.viewport_height,
+                        view.aspect_ratio());
     }
 
     nasrbrowse::pick_result pick_at(double ndc_x, double ndc_y)
@@ -254,7 +253,7 @@ struct layer_map::impl
         click_lon -= 180.0;
 
         // Point-feature pick box: pixel half-size → world coords.
-        double pick_half_ndc = (PICK_BOX_SIZE_PIXELS * 0.5) / viewport_height;
+        double pick_half_ndc = (PICK_BOX_SIZE_PIXELS * 0.5) / view.viewport_height;
         double box_world_half = pick_half_ndc * 2.0 * view.half_extent_y;
         double box_lon_half = mx_to_lon(box_world_half);
         geo_bbox pick_box{
@@ -266,7 +265,7 @@ struct layer_map::impl
 
         nasrbrowse::pick_context ctx{
             pick_db, styles, vis,
-            view.zoom_level(viewport_height),
+            view.zoom_level(),
             click_lon, click_lat,
             pick_box, click_box,
             (pick_box.lat_max - pick_box.lat_min) * 0.5 * 60.0};
@@ -281,27 +280,6 @@ struct layer_map::impl
     }
 
     // Convert a world lon/lat into pixel coordinates relative to the
-    // ImGui display origin (top-left). Handles antimeridian wrap by
-    // shifting lon to be closest to the current view center.
-    void world_to_pixel(double lon, double lat,
-                        float& px, float& py) const
-    {
-        double world_x = nasrbrowse::lon_to_mx(lon);
-        // Unwrap to stay near view.center_x
-        constexpr double W = 2.0 * nasrbrowse::HALF_CIRCUMFERENCE;
-        while(world_x - view.center_x > nasrbrowse::HALF_CIRCUMFERENCE)
-            world_x -= W;
-        while(view.center_x - world_x > nasrbrowse::HALF_CIRCUMFERENCE)
-            world_x += W;
-        double world_y = nasrbrowse::lat_to_my(lat);
-
-        double ndc_x = (world_x - view.center_x) / (2.0 * view.half_extent_y);
-        double ndc_y = (world_y - view.center_y) / (2.0 * view.half_extent_y);
-
-        px = static_cast<float>(ndc_x * viewport_height + viewport_width * 0.5);
-        py = static_cast<float>((0.5 - ndc_y) * viewport_height);
-    }
-
     // Compute where to place a popup anchored at world coord (lon, lat).
     // Returns true and fills pos/pivot when the anchor is on-screen.
     // Returns false when off-screen (popup should dismiss).
@@ -309,12 +287,12 @@ struct layer_map::impl
                               ImVec2& pos, ImVec2& pivot) const
     {
         float ax, ay;
-        world_to_pixel(lon, lat, ax, ay);
-        if(ax < 0 || ax > viewport_width || ay < 0 || ay > viewport_height)
+        view.world_to_pixel(lon, lat, ax, ay);
+        if(ax < 0 || ax > view.viewport_width || ay < 0 || ay > view.viewport_height)
             return false;
 
-        bool right  = ax >= viewport_width * 0.5F;
-        bool bottom = ay >= viewport_height * 0.5F;
+        bool right  = ax >= view.viewport_width * 0.5F;
+        bool bottom = ay >= view.viewport_height * 0.5F;
 
         pos.x = ax + (right  ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING);
         pos.y = ay + (bottom ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING);
@@ -367,9 +345,9 @@ struct layer_map::impl
             auto coord = nasrbrowse::find_feature_type(feature_types, f).point_coord(f);
             if(!coord) continue;
             float fx, fy;
-            world_to_pixel(coord->first, coord->second, fx, fy);
+            view.world_to_pixel(coord->first, coord->second, fx, fy);
             float cx, cy;
-            world_to_pixel(result.lon, result.lat, cx, cy);
+            view.world_to_pixel(result.lon, result.lat, cx, cy);
             double dx = fx - cx, dy = fy - cy;
             if(std::sqrt(dx * dx + dy * dy) <= exact_threshold_px)
             {
@@ -412,7 +390,7 @@ struct layer_map::impl
 
         ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
         ImGui::SetNextWindowBgAlpha(0.9F);
-        ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, viewport_height * 0.8F));
+        ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.8F));
         char window_id[48];
         std::snprintf(window_id, sizeof(window_id), "##pick_selector_%d", pick_popup.session_id);
         ImGui::Begin(window_id, nullptr,
@@ -491,7 +469,7 @@ struct layer_map::impl
 
         ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
         ImGui::SetNextWindowBgAlpha(0.9F);
-        ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, viewport_height * 0.9F));
+        ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.9F));
         char window_id[48];
         std::snprintf(window_id, sizeof(window_id), "##info_popup_%d", info_popup.session_id);
         ImGui::Begin(window_id, nullptr,
@@ -567,20 +545,19 @@ struct layer_map::impl
     }
 };
 
-layer_map::layer_map(sdl::device& dev, const char* tile_path, const char* db_path,
+map_widget::map_widget(sdl::device& dev, const char* tile_path, const char* db_path,
                      nasrbrowse::nasr_database& db,
                      const nasrbrowse::chart_style& cs,
                      sdl::text_engine& text_engine, sdl::font& font,
                      sdl::font& outline_font,
                      const sdl::sampler& text_sampler)
-    : layer()
-    , pimpl(new impl(dev, tile_path, db_path, db, cs, text_engine, font, outline_font, text_sampler))
+    : pimpl(new impl(dev, tile_path, db_path, db, cs, text_engine, font, outline_font, text_sampler))
 {
 }
 
-layer_map::~layer_map() = default;
+map_widget::~map_widget() = default;
 
-void layer_map::set_visibility(const nasrbrowse::layer_visibility& vis)
+void map_widget::set_visibility(const nasrbrowse::layer_visibility& vis)
 {
     pimpl->show_tiles = vis[nasrbrowse::layer_basemap];
     pimpl->vis = vis;
@@ -591,7 +568,7 @@ void layer_map::set_visibility(const nasrbrowse::layer_visibility& vis)
     pimpl->update_tiles();
 }
 
-void layer_map::focus_on_hit(const nasrbrowse::search_hit& hit)
+void map_widget::focus_on_hit(const nasrbrowse::search_hit& hit)
 {
     auto bbox = pimpl->pick_db.get_hit_bbox(hit);
     if(!bbox) return;
@@ -611,7 +588,7 @@ void layer_map::focus_on_hit(const nasrbrowse::search_hit& hit)
                      bbox->lat_min == bbox->lat_max);
     if(is_point)
     {
-        d.view.zoom_to_level(d.viewport_height, POINT_FOCUS_ZOOM);
+        d.view.zoom_to_level(POINT_FOCUS_ZOOM);
     }
     else
     {
@@ -624,34 +601,40 @@ void layer_map::focus_on_hit(const nasrbrowse::search_hit& hit)
             (nasrbrowse::lon_to_mx(bbox->lon_max) -
              nasrbrowse::lon_to_mx(bbox->lon_min)) * 0.5;
         double needed = std::max(half_height_m,
-                                  half_width_m / d.aspect_ratio());
+                                  half_width_m / d.view.aspect_ratio());
         d.view.half_extent_y = needed * 1.2;
         // Force clamp by setting same extent through zoom(1.0).
-        d.view.zoom(1.0, d.viewport_height);
+        d.view.zoom(1.0);
     }
 
     d.needs_update = true;
     d.update_tiles();
 }
 
-void layer_map::set_imgui_wants_mouse(bool wants)
+void map_widget::set_imgui_wants_mouse(bool wants)
 {
     pimpl->imgui_wants_mouse = wants;
 }
 
-double layer_map::zoom_level() const
+double map_widget::zoom_level() const
 {
-    return pimpl->view.zoom_level(pimpl->viewport_height);
+    return pimpl->view.zoom_level();
 }
 
 const std::vector<std::unique_ptr<nasrbrowse::feature_type>>&
-layer_map::feature_types() const
+map_widget::feature_types() const
 {
     return pimpl->feature_types;
 }
 
-void layer_map::on_button_input(sdl::input_button_t button, sdl::input_action_t action, sdl::input_mod_t)
+void map_widget::button_event(sdl::input_button_t button, sdl::input_action_t action, sdl::input_mod_t)
 {
+    // Track button state for drag detection.
+    if(action == sdl::input_action::release)
+        pimpl->buttons_down.erase(button);
+    else
+        pimpl->buttons_down.insert(button);
+
     if(static_cast<uint8_t>(button) != BUTTON_LEFT)
         return;
 
@@ -668,7 +651,7 @@ void layer_map::on_button_input(sdl::input_button_t button, sdl::input_action_t 
     }
 }
 
-bool layer_map::draw_imgui()
+bool map_widget::draw_imgui()
 {
     // Both popups can coexist in theory, but in practice the selector is
     // dismissed as soon as a feature is chosen. Always draw both so either
@@ -678,13 +661,35 @@ bool layer_map::draw_imgui()
     return a || b;
 }
 
-void layer_map::on_cursor_position(double xpos, double ypos)
+void map_widget::cursor_position_event(double xpos, double ypos)
 {
-    pimpl->cursor_ndc_x = xpos;
-    pimpl->cursor_ndc_y = ypos;
+    // Convert from window pixels to NDC via the projection matrix.
+    double ypos_flipped = pimpl->viewport_vec.w - ypos;
+    glm::vec3 pixel_pos(xpos, ypos_flipped, 0.0);
+    glm::vec3 pos(glm::unProject(pixel_pos, glm::mat4(1.0F),
+                                  pimpl->projection_matrix, pimpl->viewport_vec));
+
+    pimpl->cursor_ndc_x = pos[0];
+    pimpl->cursor_ndc_y = pos[1];
+
+    // If any button is held, dispatch as a drag.
+    if(!pimpl->buttons_down.empty())
+    {
+        double dx = pos[0] - pimpl->cursor_last_x;
+        double dy = pos[1] - pimpl->cursor_last_y;
+        pimpl->dragged = true;
+        double dx_meters = -dx * pimpl->view.half_extent_y * 2.0;
+        double dy_meters = -dy * pimpl->view.half_extent_y * 2.0;
+        pimpl->view.pan_meters(dx_meters, dy_meters);
+        pimpl->rebuild_grid();
+        pimpl->update_tiles();
+    }
+
+    pimpl->cursor_last_x = pos[0];
+    pimpl->cursor_last_y = pos[1];
 }
 
-void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t)
+void map_widget::key_event(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t)
 {
     if(action != sdl::input_action::release)
     {
@@ -692,33 +697,33 @@ void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, s
         {
         case 'w':
         case 'W':
-            pimpl->view.pan(0.0, 0.1, pimpl->aspect_ratio());
+            pimpl->view.pan(0.0, 0.1);
             pimpl->rebuild_grid();
             pimpl->update_tiles();
             break;
         case 's':
         case 'S':
-            pimpl->view.pan(0.0, -0.1, pimpl->aspect_ratio());
+            pimpl->view.pan(0.0, -0.1);
             pimpl->rebuild_grid();
             pimpl->update_tiles();
             break;
         case 'a':
         case 'A':
-            pimpl->view.pan(-0.1, 0.0, pimpl->aspect_ratio());
+            pimpl->view.pan(-0.1, 0.0);
             pimpl->rebuild_grid();
             pimpl->update_tiles();
             break;
         case 'd':
         case 'D':
-            pimpl->view.pan(0.1, 0.0, pimpl->aspect_ratio());
+            pimpl->view.pan(0.1, 0.0);
             pimpl->rebuild_grid();
             pimpl->update_tiles();
             break;
         case 'r':
         case 'R':
         {
-            int z = static_cast<int>(pimpl->view.zoom_level(pimpl->viewport_height)) + 1;
-            pimpl->view.zoom_to_level(pimpl->viewport_height, z);
+            int z = static_cast<int>(pimpl->view.zoom_level()) + 1;
+            pimpl->view.zoom_to_level(z);
             pimpl->rebuild_grid();
             pimpl->update_tiles();
             break;
@@ -726,8 +731,8 @@ void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, s
         case 'f':
         case 'F':
         {
-            int z = static_cast<int>(pimpl->view.zoom_level(pimpl->viewport_height)) - 1;
-            pimpl->view.zoom_to_level(pimpl->viewport_height, z);
+            int z = static_cast<int>(pimpl->view.zoom_level()) - 1;
+            pimpl->view.zoom_to_level(z);
             pimpl->rebuild_grid();
             pimpl->update_tiles();
             break;
@@ -736,36 +741,35 @@ void layer_map::on_key_input(sdl::input_key_t key, sdl::input_action_t action, s
     }
 }
 
-void layer_map::on_drag_input(const std::vector<sdl::input_button_t>&, double xdelta, double ydelta)
-{
-    pimpl->dragged = true;
-    // Convert NDC delta to meters
-    double dx_meters = -xdelta * pimpl->view.half_extent_y * 2.0;
-    double dy_meters = -ydelta * pimpl->view.half_extent_y * 2.0;
-    pimpl->view.pan_meters(dx_meters, dy_meters);
-    pimpl->rebuild_grid();
-    pimpl->update_tiles();
-}
-
-void layer_map::on_scroll(double, double yoffset)
+void map_widget::scroll_event(double, double yoffset)
 {
     double factor = (yoffset > 0) ? 0.9 : 1.0 / 0.9;
     double wx = pimpl->cursor_ndc_x * 2.0 * pimpl->view.half_extent_y + pimpl->view.center_x;
     double wy = pimpl->cursor_ndc_y * 2.0 * pimpl->view.half_extent_y + pimpl->view.center_y;
-    pimpl->view.zoom_at(factor, wx, wy, pimpl->viewport_height);
+    pimpl->view.zoom_at(factor, wx, wy);
     pimpl->rebuild_grid();
     pimpl->update_tiles();
 }
 
-void layer_map::on_resize(float normalized_viewport_width, int viewport_height_pixels)
+void map_widget::framebuffer_size_event(int width, int height)
 {
-    pimpl->viewport_width = static_cast<int>(normalized_viewport_width * viewport_height_pixels);
-    pimpl->viewport_height = viewport_height_pixels;
+    if(height == 0) return;
+    auto fwidth = static_cast<float>(width);
+    auto fheight = static_cast<float>(height);
+    pimpl->viewport_vec = glm::vec4(0.0F, 0.0F, fwidth, fheight);
+    pimpl->normalized_viewport_width = fwidth / fheight;
+    pimpl->projection_matrix = glm::orthoLH_ZO(
+        -pimpl->normalized_viewport_width * 0.5F,
+         pimpl->normalized_viewport_width * 0.5F,
+        -0.5F, 0.5F, -1.0F, 1.0F);
+
+    pimpl->view.viewport_width = width;
+    pimpl->view.viewport_height = height;
     pimpl->rebuild_grid();
     pimpl->update_tiles();
 }
 
-bool layer_map::on_update()
+bool map_widget::update()
 {
     if(pimpl->tiles) pimpl->tiles->drain();
 
@@ -781,7 +785,7 @@ bool layer_map::on_update()
         pimpl->labels.update_positions(
             pimpl->view.center_x, pimpl->view.center_y,
             pimpl->view.half_extent_y,
-            pimpl->viewport_width, pimpl->viewport_height,
+            pimpl->view.viewport_width, pimpl->view.viewport_height,
             pimpl->vis);
     }
 
@@ -796,7 +800,7 @@ bool layer_map::on_update()
     return result;
 }
 
-void layer_map::on_copy(sdl::copy_pass& pass)
+void map_widget::copy(sdl::copy_pass& pass)
 {
     if(!pimpl->grid_vertices.empty())
     {
@@ -809,8 +813,11 @@ void layer_map::on_copy(sdl::copy_pass& pass)
     pimpl->labels.copy(pass, pimpl->dev);
 }
 
-void layer_map::on_render(sdl::render_pass& pass, const nasrbrowse::render_context& ctx) const
+void map_widget::render(sdl::render_pass& pass, nasrbrowse::render_context& ctx) const
 {
+    ctx.projection_matrix = pimpl->projection_matrix;
+    ctx.normalized_viewport_width = pimpl->normalized_viewport_width;
+
     float s = static_cast<float>(1.0 / (2.0 * pimpl->view.half_extent_y));
     float cx = static_cast<float>(pimpl->view.center_x);
     float cy = static_cast<float>(pimpl->view.center_y);
@@ -827,7 +834,7 @@ void layer_map::on_render(sdl::render_pass& pass, const nasrbrowse::render_conte
 
     // Render labels (text pass)
     pimpl->labels.render(pass, ctx, pimpl->text_sampler,
-                         pimpl->viewport_width, pimpl->viewport_height);
+                         pimpl->view.viewport_width, pimpl->view.viewport_height);
 
     // Render grid (line pass)
     if(ctx.current_pass == nasrbrowse::render_pass_id::trianglelist_0)

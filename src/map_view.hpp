@@ -98,8 +98,11 @@ namespace nasrbrowse
         double center_y;
 
         // Half the viewport extent in meters (controls zoom)
-        // Smaller = more zoomed in
         double half_extent_y;
+
+        // Viewport dimensions in pixels (set by framebuffer_size_event)
+        int viewport_width = 0;
+        int viewport_height = 0;
 
         map_view()
             : center_x(lon_to_mx(-98.0))  // Center of CONUS
@@ -108,14 +111,21 @@ namespace nasrbrowse
         {
         }
 
-        // Viewport bounds in meters (y only; x requires aspect ratio from caller)
+        double aspect_ratio() const
+        {
+            return static_cast<double>(viewport_width) / viewport_height;
+        }
+
+        // Viewport bounds in Mercator meters
         double view_y_min() const { return center_y - half_extent_y; }
         double view_y_max() const { return center_y + half_extent_y; }
+        double view_x_min() const { return center_x - half_extent_y * aspect_ratio(); }
+        double view_x_max() const { return center_x + half_extent_y * aspect_ratio(); }
 
         // Pan by fraction of viewport
-        void pan(double dx_frac, double dy_frac, double aspect_ratio)
+        void pan(double dx_frac, double dy_frac)
         {
-            center_x += dx_frac * half_extent_y * aspect_ratio * 2.0;
+            center_x += dx_frac * half_extent_y * aspect_ratio() * 2.0;
             center_y += dy_frac * half_extent_y * 2.0;
             clamp_center();
         }
@@ -129,66 +139,81 @@ namespace nasrbrowse
         }
 
         // Zoom by factor around viewport center
-        void zoom(double factor, int viewport_height)
+        void zoom(double factor)
         {
             half_extent_y *= factor;
-            clamp_extent(viewport_height);
+            clamp_extent();
         }
 
         // Zoom by factor around a point in meters
-        void zoom_at(double factor, double px, double py, int viewport_height)
+        void zoom_at(double factor, double px, double py)
         {
-            // Move center toward/away from the zoom point
             center_x = px + (center_x - px) * factor;
             center_y = py + (center_y - py) * factor;
             half_extent_y *= factor;
-            clamp_extent(viewport_height);
+            clamp_extent();
             clamp_center();
         }
 
-        double zoom_level(int viewport_height) const
+        double zoom_level() const
         {
             return nasrbrowse::zoom_level(half_extent_y, viewport_height);
         }
 
         // Set zoom to an exact zoom level
-        void zoom_to_level(int viewport_height, int z)
+        void zoom_to_level(int z)
         {
             double world_size = 2.0 * HALF_CIRCUMFERENCE;
             double meters_per_pixel = world_size / (256.0 * std::pow(2.0, z));
             half_extent_y = meters_per_pixel * viewport_height * 0.5;
-            clamp_extent(viewport_height);
+            clamp_extent();
+        }
+
+        // Convert world lon/lat to pixel coordinates (ImGui display
+        // origin, top-left). Handles antimeridian wrap.
+        void world_to_pixel(double lon, double lat,
+                             float& px, float& py) const
+        {
+            double world_x = lon_to_mx(lon);
+            constexpr double W = 2.0 * HALF_CIRCUMFERENCE;
+            while(world_x - center_x > HALF_CIRCUMFERENCE) world_x -= W;
+            while(center_x - world_x > HALF_CIRCUMFERENCE) world_x += W;
+            double world_y = lat_to_my(lat);
+
+            double ndc_x = (world_x - center_x) / (2.0 * half_extent_y);
+            double ndc_y = (world_y - center_y) / (2.0 * half_extent_y);
+
+            px = static_cast<float>(ndc_x * viewport_height + viewport_width * 0.5);
+            py = static_cast<float>((0.5 - ndc_y) * viewport_height);
         }
 
     private:
         void clamp_center()
         {
-            // X wraps around the antimeridian
             constexpr double W = 2.0 * HALF_CIRCUMFERENCE;
             center_x = std::fmod(center_x + HALF_CIRCUMFERENCE, W);
             if(center_x < 0) center_x += W;
             center_x -= HALF_CIRCUMFERENCE;
 
-            // Y clamps (latitude doesn't wrap)
             if(center_y < -HALF_CIRCUMFERENCE)
                 center_y = -HALF_CIRCUMFERENCE;
             if(center_y > HALF_CIRCUMFERENCE)
                 center_y = HALF_CIRCUMFERENCE;
         }
 
-        static double half_extent_for_zoom(double z, int viewport_height)
+        double half_extent_for_zoom(double z) const
         {
             double world_size = 2.0 * HALF_CIRCUMFERENCE;
             double meters_per_pixel = world_size / (256.0 * std::pow(2.0, z));
             return meters_per_pixel * viewport_height * 0.5;
         }
 
-        void clamp_extent(int viewport_height)
+        void clamp_extent()
         {
             constexpr double min_zoom = 3.0;
             constexpr double max_zoom = 18.0;
-            double max_extent = half_extent_for_zoom(min_zoom, viewport_height);
-            double min_extent = half_extent_for_zoom(max_zoom, viewport_height);
+            double max_extent = half_extent_for_zoom(min_zoom);
+            double min_extent = half_extent_for_zoom(max_zoom);
             if(half_extent_y > max_extent)
                 half_extent_y = max_extent;
             if(half_extent_y < min_extent)

@@ -1,4 +1,4 @@
-#include "layer_map.hpp"
+#include "map_widget.hpp"
 #include "nasr_database.hpp"
 #include "render_context.hpp"
 #include "ui_overlay.hpp"
@@ -330,11 +330,11 @@ int main(int argc, char** argv)
         nasrbrowse::chart_style chart_styles(conf_path, nasrbrowse::chart_mode::vfr);
 
         // NASR database used for picks, info popup, and search. Owned here
-        // and borrowed by layer_map (and by the UI search path below).
+        // and borrowed by map_widget (and by the UI search path below).
         nasrbrowse::nasr_database nasr_db(db_path);
 
         // Create map layer
-        auto map_layer = std::make_shared<layer_map>(
+        auto map_layer = std::make_shared<map_widget>(
             dev, tile_path, db_path, nasr_db, chart_styles,
             text_engine, label_font, outline_font, text_sampler);
         event_mgr.add_listener(map_layer);

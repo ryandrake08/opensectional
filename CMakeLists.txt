@@ -34,8 +34,7 @@ add_subdirectory(thirdparty/imgui)
 add_executable(nasrbrowse
     # Application sources
     src/ini_config.cpp
-    src/layer.cpp
-    src/layer_map.cpp
+    src/map_widget.cpp
     src/feature_builder.cpp
     src/feature_type.cpp
     src/feature_renderer.cpp

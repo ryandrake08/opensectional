@@ -2,7 +2,7 @@
 
 // One feature_type per map feature type. Each subclass owns all
 // per-type logic — pick, build, info, summary, etc. — in one place.
-// The application holds a single vector of layer instances; layer_map,
+// The application holds a single vector of instances; map_widget,
 // ui_overlay, and feature_builder all iterate that vector instead of
 // branching on feature type.
 //
