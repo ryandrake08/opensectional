@@ -32,11 +32,6 @@ namespace sdl
             SDL_EndGPUCopyPass(handle);
         }
 
-        transfer_buffer& alloc(const device& dev, uint32_t size)
-        {
-            transfers.emplace_back(dev, size);
-            return transfers.back();
-        }
     };
 
     copy_pass::copy_pass(command_buffer& cmd)
@@ -69,7 +64,8 @@ namespace sdl
         texture tex(dev, surf);
 
         uint32_t data_size = surf.size();
-        transfer_buffer& transfer = pimpl->alloc(dev, data_size);
+        pimpl->transfers.emplace_back(dev, data_size);
+        transfer_buffer& transfer = pimpl->transfers.back();
         uint32_t offset = transfer.append(surf.pixels(), data_size);
 
         SDL_GPUTextureTransferInfo source = {};
@@ -98,7 +94,8 @@ namespace sdl
         buffer buf(dev, usage, count, element_size);
 
         uint32_t byte_size = count * element_size;
-        transfer_buffer& transfer = pimpl->alloc(dev, byte_size);
+        pimpl->transfers.emplace_back(dev, byte_size);
+        transfer_buffer& transfer = pimpl->transfers.back();
         uint32_t offset = transfer.append(data, byte_size);
 
         SDL_GPUTransferBufferLocation source = {};
