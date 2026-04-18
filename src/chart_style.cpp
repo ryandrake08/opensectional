@@ -209,6 +209,7 @@ namespace nasrbrowse
         "pja_area", "pja_point",
         "maa_area", "maa_point",
         "adiz",
+        "tfr",
         "sua_prohibited", "sua_restricted", "sua_warning",
         "sua_alert", "sua_moa", "sua_nsa",
         "runway",
@@ -416,6 +417,12 @@ namespace nasrbrowse
     { return visible("adiz", zoom); }
     const feature_style& chart_style::adiz_style() const
     { return get("adiz"); }
+
+    // TFR
+    bool chart_style::tfr_visible(double zoom) const
+    { return visible("tfr", zoom); }
+    const feature_style& chart_style::tfr_style() const
+    { return get("tfr"); }
 
     // PJA
     bool chart_style::pja_area_visible(double zoom) const

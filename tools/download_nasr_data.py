@@ -11,6 +11,7 @@ Sources:
     - AIXM 5.0 special use airspace
     - Digital Obstacle File (DOF)
     - ADIZ boundaries (ArcGIS FeatureServer)
+    - TFR XNOTAM data (tfr.faa.gov)
 
 Usage:
     python3 tools/download_nasr_data.py [--current|--preview] [--output-dir DIR]
@@ -20,6 +21,7 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -38,6 +40,8 @@ _ADIZ_URL = (
     "Airspace/FeatureServer/0/query"
     "?where=TYPE_CODE%3D%27ADIZ%27&outFields=*&outSR=4326&f=geojson"
 )
+_TFR_LIST_URL = "https://tfr.faa.gov/tfrapi/getTfrList"
+_TFR_XML_URL = "https://tfr.faa.gov/download/detail_{notam_id}.xml"
 
 
 def fetch_html(url):
@@ -149,6 +153,48 @@ def download_adiz(output_dir):
     return filepath
 
 
+def download_tfrs(output_dir):
+    """Download TFR XNOTAM XML files from tfr.faa.gov.
+
+    Fetches the active TFR list, then downloads each TFR's detail XML
+    into a tfr_data/ subdirectory.  Returns the path to that directory.
+    """
+    tfr_dir = os.path.join(output_dir, "tfr_data")
+    os.makedirs(tfr_dir, exist_ok=True)
+
+    print("Fetching TFR list from tfr.faa.gov...")
+    req = urllib.request.Request(_TFR_LIST_URL)
+    req.add_header("Accept", "application/json")
+    with urllib.request.urlopen(req) as response:
+        tfr_list = json.loads(response.read().decode("utf-8"))
+
+    if not tfr_list:
+        print("  No active TFRs found")
+        return tfr_dir
+
+    print(f"  {len(tfr_list)} active TFRs, downloading XNOTAM XML...")
+    downloaded = 0
+    for tfr in tfr_list:
+        notam_id = tfr.get("notam_id") or tfr.get("gid", "")
+        if not notam_id:
+            continue
+        # URL uses underscore in place of slash: "6/4033" -> "6_4033"
+        url_id = notam_id.replace("/", "_")
+        filename = f"detail_{url_id}.xml"
+        url = _TFR_XML_URL.format(notam_id=url_id)
+        try:
+            with urllib.request.urlopen(url) as resp:
+                data = resp.read()
+            with open(os.path.join(tfr_dir, filename), "wb") as f:
+                f.write(data)
+            downloaded += 1
+        except urllib.error.HTTPError as e:
+            print(f"  Warning: failed to download {notam_id}: HTTP {e.code}")
+
+    print(f"  Downloaded {downloaded} TFR XML files to {tfr_dir}/")
+    return tfr_dir
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Download FAA aeronautical data for NASRBrowse."
@@ -201,10 +247,13 @@ def main():
     # Download ADIZ
     adiz_path = download_adiz(output_dir)
 
+    # Download TFRs
+    tfr_dir = download_tfrs(output_dir)
+
     # Print summary
     print(f"\nAll data downloaded to {output_dir}/")
     print("\nTo build the database, run:")
-    print(f"  python3 tools/build_nasr_db.py {csv_path} {shp_path} {aixm_path} {dof_path} {adiz_path} nasr.db")
+    print(f"  python3 tools/build_nasr_db.py {csv_path} {shp_path} {aixm_path} {dof_path} {adiz_path} {tfr_dir} nasr.db")
 
 
 if __name__ == "__main__":

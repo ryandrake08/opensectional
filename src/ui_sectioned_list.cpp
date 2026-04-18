@@ -20,6 +20,7 @@ namespace nasrbrowse
         {"SUA",   "SPECIAL USE AIRSPACE"},
         {"MAA",   "MILITARY ALTITUDE AREAS"},
         {"PJA",   "PARACHUTE JUMP AREAS"},
+        {"TFR",   "TFRs"},
         {"ADIZ",  "ADIZ"},
         {"ARTCC", "ARTCC"},
         {"FSS",   "FLIGHT SERVICE"},

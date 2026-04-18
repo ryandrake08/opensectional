@@ -373,6 +373,7 @@ namespace nasrbrowse
         DECLARE_AREA_FEATURE_TYPE (maa_type,         "MAA",       layer_maa,       "MAA",   maa)
         DECLARE_AREA_FEATURE_TYPE (airspace_type,    "Airspace",  layer_airspace,  "CLS",   class_airspace)
         DECLARE_AREA_FEATURE_TYPE (sua_type,         "SUA",       layer_sua,       "SUA",   sua)
+        DECLARE_AREA_FEATURE_TYPE (tfr_type,         "TFRs",      layer_tfr,       "TFR",   tfr)
         DECLARE_AREA_FEATURE_TYPE (adiz_type,        "ADIZ",      layer_adiz,      "ADIZ",  adiz)
         DECLARE_AREA_FEATURE_TYPE (artcc_type,       "ARTCC",     layer_artcc,     "ARTCC", artcc)
         DECLARE_POINT_FEATURE_TYPE(obstacle_type,    "Obstacles", layer_obstacles, "OBS",   obstacle)
@@ -503,6 +504,29 @@ namespace nasrbrowse
                     continue;
                 if(point_in_ring(ctx.click_lon, ctx.click_lat, a.points))
                     out.push_back(a);
+            }
+        }
+
+        void tfr_type::pick(const pick_context& ctx,
+                              std::vector<feature>& out) const
+        {
+            if(!ctx.styles.tfr_visible(ctx.zoom)) return;
+            if(!ctx.vis.altitude.any()) return;
+            for(const auto& t : ctx.db.query_tfr(ctx.click_box))
+            {
+                for(const auto& area : t.areas)
+                {
+                    if(!ctx.vis.altitude.overlaps(area.lower_ft_val, area.lower_ft_ref,
+                                                   area.upper_ft_val, area.upper_ft_ref))
+                        continue;
+                    if(point_in_ring(ctx.click_lon, ctx.click_lat, area.points))
+                    {
+                        tfr pick = t;
+                        pick.areas.clear();
+                        pick.areas.push_back(area);
+                        out.push_back(std::move(pick));
+                    }
+                }
             }
         }
 
@@ -646,6 +670,11 @@ namespace nasrbrowse
         {
             const auto& v = std::get<artcc>(f);
             return "ARTCC: " + v.location_id + " " + v.name;
+        }
+        std::string tfr_type::summary(const feature& f) const
+        {
+            const auto& v = std::get<tfr>(f);
+            return "TFR: " + v.notam_id + " " + v.tfr_type;
         }
         std::string adiz_type::summary(const feature& f) const
         {
@@ -854,6 +883,31 @@ namespace nasrbrowse
             };
         }
 
+        kv_list tfr_type::info_kv(const feature& f) const
+        {
+            const auto& v = std::get<tfr>(f);
+            kv_list rows{
+                {"NOTAM ID",  v.notam_id},
+                {"Type",      v.tfr_type},
+                {"Facility",  v.facility},
+                {"Effective", v.date_effective},
+                {"Expires",   v.date_expire},
+            };
+            for(const auto& area : v.areas)
+            {
+                if(!area.area_name.empty())
+                    rows.push_back({"Area", area.area_name});
+                std::string alt = fmt_int(area.lower_ft_val) + " " + area.lower_ft_ref
+                                + " - " + fmt_int(area.upper_ft_val) + " " + area.upper_ft_ref;
+                rows.push_back({"Altitude", alt});
+                if(!area.date_effective.empty())
+                    rows.push_back({"Area effective", area.date_effective});
+                if(!area.date_expire.empty())
+                    rows.push_back({"Area expires", area.date_expire});
+            }
+            rows.push_back({"Description", v.description});
+            return rows;
+        }
         kv_list adiz_type::info_kv(const feature& f) const
         {
             const auto& v = std::get<adiz>(f);
@@ -1556,6 +1610,24 @@ namespace nasrbrowse
             }
         }
 
+        void tfr_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.tfr_visible(ctx.req.zoom)) return;
+            if(!ctx.req.altitude.any()) return;
+            geo_bbox bbox{ctx.req.lon_min, ctx.req.lat_min,
+                          ctx.req.lon_max, ctx.req.lat_max};
+            const auto& segs = ctx.db.query_tfr_segments(bbox);
+            auto ls = to_line_style(ctx.styles.tfr_style());
+            for(const auto& seg : segs)
+            {
+                if(!sua_altitude_visible(ctx.req.altitude,
+                                          seg.upper_ft_val, seg.upper_ft_ref,
+                                          seg.lower_ft_val, seg.lower_ft_ref))
+                    continue;
+                add_polyline(ctx.poly[layer_tfr], seg.points, ls, ctx.mx_offset);
+            }
+        }
+
         void adiz_type::build(const build_context& ctx) const
         {
             if(!ctx.styles.adiz_visible(ctx.req.zoom)) return;
@@ -1962,6 +2034,22 @@ namespace nasrbrowse
             triangulate_polygon(ring, {}, fill_color, fill_out);
         }
 
+        void tfr_type::build_selection(const build_context& ctx, const feature& f,
+                                         polyline_data& out, polygon_fill_data& fill_out) const
+        {
+            const auto& v = std::get<tfr>(f);
+            auto fs = ctx.styles.tfr_style();
+            line_style base = to_line_style(fs);
+            glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
+            std::vector<glm::vec2> ring;
+            for(const auto& area : v.areas)
+            {
+                ring_to_mercator(area.points, ring);
+                emit_selection_boundary(out, ring, base);
+                triangulate_polygon(ring, {}, fill_color, fill_out);
+            }
+        }
+
         void adiz_type::build_selection(const build_context& ctx, const feature& f,
                                           polyline_data& out, polygon_fill_data& fill_out) const
         {
@@ -2009,7 +2097,7 @@ namespace nasrbrowse
     {
         // Order controls z-priority of pick results and checkbox order.
         std::vector<std::unique_ptr<feature_type>> v;
-        v.reserve(15);
+        v.reserve(16);
         // Order also determines build dependency order: navaid populates
         // navaid_positions (used by airway clearance), airway populates
         // airway_waypoints (used by fix on-airway test). So: navaid ->
@@ -2024,6 +2112,7 @@ namespace nasrbrowse
         v.push_back(std::make_unique<maa_type_anchored>());
         v.push_back(std::make_unique<airspace_type>());
         v.push_back(std::make_unique<sua_type>());
+        v.push_back(std::make_unique<tfr_type>());
         v.push_back(std::make_unique<adiz_type>());
         v.push_back(std::make_unique<artcc_type>());
         v.push_back(std::make_unique<obstacle_type>());

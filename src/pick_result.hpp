@@ -15,6 +15,7 @@ namespace nasrbrowse
         sua,
         artcc,
         adiz,
+        tfr,
         maa,
         pja,
         awos,

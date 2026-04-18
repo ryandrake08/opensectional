@@ -32,6 +32,7 @@ namespace nasrbrowse
         layer_fixes,
         layer_navaids,
         layer_airports,
+        layer_tfr,
         layer_sdf_count,
 
         // Non-SDF layers
