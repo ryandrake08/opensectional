@@ -2,6 +2,7 @@
 
 #include "altitude_filter.hpp"
 #include "chart_style.hpp"
+#include "geo_math.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
 #include "ui_overlay.hpp"  // for the layer enum
@@ -167,6 +168,8 @@ namespace nasrbrowse
             add_circle_to(pd, cx, cy, dot_r, ls, 8);
         }
 
+        // Project a sequence of lat/lon points to Mercator and append
+        // as a polyline. Long edges are subdivided along the great circle.
         void add_polyline(polyline_data& pd,
                           const std::vector<airspace_point>& points,
                           const line_style& ls,
@@ -175,12 +178,37 @@ namespace nasrbrowse
             if(points.size() < 2) return;
             std::vector<glm::vec2> polyline;
             polyline.reserve(points.size());
-            for(const auto& pt : points)
+            polyline.emplace_back(
+                static_cast<float>(lon_to_mx(points[0].lon) + mx_offset),
+                static_cast<float>(lat_to_my(points[0].lat)));
+            for(std::size_t i = 1; i < points.size(); i++)
             {
-                polyline.emplace_back(
-                    static_cast<float>(lon_to_mx(pt.lon) + mx_offset),
-                    static_cast<float>(lat_to_my(pt.lat)));
+                auto seg = geodesic_interpolate(
+                    points[i - 1].lat, points[i - 1].lon,
+                    points[i].lat, points[i].lon);
+                for(std::size_t j = 1; j < seg.size(); j++)
+                    polyline.emplace_back(
+                        static_cast<float>(lon_to_mx(seg[j].lon) + mx_offset),
+                        static_cast<float>(lat_to_my(seg[j].lat)));
             }
+            pd.polylines.push_back(std::move(polyline));
+            pd.styles.push_back(ls);
+        }
+
+        // Generate a geodesic circle as a Mercator polyline.
+        void add_geodesic_circle(polyline_data& pd,
+                                  double center_lat, double center_lon,
+                                  double radius_nm,
+                                  const line_style& ls,
+                                  double mx_offset)
+        {
+            auto pts = geodesic_circle(center_lat, center_lon, radius_nm);
+            std::vector<glm::vec2> polyline;
+            polyline.reserve(pts.size());
+            for(const auto& p : pts)
+                polyline.emplace_back(
+                    static_cast<float>(lon_to_mx(p.lon) + mx_offset),
+                    static_cast<float>(lat_to_my(p.lat)));
             pd.polylines.push_back(std::move(polyline));
             pd.styles.push_back(ls);
         }
@@ -1412,33 +1440,40 @@ namespace nasrbrowse
 
                 const auto& fs = ctx.styles.airway_style(seg.awy_id);
 
-                float x0 = static_cast<float>(lon_to_mx(seg.from_lon) + ctx.mx_offset);
-                float y0 = static_cast<float>(lat_to_my(seg.from_lat));
-                float x1 = static_cast<float>(lon_to_mx(seg.to_lon) + ctx.mx_offset);
-                float y1 = static_cast<float>(lat_to_my(seg.to_lat));
+                auto arc = geodesic_interpolate(
+                    seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon);
+                std::vector<glm::vec2> polyline;
+                polyline.reserve(arc.size());
+                for(const auto& p : arc)
+                    polyline.emplace_back(
+                        static_cast<float>(lon_to_mx(p.lon) + ctx.mx_offset),
+                        static_cast<float>(lat_to_my(p.lat)));
 
-                float dx = x1 - x0;
-                float dy = y1 - y0;
+                // Trim endpoints away from navaid icons
+                auto& front = polyline.front();
+                auto& back = polyline.back();
+                float dx = back.x - front.x;
+                float dy = back.y - front.y;
                 float len = std::sqrt(dx * dx + dy * dy);
                 if(len > 0.0F)
                 {
                     float ux = dx / len;
                     float uy = dy / len;
-                    if(ctx.is_at_navaid(x0, y0))
+                    if(ctx.is_at_navaid(front.x, front.y))
                     {
-                        x0 += ux * ctx.state.navaid_clearance;
-                        y0 += uy * ctx.state.navaid_clearance;
+                        front.x += ux * ctx.state.navaid_clearance;
+                        front.y += uy * ctx.state.navaid_clearance;
                     }
-                    if(ctx.is_at_navaid(x1, y1))
+                    if(ctx.is_at_navaid(back.x, back.y))
                     {
-                        x1 -= ux * ctx.state.navaid_clearance;
-                        y1 -= uy * ctx.state.navaid_clearance;
+                        back.x -= ux * ctx.state.navaid_clearance;
+                        back.y -= uy * ctx.state.navaid_clearance;
                     }
                 }
-                if((x1 - x0) * dx + (y1 - y0) * dy <= 0.0F) continue;
+                if((back.x - front.x) * dx + (back.y - front.y) * dy <= 0.0F)
+                    continue;
 
-                ctx.poly[layer_airways].polylines.push_back(
-                    {glm::vec2(x0, y0), glm::vec2(x1, y1)});
+                ctx.poly[layer_airways].polylines.push_back(std::move(polyline));
                 ctx.poly[layer_airways].styles.push_back(to_line_style(fs));
             }
         }
@@ -1486,12 +1521,15 @@ namespace nasrbrowse
             {
                 if(!altitude_filter_allows(ctx.req.altitude, mtr_bands(seg.route_type_code)))
                     continue;
-                float x0 = static_cast<float>(lon_to_mx(seg.from_lon) + ctx.mx_offset);
-                float y0 = static_cast<float>(lat_to_my(seg.from_lat));
-                float x1 = static_cast<float>(lon_to_mx(seg.to_lon) + ctx.mx_offset);
-                float y1 = static_cast<float>(lat_to_my(seg.to_lat));
-                ctx.poly[layer_mtrs].polylines.push_back(
-                    {glm::vec2(x0, y0), glm::vec2(x1, y1)});
+                auto arc = geodesic_interpolate(
+                    seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon);
+                std::vector<glm::vec2> polyline;
+                polyline.reserve(arc.size());
+                for(const auto& p : arc)
+                    polyline.emplace_back(
+                        static_cast<float>(lon_to_mx(p.lon) + ctx.mx_offset),
+                        static_cast<float>(lat_to_my(p.lat)));
+                ctx.poly[layer_mtrs].polylines.push_back(std::move(polyline));
                 ctx.poly[layer_mtrs].styles.push_back(to_line_style(fs));
             }
         }
@@ -1524,11 +1562,9 @@ namespace nasrbrowse
                                           c.lower_ft_val, c.lower_ft_ref))
                     continue;
                 auto ls = to_line_style(ctx.styles.sua_style(c.sua_type));
-                double lat_rad = c.center_lat * M_PI / 180.0;
-                float cx = static_cast<float>(lon_to_mx(c.center_lon) + ctx.mx_offset);
-                float cy = static_cast<float>(lat_to_my(c.center_lat));
-                float r = static_cast<float>(c.radius_nm * 1852.0 / std::cos(lat_rad));
-                ctx.poly[layer_sua].circles.push_back({{cx, cy}, r, ls});
+                add_geodesic_circle(ctx.poly[layer_sua],
+                    c.center_lat, c.center_lon, c.radius_nm,
+                    ls, ctx.mx_offset);
             }
         }
 
@@ -1539,7 +1575,6 @@ namespace nasrbrowse
             if(!area_vis && !point_vis) return;
             if(!ctx.req.altitude.any()) return;
 
-            constexpr double NM_TO_METERS = 1852.0;
             constexpr double SYMBOL_RADIUS_PJA = SYMBOL_RADIUS_AIRPORT;
 
             const auto& pjas = ctx.db.query_pjas(
@@ -1553,12 +1588,10 @@ namespace nasrbrowse
 
                 if(p.radius_nm > 0.0 && area_vis)
                 {
-                    double lat_rad = p.lat * M_PI / 180.0;
-                    float cx = static_cast<float>(lon_to_mx(p.lon) + ctx.mx_offset);
-                    float cy = static_cast<float>(lat_to_my(p.lat));
-                    float r = static_cast<float>(p.radius_nm * NM_TO_METERS / std::cos(lat_rad));
                     auto ls = to_line_style(ctx.styles.pja_area_style());
-                    ctx.poly[layer_pja].circles.push_back({{cx, cy}, r, ls});
+                    add_geodesic_circle(ctx.poly[layer_pja],
+                        p.lat, p.lon, p.radius_nm,
+                        ls, ctx.mx_offset);
                 }
                 else if(p.radius_nm <= 0.0 && point_vis)
                 {
@@ -1578,8 +1611,6 @@ namespace nasrbrowse
             if(!area_vis && !point_vis) return;
             if(!ctx.req.altitude.low_enabled()) return;
 
-            constexpr double NM_TO_METERS = 1852.0;
-
             const auto& maas = ctx.db.query_maas(
                 {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
 
@@ -1592,12 +1623,10 @@ namespace nasrbrowse
                 }
                 else if(m.radius_nm > 0.0 && area_vis)
                 {
-                    double lat_rad = m.lat * M_PI / 180.0;
-                    float cx = static_cast<float>(lon_to_mx(m.lon) + ctx.mx_offset);
-                    float cy = static_cast<float>(lat_to_my(m.lat));
-                    float r = static_cast<float>(m.radius_nm * NM_TO_METERS / std::cos(lat_rad));
                     auto ls = to_line_style(ctx.styles.maa_area_style());
-                    ctx.poly[layer_maa].circles.push_back({{cx, cy}, r, ls});
+                    add_geodesic_circle(ctx.poly[layer_maa],
+                        m.lat, m.lon, m.radius_nm,
+                        ls, ctx.mx_offset);
                 }
                 else if(m.lat != 0.0 && point_vis)
                 {
@@ -1737,36 +1766,40 @@ namespace nasrbrowse
             add_circle_to(out, cx, cy, halo_r * 0.5F, halo_ls);
         }
 
-        // Convert a polygon ring to Mercator vec2s.
+        // Convert a polygon ring to Mercator vec2s, interpolating
+        // long edges along the great circle.
         void ring_to_mercator(const std::vector<airspace_point>& pts,
                                 std::vector<glm::vec2>& out_ring)
         {
             out_ring.clear();
+            if(pts.empty()) return;
             out_ring.reserve(pts.size());
-            for(const auto& p : pts)
-                out_ring.emplace_back(static_cast<float>(lon_to_mx(p.lon)),
-                                      static_cast<float>(lat_to_my(p.lat)));
+            out_ring.emplace_back(
+                static_cast<float>(lon_to_mx(pts[0].lon)),
+                static_cast<float>(lat_to_my(pts[0].lat)));
+            for(std::size_t i = 1; i < pts.size(); i++)
+            {
+                auto seg = geodesic_interpolate(
+                    pts[i - 1].lat, pts[i - 1].lon,
+                    pts[i].lat, pts[i].lon);
+                for(std::size_t j = 1; j < seg.size(); j++)
+                    out_ring.emplace_back(
+                        static_cast<float>(lon_to_mx(seg[j].lon)),
+                        static_cast<float>(lat_to_my(seg[j].lat)));
+            }
         }
 
         void circle_to_ring(double center_lon, double center_lat,
                               double radius_nm,
                               std::vector<glm::vec2>& out_ring)
         {
-            constexpr int N = 48;
-            constexpr double NM_TO_M = 1852.0;
-            double lat_rad = center_lat * M_PI / 180.0;
-            double r = radius_nm * NM_TO_M / std::cos(lat_rad);
-            double cx = lon_to_mx(center_lon);
-            double cy = lat_to_my(center_lat);
+            auto pts = geodesic_circle(center_lat, center_lon, radius_nm);
             out_ring.clear();
-            out_ring.reserve(N + 1);
-            for(int i = 0; i <= N; i++)
-            {
-                double a = 2.0 * M_PI * i / N;
+            out_ring.reserve(pts.size());
+            for(const auto& p : pts)
                 out_ring.emplace_back(
-                    static_cast<float>(cx + r * std::cos(a)),
-                    static_cast<float>(cy + r * std::sin(a)));
-            }
+                    static_cast<float>(lon_to_mx(p.lon)),
+                    static_cast<float>(lat_to_my(p.lat)));
         }
 
         // Emit a white widened outline on top of an area feature. Same
@@ -1935,11 +1968,15 @@ namespace nasrbrowse
             line_style ls = selection_line_style(ctx.styles.airway_style(v.awy_id));
             for(const auto& seg : ctx.db.query_airway_by_id(v.awy_id))
             {
-                float x0 = static_cast<float>(lon_to_mx(seg.from_lon));
-                float y0 = static_cast<float>(lat_to_my(seg.from_lat));
-                float x1 = static_cast<float>(lon_to_mx(seg.to_lon));
-                float y1 = static_cast<float>(lat_to_my(seg.to_lat));
-                out.polylines.push_back({{x0, y0}, {x1, y1}});
+                auto arc = geodesic_interpolate(
+                    seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon);
+                std::vector<glm::vec2> polyline;
+                polyline.reserve(arc.size());
+                for(const auto& p : arc)
+                    polyline.emplace_back(
+                        static_cast<float>(lon_to_mx(p.lon)),
+                        static_cast<float>(lat_to_my(p.lat)));
+                out.polylines.push_back(std::move(polyline));
                 out.styles.push_back(ls);
             }
         }
@@ -1951,11 +1988,15 @@ namespace nasrbrowse
             line_style ls = selection_line_style(ctx.styles.mtr_style());
             for(const auto& seg : ctx.db.query_mtr_by_id(v.mtr_id))
             {
-                float x0 = static_cast<float>(lon_to_mx(seg.from_lon));
-                float y0 = static_cast<float>(lat_to_my(seg.from_lat));
-                float x1 = static_cast<float>(lon_to_mx(seg.to_lon));
-                float y1 = static_cast<float>(lat_to_my(seg.to_lat));
-                out.polylines.push_back({{x0, y0}, {x1, y1}});
+                auto arc = geodesic_interpolate(
+                    seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon);
+                std::vector<glm::vec2> polyline;
+                polyline.reserve(arc.size());
+                for(const auto& p : arc)
+                    polyline.emplace_back(
+                        static_cast<float>(lon_to_mx(p.lon)),
+                        static_cast<float>(lat_to_my(p.lat)));
+                out.polylines.push_back(std::move(polyline));
                 out.styles.push_back(ls);
             }
         }
