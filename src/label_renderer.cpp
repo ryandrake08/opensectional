@@ -2,6 +2,7 @@
 #include "render_context.hpp"
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
@@ -37,6 +38,21 @@ namespace nasrbrowse
         float angle;
         int priority;
         int layer;
+        uint8_t outline_r = OUTLINE_R;
+        uint8_t outline_g = OUTLINE_G;
+        uint8_t outline_b = OUTLINE_B;
+
+        // Composite airspace label: TYPE on left, upper/lower altitudes
+        // on right separated by a divider line.
+        std::optional<sdl::text> upper_fill, upper_outline;
+        std::optional<sdl::text> lower_fill, lower_outline;
+        std::optional<sdl::text> divider_fill, divider_outline;
+        float type_width = 0.0F;
+        float upper_width = 0.0F;
+        float lower_width = 0.0F;
+        float divider_width = 0.0F;
+        float right_col_width = 0.0F;
+        float line_height = 0.0F;
     };
 
     struct label_renderer::impl
@@ -94,16 +110,72 @@ namespace nasrbrowse
         {
             sdl::text fill(pimpl->engine, pimpl->font, lc.text.c_str());
             auto bounds = fill.get_bounds();
+
+            if(lc.upper_text.empty())
+            {
+                pimpl->labels.push_back(cached_label{
+                    .fill = std::move(fill),
+                    .outline = sdl::text(pimpl->engine, pimpl->outline_font,
+                                         lc.text.c_str()),
+                    .mx = lc.mx,
+                    .my = lc.my,
+                    .width = bounds.width(),
+                    .height = bounds.height(),
+                    .angle = lc.angle,
+                    .priority = lc.priority,
+                    .layer = lc.layer,
+                });
+                continue;
+            }
+
+            // Composite airspace label
+            constexpr float COMPOSITE_GAP = 3.0F;
+
+            sdl::text uf(pimpl->engine, pimpl->font, lc.upper_text.c_str());
+            sdl::text lf(pimpl->engine, pimpl->font, lc.lower_text.c_str());
+            float upper_w = uf.get_bounds().width();
+            float lower_w = lf.get_bounds().width();
+            float right_w = std::max(upper_w, lower_w);
+
+            std::string dashes(static_cast<size_t>(right_w / 4.0F + 1.5F), '-');
+            sdl::text df(pimpl->engine, pimpl->font, dashes.c_str());
+            float divider_w = df.get_bounds().width();
+            right_w = std::max(right_w, divider_w);
+
+            float type_w = bounds.width();
+            float total_w = type_w + COMPOSITE_GAP + right_w;
+            float line_h = bounds.height();
+            float total_h = line_h * 3.0F;
+
             pimpl->labels.push_back(cached_label{
                 .fill = std::move(fill),
-                .outline = sdl::text(pimpl->engine, pimpl->outline_font, lc.text.c_str()),
+                .outline = sdl::text(pimpl->engine, pimpl->outline_font,
+                                     lc.text.c_str()),
                 .mx = lc.mx,
                 .my = lc.my,
-                .width = bounds.width(),
-                .height = bounds.height(),
-                .angle = lc.angle,
+                .width = total_w,
+                .height = total_h,
+                .angle = 0.0F,
                 .priority = lc.priority,
                 .layer = lc.layer,
+                .outline_r = lc.outline_r,
+                .outline_g = lc.outline_g,
+                .outline_b = lc.outline_b,
+                .upper_fill = std::move(uf),
+                .upper_outline = sdl::text(pimpl->engine, pimpl->outline_font,
+                                            lc.upper_text.c_str()),
+                .lower_fill = std::move(lf),
+                .lower_outline = sdl::text(pimpl->engine, pimpl->outline_font,
+                                            lc.lower_text.c_str()),
+                .divider_fill = std::move(df),
+                .divider_outline = sdl::text(pimpl->engine, pimpl->outline_font,
+                                              dashes.c_str()),
+                .type_width = type_w,
+                .upper_width = upper_w,
+                .lower_width = lower_w,
+                .divider_width = divider_w,
+                .right_col_width = right_w,
+                .line_height = line_h,
             });
         }
     }
@@ -157,7 +229,18 @@ namespace nasrbrowse
             float x0, y0, x1, y1;
             glm::vec3 pos;
 
-            if(lbl.angle == 0.0F)
+            if(lbl.upper_fill)
+            {
+                // Composite airspace label: centered at screen point
+                x0 = sx - (lbl.width * 0.5F + LABEL_PAD_X);
+                y0 = sy - (lbl.height * 0.5F + LABEL_PAD_Y);
+                x1 = sx + (lbl.width * 0.5F + LABEL_PAD_X);
+                y1 = sy + (lbl.height * 0.5F + LABEL_PAD_Y);
+
+                float proj_y = static_cast<float>(viewport_height) - sy;
+                pos = {sx, proj_y, 0.0F};
+            }
+            else if(lbl.angle == 0.0F)
             {
                 // Point label: centered horizontally, offset above symbol
                 float lx = sx - lbl.width * 0.5F;
@@ -218,15 +301,76 @@ namespace nasrbrowse
         pimpl->fill_vertices.clear();
         pimpl->fill_indices.clear();
 
+        constexpr float COMPOSITE_GAP = 3.0F;
+        float ofs = static_cast<float>(pimpl->outline_font.get_outline() * 2);
+
         for(size_t i = 0; i < pimpl->visible.size(); i++)
         {
             size_t idx = pimpl->visible[i];
             const auto& pos = pimpl->positions[i];
-            const auto& lbl = pimpl->labels[idx];
+            auto& lbl = pimpl->labels[idx];
 
-            if(lbl.angle == 0.0F)
+            if(lbl.upper_fill)
             {
-                float ofs = static_cast<float>(pimpl->outline_font.get_outline() * 2);
+                // Composite airspace label. pos is center (Y-up proj).
+                // Layout:
+                //        UPPER
+                //  TYPE ------
+                //        LOWER
+                float left_x = pos.x - lbl.width * 0.5F;
+                float right_x = left_x + lbl.type_width + COMPOSITE_GAP;
+                float mid_y = pos.y;
+
+                // TYPE: right-justified, vertically centered
+                glm::vec3 type_pos(right_x - lbl.type_width - COMPOSITE_GAP,
+                                   mid_y - lbl.line_height * 0.5F, 0.0F);
+                glm::vec3 type_opos(type_pos.x - ofs, type_pos.y + ofs, 0.0F);
+                lbl.outline.append_geometry(
+                    pimpl->outline_vertices, pimpl->outline_indices, type_opos,
+                    lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
+                lbl.fill.append_geometry(
+                    pimpl->fill_vertices, pimpl->fill_indices, type_pos,
+                    FILL_R, FILL_G, FILL_B, FILL_A);
+
+                // Center of right column for centering text
+                float right_cx = right_x + lbl.right_col_width * 0.5F;
+
+                // UPPER: above divider, centered on right column
+                float upper_x = right_cx - lbl.upper_width * 0.5F;
+                glm::vec3 upper_pos(upper_x, mid_y + lbl.line_height * 0.5F, 0.0F);
+                glm::vec3 upper_opos(upper_pos.x - ofs, upper_pos.y + ofs, 0.0F);
+                lbl.upper_outline->append_geometry(
+                    pimpl->outline_vertices, pimpl->outline_indices, upper_opos,
+                    lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
+                lbl.upper_fill->append_geometry(
+                    pimpl->fill_vertices, pimpl->fill_indices, upper_pos,
+                    FILL_R, FILL_G, FILL_B, FILL_A);
+
+                // DIVIDER: centered on right column
+                float div_x = right_cx - lbl.divider_width * 0.5F;
+                glm::vec3 div_pos(div_x, mid_y - lbl.line_height * 0.5F, 0.0F);
+                glm::vec3 div_opos(div_pos.x - ofs, div_pos.y + ofs, 0.0F);
+                lbl.divider_outline->append_geometry(
+                    pimpl->outline_vertices, pimpl->outline_indices, div_opos,
+                    lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
+                lbl.divider_fill->append_geometry(
+                    pimpl->fill_vertices, pimpl->fill_indices, div_pos,
+                    FILL_R, FILL_G, FILL_B, FILL_A);
+
+                // LOWER: below divider, centered on right column
+                float lower_x = right_cx - lbl.lower_width * 0.5F;
+                glm::vec3 lower_pos(lower_x,
+                                    mid_y - lbl.line_height * 1.5F, 0.0F);
+                glm::vec3 lower_opos(lower_pos.x - ofs, lower_pos.y + ofs, 0.0F);
+                lbl.lower_outline->append_geometry(
+                    pimpl->outline_vertices, pimpl->outline_indices, lower_opos,
+                    lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
+                lbl.lower_fill->append_geometry(
+                    pimpl->fill_vertices, pimpl->fill_indices, lower_pos,
+                    FILL_R, FILL_G, FILL_B, FILL_A);
+            }
+            else if(lbl.angle == 0.0F)
+            {
                 glm::vec3 opos(pos.x - ofs, pos.y + ofs, 0.0F);
                 lbl.outline.append_geometry(
                     pimpl->outline_vertices, pimpl->outline_indices, opos,
@@ -241,7 +385,7 @@ namespace nasrbrowse
                 lbl.outline.append_geometry(
                     pimpl->outline_vertices, pimpl->outline_indices,
                     pos, lbl.angle,
-                    OUTLINE_R, OUTLINE_G, OUTLINE_B, OUTLINE_A);
+                    lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
 
                 lbl.fill.append_geometry(
                     pimpl->fill_vertices, pimpl->fill_indices,

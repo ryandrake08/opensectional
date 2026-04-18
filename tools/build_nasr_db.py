@@ -735,7 +735,18 @@ def build_maa(conn, csv_zf):
 
     conn.execute("CREATE INDEX idx_maa_shp ON MAA_SHP(MAA_ID)")
 
-    # Build MAA_BASE with parsed coordinates
+    # Parse MAA altitude strings like "5000AGL" → (5000, "AGL")
+    def _parse_maa_alt(s):
+        if not s or not s.strip():
+            return 0, ""
+        s = s.strip()
+        if s.endswith("AGL"):
+            return int(s[:-3]), "AGL"
+        if s.endswith("MSL"):
+            return int(s[:-3]), "MSL"
+        return 0, ""
+
+    # Build MAA_BASE with parsed coordinates and altitudes
     conn.execute("""
         CREATE TABLE MAA_BASE AS
         SELECT
@@ -748,9 +759,23 @@ def build_maa(conn, csv_zf):
             0.0 AS LON,
             CASE WHEN MAA_RADIUS IS NOT NULL AND TRIM(MAA_RADIUS) != ''
                  THEN CAST(MAA_RADIUS AS REAL) ELSE 0.0 END AS RADIUS_NM,
-            MAX_ALT, MIN_ALT
+            0 AS MAX_ALT_FT,
+            '' AS MAX_ALT_REF,
+            0 AS MIN_ALT_FT,
+            '' AS MIN_ALT_REF
         FROM MAA_RAW
     """)
+
+    alt_updates = []
+    for row in conn.execute(
+            "SELECT rowid, MAX_ALT, MIN_ALT FROM MAA_RAW"):
+        max_ft, max_ref = _parse_maa_alt(row[1])
+        min_ft, min_ref = _parse_maa_alt(row[2])
+        alt_updates.append((max_ft, max_ref, min_ft, min_ref, row[0]))
+    conn.executemany(
+        "UPDATE MAA_BASE SET MAX_ALT_FT=?, MAX_ALT_REF=?, "
+        "MIN_ALT_FT=?, MIN_ALT_REF=? WHERE rowid=?",
+        alt_updates)
     conn.execute("DROP TABLE MAA_RAW")
 
     cursor = conn.execute(
@@ -3751,6 +3776,41 @@ def build_cls_arsp(conn, shp_zf):
     )
 
     # Create base table
+    def _parse_cls_arsp_alt(desc, val, uom, code):
+        """Parse class airspace altitude fields into (ft, ref).
+
+        Fields from the shapefile:
+          DESC: AA (And Above), TI (To Including), TNI (To Not Including),
+                ANI (Above Not Including), or blank
+          VAL:  altitude in feet, or -9998 for undefined
+          UOM:  FT or blank
+          CODE: MSL, SFC, STD, UNLTD, or blank
+
+        CODE is the authoritative reference. DESC=AA with blank
+        CODE/UOM and VAL=-9998 means "up to overlying airspace"
+        (typically 18000 MSL for Class E).
+        """
+        if not val or not val.strip():
+            return 0, ""
+        try:
+            ft = int(val)
+        except ValueError:
+            return 0, ""
+        if ft < 0:
+            return 0, ""
+        if code == "SFC" or (ft == 0 and not code):
+            return 0, "SFC"
+        if code == "MSL" or code == "STD":
+            return ft, "MSL"
+        if code == "UNLTD":
+            return 0, ""
+        # Blank code: infer from context.  All class airspace altitudes
+        # are MSL except Class E AA entries with -9998 (already filtered
+        # above as ft < 0).
+        if ft > 0:
+            return ft, "MSL"
+        return 0, ""
+
     conn.execute("DROP TABLE IF EXISTS CLS_ARSP_BASE")
     conn.execute("""
         CREATE TABLE CLS_ARSP_BASE (
@@ -3760,10 +3820,10 @@ def build_cls_arsp(conn, shp_zf):
             LOCAL_TYPE TEXT,
             IDENT TEXT,
             SECTOR TEXT,
-            UPPER_DESC TEXT,
-            UPPER_VAL TEXT,
-            LOWER_DESC TEXT,
-            LOWER_VAL TEXT,
+            UPPER_FT INTEGER,
+            UPPER_REF TEXT,
+            LOWER_FT INTEGER,
+            LOWER_REF TEXT,
             WKHR_CODE TEXT,
             WKHR_RMK TEXT
         )
@@ -3790,6 +3850,12 @@ def build_cls_arsp(conn, shp_zf):
     base_rows = []
     shp_rows = []
     for arsp_id, (rec, parts) in enumerate(zip(records, geometries), start=1):
+        upper_ft, upper_ref = _parse_cls_arsp_alt(
+            rec.get("UPPER_DESC", ""), rec.get("UPPER_VAL", ""),
+            rec.get("UPPER_UOM", ""), rec.get("UPPER_CODE", ""))
+        lower_ft, lower_ref = _parse_cls_arsp_alt(
+            rec.get("LOWER_DESC", ""), rec.get("LOWER_VAL", ""),
+            rec.get("LOWER_UOM", ""), rec.get("LOWER_CODE", ""))
         base_rows.append((
             arsp_id,
             rec.get("NAME", ""),
@@ -3797,10 +3863,10 @@ def build_cls_arsp(conn, shp_zf):
             rec.get("LOCAL_TYPE", ""),
             rec.get("IDENT", ""),
             rec.get("SECTOR", ""),
-            rec.get("UPPER_DESC", ""),
-            rec.get("UPPER_VAL", ""),
-            rec.get("LOWER_DESC", ""),
-            rec.get("LOWER_VAL", ""),
+            upper_ft,
+            upper_ref,
+            lower_ft,
+            lower_ref,
             rec.get("WKHR_CODE", ""),
             rec.get("WKHR_RMK", ""),
         ))

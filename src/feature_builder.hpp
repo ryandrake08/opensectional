@@ -64,6 +64,9 @@ namespace nasrbrowse
         int priority;               // Higher = placed first
         int layer;                  // layer_id for visibility filtering
         float angle = 0.0F;         // Rotation in radians (0 = horizontal above point)
+        std::string upper_text;     // Composite airspace label (when non-empty)
+        std::string lower_text;
+        uint8_t outline_r = 0, outline_g = 0, outline_b = 0;
     };
 
     // Cross-feature scratch state shared across a single build pass.

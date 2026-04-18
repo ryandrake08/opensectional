@@ -830,7 +830,8 @@ namespace nasrbrowse
                 {"Local type", v.local_type},
                 {"Ident",      v.ident},
                 {"Sector",     v.sector},
-                {"Upper",      v.upper_val.empty() && v.upper_desc.empty() ? std::string() : v.upper_desc + " " + v.upper_val},
+                {"Upper",      v.upper_ref.empty() ? std::string() : std::to_string(v.upper_ft) + " " + v.upper_ref},
+                {"Lower",      v.lower_ref.empty() ? std::string() : std::to_string(v.lower_ft) + " " + v.lower_ref},
             };
         }
 
@@ -957,8 +958,8 @@ namespace nasrbrowse
                 {"ID",      v.maa_id},
                 {"Name",    v.name},
                 {"Type",    v.type},
-                {"Min alt", v.min_alt},
-                {"Max alt", v.max_alt},
+                {"Min alt", std::to_string(v.min_alt_ft) + " " + v.min_alt_ref},
+                {"Max alt", std::to_string(v.max_alt_ft) + " " + v.max_alt_ref},
                 {"Radius",  fmt_dbl(v.radius_nm, 1) + " NM"},
             };
         }
@@ -1050,6 +1051,35 @@ namespace nasrbrowse
         constexpr int LABEL_PRIORITY_AIRWAY              = 50;
         constexpr int LABEL_PRIORITY_FIX_AIRWAY        = 30;
         constexpr int LABEL_PRIORITY_FIX_OTHER         = 20;
+        constexpr int LABEL_PRIORITY_AIRSPACE          = 10;
+
+        constexpr int AIRSPACE_LABEL_MIN_ZOOM = 10;
+
+        static uint8_t to_u8(float f) { return static_cast<uint8_t>(f * 255.0F); }
+
+        static geo_bbox request_bbox(const feature_build_request& req)
+        {
+            return {req.lon_min, req.lat_min, req.lon_max, req.lat_max};
+        }
+
+        static void emit_airspace_label(
+            const build_context& ctx, const std::string& type_text,
+            double mx, double my, int layer,
+            const std::string& upper, const std::string& lower,
+            const feature_style& fs)
+        {
+            ctx.labels.push_back({
+                .text = type_text,
+                .mx = mx, .my = my,
+                .priority = LABEL_PRIORITY_AIRSPACE,
+                .layer = layer,
+                .upper_text = upper,
+                .lower_text = lower,
+                .outline_r = to_u8(fs.r),
+                .outline_g = to_u8(fs.g),
+                .outline_b = to_u8(fs.b),
+            });
+        }
 
         bool is_military_apt(const airport& apt)
         {
@@ -1338,7 +1368,7 @@ namespace nasrbrowse
         {
             if(!ctx.styles.any_airport_visible(ctx.req.zoom)) return;
             const auto& airports = ctx.db.query_airports(
-                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max},
+                request_bbox(ctx.req),
                 ctx.styles.visible_airport_classes(ctx.req.zoom));
 
             float r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
@@ -1358,11 +1388,14 @@ namespace nasrbrowse
 
                 const auto& id = apt.icao_id.empty() ? apt.arpt_id : apt.icao_id;
                 bool towered = apt.twr_type_code.find("ATCT") != std::string::npos;
-                ctx.labels.push_back({id,
-                    lon_to_mx(apt.lon) + ctx.mx_offset, lat_to_my(apt.lat),
-                    towered ? LABEL_PRIORITY_AIRPORT_TOWERED
-                            : LABEL_PRIORITY_AIRPORT_UNTOWERED,
-                    layer_airports});
+                ctx.labels.push_back({
+                    .text = id,
+                    .mx = lon_to_mx(apt.lon) + ctx.mx_offset,
+                    .my = lat_to_my(apt.lat),
+                    .priority = towered ? LABEL_PRIORITY_AIRPORT_TOWERED
+                                        : LABEL_PRIORITY_AIRPORT_UNTOWERED,
+                    .layer = layer_airports,
+                });
             }
         }
 
@@ -1372,7 +1405,7 @@ namespace nasrbrowse
             if(!ctx.req.altitude.low_enabled()) return;
 
             const auto& runways = ctx.db.query_runways(
-                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+                request_bbox(ctx.req));
             const auto& fs = ctx.styles.runway_style();
 
             for(const auto& rwy : runways)
@@ -1394,7 +1427,7 @@ namespace nasrbrowse
             constexpr float NAV_CLEARANCE = 2.0F;
 
             const auto& navaids = ctx.db.query_navaids(
-                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+                request_bbox(ctx.req));
             float r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
 
             ctx.state.navaid_positions.clear();
@@ -1419,10 +1452,14 @@ namespace nasrbrowse
 
                 bool is_vor = nav.nav_type.find("VOR") != std::string::npos
                            || nav.nav_type == "TACAN" || nav.nav_type == "VORTAC";
-                ctx.labels.push_back({nav.nav_id,
-                    lon_to_mx(nav.lon) + ctx.mx_offset, lat_to_my(nav.lat),
-                    is_vor ? LABEL_PRIORITY_NAVAID_VOR : LABEL_PRIORITY_NAVAID_NDB,
-                    layer_navaids});
+                ctx.labels.push_back({
+                    .text = nav.nav_id,
+                    .mx = lon_to_mx(nav.lon) + ctx.mx_offset,
+                    .my = lat_to_my(nav.lat),
+                    .priority = is_vor ? LABEL_PRIORITY_NAVAID_VOR
+                                       : LABEL_PRIORITY_NAVAID_NDB,
+                    .layer = layer_navaids,
+                });
             }
         }
 
@@ -1446,7 +1483,7 @@ namespace nasrbrowse
             ctx.state.airway_waypoints.clear();
             if(!ctx.styles.any_airway_visible(ctx.req.zoom)) return;
             const auto& airways = ctx.db.query_airways(
-                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+                request_bbox(ctx.req));
 
             // Visible segment info for label placement
             struct seg_info
@@ -1536,9 +1573,11 @@ namespace nasrbrowse
                     labeled.insert(i);
                     const auto& s = segs[i];
                     ctx.labels.push_back({
-                        awy_id, s.mid_mx, s.mid_my,
-                        LABEL_PRIORITY_AIRWAY, layer_airways,
-                        segment_angle(s.dx, s.dy),
+                        .text = awy_id,
+                        .mx = s.mid_mx, .my = s.mid_my,
+                        .priority = LABEL_PRIORITY_AIRWAY,
+                        .layer = layer_airways,
+                        .angle = segment_angle(s.dx, s.dy),
                     });
                 }
                 // Always emit at least one label
@@ -1547,9 +1586,11 @@ namespace nasrbrowse
                     const auto& s = segs[n / 2];
                     labeled.insert(n / 2);
                     ctx.labels.push_back({
-                        awy_id, s.mid_mx, s.mid_my,
-                        LABEL_PRIORITY_AIRWAY, layer_airways,
-                        segment_angle(s.dx, s.dy),
+                        .text = awy_id,
+                        .mx = s.mid_mx, .my = s.mid_my,
+                        .priority = LABEL_PRIORITY_AIRWAY,
+                        .layer = layer_airways,
+                        .angle = segment_angle(s.dx, s.dy),
                     });
                 }
 
@@ -1563,9 +1604,11 @@ namespace nasrbrowse
                     {
                         const auto& s = segs[i];
                         ctx.labels.push_back({
-                            awy_id, s.mid_mx, s.mid_my,
-                            LABEL_PRIORITY_AIRWAY, layer_airways,
-                            segment_angle(s.dx, s.dy),
+                            .text = awy_id,
+                            .mx = s.mid_mx, .my = s.mid_my,
+                            .priority = LABEL_PRIORITY_AIRWAY,
+                            .layer = layer_airways,
+                            .angle = segment_angle(s.dx, s.dy),
                         });
                     }
                 }
@@ -1577,7 +1620,7 @@ namespace nasrbrowse
             if(!ctx.styles.any_fix_visible(ctx.req.zoom)) return;
             if(!ctx.req.altitude.any()) return;
             const auto& fixes = ctx.db.query_fixes(
-                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+                request_bbox(ctx.req));
             float radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_FIX);
 
             for(const auto& f : fixes)
@@ -1595,10 +1638,14 @@ namespace nasrbrowse
                 emit_fix_icon(ctx.poly[layer_fixes], cx, cy, radius, f, fs);
 
                 bool on_airway = ctx.fix_on_airway(f.fix_id);
-                ctx.labels.push_back({f.fix_id,
-                    lon_to_mx(f.lon) + ctx.mx_offset, lat_to_my(f.lat),
-                    on_airway ? LABEL_PRIORITY_FIX_AIRWAY : LABEL_PRIORITY_FIX_OTHER,
-                    layer_fixes});
+                ctx.labels.push_back({
+                    .text = f.fix_id,
+                    .mx = lon_to_mx(f.lon) + ctx.mx_offset,
+                    .my = lat_to_my(f.lat),
+                    .priority = on_airway ? LABEL_PRIORITY_FIX_AIRWAY
+                                          : LABEL_PRIORITY_FIX_OTHER,
+                    .layer = layer_fixes,
+                });
             }
         }
 
@@ -1608,7 +1655,7 @@ namespace nasrbrowse
             if(!ctx.req.altitude.any()) return;
 
             const auto& mtrs = ctx.db.query_mtrs(
-                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+                request_bbox(ctx.req));
             const auto& fs = ctx.styles.mtr_style();
 
             struct seg_info
@@ -1653,11 +1700,109 @@ namespace nasrbrowse
                 size_t median = segs.size() / 2;
                 const auto& ms = segs[median];
                 ctx.labels.push_back({
-                    mtr_id, ms.mid_mx, ms.mid_my,
-                    LABEL_PRIORITY_AIRWAY, layer_mtrs,
-                    segment_angle(ms.dx, ms.dy),
+                    .text = mtr_id,
+                    .mx = ms.mid_mx, .my = ms.mid_my,
+                    .priority = LABEL_PRIORITY_AIRWAY,
+                    .layer = layer_mtrs,
+                    .angle = segment_angle(ms.dx, ms.dy),
                 });
             }
+        }
+
+        // Format altitude value for airspace labels: round to nearest
+        // 100 feet, zero-pad to 3 digits. AGL gets "A" suffix.
+        static std::string format_altitude(int ft_val, const std::string& ft_ref)
+        {
+            if(ft_val <= 0 && (ft_ref == "SFC" || ft_ref.empty()))
+                return "SFC";
+            if(ft_val < 0) return "";
+            int hundreds = (ft_val + 50) / 100;
+            char buf[8];
+            if(ft_ref == "MSL" || ft_ref == "STD")
+                std::snprintf(buf, sizeof(buf), "%03d", hundreds);
+            else
+                std::snprintf(buf, sizeof(buf), "%03dA", hundreds);
+            return buf;
+        }
+
+        static const char* sua_type_label(const std::string& sua_type)
+        {
+            if(sua_type == "PA") return "PRO";
+            if(sua_type == "RA") return "RES";
+            if(sua_type == "AA") return "ALR";
+            if(sua_type == "WA") return "WRN";
+            if(sua_type == "MOA") return "MOA";
+            if(sua_type == "NSA") return "NSA";
+            return sua_type.c_str();
+        }
+
+        // Pick a label position inside an airspace polygon: midpoint of
+        // the longest edge, nudged 30% toward the centroid so the label
+        // sits inside the boundary rather than on it.
+        static std::pair<double, double> polygon_label_pos(
+            const std::vector<airspace_point>& pts, double mx_offset)
+        {
+            if(pts.size() < 2)
+            {
+                double mx = lon_to_mx(pts[0].lon) + mx_offset;
+                double my = lat_to_my(pts[0].lat);
+                return {mx, my};
+            }
+
+            // Centroid
+            double sum_mx = 0.0, sum_my = 0.0;
+            for(const auto& p : pts)
+            {
+                sum_mx += lon_to_mx(p.lon) + mx_offset;
+                sum_my += lat_to_my(p.lat);
+            }
+            double n = static_cast<double>(pts.size());
+            double cx = sum_mx / n;
+            double cy = sum_my / n;
+
+            // Longest edge midpoint
+            double best_len2 = 0.0;
+            double best_mx = cx, best_my = cy;
+            for(size_t i = 0; i < pts.size(); i++)
+            {
+                size_t j = (i + 1) % pts.size();
+                double ax = lon_to_mx(pts[i].lon) + mx_offset;
+                double ay = lat_to_my(pts[i].lat);
+                double bx = lon_to_mx(pts[j].lon) + mx_offset;
+                double by = lat_to_my(pts[j].lat);
+                double dx = bx - ax;
+                double dy = by - ay;
+                double len2 = dx * dx + dy * dy;
+                if(len2 > best_len2)
+                {
+                    best_len2 = len2;
+                    best_mx = (ax + bx) * 0.5;
+                    best_my = (ay + by) * 0.5;
+                }
+            }
+
+            // Blend 70% edge midpoint, 30% centroid
+            constexpr double EDGE_WEIGHT = 0.7;
+            return {best_mx * EDGE_WEIGHT + cx * (1.0 - EDGE_WEIGHT),
+                    best_my * EDGE_WEIGHT + cy * (1.0 - EDGE_WEIGHT)};
+        }
+
+        // Label position for a circular airspace: a point on the
+        // circumference (upper-right quadrant), nudged 30% toward center.
+        static std::pair<double, double> circle_label_pos(
+            double lat, double lon, double radius_nm, double mx_offset)
+        {
+            constexpr double NM_TO_DEG_LAT = 1.0 / 60.0;
+            double edge_lat = lat + radius_nm * NM_TO_DEG_LAT * 0.707;
+            double edge_lon = lon + radius_nm * NM_TO_DEG_LAT * 0.707
+                / std::cos(lat * M_PI / 180.0);
+            double cmx = lon_to_mx(lon) + mx_offset;
+            double cmy = lat_to_my(lat);
+            double emx = lon_to_mx(edge_lon) + mx_offset;
+            double emy = lat_to_my(edge_lat);
+            constexpr double EDGE_WEIGHT = 0.7;
+            return {emx * EDGE_WEIGHT + cmx * (1.0 - EDGE_WEIGHT),
+                    emy * EDGE_WEIGHT + cmy * (1.0 - EDGE_WEIGHT)};
         }
 
         void sua_type::build(const build_context& ctx) const
@@ -1665,8 +1810,7 @@ namespace nasrbrowse
             if(!ctx.styles.any_sua_visible(ctx.req.zoom)) return;
             if(!ctx.req.altitude.any()) return;
             auto sua_filter = ctx.styles.visible_sua_types(ctx.req.zoom);
-            geo_bbox bbox{ctx.req.lon_min, ctx.req.lat_min,
-                          ctx.req.lon_max, ctx.req.lat_max};
+            auto bbox = request_bbox(ctx.req);
 
             const auto& segs = ctx.db.query_sua_segments(bbox, sua_filter);
             for(const auto& seg : segs)
@@ -1692,6 +1836,29 @@ namespace nasrbrowse
                     c.center_lat, c.center_lon, c.radius_nm,
                     ls, ctx.mx_offset);
             }
+
+            // Labels from full SUA query
+            if(ctx.req.zoom < AIRSPACE_LABEL_MIN_ZOOM) return;
+            const auto& suas = ctx.db.query_sua(bbox, sua_filter);
+            for(const auto& s : suas)
+            {
+                if(!ctx.styles.sua_visible(s.sua_type, ctx.req.zoom)) continue;
+                if(s.strata.empty()) continue;
+                const auto& st = s.strata[0];
+                if(!sua_altitude_visible(ctx.req.altitude,
+                                          st.upper_ft_val, st.upper_ft_ref,
+                                          st.lower_ft_val, st.lower_ft_ref))
+                    continue;
+                if(st.parts.empty() || st.parts[0].points.empty()) continue;
+
+                auto [cmx, cmy] = polygon_label_pos(st.parts[0].points,
+                                                    ctx.mx_offset);
+                emit_airspace_label(ctx, sua_type_label(s.sua_type),
+                    cmx, cmy, layer_sua,
+                    format_altitude(st.upper_ft_val, st.upper_ft_ref),
+                    format_altitude(st.lower_ft_val, st.lower_ft_ref),
+                    ctx.styles.sua_style(s.sua_type));
+            }
         }
 
         void pja_type::build(const build_context& ctx) const
@@ -1704,7 +1871,7 @@ namespace nasrbrowse
             constexpr double SYMBOL_RADIUS_PJA = SYMBOL_RADIUS_AIRPORT;
 
             const auto& pjas = ctx.db.query_pjas(
-                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+                request_bbox(ctx.req));
 
             for(const auto& p : pjas)
             {
@@ -1718,6 +1885,17 @@ namespace nasrbrowse
                     add_geodesic_circle(ctx.poly[layer_pja],
                         p.lat, p.lon, p.radius_nm,
                         ls, ctx.mx_offset);
+
+                    if(ctx.req.zoom >= AIRSPACE_LABEL_MIN_ZOOM)
+                    {
+                        auto [mx, my] = circle_label_pos(
+                            p.lat, p.lon, p.radius_nm, ctx.mx_offset);
+                        std::string upper = p.max_altitude_ft_msl > 0
+                            ? format_altitude(p.max_altitude_ft_msl, "MSL")
+                            : "UNL";
+                        emit_airspace_label(ctx, "PJA", mx, my, layer_pja,
+                            upper, "SFC", ctx.styles.pja_area_style());
+                    }
                 }
                 else if(p.radius_nm <= 0.0 && point_vis)
                 {
@@ -1738,14 +1916,16 @@ namespace nasrbrowse
             if(!ctx.req.altitude.low_enabled()) return;
 
             const auto& maas = ctx.db.query_maas(
-                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+                request_bbox(ctx.req));
 
             for(const auto& m : maas)
             {
+                bool is_area = false;
                 if(!m.shape.empty() && area_vis)
                 {
                     auto ls = to_line_style(ctx.styles.maa_area_style());
                     add_polyline(ctx.poly[layer_maa], m.shape, ls, ctx.mx_offset);
+                    is_area = true;
                 }
                 else if(m.radius_nm > 0.0 && area_vis)
                 {
@@ -1753,6 +1933,7 @@ namespace nasrbrowse
                     add_geodesic_circle(ctx.poly[layer_maa],
                         m.lat, m.lon, m.radius_nm,
                         ls, ctx.mx_offset);
+                    is_area = true;
                 }
                 else if(m.lat != 0.0 && point_vis)
                 {
@@ -1762,6 +1943,32 @@ namespace nasrbrowse
                     emit_maa_point_icon(ctx.poly[layer_maa], cx, cy, r, m,
                                          ctx.styles.maa_point_style());
                 }
+
+                if(is_area && ctx.req.zoom >= AIRSPACE_LABEL_MIN_ZOOM)
+                {
+                    double mx, my;
+                    if(!m.shape.empty())
+                    {
+                        auto [smx, smy] = polygon_label_pos(m.shape,
+                                                             ctx.mx_offset);
+                        mx = smx;
+                        my = smy;
+                    }
+                    else
+                    {
+                        auto [cmx, cmy] = circle_label_pos(
+                            m.lat, m.lon, m.radius_nm, ctx.mx_offset);
+                        mx = cmx;
+                        my = cmy;
+                    }
+                    std::string upper = format_altitude(m.max_alt_ft,
+                        m.max_alt_ref.empty() ? "MSL" : m.max_alt_ref);
+                    std::string lower = format_altitude(m.min_alt_ft,
+                        m.min_alt_ref.empty() ? "SFC" : m.min_alt_ref);
+                    if(upper.empty()) upper = "UNL";
+                    emit_airspace_label(ctx, "MAA", mx, my, layer_maa,
+                        upper, lower, ctx.styles.maa_area_style());
+                }
             }
         }
 
@@ -1769,8 +1976,7 @@ namespace nasrbrowse
         {
             if(!ctx.styles.tfr_visible(ctx.req.zoom)) return;
             if(!ctx.req.altitude.any()) return;
-            geo_bbox bbox{ctx.req.lon_min, ctx.req.lat_min,
-                          ctx.req.lon_max, ctx.req.lat_max};
+            auto bbox = request_bbox(ctx.req);
             const auto& segs = ctx.db.query_tfr_segments(bbox);
             auto ls = to_line_style(ctx.styles.tfr_style());
             for(const auto& seg : segs)
@@ -1781,24 +1987,54 @@ namespace nasrbrowse
                     continue;
                 add_polyline(ctx.poly[layer_tfr], seg.points, ls, ctx.mx_offset);
             }
+
+            if(ctx.req.zoom < AIRSPACE_LABEL_MIN_ZOOM) return;
+            const auto& tfrs = ctx.db.query_tfr(bbox);
+            const auto& fs = ctx.styles.tfr_style();
+            for(const auto& t : tfrs)
+            {
+                for(const auto& area : t.areas)
+                {
+                    if(!sua_altitude_visible(ctx.req.altitude,
+                                              area.upper_ft_val, area.upper_ft_ref,
+                                              area.lower_ft_val, area.lower_ft_ref))
+                        continue;
+                    if(area.points.empty()) continue;
+                    auto [cmx, cmy] = polygon_label_pos(area.points, ctx.mx_offset);
+                    emit_airspace_label(ctx, "TFR", cmx, cmy, layer_tfr,
+                        format_altitude(area.upper_ft_val, area.upper_ft_ref),
+                        format_altitude(area.lower_ft_val, area.lower_ft_ref),
+                        fs);
+                }
+            }
         }
 
         void adiz_type::build(const build_context& ctx) const
         {
             if(!ctx.styles.adiz_visible(ctx.req.zoom)) return;
-            const auto& segs = ctx.db.query_adiz_segments(
-                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+            auto bbox = request_bbox(ctx.req);
+            const auto& segs = ctx.db.query_adiz_segments(bbox);
             auto ls = to_line_style(ctx.styles.adiz_style());
             for(const auto& seg : segs)
                 add_polyline(ctx.poly[layer_adiz], seg.points, ls, ctx.mx_offset);
+
+            if(ctx.req.zoom < AIRSPACE_LABEL_MIN_ZOOM) return;
+            const auto& adizs = ctx.db.query_adiz(bbox);
+            for(const auto& a : adizs)
+            {
+                if(a.parts.empty() || a.parts[0].empty()) continue;
+                auto [cmx, cmy] = polygon_label_pos(a.parts[0], ctx.mx_offset);
+                emit_airspace_label(ctx, "ADIZ", cmx, cmy, layer_adiz,
+                    "UNL", "SFC", ctx.styles.adiz_style());
+            }
         }
 
         void artcc_type::build(const build_context& ctx) const
         {
             if(!ctx.styles.any_artcc_visible(ctx.req.zoom)) return;
             if(!ctx.req.altitude.any()) return;
-            const auto& segs = ctx.db.query_artcc_segments(
-                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+            auto bbox = request_bbox(ctx.req);
+            const auto& segs = ctx.db.query_artcc_segments(bbox);
             for(const auto& seg : segs)
             {
                 if(!ctx.styles.artcc_visible(seg.altitude, ctx.req.zoom)) continue;
@@ -1807,6 +2043,20 @@ namespace nasrbrowse
                 auto ls = to_line_style(ctx.styles.artcc_style(seg.altitude));
                 add_polyline(ctx.poly[layer_artcc], seg.points, ls, ctx.mx_offset);
             }
+
+            if(ctx.req.zoom < AIRSPACE_LABEL_MIN_ZOOM) return;
+            const auto& artccs = ctx.db.query_artcc(bbox);
+            for(const auto& a : artccs)
+            {
+                if(!ctx.styles.artcc_visible(a.altitude, ctx.req.zoom)) continue;
+                if(!altitude_filter_allows(ctx.req.altitude, artcc_bands(a.altitude)))
+                    continue;
+                if(a.points.empty()) continue;
+                auto [cmx, cmy] = polygon_label_pos(a.points, ctx.mx_offset);
+                emit_airspace_label(ctx, "ARTCC", cmx, cmy, layer_artcc,
+                    a.location_id, a.altitude,
+                    ctx.styles.artcc_style(a.altitude));
+            }
         }
 
         void obstacle_type::build(const build_context& ctx) const
@@ -1814,7 +2064,7 @@ namespace nasrbrowse
             if(!ctx.styles.any_obstacle_visible(ctx.req.zoom)) return;
             if(!ctx.req.altitude.low_enabled()) return;
             const auto& obstacles = ctx.db.query_obstacles(
-                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max});
+                request_bbox(ctx.req));
             float radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_OBSTACLE);
 
             for(const auto& obs : obstacles)
@@ -1831,9 +2081,9 @@ namespace nasrbrowse
         {
             if(!ctx.styles.any_airspace_visible(ctx.req.zoom)) return;
             if(!ctx.req.altitude.low_enabled()) return;
+            auto bbox = request_bbox(ctx.req);
             const auto& segs = ctx.db.query_class_airspace_segments(
-                {ctx.req.lon_min, ctx.req.lat_min, ctx.req.lon_max, ctx.req.lat_max},
-                ctx.styles.visible_airspace_values(ctx.req.zoom));
+                bbox, ctx.styles.visible_airspace_values(ctx.req.zoom));
             for(const auto& seg : segs)
             {
                 if(!ctx.styles.airspace_visible(seg.airspace_class, seg.local_type,
@@ -1841,6 +2091,28 @@ namespace nasrbrowse
                 auto ls = to_line_style(ctx.styles.airspace_style(
                     seg.airspace_class, seg.local_type));
                 add_polyline(ctx.poly[layer_airspace], seg.points, ls, ctx.mx_offset);
+            }
+
+            if(ctx.req.zoom < AIRSPACE_LABEL_MIN_ZOOM) return;
+            const auto& arsp = ctx.db.query_class_airspace(bbox);
+            for(const auto& a : arsp)
+            {
+                if(!ctx.styles.airspace_visible(a.airspace_class, a.local_type,
+                                                 ctx.req.zoom)) continue;
+                if(a.parts.empty() || a.parts[0].points.empty()) continue;
+                auto [cmx, cmy] = polygon_label_pos(a.parts[0].points,
+                                                    ctx.mx_offset);
+                const auto& fs = ctx.styles.airspace_style(
+                    a.airspace_class, a.local_type);
+                // Undefined upper (class E) defaults to 18000 MSL (FL180)
+                std::string upper = a.upper_ref.empty()
+                    ? format_altitude(18000, "MSL")
+                    : format_altitude(a.upper_ft, a.upper_ref);
+                std::string lower = a.lower_ref == "SFC" || a.lower_ref.empty()
+                    ? "SFC"
+                    : format_altitude(a.lower_ft, a.lower_ref);
+                emit_airspace_label(ctx, a.airspace_class,
+                    cmx, cmy, layer_airspace, upper, lower, fs);
             }
         }
 
@@ -1862,9 +2134,7 @@ namespace nasrbrowse
             if(!ctx.styles.rco_visible(ctx.req.zoom)) return;
             if(!ctx.req.altitude.low_enabled()) return;
             build_comm_impl(ctx, layer_rco, to_line_style(ctx.styles.rco_style()),
-                             ctx.db.query_comm_outlets(
-                                 {ctx.req.lon_min, ctx.req.lat_min,
-                                  ctx.req.lon_max, ctx.req.lat_max}));
+                             ctx.db.query_comm_outlets(request_bbox(ctx.req)));
         }
 
         void awos_type::build(const build_context& ctx) const
@@ -1872,9 +2142,7 @@ namespace nasrbrowse
             if(!ctx.styles.awos_visible(ctx.req.zoom)) return;
             if(!ctx.req.altitude.low_enabled()) return;
             build_comm_impl(ctx, layer_awos, to_line_style(ctx.styles.awos_style()),
-                             ctx.db.query_awos(
-                                 {ctx.req.lon_min, ctx.req.lat_min,
-                                  ctx.req.lon_max, ctx.req.lat_max}));
+                             ctx.db.query_awos(request_bbox(ctx.req)));
         }
 
         // -- build_selection() bodies ---------------------------------------

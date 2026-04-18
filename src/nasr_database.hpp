@@ -127,8 +127,10 @@ namespace nasrbrowse
         double lat;         // 0 if shape-defined
         double lon;
         double radius_nm;   // 0 if point-only or shape-defined
-        std::string max_alt;
-        std::string min_alt;
+        int max_alt_ft;
+        std::string max_alt_ref;  // "MSL" or "AGL"
+        int min_alt_ft;
+        std::string min_alt_ref;
         std::vector<airspace_point> shape;  // empty if point/radius
     };
 
@@ -439,10 +441,10 @@ namespace nasrbrowse
         std::string local_type;      // "CLASS_B", "CLASS_C", "CLASS_D", "CLASS_E2", etc.
         std::string ident;
         std::string sector;
-        std::string upper_desc;      // "AA", "TI", "TNI", "ANI"
-        std::string upper_val;
-        std::string lower_desc;
-        std::string lower_val;
+        int upper_ft;
+        std::string upper_ref;       // "MSL", "AGL", or "" (undefined)
+        int lower_ft;
+        std::string lower_ref;       // "MSL", "AGL", "SFC", or ""
         std::string wkhr_code;
         std::string wkhr_rmk;
         std::vector<polygon_ring> parts;

@@ -200,14 +200,14 @@ namespace nasrbrowse
 
             , stmt_maas(prepare_checked(db, R"(
                 SELECT MAA_ID, TYPE, NAME, LAT, LON, RADIUS_NM,
-                       MAX_ALT, MIN_ALT
+                       MAX_ALT_FT, MAX_ALT_REF, MIN_ALT_FT, MIN_ALT_REF
                 FROM MAA_BASE
                 WHERE rowid IN (
                     SELECT id FROM MAA_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 8))
+            )", 10))
 
             , stmt_maa_shape(prepare_checked(db, R"(
                 SELECT LON_DECIMAL, LAT_DECIMAL
@@ -219,7 +219,7 @@ namespace nasrbrowse
             , stmt_cls_arsp(prepare_checked(db, R"(
                 SELECT ARSP_ID, NAME, CLASS, LOCAL_TYPE,
                        IDENT, SECTOR,
-                       UPPER_DESC, UPPER_VAL, LOWER_DESC, LOWER_VAL,
+                       UPPER_FT, UPPER_REF, LOWER_FT, LOWER_REF,
                        WKHR_CODE, WKHR_RMK
                 FROM CLS_ARSP_BASE
                 WHERE ARSP_ID IN (
@@ -750,7 +750,8 @@ namespace nasrbrowse
         {
             maa m{s.column_text(0), s.column_text(1), s.column_text(2),
                   s.column_double(3), s.column_double(4), s.column_double(5),
-                  s.column_text(6), s.column_text(7), {}};
+                  s.column_int(6), s.column_text(7),
+                  s.column_int(8), s.column_text(9), {}};
 
             // Load shape polygon for shape-defined entries
             if (m.lat == 0.0)
@@ -776,7 +777,7 @@ namespace nasrbrowse
             class_airspace a{s.column_int(0),
                 s.column_text(1), s.column_text(2), s.column_text(3),
                 s.column_text(4), s.column_text(5),
-                s.column_text(6), s.column_text(7), s.column_text(8), s.column_text(9),
+                s.column_int(6), s.column_text(7), s.column_int(8), s.column_text(9),
                 s.column_text(10), s.column_text(11), {}};
 
             d.stmt_cls_arsp_shape.reset();

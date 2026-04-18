@@ -1,6 +1,6 @@
 # NASRBrowse
 
-A desktop application for visualizing FAA NASR (National Airspace System Resource) data on an interactive map. Displays airports, navaids, fixes, airways, airspace boundaries, TFRs, military training routes, obstacles, weather stations, and communication outlets as vector overlays on a raster basemap. Geographic features use spherical geometry (great-circle arcs, geodesic circles).
+A desktop application for visualizing FAA NASR (National Airspace System Resource) data on an interactive map. Displays airports, navaids, fixes, airways, airspace boundaries, TFRs, military training routes, obstacles, weather stations, and communication outlets as vector overlays on a raster basemap. Features include rotated airway/MTR labels, composite airspace labels with altitude bounds, and overlap-eliminated text placement. Geographic features use spherical geometry (great-circle arcs, geodesic circles).
 
 ## Quick Start
 
@@ -200,12 +200,12 @@ The download script fetches data from the FAA NASR subscription page, the Digita
 - `MTR_BASE` / `MTR_SEG` — 5,366 military training route segments
 
 **Airspace**
-- `CLS_ARSP_BASE` / `CLS_ARSP_SHP` / `CLS_ARSP_SEG` — 5,608 class airspace polygons (B/C/D/E) with pre-computed rendering segments
+- `CLS_ARSP_BASE` / `CLS_ARSP_SHP` / `CLS_ARSP_SEG` — 5,608 class airspace polygons (B/C/D/E) with pre-computed rendering segments. Altitudes parsed from shapefile DESC/VAL/UOM/CODE fields into numeric UPPER_FT/UPPER_REF/LOWER_FT/LOWER_REF columns
 - `SUA_BASE` / `SUA_SHP` / `SUA_SEG` — 1,234 special use airspace polygons (MOA/RA/WA/AA/PA/NSA) with rendering segments
 - `SUA_CIRCLE` / `SUA_FREQ` / `SUA_SCHEDULE` / `SUA_SERVICE` — SUA circular boundaries, controlling frequencies, activation schedules, and controlling agencies
 - `ARTCC_BASE` / `ARTCC_SHP` / `ARTCC_SEG` — ARTCC boundary polygons with rendering segments
 - `ADIZ_BASE` / `ADIZ_SHP` / `ADIZ_SEG` — 19 Air Defense Identification Zone boundaries with rendering segments
-- `MAA_BASE` / `MAA_SHP` / `MAA_RMK` — 174 miscellaneous activity areas
+- `MAA_BASE` / `MAA_SHP` / `MAA_RMK` — 174 miscellaneous activity areas with parsed numeric altitudes (MAX_ALT_FT/MAX_ALT_REF/MIN_ALT_FT/MIN_ALT_REF)
 - `PJA_BASE` — parachute jump areas
 
 **Communications & ATC**
@@ -287,7 +287,7 @@ src/                      Application sources
   feature_builder.cpp     Background worker: builds polyline geometry from DB results
   feature_type.cpp        Per-feature-type build/pick/selection logic (polymorphic)
   line_renderer.cpp       SDF polyline rendering (lines, dashes, borders, circles)
-  label_renderer.cpp      Text label placement and rendering
+  label_renderer.cpp      Text label placement, overlap elimination, and rendering (supports rotated and composite labels)
   nasr_database.cpp       SQLite query interface with R-tree spatial queries
   chart_style.cpp         INI-based zoom-dependent feature styling
   tile_loader.cpp         Background tile I/O
