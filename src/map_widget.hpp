@@ -1,5 +1,7 @@
 #pragma once
+#include "flight_route.hpp"
 #include <memory>
+#include <optional>
 #include <sdl/event.hpp>
 #include <string>
 #include <vector>
@@ -45,6 +47,17 @@ public:
 
     // Run a full-text search against the NASR database.
     std::vector<nasrbrowse::search_hit> search(const std::string& query, int limit);
+
+    // Parse `text` as a flight route and activate it. Empty text clears
+    // the route. Throws nasrbrowse::route_parse_error on parse failure —
+    // the caller is responsible for surfacing the message.
+    void set_route_text(const std::string& text);
+
+    // Clear the active route, if any.
+    void clear_route();
+
+    // Currently active route (nullopt if none).
+    const std::optional<nasrbrowse::flight_route>& route() const;
 
     // Tell the map whether ImGui is consuming the mouse this frame
     // (suppresses pick on click when true).

@@ -63,6 +63,9 @@ namespace nasrbrowse
         sqlite::statement stmt_cls_arsp_seg;
         sqlite::statement stmt_sua_seg;
         sqlite::statement stmt_search;
+        sqlite::statement stmt_lookup_airport;
+        sqlite::statement stmt_lookup_navaid;
+        sqlite::statement stmt_lookup_fix;
 
         std::vector<airport> airports;
         std::vector<navaid> navaids;
@@ -531,6 +534,50 @@ namespace nasrbrowse
                 ORDER BY rank
                 LIMIT ?2
             )", 5))
+
+            , stmt_lookup_airport(prepare_checked(db, R"(
+                SELECT a.SITE_TYPE_CODE, a.STATE_CODE, a.ARPT_ID, a.CITY,
+                       a.COUNTRY_CODE, a.ARPT_NAME,
+                       a.OWNERSHIP_TYPE_CODE, a.FACILITY_USE_CODE,
+                       a.LAT_DECIMAL, a.LONG_DECIMAL, a.ELEV,
+                       a.MAG_VARN, a.MAG_HEMIS, a.TPA,
+                       a.RESP_ARTCC_ID, a.FSS_ID, a.NOTAM_ID,
+                       a.ACTIVATION_DATE, a.ARPT_STATUS, a.FUEL_TYPES,
+                       a.LGT_SKED, a.BCN_LGT_SKED,
+                       a.TWR_TYPE_CODE, a.ICAO_ID, a.HARD_SURFACE,
+                       CASE
+                           WHEN c.CLASS_B_AIRSPACE = 'Y' THEN 'B'
+                           WHEN c.CLASS_C_AIRSPACE = 'Y' THEN 'C'
+                           WHEN c.CLASS_D_AIRSPACE = 'Y' THEN 'D'
+                           WHEN c.CLASS_E_AIRSPACE = 'Y' THEN 'E'
+                           ELSE ''
+                       END AS airspace_class
+                FROM APT_BASE a
+                LEFT JOIN CLS_ARSP c ON c.SITE_NO = a.SITE_NO
+                WHERE a.ARPT_ID = ?1 OR a.ICAO_ID = ?1
+            )", 26))
+
+            , stmt_lookup_navaid(prepare_checked(db, R"(
+                SELECT NAV_ID, NAV_TYPE, STATE_CODE, CITY, COUNTRY_CODE,
+                       NAV_STATUS, NAME, OPER_HOURS,
+                       HIGH_ALT_ARTCC_ID, LOW_ALT_ARTCC_ID,
+                       LAT_DECIMAL, LONG_DECIMAL, ELEV,
+                       MAG_VARN, MAG_VARN_HEMIS, FREQ,
+                       CHAN, PWR_OUTPUT, SIMUL_VOICE_FLAG,
+                       VOICE_CALL, RESTRICTION_FLAG,
+                       IS_LOW_NAV, IS_HIGH_NAV
+                FROM NAV_BASE
+                WHERE NAV_STATUS != 'SHUTDOWN' AND NAV_ID = ?1
+            )", 23))
+
+            , stmt_lookup_fix(prepare_checked(db, R"(
+                SELECT FIX_ID, STATE_CODE, COUNTRY_CODE, ICAO_REGION_CODE,
+                       LAT_DECIMAL, LONG_DECIMAL, FIX_USE_CODE,
+                       ARTCC_ID_HIGH, ARTCC_ID_LOW,
+                       IS_LOW_FIX, IS_HIGH_FIX
+                FROM FIX_BASE
+                WHERE FIX_ID = ?1
+            )", 11))
         {
             // Precompute the set of shadowed ARSP_IDs. Any class airspace
             // that has a lower-class neighbor at the same non-empty IDENT
@@ -1326,6 +1373,67 @@ namespace nasrbrowse
         if(bb.lon_min == 0 && bb.lon_max == 0 && bb.lat_min == 0 && bb.lat_max == 0)
             return std::nullopt;  // null/missing coords
         return bb;
+    }
+
+    std::vector<airport> nasr_database::lookup_airports(const std::string& id)
+    {
+        auto& s = pimpl->stmt_lookup_airport;
+        s.reset();
+        s.bind(1, id);
+        std::vector<airport> out;
+        while(s.step())
+        {
+            out.push_back(airport{
+                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7),
+                s.column_double(8), s.column_double(9), s.column_double(10),
+                s.column_text(11), s.column_text(12), s.column_text(13),
+                s.column_text(14), s.column_text(15), s.column_text(16),
+                s.column_text(17), s.column_text(18), s.column_text(19),
+                s.column_text(20), s.column_text(21),
+                s.column_text(22), s.column_text(23),
+                s.column_int(24) != 0,
+                s.column_text(25)});
+        }
+        return out;
+    }
+
+    std::vector<navaid> nasr_database::lookup_navaids(const std::string& id)
+    {
+        auto& s = pimpl->stmt_lookup_navaid;
+        s.reset();
+        s.bind(1, id);
+        std::vector<navaid> out;
+        while(s.step())
+        {
+            out.push_back(navaid{
+                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7),
+                s.column_text(8), s.column_text(9),
+                s.column_double(10), s.column_double(11), s.column_double(12),
+                s.column_text(13), s.column_text(14), s.column_text(15),
+                s.column_text(16), s.column_text(17), s.column_text(18),
+                s.column_text(19), s.column_text(20),
+                s.column_int(21) != 0, s.column_int(22) != 0});
+        }
+        return out;
+    }
+
+    std::vector<fix> nasr_database::lookup_fixes(const std::string& id)
+    {
+        auto& s = pimpl->stmt_lookup_fix;
+        s.reset();
+        s.bind(1, id);
+        std::vector<fix> out;
+        while(s.step())
+        {
+            out.push_back(fix{
+                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                s.column_double(4), s.column_double(5),
+                s.column_text(6), s.column_text(7), s.column_text(8),
+                s.column_int(9) != 0, s.column_int(10) != 0});
+        }
+        return out;
     }
 
 } // namespace nasrbrowse

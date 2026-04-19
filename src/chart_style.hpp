@@ -111,6 +111,9 @@ namespace nasrbrowse
         bool awos_visible(double zoom) const;
         const feature_style& awos_style() const;
 
+        // Route line and waypoint halo style (always visible)
+        const feature_style& route_style() const;
+
         // Group-level early-out helpers: true if ANY variant in the group
         // is visible at this zoom. Used by builders to skip DB queries
         // entirely when nothing in the layer would render.

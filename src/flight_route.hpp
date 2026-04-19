@@ -1,0 +1,101 @@
+#pragma once
+
+#include "nasr_database.hpp"
+#include <stdexcept>
+#include <string>
+#include <variant>
+#include <vector>
+
+namespace nasrbrowse
+{
+    // A resolved waypoint on a route — one of the four point types
+    struct airport_ref
+    {
+        std::string id;
+        airport resolved;
+    };
+    struct navaid_ref
+    {
+        std::string id;
+        navaid resolved;
+    };
+    struct fix_ref
+    {
+        std::string id;
+        fix resolved;
+    };
+    struct latlon_ref
+    {
+        double lat;
+        double lon;
+    };
+
+    using route_waypoint = std::variant<airport_ref, navaid_ref, fix_ref, latlon_ref>;
+
+    double waypoint_lat(const route_waypoint& wp);
+    double waypoint_lon(const route_waypoint& wp);
+    std::string waypoint_id(const route_waypoint& wp);
+
+    // An airway traversal: entry fix, exit fix, and the expanded sequence
+    struct airway_ref
+    {
+        std::string airway_id;
+        std::string entry_id;
+        std::string exit_id;
+        std::vector<route_waypoint> expanded;
+    };
+
+    // A route element is either a single waypoint or an airway traversal
+    using route_element = std::variant<route_waypoint, airway_ref>;
+
+    // Thrown when a route string cannot be parsed or resolved
+    struct route_parse_error : std::runtime_error
+    {
+        std::string token;
+        int token_index;
+
+        route_parse_error(const std::string& message,
+                          const std::string& token, int token_index)
+            : std::runtime_error(message)
+            , token(token)
+            , token_index(token_index)
+        {}
+
+        route_parse_error(const std::string& message)
+            : std::runtime_error(message)
+            , token_index(-1)
+        {}
+    };
+
+    // A parsed and resolved flight route. Always valid — construction
+    // throws route_parse_error on failure.
+    struct flight_route
+    {
+        std::vector<route_element> elements;
+        std::vector<route_waypoint> waypoints;
+
+        // Parse a route string (space-separated waypoints) and resolve
+        // against the database. Throws route_parse_error on failure.
+        flight_route(const std::string& text, nasr_database& db);
+
+        // Reconstruct the shorthand text from the definition form
+        std::string to_text() const;
+
+        // Insert a waypoint between expanded waypoints at `segment_index`
+        // and `segment_index + 1`. Updates both elements and waypoints.
+        void insert_waypoint(int segment_index, route_waypoint wp);
+    };
+
+    // One leg of an expanded route, from one waypoint to the next.
+    struct route_leg
+    {
+        std::string from_id;
+        std::string to_id;
+        double distance_nm;
+        double true_course_deg;  // initial great-circle bearing, [0, 360)
+    };
+
+    std::vector<route_leg> compute_legs(const flight_route& r);
+    double total_distance_nm(const std::vector<route_leg>& legs);
+
+} // namespace nasrbrowse

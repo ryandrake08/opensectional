@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "altitude_filter.hpp"
+#include "flight_route.hpp"
 #include "nasr_database.hpp"  // for search_hit (POD struct, not the class)
 
 namespace nasrbrowse
@@ -29,10 +30,12 @@ namespace nasrbrowse
         layer_obstacles,
         layer_rco,
         layer_awos,
+        layer_route_halo,
         layer_fixes,
         layer_navaids,
         layer_airports,
         layer_tfr,
+        layer_route,
         layer_sdf_count,
 
         // Non-SDF layers
@@ -63,6 +66,12 @@ namespace nasrbrowse
         // Copy of the hit that the user just selected (click or Enter).
         // Set for exactly one frame.
         std::optional<int> selected_hit_index;
+
+        // Route text submitted this frame (Enter or "Set" button).
+        // Caller parses it and feeds state back via set_route_state().
+        std::optional<std::string> submit_route_text;
+        // True for one frame when the user clicks "Clear".
+        bool clear_route = false;
     };
 
     class ui_overlay
@@ -81,6 +90,14 @@ namespace nasrbrowse
         // Access the currently displayed results (caller uses the selected
         // index from ui_overlay_result to retrieve the chosen hit).
         const std::vector<search_hit>& search_results() const;
+
+        // Update the route panel's displayed state after the caller parses
+        // a submitted route text successfully.
+        void set_route_state(const flight_route& route);
+
+        // Clear the route panel (no active route). `error` is shown in red
+        // if non-empty — typically the message from a failed parse.
+        void clear_route_state(const std::string& error = "");
 
         // Draw FPS display, zoom level, layer checkboxes, and the search box.
         // `feature_types` supplies the labels+ids for the feature-layer

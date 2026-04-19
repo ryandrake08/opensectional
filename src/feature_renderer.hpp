@@ -56,6 +56,9 @@ namespace nasrbrowse
         // Set (or clear) the currently-selected feature. The builder re-runs
         // and emits a highlight overlay rendered on top of everything.
         void set_selection(std::optional<feature> sel);
+
+        // Set (or clear) the active flight route. Triggers a rebuild.
+        void set_route(std::optional<flight_route> route);
     };
 
 } // namespace nasrbrowse

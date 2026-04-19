@@ -180,6 +180,29 @@ int main(int argc, char** argv)
                 needs_render = true;
             }
 
+            if(ui_result.clear_route)
+            {
+                map->clear_route();
+                ui.clear_route_state();
+                needs_render = true;
+            }
+            else if(ui_result.submit_route_text)
+            {
+                try
+                {
+                    map->set_route_text(*ui_result.submit_route_text);
+                    if(map->route())
+                        ui.set_route_state(*map->route());
+                    else
+                        ui.clear_route_state();
+                }
+                catch(const nasrbrowse::route_parse_error& e)
+                {
+                    ui.clear_route_state(e.what());
+                }
+                needs_render = true;
+            }
+
             if(map->draw_imgui()) needs_render = true;
             if(imgui_ctx.wants_mouse()) needs_render = true;
             if(imgui_ctx.warming_up()) needs_render = true;

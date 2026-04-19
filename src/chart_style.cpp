@@ -214,6 +214,7 @@ namespace nasrbrowse
         "sua_alert", "sua_moa", "sua_nsa",
         "runway",
         "rco", "awos",
+        "route",
     };
 
     chart_style::chart_style(const std::string& ini_path, chart_mode mode)
@@ -455,6 +456,10 @@ namespace nasrbrowse
     { return visible("awos", zoom); }
     const feature_style& chart_style::awos_style() const
     { return get("awos"); }
+
+    // Route
+    const feature_style& chart_style::route_style() const
+    { return get("route"); }
 
     // Group-level early-out helpers
     bool chart_style::any_airport_visible(double zoom) const

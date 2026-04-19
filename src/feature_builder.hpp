@@ -1,5 +1,6 @@
 #pragma once
 
+#include "flight_route.hpp"
 #include "line_renderer.hpp"
 #include "pick_result.hpp"
 #include "ui_overlay.hpp"
@@ -54,6 +55,7 @@ namespace nasrbrowse
         double zoom;
         altitude_filter altitude;
         std::optional<feature> selection;
+        std::optional<flight_route> route;
     };
 
     // A label candidate from the feature build pass (world-space)

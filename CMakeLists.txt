@@ -37,6 +37,7 @@ add_executable(nasrbrowse
     src/geo_math.cpp
     src/map_view.cpp
     src/map_widget.cpp
+    src/flight_route.cpp
     src/feature_builder.cpp
     src/feature_type.cpp
     src/feature_renderer.cpp

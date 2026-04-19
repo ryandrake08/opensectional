@@ -512,6 +512,14 @@ namespace nasrbrowse
         const std::vector<sua_segment>& query_sua_segments(
         const geo_bbox& bbox, const filter_list& type_filter = std::nullopt);
 
+        // Exact-match lookup by identifier. Used for route parsing.
+        // May return multiple results — navaid and fix identifiers are not
+        // globally unique (duplicates across states/regions). Airport IDs
+        // are unique in practice but returned as a vector for consistency.
+        std::vector<airport> lookup_airports(const std::string& id);
+        std::vector<navaid> lookup_navaids(const std::string& id);
+        std::vector<fix> lookup_fixes(const std::string& id);
+
         // Full-text search across the search_fts index. Tokens are split on
         // whitespace; each token is sanitized (alphanumerics only) and given
         // a `*` suffix for prefix matching. Tokens are ANDed. Results are

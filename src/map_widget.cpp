@@ -236,6 +236,8 @@ struct map_widget::impl
 
     std::vector<std::unique_ptr<nasrbrowse::feature_type>> feature_types;
 
+    std::optional<nasrbrowse::flight_route> route;
+
     // Event dispatch state
     glm::mat4 projection_matrix{1.0F};
     float normalized_viewport_width = 1.0F;
@@ -948,6 +950,35 @@ std::vector<nasrbrowse::search_hit> map_widget::search(
     const std::string& query, int limit)
 {
     return pimpl->pick_db.search(query, limit);
+}
+
+void map_widget::set_route_text(const std::string& text)
+{
+    if(text.empty())
+    {
+        clear_route();
+        return;
+    }
+    // May throw route_parse_error; caller handles.
+    pimpl->route.emplace(text, pimpl->pick_db);
+    pimpl->features.set_route(pimpl->route);
+    pimpl->needs_update = true;
+    // Kick the feature builder so the route renders without waiting
+    // for a pan/zoom to resubmit.
+    pimpl->update_tiles();
+}
+
+void map_widget::clear_route()
+{
+    pimpl->route.reset();
+    pimpl->features.set_route(std::nullopt);
+    pimpl->needs_update = true;
+    pimpl->update_tiles();
+}
+
+const std::optional<nasrbrowse::flight_route>& map_widget::route() const
+{
+    return pimpl->route;
 }
 
 void map_widget::render_frame(sdl::command_buffer& cmd, sdl::texture& swapchain)

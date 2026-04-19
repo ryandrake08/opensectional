@@ -19,10 +19,38 @@ namespace nasrbrowse
         layer_visibility vis;
         char search_buf[64] = {0};
         std::vector<search_hit> hits;
+
+        // Route panel state: input buffer + cached display data refreshed
+        // via set_route_state() after the caller parses a submission.
+        char route_buf[512] = {0};
+        bool has_route = false;
+        std::string route_shorthand;
+        std::vector<route_leg> route_legs;
+        std::string route_error;
     };
 
     ui_overlay::ui_overlay() : pimpl(new impl) {}
     ui_overlay::~ui_overlay() = default;
+
+    void ui_overlay::set_route_state(const flight_route& route)
+    {
+        pimpl->route_error.clear();
+        pimpl->has_route = true;
+        pimpl->route_shorthand = route.to_text();
+        pimpl->route_legs = compute_legs(route);
+        // Snap the input buffer to the canonical shorthand so
+        // auto-corrected entry/exit points are reflected.
+        std::snprintf(pimpl->route_buf, sizeof(pimpl->route_buf),
+                      "%s", pimpl->route_shorthand.c_str());
+    }
+
+    void ui_overlay::clear_route_state(const std::string& error)
+    {
+        pimpl->has_route = false;
+        pimpl->route_shorthand.clear();
+        pimpl->route_legs.clear();
+        pimpl->route_error = error;
+    }
 
     void ui_overlay::set_search_results(std::vector<search_hit> hits)
     {
@@ -219,6 +247,72 @@ namespace nasrbrowse
             result.selected_hit_index = *selected_flat;
             d.search_buf[0] = '\0';
             result.search_query.clear();
+        }
+
+        ImGui::End();
+
+        // Route panel, top-center.
+        ImGui::SetNextWindowPos(
+            ImVec2(io.DisplaySize.x * 0.5F, 0),
+            ImGuiCond_Always,
+            ImVec2(0.5F, 0.0F));
+        ImGui::SetNextWindowBgAlpha(0.85F);
+        ImGui::Begin("Route", nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoCollapse |
+            ImGuiWindowFlags_NoSavedSettings);
+
+        ImGui::SetNextItemWidth(360.0F);
+        bool submit = ImGui::InputText("##route_input",
+            d.route_buf, sizeof(d.route_buf),
+            ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        if(ImGui::Button("Set")) submit = true;
+        if(submit)
+            result.submit_route_text = std::string(d.route_buf);
+
+        if(!d.route_error.empty())
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
+            ImGui::TextWrapped("%s", d.route_error.c_str());
+            ImGui::PopStyleColor();
+        }
+
+        if(d.has_route)
+        {
+            if(ImGui::Button("Clear"))
+            {
+                result.clear_route = true;
+                d.route_buf[0] = '\0';
+            }
+
+            double total = 0;
+            const ImGuiTableFlags flags =
+                ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit;
+            if(ImGui::BeginTable("route_legs", 4, flags))
+            {
+                ImGui::TableSetupColumn("From");
+                ImGui::TableSetupColumn("To");
+                ImGui::TableSetupColumn("Dist (nm)");
+                ImGui::TableSetupColumn("Course (T)");
+                ImGui::TableHeadersRow();
+                for(const auto& leg : d.route_legs)
+                {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(leg.from_id.c_str());
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TextUnformatted(leg.to_id.c_str());
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::Text("%.1f", leg.distance_nm);
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::Text("%03.0f", leg.true_course_deg);
+                    total += leg.distance_nm;
+                }
+                ImGui::EndTable();
+            }
+            ImGui::Text("Total: %.1f nm", total);
         }
 
         ImGui::End();

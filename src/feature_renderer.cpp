@@ -51,6 +51,7 @@ namespace nasrbrowse
 
         layer_visibility vis;
         std::optional<feature> selection;
+        std::optional<flight_route> route;
 
         impl(sdl::device& dev, const char* db_path, const chart_style& styles)
             : dev(dev)
@@ -151,6 +152,7 @@ namespace nasrbrowse
             req.zoom = pimpl->zoom_level();
             req.altitude = pimpl->vis.altitude;
             req.selection = pimpl->selection;
+            req.route = pimpl->route;
             pimpl->builder.request(req);
 
             // Speculatively update cache so we don't re-request next frame
@@ -257,6 +259,12 @@ namespace nasrbrowse
         // Force the worker to rebuild so the new selection's overlay is
         // generated. Clearing has_cached_query ensures update() resubmits
         // a request on the next frame even if the view hasn't changed.
+        pimpl->has_cached_query = false;
+    }
+
+    void feature_renderer::set_route(std::optional<flight_route> route)
+    {
+        pimpl->route = std::move(route);
         pimpl->has_cached_query = false;
     }
 
