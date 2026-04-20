@@ -58,7 +58,12 @@ namespace nasrbrowse
         void set_selection(std::optional<feature> sel);
 
         // Set (or clear) the active flight route. Triggers a rebuild.
+        // A newly-set route starts in the selected state.
         void set_route(std::optional<flight_route> route);
+
+        // Toggle the route's selected visualization (white line + halos
+        // when selected; configured color + no halos when not).
+        void set_route_selected(bool selected);
     };
 
 } // namespace nasrbrowse

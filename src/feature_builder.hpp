@@ -56,6 +56,7 @@ namespace nasrbrowse
         altitude_filter altitude;
         std::optional<feature> selection;
         std::optional<flight_route> route;
+        bool route_selected = true;
     };
 
     // A label candidate from the feature build pass (world-space)

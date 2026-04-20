@@ -1,6 +1,6 @@
 # NASRBrowse
 
-A desktop application for visualizing FAA NASR (National Airspace System Resource) data on an interactive map. Displays airports, navaids, fixes, airways, airspace boundaries, TFRs, military training routes, obstacles, weather stations, and communication outlets as vector overlays on a raster basemap. Features include rotated airway/MTR labels, composite airspace labels with altitude bounds, and overlap-eliminated text placement. Geographic features use spherical geometry (great-circle arcs, geodesic circles).
+A desktop application for visualizing FAA NASR (National Airspace System Resource) data on an interactive map. Displays airports, navaids, fixes, airways, airspace boundaries, TFRs, military training routes, obstacles, weather stations, and communication outlets as vector overlays on a raster basemap. Features include rotated airway/MTR labels, composite airspace labels with altitude bounds, overlap-eliminated text placement, and interactive flight-route planning with drag-to-edit waypoints. Geographic features use spherical geometry (great-circle arcs, geodesic circles).
 
 ## Quick Start
 
@@ -246,10 +246,17 @@ For a basemap derived from FAA aeronav charts, generate XYZ tile pyramids using 
 
 | Input | Action |
 |-------|--------|
-| Click + drag | Pan |
+| Click + drag (empty space) | Pan |
 | Scroll wheel | Zoom in/out |
 | W/A/S/D | Pan (keyboard) |
 | R/F | Zoom in/out (keyboard) |
+| Click feature | Show info popup (or selector if multiple features overlap) |
+| Click route line | Select the active route (highlights it white with waypoint halos) |
+| Drag route leg | Insert a new waypoint on that leg at the release point |
+| Drag route waypoint | Replace that waypoint with whatever's under the cursor on release |
+| Drag route waypoint → adjacent waypoint | Delete the dragged waypoint |
+
+Type a route string in the "Route" panel at the top-center, e.g. `O61 LIN V459 LOPES KTSP`, and press Enter or click **Set**. Waypoints may be airports, navaids, fixes, or raw lat/lon (`DDMMSSXDDDMMSSY`, e.g. `383412N1210305W`). Three-token runs `ENTRY AIRWAY EXIT` expand airway shorthand into individual fixes (auto-correcting ENTRY/EXIT to the closest airway fix if needed).
 
 ### Command Line Options
 
@@ -286,12 +293,13 @@ src/                      Application sources
   feature_renderer.cpp    Feature layer: query scheduling, SDF line packing, GPU upload
   feature_builder.cpp     Background worker: builds polyline geometry from DB results
   feature_type.cpp        Per-feature-type build/pick/selection logic (polymorphic)
+  flight_route.cpp        Route data model, shorthand parser, airway expansion, leg computation
   line_renderer.cpp       SDF polyline rendering (lines, dashes, borders, circles)
   label_renderer.cpp      Text label placement, overlap elimination, and rendering (supports rotated and composite labels)
   nasr_database.cpp       SQLite query interface with R-tree spatial queries
   chart_style.cpp         INI-based zoom-dependent feature styling
   tile_loader.cpp         Background tile I/O
-  ui_overlay.cpp          ImGui UI (FPS, layer checkboxes, search, altitude filter)
+  ui_overlay.cpp          ImGui UI (FPS, layer checkboxes, search, altitude filter, route input/info)
   ui_sectioned_list.cpp   Grouped selectable list widget (pick popup, search results)
   render_context.cpp      Render state (projection matrix, sampler)
   ini_config.cpp          INI file parser

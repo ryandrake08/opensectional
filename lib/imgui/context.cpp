@@ -74,6 +74,11 @@ namespace imgui
         return ImGui::GetIO().WantCaptureMouse;
     }
 
+    bool context::wants_keyboard() const
+    {
+        return ImGui::GetIO().WantCaptureKeyboard;
+    }
+
     bool context::warming_up()
     {
         if(pimpl->warmup_frames <= 0)

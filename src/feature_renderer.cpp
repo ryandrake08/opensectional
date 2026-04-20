@@ -52,6 +52,7 @@ namespace nasrbrowse
         layer_visibility vis;
         std::optional<feature> selection;
         std::optional<flight_route> route;
+        bool route_selected = true;
 
         impl(sdl::device& dev, const char* db_path, const chart_style& styles)
             : dev(dev)
@@ -153,6 +154,7 @@ namespace nasrbrowse
             req.altitude = pimpl->vis.altitude;
             req.selection = pimpl->selection;
             req.route = pimpl->route;
+            req.route_selected = pimpl->route_selected;
             pimpl->builder.request(req);
 
             // Speculatively update cache so we don't re-request next frame
@@ -265,6 +267,15 @@ namespace nasrbrowse
     void feature_renderer::set_route(std::optional<flight_route> route)
     {
         pimpl->route = std::move(route);
+        // A freshly-set route starts selected.
+        pimpl->route_selected = true;
+        pimpl->has_cached_query = false;
+    }
+
+    void feature_renderer::set_route_selected(bool selected)
+    {
+        if(pimpl->route_selected == selected) return;
+        pimpl->route_selected = selected;
         pimpl->has_cached_query = false;
     }
 

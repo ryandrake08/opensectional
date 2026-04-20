@@ -59,9 +59,18 @@ public:
     // Currently active route (nullopt if none).
     const std::optional<nasrbrowse::flight_route>& route() const;
 
+    // Returns true once if the route was mutated internally (e.g. via
+    // segment drag-insert) since the last call; used by main() to re-push
+    // the route state into the UI overlay.
+    bool drain_route_dirty();
+
     // Tell the map whether ImGui is consuming the mouse this frame
     // (suppresses pick on click when true).
     void set_imgui_wants_mouse(bool wants);
+
+    // Tell the map whether ImGui is consuming the keyboard this frame
+    // (suppresses WASD / R / F pan+zoom when a text box has focus).
+    void set_imgui_wants_keyboard(bool wants);
 
     // Current map zoom level (for UI display).
     double zoom_level() const;

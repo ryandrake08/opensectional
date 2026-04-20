@@ -147,6 +147,7 @@ int main(int argc, char** argv)
         while(true)
         {
             map->set_imgui_wants_mouse(imgui_ctx.wants_mouse());
+            map->set_imgui_wants_keyboard(imgui_ctx.wants_keyboard());
 
             if(event_mgr.dispatch_events()) break;
 
@@ -200,6 +201,13 @@ int main(int argc, char** argv)
                 {
                     ui.clear_route_state(e.what());
                 }
+                needs_render = true;
+            }
+
+            if(map->drain_route_dirty())
+            {
+                if(map->route()) ui.set_route_state(*map->route());
+                else ui.clear_route_state();
                 needs_render = true;
             }
 

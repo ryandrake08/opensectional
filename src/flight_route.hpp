@@ -84,6 +84,14 @@ namespace nasrbrowse
         // Insert a waypoint between expanded waypoints at `segment_index`
         // and `segment_index + 1`. Updates both elements and waypoints.
         void insert_waypoint(int segment_index, route_waypoint wp);
+
+        // Replace the waypoint at `waypoint_index` with `wp`. Flattens the
+        // route into explicit waypoints (any airway shorthand is lost).
+        void replace_waypoint(int waypoint_index, route_waypoint wp);
+
+        // Remove the waypoint at `waypoint_index`. Flattens the route.
+        // Callers must ensure the resulting route still has >= 2 waypoints.
+        void delete_waypoint(int waypoint_index);
     };
 
     // One leg of an expanded route, from one waypoint to the next.

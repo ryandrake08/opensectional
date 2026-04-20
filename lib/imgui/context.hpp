@@ -40,6 +40,10 @@ namespace imgui
         // Returns true if ImGui wants to capture mouse input
         bool wants_mouse() const;
 
+        // Returns true if ImGui wants to capture keyboard input
+        // (e.g. a text box has focus).
+        bool wants_keyboard() const;
+
         // Returns true during initial warmup frames where rendering is forced
         bool warming_up();
     };

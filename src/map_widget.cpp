@@ -1,6 +1,7 @@
 #include "map_widget.hpp"
 #include "feature_type.hpp"
 #include "feature_renderer.hpp"
+#include "geo_math.hpp"
 #include "label_renderer.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
@@ -10,6 +11,7 @@
 #include "ui_overlay.hpp"
 #include "ui_sectioned_list.hpp"
 #include "chart_style.hpp"
+#include <algorithm>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_projection.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -173,6 +175,7 @@ namespace
         double click_lon = 0.0;
         double click_lat = 0.0;
         std::vector<nasrbrowse::feature> features;
+        bool route_hit = false;
     };
 
     // Info-popup state: details for a single selected feature.
@@ -230,6 +233,7 @@ struct map_widget::impl
     double cursor_ndc_y;
     bool dragged;
     bool imgui_wants_mouse;
+    bool imgui_wants_keyboard;
 
     pick_popup_state pick_popup;
     info_popup_state info_popup;
@@ -237,6 +241,16 @@ struct map_widget::impl
     std::vector<std::unique_ptr<nasrbrowse::feature_type>> feature_types;
 
     std::optional<nasrbrowse::flight_route> route;
+    bool route_selected = false;
+    bool route_dirty = false;
+
+    // Route drag state. Waypoint hit takes priority over segment hit so
+    // dragging an existing waypoint doesn't get mistaken for an insert.
+    enum class route_drag_mode { none, segment, waypoint };
+    struct {
+        route_drag_mode mode = route_drag_mode::none;
+        int index = 0;  // segment index (segment mode) or wp index (waypoint mode)
+    } route_drag;
 
     // Event dispatch state
     glm::mat4 projection_matrix{1.0F};
@@ -284,6 +298,7 @@ struct map_widget::impl
         , cursor_ndc_y(0)
         , dragged(false)
         , imgui_wants_mouse(false)
+        , imgui_wants_keyboard(false)
         , feature_types(nasrbrowse::make_feature_types())
     {
         outline_font.set_outline(1);
@@ -429,6 +444,162 @@ struct map_widget::impl
         return result;
     }
 
+    // NDC → world lon/lat (same math pick_at uses to derive click_lon/lat,
+    // without running the feature-type pick pass).
+    std::pair<double, double> ndc_to_lonlat(double ndc_x, double ndc_y) const
+    {
+        double world_x = ndc_x * 2.0 * view.half_extent_y + view.center_x;
+        double world_y = ndc_y * 2.0 * view.half_extent_y + view.center_y;
+        double lon = nasrbrowse::mx_to_lon(world_x);
+        double lat = nasrbrowse::my_to_lat(world_y);
+        lon = std::fmod(lon + 180.0, 360.0);
+        if(lon < 0) lon += 360.0;
+        lon -= 180.0;
+        return {lon, lat};
+    }
+
+    // Distance from point (px, py) to the segment (ax, ay)-(bx, by).
+    static float point_segment_distance_px(float px, float py,
+                                            float ax, float ay,
+                                            float bx, float by)
+    {
+        float dx = bx - ax, dy = by - ay;
+        float len_sq = dx * dx + dy * dy;
+        float t = 0.0F;
+        if(len_sq > 0) t = ((px - ax) * dx + (py - ay) * dy) / len_sq;
+        t = std::clamp(t, 0.0F, 1.0F);
+        float cx = ax + t * dx, cy = ay + t * dy;
+        return std::sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+    }
+
+    // Return the 0-based waypoint index whose pixel position is within
+    // pick distance of the click, or nullopt.
+    std::optional<int> hit_route_waypoint(double click_lon, double click_lat) const
+    {
+        if(!route) return std::nullopt;
+        float cursor_px, cursor_py;
+        view.world_to_pixel(click_lon, click_lat, cursor_px, cursor_py);
+        const float threshold = PICK_BOX_SIZE_PIXELS * 0.5F;
+        const auto& wps = route->waypoints;
+        for(std::size_t i = 0; i < wps.size(); ++i)
+        {
+            float wx, wy;
+            view.world_to_pixel(
+                nasrbrowse::waypoint_lon(wps[i]),
+                nasrbrowse::waypoint_lat(wps[i]), wx, wy);
+            float dx = wx - cursor_px, dy = wy - cursor_py;
+            if(dx * dx + dy * dy < threshold * threshold)
+                return static_cast<int>(i);
+        }
+        return std::nullopt;
+    }
+
+    // Return the 0-based leg index whose great-circle polyline the click
+    // lands on, or nullopt if no route leg is within pick distance.
+    std::optional<int> hit_route_segment(double click_lon, double click_lat) const
+    {
+        if(!route || route->waypoints.size() < 2) return std::nullopt;
+
+        float cursor_px, cursor_py;
+        view.world_to_pixel(click_lon, click_lat, cursor_px, cursor_py);
+        const float threshold = PICK_BOX_SIZE_PIXELS * 0.5F;
+
+        const auto& wps = route->waypoints;
+        for(std::size_t i = 1; i < wps.size(); ++i)
+        {
+            auto arc = nasrbrowse::geodesic_interpolate(
+                nasrbrowse::waypoint_lat(wps[i - 1]),
+                nasrbrowse::waypoint_lon(wps[i - 1]),
+                nasrbrowse::waypoint_lat(wps[i]),
+                nasrbrowse::waypoint_lon(wps[i]));
+            for(std::size_t j = 1; j < arc.size(); ++j)
+            {
+                float ax, ay, bx, by;
+                view.world_to_pixel(arc[j - 1].lon, arc[j - 1].lat, ax, ay);
+                view.world_to_pixel(arc[j].lon, arc[j].lat, bx, by);
+                if(point_segment_distance_px(
+                    cursor_px, cursor_py, ax, ay, bx, by) < threshold)
+                    return static_cast<int>(i - 1);
+            }
+        }
+        return std::nullopt;
+    }
+
+    // Convert a picked feature (already known to be airport/navaid/fix)
+    // into the route_waypoint variant the route uses.
+    static nasrbrowse::route_waypoint feature_to_waypoint(const nasrbrowse::feature& f)
+    {
+        if(auto* a = std::get_if<nasrbrowse::airport>(&f))
+            return nasrbrowse::airport_ref{a->arpt_id, *a};
+        if(auto* n = std::get_if<nasrbrowse::navaid>(&f))
+            return nasrbrowse::navaid_ref{n->nav_id, *n};
+        auto& x = std::get<nasrbrowse::fix>(f);
+        return nasrbrowse::fix_ref{x.fix_id, x};
+    }
+
+    // Resolve a release point to a route_waypoint: prefer the first
+    // airport/navaid/fix under the cursor; otherwise lat/lon at the click.
+    nasrbrowse::route_waypoint resolve_release_waypoint()
+    {
+        auto pick = pick_at(cursor_ndc_x, cursor_ndc_y);
+        for(const auto& f : pick.features)
+        {
+            if(std::holds_alternative<nasrbrowse::airport>(f) ||
+               std::holds_alternative<nasrbrowse::navaid>(f) ||
+               std::holds_alternative<nasrbrowse::fix>(f))
+                return feature_to_waypoint(f);
+        }
+        return nasrbrowse::route_waypoint{
+            nasrbrowse::latlon_ref{pick.lat, pick.lon}};
+    }
+
+    void notify_route_changed()
+    {
+        features.set_route(route);
+        route_dirty = true;
+        needs_update = true;
+        update_tiles();
+    }
+
+    void handle_route_drag_release(route_drag_mode mode)
+    {
+        if(!route) return;
+        if(mode == route_drag_mode::segment)
+        {
+            route->insert_waypoint(route_drag.index, resolve_release_waypoint());
+            notify_route_changed();
+            return;
+        }
+
+        // Waypoint mode. If release lands on an adjacent waypoint, delete
+        // the dragged waypoint (but only if the route keeps >= 2
+        // waypoints afterward). Otherwise replace it with whatever's
+        // under the cursor.
+        int i = route_drag.index;
+        auto [lon, lat] = ndc_to_lonlat(cursor_ndc_x, cursor_ndc_y);
+        auto hit = hit_route_waypoint(lon, lat);
+        bool adjacent = hit && (*hit == i - 1 || *hit == i + 1);
+
+        if(adjacent && route->waypoints.size() > 2)
+        {
+            route->delete_waypoint(i);
+        }
+        else
+        {
+            route->replace_waypoint(i, resolve_release_waypoint());
+        }
+        notify_route_changed();
+    }
+
+    void set_route_selected(bool selected)
+    {
+        if(route_selected == selected) return;
+        route_selected = selected;
+        features.set_route_selected(selected);
+        needs_update = true;
+        update_tiles();
+    }
+
     // Convert a world lon/lat into pixel coordinates relative to the
     // Compute where to place a popup anchored at world coord (lon, lat).
     // Returns true and fills pos/pivot when the anchor is on-screen.
@@ -463,6 +634,7 @@ struct map_widget::impl
         info_popup.anchor_lat = alat;
         info_popup.feature = f;
         features.set_selection(f);
+        set_route_selected(false);
         update_tiles();
         needs_update = true;
     }
@@ -482,8 +654,19 @@ struct map_widget::impl
     {
         pick_popup.open = false;
         pick_popup.features.clear();
+        pick_popup.route_hit = false;
 
         auto result = pick_at(cursor_ndc_x, cursor_ndc_y);
+
+        bool route_hit = route && hit_route_segment(result.lon, result.lat).has_value();
+
+        // Route-only click (no other features): select directly without popup.
+        if(result.features.empty() && route_hit)
+        {
+            close_info_popup();
+            set_route_selected(true);
+            return;
+        }
 
         // Exact-point short-circuit: count point features within the
         // exact-pick pixel radius of the click.
@@ -520,6 +703,7 @@ struct map_widget::impl
         pick_popup.click_lon = result.lon;
         pick_popup.click_lat = result.lat;
         pick_popup.features = std::move(result.features);
+        pick_popup.route_hit = route_hit;
         needs_update = true;
     }
 
@@ -564,15 +748,19 @@ struct map_widget::impl
             return false;
         }
 
-        if(!pick_popup.features.empty())
+        if(!pick_popup.features.empty() || pick_popup.route_hit)
         {
             ImGui::Separator();
 
-            // Group pick features by their canonical feature-section tag.
-            std::vector<nasrbrowse::ui_section> sections(nasrbrowse::FEATURE_SECTION_COUNT);
-            std::vector<std::vector<int>> section_feature_index(nasrbrowse::FEATURE_SECTION_COUNT);
+            // Group pick features by their canonical feature-section tag,
+            // then append a synthetic "ROUTE" section when the route was hit.
+            const std::size_t route_section = nasrbrowse::FEATURE_SECTION_COUNT;
+            std::vector<nasrbrowse::ui_section> sections(route_section + 1);
+            std::vector<std::vector<int>> section_feature_index(route_section + 1);
             for(std::size_t s = 0; s < nasrbrowse::FEATURE_SECTION_COUNT; ++s)
                 sections[s].header = nasrbrowse::FEATURE_SECTIONS[s].header;
+            sections[route_section].header = "ROUTE";
+
             for(int i = 0; i < static_cast<int>(pick_popup.features.size()); ++i)
             {
                 const auto& f = pick_popup.features[i];
@@ -583,14 +771,26 @@ struct map_widget::impl
                 section_feature_index[s].push_back(i);
             }
 
+            if(pick_popup.route_hit)
+                sections[route_section].items.push_back("Flight route");
+
             auto picked = nasrbrowse::draw_sectioned_selectable_list(sections);
             if(picked)
             {
-                int fi = section_feature_index[picked->first][picked->second];
-                open_info_popup(pick_popup.features[fi],
-                                pick_popup.click_lon, pick_popup.click_lat);
+                if(static_cast<std::size_t>(picked->first) == route_section)
+                {
+                    close_info_popup();
+                    set_route_selected(true);
+                }
+                else
+                {
+                    int fi = section_feature_index[picked->first][picked->second];
+                    open_info_popup(pick_popup.features[fi],
+                                    pick_popup.click_lon, pick_popup.click_lat);
+                }
                 pick_popup.open = false;
                 pick_popup.features.clear();
+                pick_popup.route_hit = false;
             }
         }
 
@@ -762,6 +962,11 @@ void map_widget::set_imgui_wants_mouse(bool wants)
     pimpl->imgui_wants_mouse = wants;
 }
 
+void map_widget::set_imgui_wants_keyboard(bool wants)
+{
+    pimpl->imgui_wants_keyboard = wants;
+}
+
 double map_widget::zoom_level() const
 {
     return pimpl->view.zoom_level();
@@ -787,10 +992,38 @@ void map_widget::button_event(sdl::input_button_t button, sdl::input_action_t ac
     if(action.value != 0) // press
     {
         pimpl->dragged = false;
+        // If the press landed on a route waypoint or leg, start a drag;
+        // this suppresses the normal pan + pick. The route gets selected
+        // implicitly so the drag has the same visual affordance as a
+        // drag on an already-selected route.
+        // Waypoint hit takes priority over segment hit.
+        if(pimpl->route && !pimpl->imgui_wants_mouse)
+        {
+            auto [lon, lat] = pimpl->ndc_to_lonlat(
+                pimpl->cursor_ndc_x, pimpl->cursor_ndc_y);
+            if(auto wp = pimpl->hit_route_waypoint(lon, lat))
+            {
+                pimpl->route_drag.mode = impl::route_drag_mode::waypoint;
+                pimpl->route_drag.index = *wp;
+                pimpl->set_route_selected(true);
+            }
+            else if(auto seg = pimpl->hit_route_segment(lon, lat))
+            {
+                pimpl->route_drag.mode = impl::route_drag_mode::segment;
+                pimpl->route_drag.index = *seg;
+                pimpl->set_route_selected(true);
+            }
+        }
     }
     else // release
     {
-        if(!pimpl->dragged && !pimpl->imgui_wants_mouse)
+        auto mode = pimpl->route_drag.mode;
+        pimpl->route_drag.mode = impl::route_drag_mode::none;
+        if(mode != impl::route_drag_mode::none && pimpl->dragged)
+        {
+            pimpl->handle_route_drag_release(mode);
+        }
+        else if(!pimpl->dragged && !pimpl->imgui_wants_mouse)
         {
             pimpl->handle_pick();
         }
@@ -804,6 +1037,36 @@ bool map_widget::draw_imgui()
     // one's warmup frames propagate upward.
     bool a = pimpl->draw_pick_imgui();
     bool b = pimpl->draw_info_imgui();
+
+    if(pimpl->route_drag.mode != impl::route_drag_mode::none && pimpl->route)
+    {
+        const auto& wps = pimpl->route->waypoints;
+        int i = pimpl->route_drag.index;
+        ImVec2 cursor = ImGui::GetMousePos();
+        auto* dl = ImGui::GetForegroundDrawList();
+        ImU32 col = IM_COL32(255, 255, 255, 220);
+
+        auto draw_from = [&](int idx)
+        {
+            float x, y;
+            pimpl->view.world_to_pixel(
+                nasrbrowse::waypoint_lon(wps[idx]),
+                nasrbrowse::waypoint_lat(wps[idx]), x, y);
+            dl->AddLine(ImVec2(x, y), cursor, col, 2.0F);
+        };
+
+        if(pimpl->route_drag.mode == impl::route_drag_mode::segment)
+        {
+            draw_from(i);
+            draw_from(i + 1);
+        }
+        else  // waypoint: anchor to prev + next neighbors (if any)
+        {
+            if(i > 0) draw_from(i - 1);
+            if(i + 1 < static_cast<int>(wps.size())) draw_from(i + 1);
+        }
+    }
+
     return a || b;
 }
 
@@ -821,14 +1084,22 @@ void map_widget::cursor_position_event(double xpos, double ypos)
     // If any button is held, dispatch as a drag.
     if(!pimpl->buttons_down.empty())
     {
-        double dx = pos[0] - pimpl->cursor_last_x;
-        double dy = pos[1] - pimpl->cursor_last_y;
         pimpl->dragged = true;
-        double dx_meters = -dx * pimpl->view.half_extent_y * 2.0;
-        double dy_meters = -dy * pimpl->view.half_extent_y * 2.0;
-        pimpl->view.pan_meters(dx_meters, dy_meters);
-        pimpl->rebuild_grid();
-        pimpl->update_tiles();
+        if(pimpl->route_drag.mode != impl::route_drag_mode::none)
+        {
+            // Rubber-band follows cursor; force a redraw.
+            pimpl->needs_update = true;
+        }
+        else
+        {
+            double dx = pos[0] - pimpl->cursor_last_x;
+            double dy = pos[1] - pimpl->cursor_last_y;
+            double dx_meters = -dx * pimpl->view.half_extent_y * 2.0;
+            double dy_meters = -dy * pimpl->view.half_extent_y * 2.0;
+            pimpl->view.pan_meters(dx_meters, dy_meters);
+            pimpl->rebuild_grid();
+            pimpl->update_tiles();
+        }
     }
 
     pimpl->cursor_last_x = pos[0];
@@ -837,6 +1108,9 @@ void map_widget::cursor_position_event(double xpos, double ypos)
 
 void map_widget::key_event(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t)
 {
+    // Suppress pan/zoom keybindings while a text input has focus.
+    if(pimpl->imgui_wants_keyboard) return;
+
     if(action != sdl::input_action::release)
     {
         switch(key.value)
@@ -962,6 +1236,53 @@ void map_widget::set_route_text(const std::string& text)
     // May throw route_parse_error; caller handles.
     pimpl->route.emplace(text, pimpl->pick_db);
     pimpl->features.set_route(pimpl->route);
+    pimpl->route_selected = true;
+
+    // Fit the view to the route's bounding box (20% padding), so the
+    // pilot sees the whole route after pressing Set.
+    const auto& wps = pimpl->route->waypoints;
+    if(!wps.empty())
+    {
+        double lat_min = nasrbrowse::waypoint_lat(wps[0]);
+        double lat_max = lat_min;
+        double lon_min = nasrbrowse::waypoint_lon(wps[0]);
+        double lon_max = lon_min;
+        for(const auto& wp : wps)
+        {
+            double la = nasrbrowse::waypoint_lat(wp);
+            double lo = nasrbrowse::waypoint_lon(wp);
+            if(la < lat_min) lat_min = la;
+            if(la > lat_max) lat_max = la;
+            if(lo < lon_min) lon_min = lo;
+            if(lo > lon_max) lon_max = lo;
+        }
+
+        auto& d = *pimpl;
+        d.view.center_x = nasrbrowse::lon_to_mx((lon_min + lon_max) * 0.5);
+        d.view.center_y = nasrbrowse::lat_to_my((lat_min + lat_max) * 0.5);
+
+        bool is_point = (lon_min == lon_max && lat_min == lat_max);
+        if(is_point)
+        {
+            constexpr int POINT_FOCUS_ZOOM = 12;
+            d.view.zoom_to_level(POINT_FOCUS_ZOOM);
+        }
+        else
+        {
+            double half_height_m =
+                (nasrbrowse::lat_to_my(lat_max) -
+                 nasrbrowse::lat_to_my(lat_min)) * 0.5;
+            double half_width_m =
+                (nasrbrowse::lon_to_mx(lon_max) -
+                 nasrbrowse::lon_to_mx(lon_min)) * 0.5;
+            double needed = std::max(half_height_m,
+                                      half_width_m / d.view.aspect_ratio());
+            d.view.half_extent_y = needed * 1.2;
+            d.view.zoom(1.0);
+        }
+        pimpl->rebuild_grid();
+    }
+
     pimpl->needs_update = true;
     // Kick the feature builder so the route renders without waiting
     // for a pan/zoom to resubmit.
@@ -972,6 +1293,7 @@ void map_widget::clear_route()
 {
     pimpl->route.reset();
     pimpl->features.set_route(std::nullopt);
+    pimpl->route_selected = false;
     pimpl->needs_update = true;
     pimpl->update_tiles();
 }
@@ -979,6 +1301,13 @@ void map_widget::clear_route()
 const std::optional<nasrbrowse::flight_route>& map_widget::route() const
 {
     return pimpl->route;
+}
+
+bool map_widget::drain_route_dirty()
+{
+    bool r = pimpl->route_dirty;
+    pimpl->route_dirty = false;
+    return r;
 }
 
 void map_widget::render_frame(sdl::command_buffer& cmd, sdl::texture& swapchain)

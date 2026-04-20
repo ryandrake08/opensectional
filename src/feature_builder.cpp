@@ -94,6 +94,18 @@ namespace nasrbrowse
             ls.b = rs.b;
             ls.a = rs.a;
 
+            // Selected route: white, slightly wider, no border/dash — same
+            // transform airway selection uses.
+            if(req.route_selected)
+            {
+                ls.line_width = ls.line_width + 2.0F * ls.border_width + 2.0F;
+                ls.border_width = 0;
+                ls.dash_length = 0;
+                ls.gap_length = 0;
+                ls.r = ls.g = ls.b = 1.0F;
+                ls.a = 1.0F;
+            }
+
             // Route lines between consecutive waypoints
             for(size_t i = 1; i < wps.size(); ++i)
             {
@@ -114,7 +126,23 @@ namespace nasrbrowse
                 pd.styles.push_back(ls);
             }
 
-            // Waypoint halos
+            // Waypoint halos — only when the route is selected.
+            if(!req.route_selected)
+            {
+                // Still emit labels for unselected routes.
+                for(const auto& wp : wps)
+                {
+                    label_candidate lbl;
+                    lbl.text = waypoint_id(wp);
+                    lbl.mx = lon_to_mx(waypoint_lon(wp)) + mx_offset;
+                    lbl.my = lat_to_my(waypoint_lat(wp));
+                    lbl.priority = 100;
+                    lbl.layer = layer_route;
+                    labels.push_back(std::move(lbl));
+                }
+                return;
+            }
+
             constexpr double SYMBOL_RADIUS = 0.012;
             constexpr float HALO_SCALE = 1.8F;
             float r_base = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS);

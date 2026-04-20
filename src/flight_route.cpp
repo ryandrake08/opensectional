@@ -632,4 +632,25 @@ namespace nasrbrowse
             elements.push_back(w);
     }
 
+    void flight_route::replace_waypoint(int waypoint_index, route_waypoint wp)
+    {
+        assert(waypoint_index >= 0 &&
+               waypoint_index < static_cast<int>(waypoints.size()));
+        waypoints[waypoint_index] = std::move(wp);
+        elements.clear();
+        for(const auto& w : waypoints)
+            elements.push_back(w);
+    }
+
+    void flight_route::delete_waypoint(int waypoint_index)
+    {
+        assert(waypoint_index >= 0 &&
+               waypoint_index < static_cast<int>(waypoints.size()));
+        assert(waypoints.size() > 2);
+        waypoints.erase(waypoints.begin() + waypoint_index);
+        elements.clear();
+        for(const auto& w : waypoints)
+            elements.push_back(w);
+    }
+
 } // namespace nasrbrowse
