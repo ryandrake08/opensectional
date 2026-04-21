@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -267,7 +268,7 @@ namespace nasrbrowse
     };
 
     feature_builder::feature_builder(const char* db_path, const chart_style& cs)
-        : pimpl(new impl(db_path, cs))
+        : pimpl(std::make_unique<impl>(db_path, cs))
     {
         pimpl->worker = std::thread(&impl::worker_loop, pimpl.get());
     }

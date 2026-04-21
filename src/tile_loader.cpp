@@ -1,6 +1,7 @@
 #include "tile_loader.hpp"
 #include <condition_variable>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <sdl/surface.hpp>
 #include <thread>
@@ -63,7 +64,7 @@ namespace nasrbrowse
     };
 
     tile_loader::tile_loader()
-        : pimpl(new impl())
+        : pimpl(std::make_unique<impl>())
     {
         pimpl->worker = std::thread(&impl::worker_loop, pimpl.get());
     }

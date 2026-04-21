@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdio>
+#include <memory>
 #include <imgui.h>
 
 namespace nasrbrowse
@@ -29,7 +30,7 @@ namespace nasrbrowse
         std::string route_error;
     };
 
-    ui_overlay::ui_overlay() : pimpl(new impl) {}
+    ui_overlay::ui_overlay() : pimpl(std::make_unique<impl>()) {}
     ui_overlay::~ui_overlay() = default;
 
     void ui_overlay::set_route_state(const flight_route& route)

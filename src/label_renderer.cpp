@@ -2,6 +2,7 @@
 #include "render_context.hpp"
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <optional>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <sdl/buffer.hpp>
@@ -95,7 +96,7 @@ namespace nasrbrowse
 
     label_renderer::label_renderer(sdl::device& dev, sdl::text_engine& engine,
                                    sdl::font& font, sdl::font& outline_font)
-        : pimpl(new impl(dev, engine, font, outline_font))
+        : pimpl(std::make_unique<impl>(dev, engine, font, outline_font))
     {
     }
 

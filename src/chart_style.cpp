@@ -1,6 +1,7 @@
 #include "chart_style.hpp"
 #include "ini_config.hpp"
 #include "nasr_database.hpp"
+#include <array>
 #include <fstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -189,7 +190,7 @@ namespace nasrbrowse
     }
 
     // All known feature keys that the renderer may look up
-    static const char* all_keys[] = {
+    static constexpr std::array all_keys = {
         "airport_class_b", "airport_class_c", "airport_class_d",
         "airport_class_e", "airport_other",
         "airport_towered", "airport_untowered",
@@ -464,7 +465,7 @@ namespace nasrbrowse
     // Group-level early-out helpers
     bool chart_style::any_airport_visible(double zoom) const
     {
-        static const char* keys[] = {
+        static constexpr std::array keys = {
             "airport_class_b", "airport_class_c", "airport_class_d",
             "airport_class_e", "airport_other"};
         for(const char* k : keys) if(visible(k, zoom)) return true;
@@ -490,7 +491,7 @@ namespace nasrbrowse
 
     bool chart_style::any_airway_visible(double zoom) const
     {
-        static const char* keys[] = {
+        static constexpr std::array keys = {
             "airway_v", "airway_t", "airway_br", "airway_tk",
             "airway_j", "airway_q", "airway_ar", "airway_rte", "airway_h",
             "airway_m", "airway_l", "airway_y", "airway_w", "airway_n",
@@ -501,7 +502,7 @@ namespace nasrbrowse
 
     bool chart_style::any_airspace_visible(double zoom) const
     {
-        static const char* keys[] = {
+        static constexpr std::array keys = {
             "airspace_b", "airspace_c", "airspace_d",
             "airspace_e2", "airspace_e3", "airspace_e4",
             "airspace_e5", "airspace_e6", "airspace_e7"};
@@ -511,7 +512,7 @@ namespace nasrbrowse
 
     bool chart_style::any_sua_visible(double zoom) const
     {
-        static const char* keys[] = {
+        static constexpr std::array keys = {
             "sua_prohibited", "sua_restricted", "sua_warning",
             "sua_alert", "sua_moa", "sua_nsa"};
         for(const char* k : keys) if(visible(k, zoom)) return true;

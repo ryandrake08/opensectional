@@ -12,6 +12,7 @@
 #include "ui_sectioned_list.hpp"
 #include "chart_style.hpp"
 #include <algorithm>
+#include <memory>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_projection.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -282,8 +283,9 @@ struct map_widget::impl
             load_shader(dev, shader_id::LINE, sdl::shader_stage::fragment, 0, 2),
             sdl::primitive_type::triangle_list,
             sdl::texture_format_t(0), false)
-        , tiles(tile_path ? std::unique_ptr<nasrbrowse::tile_renderer>(
-              new nasrbrowse::tile_renderer(dev, tile_path)) : nullptr)
+        , tiles(tile_path
+              ? std::make_unique<nasrbrowse::tile_renderer>(dev, tile_path)
+              : nullptr)
         , features(dev, db_path, nasrbrowse::chart_style(conf_path, nasrbrowse::chart_mode::vfr))
         , text_engine(dev)
         , label_font(text_engine, NotoSans_Regular_ttf, NotoSans_Regular_ttf_len, 13)
@@ -897,7 +899,7 @@ struct map_widget::impl
 
 map_widget::map_widget(sdl::device& dev, const char* tile_path,
                        const char* db_path, const char* conf_path)
-    : pimpl(new impl(dev, tile_path, db_path, conf_path))
+    : pimpl(std::make_unique<impl>(dev, tile_path, db_path, conf_path))
 {
 }
 

@@ -1,5 +1,6 @@
 #include "line_renderer.hpp"
 #include <algorithm>
+#include <memory>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/render_pass.hpp>
@@ -58,7 +59,7 @@ namespace nasrbrowse
         uint32_t instance_count = 0;
     };
 
-    line_renderer::line_renderer() : pimpl(new impl()) {}
+    line_renderer::line_renderer() : pimpl(std::make_unique<impl>()) {}
     line_renderer::~line_renderer() = default;
 
     void line_renderer::set_data(std::vector<std::vector<glm::vec2>> polylines,

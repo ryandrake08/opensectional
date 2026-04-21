@@ -1,4 +1,5 @@
 #include "nasr_database.hpp"
+#include <memory>
 #include <sqlite/database.hpp>
 #include <sqlite/statement.hpp>
 #include <stdexcept>
@@ -666,7 +667,7 @@ namespace nasrbrowse
         }
     };
 
-    nasr_database::nasr_database(const char* db_path) : pimpl(new impl(db_path))
+    nasr_database::nasr_database(const char* db_path) : pimpl(std::make_unique<impl>(db_path))
     {
     }
 

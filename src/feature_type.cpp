@@ -8,6 +8,7 @@
 #include "ui_overlay.hpp"  // for the layer enum
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <glm/glm.hpp>
@@ -1201,17 +1202,14 @@ namespace nasrbrowse
             constexpr float SQRT2_M1 = 0.41421356F;
 
             struct arc_def { float acx, acy; float start_angle; };
-            const arc_def arcs[4] = {
+            const std::array<arc_def, 4> arcs = {{
                 { r,  r, -PI / 2}, {-r,  r,  0},
                 {-r, -r,  PI / 2}, { r, -r,  PI},
-            };
+            }};
 
             std::vector<glm::vec2> star_pts;
-            for(int q = 0; q < 4; q++)
+            for(const auto& [acx_off, acy_off, a0] : arcs)
             {
-                float acx_off = arcs[q].acx;
-                float acy_off = arcs[q].acy;
-                float a0 = arcs[q].start_angle;
                 for(int i = 0; i <= ARC_SEGS; i++)
                 {
                     float t = static_cast<float>(i) / ARC_SEGS;
@@ -1285,7 +1283,7 @@ namespace nasrbrowse
                 float gap = radius * 0.4F;
                 float ray_len = radius * 0.15F;
                 constexpr float DEG_TO_RAD = static_cast<float>(M_PI) / 180.0F;
-                float angles[] = {-120, -60, 0, 60, 120};
+                constexpr std::array<float, 5> angles = {-120, -60, 0, 60, 120};
                 for(float deg : angles)
                 {
                     float rad = (90.0F - deg) * DEG_TO_RAD;

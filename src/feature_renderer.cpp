@@ -7,6 +7,7 @@
 #include "ui_overlay.hpp"
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
@@ -121,7 +122,7 @@ namespace nasrbrowse
 
     feature_renderer::feature_renderer(sdl::device& dev, const char* db_path,
                                        const chart_style& cs)
-        : pimpl(new impl(dev, db_path, cs))
+        : pimpl(std::make_unique<impl>(dev, db_path, cs))
     {
     }
 

@@ -6,6 +6,7 @@
 #include "tile_loader.hpp"
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
@@ -217,7 +218,7 @@ namespace nasrbrowse
     };
 
     tile_renderer::tile_renderer(sdl::device& dev, const char* tile_path)
-        : pimpl(new impl(dev, tile_path))
+        : pimpl(std::make_unique<impl>(dev, tile_path))
     {
     }
 
