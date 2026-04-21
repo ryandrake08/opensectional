@@ -5,6 +5,7 @@
 #include "map_view.hpp"
 #include "render_context.hpp"
 #include "ui_overlay.hpp"
+#include <algorithm>
 #include <cmath>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>

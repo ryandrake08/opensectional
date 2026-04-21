@@ -44,9 +44,9 @@ namespace nasrbrowse
 
         // Composite airspace label: TYPE on left, upper/lower altitudes
         // on right separated by a divider line.
-        std::optional<sdl::text> upper_fill, upper_outline;
-        std::optional<sdl::text> lower_fill, lower_outline;
-        std::optional<sdl::text> divider_fill, divider_outline;
+        std::optional<sdl::text> upper_fill = std::nullopt, upper_outline = std::nullopt;
+        std::optional<sdl::text> lower_fill = std::nullopt, lower_outline = std::nullopt;
+        std::optional<sdl::text> divider_fill = std::nullopt, divider_outline = std::nullopt;
         float type_width = 0.0F;
         float upper_width = 0.0F;
         float lower_width = 0.0F;

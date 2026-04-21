@@ -568,7 +568,7 @@ namespace nasrbrowse
         int wp_idx = 0;
         for(size_t ei = 0; ei < elements.size(); ++ei)
         {
-            if(auto* ewp = std::get_if<route_waypoint>(&elements[ei]))
+            if(std::holds_alternative<route_waypoint>(elements[ei]))
             {
                 if(wp_idx == segment_index)
                 {

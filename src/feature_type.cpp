@@ -1717,7 +1717,7 @@ namespace nasrbrowse
                 return "SFC";
             if(ft_val < 0) return "";
             int hundreds = (ft_val + 50) / 100;
-            char buf[8];
+            char buf[16];   // Sized to fit any int %03d[A] without truncation
             if(ft_ref == "MSL" || ft_ref == "STD")
                 std::snprintf(buf, sizeof(buf), "%03d", hundreds);
             else
