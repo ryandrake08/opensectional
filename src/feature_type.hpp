@@ -30,7 +30,7 @@ namespace nasrbrowse
     // dispatcher.
     struct pick_context
     {
-        nasr_database& db;
+        const nasr_database& db;
         const chart_style& styles;
         const layer_visibility& vis;
         double zoom;

@@ -1,5 +1,6 @@
 #include "nasr_database.hpp"
 #include <memory>
+#include <mutex>
 #include <sqlite/database.hpp>
 #include <sqlite/statement.hpp>
 #include <stdexcept>
@@ -68,29 +69,9 @@ namespace nasrbrowse
         sqlite::statement stmt_lookup_navaid;
         sqlite::statement stmt_lookup_fix;
 
-        std::vector<airport> airports;
-        std::vector<navaid> navaids;
-        std::vector<fix> fixes;
-        std::vector<airway_segment> airways;
-        std::vector<mtr_segment> mtrs;
-        std::vector<maa> maas;
-        std::vector<class_airspace> class_airspaces;
-        std::vector<runway> runways;
-        std::vector<sua> suas;
-        std::vector<obstacle> obstacles;
-        std::vector<artcc> artccs;
-        std::vector<pja> pjas;
-        std::vector<adiz> adizs;
-        std::vector<tfr> tfrs;
-        std::vector<fss> fsss;
-        std::vector<awos> awoss;
-        std::vector<comm_outlet> comm_outlets;
-        std::vector<boundary_segment> artcc_segs;
-        std::vector<boundary_segment> adiz_segs;
-        std::vector<tfr_segment> tfr_segs;
-        std::vector<airspace_segment> cls_arsp_segs;
-        std::vector<sua_segment> sua_segs;
-        std::vector<sua_circle> sua_circles;
+        // Serializes access to `db` and the prepared statements above.
+        // Each public query method acquires this lock for its duration.
+        mutable std::mutex mutex;
 
         // ARSP_IDs of class airspaces that are "shadowed" by a
         // higher-priority class at the same airport (same non-empty IDENT
@@ -633,13 +614,13 @@ namespace nasrbrowse
             stmt.bind(index, filter_json);
         }
 
-        template<typename T, typename RowMapper>
-        const std::vector<T>& query_bbox(std::vector<T>& results,
-                                          sqlite::statement& stmt,
-                                          const geo_bbox& bbox,
-                                          RowMapper&& map_row)
+        template<typename RowMapper>
+        auto query_bbox(sqlite::statement& stmt,
+                         const geo_bbox& bbox,
+                         RowMapper&& map_row)
         {
-            results.clear();
+            using T = std::invoke_result_t<RowMapper&, sqlite::statement&>;
+            std::vector<T> results;
             bind_bbox(stmt, bbox);
             while (stmt.step())
             {
@@ -648,15 +629,15 @@ namespace nasrbrowse
             return results;
         }
 
-        template<typename T, typename RowMapper>
-        const std::vector<T>& query_bbox_filtered(
-            std::vector<T>& results,
+        template<typename RowMapper>
+        auto query_bbox_filtered(
             sqlite::statement& stmt,
             const geo_bbox& bbox,
             const std::optional<std::vector<std::string>>& filter,
             RowMapper&& map_row)
         {
-            results.clear();
+            using T = std::invoke_result_t<RowMapper&, sqlite::statement&>;
+            std::vector<T> results;
             bind_bbox(stmt, bbox);
             bind_filter(stmt, 5, filter);
             while (stmt.step())
@@ -673,11 +654,12 @@ namespace nasrbrowse
 
     nasr_database::~nasr_database() = default;
 
-    const std::vector<airport>& nasr_database::query_airports(const geo_bbox& bbox,
-                                                                const filter_list& class_filter)
+    std::vector<airport> nasr_database::query_airports(const geo_bbox& bbox,
+                                                        const filter_list& class_filter) const
     {
         auto& d = *pimpl;
-        return d.query_bbox_filtered(d.airports, d.stmt_airports,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox_filtered(d.stmt_airports,
             bbox, class_filter, [](sqlite::statement& s)
         {
             return airport{
@@ -694,10 +676,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<navaid>& nasr_database::query_navaids(const geo_bbox& bbox)
+    std::vector<navaid> nasr_database::query_navaids(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.navaids, d.stmt_navaids,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_navaids,
             bbox, [](sqlite::statement& s)
         {
             return navaid{
@@ -712,10 +695,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<fix>& nasr_database::query_fixes(const geo_bbox& bbox)
+    std::vector<fix> nasr_database::query_fixes(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.fixes, d.stmt_fixes,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_fixes,
             bbox, [](sqlite::statement& s)
         {
             return fix{
@@ -726,10 +710,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<airway_segment>& nasr_database::query_airways(const geo_bbox& bbox)
+    std::vector<airway_segment> nasr_database::query_airways(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.airways, d.stmt_airways,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_airways,
             bbox, [](sqlite::statement& s)
         {
             return airway_segment{
@@ -741,10 +726,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<mtr_segment>& nasr_database::query_mtrs(const geo_bbox& bbox)
+    std::vector<mtr_segment> nasr_database::query_mtrs(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.mtrs, d.stmt_mtrs,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_mtrs,
             bbox, [](sqlite::statement& s)
         {
             return mtr_segment{
@@ -755,8 +741,9 @@ namespace nasrbrowse
         });
     }
 
-    std::vector<airway_segment> nasr_database::query_airway_by_id(const std::string& awy_id)
+    std::vector<airway_segment> nasr_database::query_airway_by_id(const std::string& awy_id) const
     {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
         auto& s = pimpl->stmt_airway_by_id;
         s.reset();
         s.bind(1, awy_id);
@@ -773,8 +760,9 @@ namespace nasrbrowse
         return out;
     }
 
-    std::vector<mtr_segment> nasr_database::query_mtr_by_id(const std::string& mtr_id)
+    std::vector<mtr_segment> nasr_database::query_mtr_by_id(const std::string& mtr_id) const
     {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
         auto& s = pimpl->stmt_mtr_by_id;
         s.reset();
         s.bind(1, mtr_id);
@@ -790,10 +778,11 @@ namespace nasrbrowse
         return out;
     }
 
-    const std::vector<maa>& nasr_database::query_maas(const geo_bbox& bbox)
+    std::vector<maa> nasr_database::query_maas(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.maas, d.stmt_maas,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_maas,
             bbox, [&](sqlite::statement& s)
         {
             maa m{s.column_text(0), s.column_text(1), s.column_text(2),
@@ -816,10 +805,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<class_airspace>& nasr_database::query_class_airspace(const geo_bbox& bbox)
+    std::vector<class_airspace> nasr_database::query_class_airspace(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.class_airspaces, d.stmt_cls_arsp,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_cls_arsp,
             bbox, [&](sqlite::statement& s)
         {
             class_airspace a{s.column_int(0),
@@ -849,10 +839,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<runway>& nasr_database::query_runways(const geo_bbox& bbox)
+    std::vector<runway> nasr_database::query_runways(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.runways, d.stmt_runways,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_runways,
             bbox, [](sqlite::statement& s)
         {
             return runway{s.column_text(0), s.column_text(1),
@@ -861,11 +852,12 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<sua>& nasr_database::query_sua(const geo_bbox& bbox,
-                                                      const filter_list& type_filter)
+    std::vector<sua> nasr_database::query_sua(const geo_bbox& bbox,
+                                                const filter_list& type_filter) const
     {
         auto& d = *pimpl;
-        return d.query_bbox_filtered(d.suas, d.stmt_sua,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox_filtered(d.stmt_sua,
             bbox, type_filter, [&](sqlite::statement& s)
         {
             sua su{s.column_int(0), s.column_text(1), s.column_text(2), s.column_text(3),
@@ -973,11 +965,12 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<sua_circle>& nasr_database::query_sua_circles(
-        const geo_bbox& bbox, const filter_list& type_filter)
+    std::vector<sua_circle> nasr_database::query_sua_circles(
+        const geo_bbox& bbox, const filter_list& type_filter) const
     {
         auto& d = *pimpl;
-        return d.query_bbox_filtered(d.sua_circles, d.stmt_sua_circles_bbox,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox_filtered(d.stmt_sua_circles_bbox,
             bbox, type_filter, [](sqlite::statement& s)
         {
             return sua_circle{s.column_text(0),
@@ -991,10 +984,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<obstacle>& nasr_database::query_obstacles(const geo_bbox& bbox)
+    std::vector<obstacle> nasr_database::query_obstacles(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.obstacles, d.stmt_obstacles,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_obstacles,
             bbox, [](sqlite::statement& s)
         {
             return obstacle{
@@ -1007,10 +1001,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<artcc>& nasr_database::query_artcc(const geo_bbox& bbox)
+    std::vector<artcc> nasr_database::query_artcc(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.artccs, d.stmt_artcc,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_artcc,
             bbox, [&](sqlite::statement& s)
         {
             artcc a{s.column_int(0), s.column_text(1),
@@ -1027,10 +1022,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<pja>& nasr_database::query_pjas(const geo_bbox& bbox)
+    std::vector<pja> nasr_database::query_pjas(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.pjas, d.stmt_pjas,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_pjas,
             bbox, [](sqlite::statement& s)
         {
             return pja{s.column_text(0), s.column_text(1),
@@ -1039,10 +1035,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<adiz>& nasr_database::query_adiz(const geo_bbox& bbox)
+    std::vector<adiz> nasr_database::query_adiz(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.adizs, d.stmt_adiz,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_adiz,
             bbox, [&](sqlite::statement& s)
         {
             adiz a{s.column_int(0), s.column_text(1),
@@ -1067,10 +1064,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<tfr>& nasr_database::query_tfr(const geo_bbox& bbox)
+    std::vector<tfr> nasr_database::query_tfr(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.tfrs, d.stmt_tfr,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_tfr,
             bbox, [&](sqlite::statement& s)
         {
             tfr t{s.column_int(0), s.column_text(1), s.column_text(2),
@@ -1106,10 +1104,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<fss>& nasr_database::query_fss(const geo_bbox& bbox)
+    std::vector<fss> nasr_database::query_fss(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.fsss, d.stmt_fss,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_fss,
             bbox, [](sqlite::statement& s)
         {
             return fss{
@@ -1121,10 +1120,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<awos>& nasr_database::query_awos(const geo_bbox& bbox)
+    std::vector<awos> nasr_database::query_awos(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.awoss, d.stmt_awos,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_awos,
             bbox, [](sqlite::statement& s)
         {
             return awos{
@@ -1136,10 +1136,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<comm_outlet>& nasr_database::query_comm_outlets(const geo_bbox& bbox)
+    std::vector<comm_outlet> nasr_database::query_comm_outlets(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        return d.query_bbox(d.comm_outlets, d.stmt_comm_outlets,
+        std::lock_guard<std::mutex> lock(d.mutex);
+        return d.query_bbox(d.stmt_comm_outlets,
             bbox, [](sqlite::statement& s)
         {
             return comm_outlet{
@@ -1151,10 +1152,11 @@ namespace nasrbrowse
         });
     }
 
-    const std::vector<boundary_segment>& nasr_database::query_artcc_segments(const geo_bbox& bbox)
+    std::vector<boundary_segment> nasr_database::query_artcc_segments(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        d.artcc_segs.clear();
+        std::lock_guard<std::mutex> lock(d.mutex);
+        std::vector<boundary_segment> results;
         d.bind_bbox(d.stmt_artcc_seg, bbox);
         int current_seg = -1;
         while (d.stmt_artcc_seg.step())
@@ -1162,20 +1164,21 @@ namespace nasrbrowse
             int seg_id = d.stmt_artcc_seg.column_int(0);
             if (seg_id != current_seg)
             {
-                d.artcc_segs.push_back({d.stmt_artcc_seg.column_text(1), {}});
+                results.push_back({d.stmt_artcc_seg.column_text(1), {}});
                 current_seg = seg_id;
             }
-            d.artcc_segs.back().points.push_back(
+            results.back().points.push_back(
                 {d.stmt_artcc_seg.column_double(3),
                  d.stmt_artcc_seg.column_double(2)});
         }
-        return d.artcc_segs;
+        return results;
     }
 
-    const std::vector<boundary_segment>& nasr_database::query_adiz_segments(const geo_bbox& bbox)
+    std::vector<boundary_segment> nasr_database::query_adiz_segments(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        d.adiz_segs.clear();
+        std::lock_guard<std::mutex> lock(d.mutex);
+        std::vector<boundary_segment> results;
         d.bind_bbox(d.stmt_adiz_seg, bbox);
         int current_seg = -1;
         while (d.stmt_adiz_seg.step())
@@ -1183,20 +1186,21 @@ namespace nasrbrowse
             int seg_id = d.stmt_adiz_seg.column_int(0);
             if (seg_id != current_seg)
             {
-                d.adiz_segs.push_back({{}, {}});
+                results.push_back({{}, {}});
                 current_seg = seg_id;
             }
-            d.adiz_segs.back().points.push_back(
+            results.back().points.push_back(
                 {d.stmt_adiz_seg.column_double(2),
                  d.stmt_adiz_seg.column_double(1)});
         }
-        return d.adiz_segs;
+        return results;
     }
 
-    const std::vector<tfr_segment>& nasr_database::query_tfr_segments(const geo_bbox& bbox)
+    std::vector<tfr_segment> nasr_database::query_tfr_segments(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        d.tfr_segs.clear();
+        std::lock_guard<std::mutex> lock(d.mutex);
+        std::vector<tfr_segment> results;
         d.bind_bbox(d.stmt_tfr_seg, bbox);
         int current_seg = -1;
         while (d.stmt_tfr_seg.step())
@@ -1204,25 +1208,26 @@ namespace nasrbrowse
             int seg_id = d.stmt_tfr_seg.column_int(0);
             if (seg_id != current_seg)
             {
-                d.tfr_segs.push_back({d.stmt_tfr_seg.column_int(1),
-                                      d.stmt_tfr_seg.column_text(2),
-                                      d.stmt_tfr_seg.column_int(3),
-                                      d.stmt_tfr_seg.column_text(4),
-                                      {}});
+                results.push_back({d.stmt_tfr_seg.column_int(1),
+                                   d.stmt_tfr_seg.column_text(2),
+                                   d.stmt_tfr_seg.column_int(3),
+                                   d.stmt_tfr_seg.column_text(4),
+                                   {}});
                 current_seg = seg_id;
             }
-            d.tfr_segs.back().points.push_back(
+            results.back().points.push_back(
                 {d.stmt_tfr_seg.column_double(6),
                  d.stmt_tfr_seg.column_double(5)});
         }
-        return d.tfr_segs;
+        return results;
     }
 
-    const std::vector<airspace_segment>& nasr_database::query_class_airspace_segments(
-        const geo_bbox& bbox, const filter_list& class_filter)
+    std::vector<airspace_segment> nasr_database::query_class_airspace_segments(
+        const geo_bbox& bbox, const filter_list& class_filter) const
     {
         auto& d = *pimpl;
-        d.cls_arsp_segs.clear();
+        std::lock_guard<std::mutex> lock(d.mutex);
+        std::vector<airspace_segment> results;
         d.bind_bbox(d.stmt_cls_arsp_seg, bbox);
         d.bind_filter(d.stmt_cls_arsp_seg, 5, class_filter);
         int current_seg = -1;
@@ -1236,23 +1241,24 @@ namespace nasrbrowse
                 skip_current = d.shadowed_arsp_ids.count(arsp_id) != 0;
                 current_seg = seg_id;
                 if (skip_current) continue;
-                d.cls_arsp_segs.push_back(
+                results.push_back(
                     {d.stmt_cls_arsp_seg.column_text(2),
                      d.stmt_cls_arsp_seg.column_text(3), {}});
             }
             if (skip_current) continue;
-            d.cls_arsp_segs.back().points.push_back(
+            results.back().points.push_back(
                 {d.stmt_cls_arsp_seg.column_double(5),
                  d.stmt_cls_arsp_seg.column_double(4)});
         }
-        return d.cls_arsp_segs;
+        return results;
     }
 
-    const std::vector<sua_segment>& nasr_database::query_sua_segments(
-        const geo_bbox& bbox, const filter_list& type_filter)
+    std::vector<sua_segment> nasr_database::query_sua_segments(
+        const geo_bbox& bbox, const filter_list& type_filter) const
     {
         auto& d = *pimpl;
-        d.sua_segs.clear();
+        std::lock_guard<std::mutex> lock(d.mutex);
+        std::vector<sua_segment> results;
         d.bind_bbox(d.stmt_sua_seg, bbox);
         d.bind_filter(d.stmt_sua_seg, 5, type_filter);
         int current_seg = -1;
@@ -1261,22 +1267,22 @@ namespace nasrbrowse
             int seg_id = d.stmt_sua_seg.column_int(0);
             if (seg_id != current_seg)
             {
-                d.sua_segs.push_back({d.stmt_sua_seg.column_text(1),
-                                      d.stmt_sua_seg.column_int(4),
-                                      d.stmt_sua_seg.column_text(5),
-                                      d.stmt_sua_seg.column_int(6),
-                                      d.stmt_sua_seg.column_text(7),
-                                      {}});
+                results.push_back({d.stmt_sua_seg.column_text(1),
+                                   d.stmt_sua_seg.column_int(4),
+                                   d.stmt_sua_seg.column_text(5),
+                                   d.stmt_sua_seg.column_int(6),
+                                   d.stmt_sua_seg.column_text(7),
+                                   {}});
                 current_seg = seg_id;
             }
-            d.sua_segs.back().points.push_back(
+            results.back().points.push_back(
                 {d.stmt_sua_seg.column_double(3),
                  d.stmt_sua_seg.column_double(2)});
         }
-        return d.sua_segs;
+        return results;
     }
 
-    std::vector<search_hit> nasr_database::search(const std::string& query, int limit)
+    std::vector<search_hit> nasr_database::search(const std::string& query, int limit) const
     {
         // Build an FTS5 MATCH expression from the user query. Split on
         // whitespace; for each token keep only alphanumerics (FTS5 rejects
@@ -1306,6 +1312,7 @@ namespace nasrbrowse
         if(expr.empty()) return hits;
 
         auto& d = *pimpl;
+        std::lock_guard<std::mutex> lock(d.mutex);
         d.stmt_search.reset();
         d.stmt_search.bind(1, expr);
         d.stmt_search.bind(2, limit);
@@ -1320,7 +1327,7 @@ namespace nasrbrowse
         return hits;
     }
 
-    std::optional<geo_bbox> nasr_database::get_hit_bbox(const search_hit& hit)
+    std::optional<geo_bbox> nasr_database::get_hit_bbox(const search_hit& hit) const
     {
         const std::string& entity_type = hit.entity_type;
         int entity_rowid = hit.entity_rowid;
@@ -1362,6 +1369,7 @@ namespace nasrbrowse
         if(!sql) return std::nullopt;
 
         auto& d = *pimpl;
+        std::lock_guard<std::mutex> lock(d.mutex);
         auto stmt = d.db.prepare(sql);
         stmt.bind(1, entity_rowid);
         if(!stmt.step()) return std::nullopt;
@@ -1376,8 +1384,9 @@ namespace nasrbrowse
         return bb;
     }
 
-    std::vector<airport> nasr_database::lookup_airports(const std::string& id)
+    std::vector<airport> nasr_database::lookup_airports(const std::string& id) const
     {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
         auto& s = pimpl->stmt_lookup_airport;
         s.reset();
         s.bind(1, id);
@@ -1399,8 +1408,9 @@ namespace nasrbrowse
         return out;
     }
 
-    std::vector<navaid> nasr_database::lookup_navaids(const std::string& id)
+    std::vector<navaid> nasr_database::lookup_navaids(const std::string& id) const
     {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
         auto& s = pimpl->stmt_lookup_navaid;
         s.reset();
         s.bind(1, id);
@@ -1420,8 +1430,9 @@ namespace nasrbrowse
         return out;
     }
 
-    std::vector<fix> nasr_database::lookup_fixes(const std::string& id)
+    std::vector<fix> nasr_database::lookup_fixes(const std::string& id) const
     {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
         auto& s = pimpl->stmt_lookup_fix;
         s.reset();
         s.bind(1, id);

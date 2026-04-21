@@ -471,66 +471,69 @@ namespace nasrbrowse
         ~nasr_database();
 
         // Query features within a geographic bounding box (lon/lat degrees).
-        // Results are valid until the next query call on the same type.
+        // Each call returns an owning vector; callers may move or retain
+        // results independently of future queries. Methods are thread-safe:
+        // a single internal mutex serializes access to the sqlite connection
+        // and its prepared statements.
         // Optional filter: when provided, restricts rows to those whose
         // relevant attribute is in the given value list (nullopt = no filter).
         using filter_list = std::optional<std::vector<std::string>>;
 
-        const std::vector<airport>& query_airports(const geo_bbox& bbox,
-                                                    const filter_list& class_filter = std::nullopt);
-        const std::vector<navaid>& query_navaids(const geo_bbox& bbox);
-        const std::vector<fix>& query_fixes(const geo_bbox& bbox);
-        const std::vector<airway_segment>& query_airways(const geo_bbox& bbox);
-        const std::vector<mtr_segment>& query_mtrs(const geo_bbox& bbox);
+        std::vector<airport> query_airports(const geo_bbox& bbox,
+                                             const filter_list& class_filter = std::nullopt) const;
+        std::vector<navaid> query_navaids(const geo_bbox& bbox) const;
+        std::vector<fix> query_fixes(const geo_bbox& bbox) const;
+        std::vector<airway_segment> query_airways(const geo_bbox& bbox) const;
+        std::vector<mtr_segment> query_mtrs(const geo_bbox& bbox) const;
 
-        // Fetch every segment of one airway / MTR by identifier. Uncached;
-        // used to highlight an entire route when one segment is selected.
-        std::vector<airway_segment> query_airway_by_id(const std::string& awy_id);
-        std::vector<mtr_segment> query_mtr_by_id(const std::string& mtr_id);
-        const std::vector<maa>& query_maas(const geo_bbox& bbox);
-        const std::vector<class_airspace>& query_class_airspace(const geo_bbox& bbox);
-        const std::vector<runway>& query_runways(const geo_bbox& bbox);
-        const std::vector<sua>& query_sua(const geo_bbox& bbox,
-                                           const filter_list& type_filter = std::nullopt);
-        const std::vector<sua_circle>& query_sua_circles(const geo_bbox& bbox,
-                                                          const filter_list& type_filter = std::nullopt);
-        const std::vector<obstacle>& query_obstacles(const geo_bbox& bbox);
-        const std::vector<artcc>& query_artcc(const geo_bbox& bbox);
-        const std::vector<pja>& query_pjas(const geo_bbox& bbox);
-        const std::vector<adiz>& query_adiz(const geo_bbox& bbox);
-        const std::vector<tfr>& query_tfr(const geo_bbox& bbox);
-        const std::vector<fss>& query_fss(const geo_bbox& bbox);
-        const std::vector<awos>& query_awos(const geo_bbox& bbox);
-        const std::vector<comm_outlet>& query_comm_outlets(const geo_bbox& bbox);
+        // Fetch every segment of one airway / MTR by identifier.
+        // Used to highlight an entire route when one segment is selected.
+        std::vector<airway_segment> query_airway_by_id(const std::string& awy_id) const;
+        std::vector<mtr_segment> query_mtr_by_id(const std::string& mtr_id) const;
+        std::vector<maa> query_maas(const geo_bbox& bbox) const;
+        std::vector<class_airspace> query_class_airspace(const geo_bbox& bbox) const;
+        std::vector<runway> query_runways(const geo_bbox& bbox) const;
+        std::vector<sua> query_sua(const geo_bbox& bbox,
+                                    const filter_list& type_filter = std::nullopt) const;
+        std::vector<sua_circle> query_sua_circles(const geo_bbox& bbox,
+                                                   const filter_list& type_filter = std::nullopt) const;
+        std::vector<obstacle> query_obstacles(const geo_bbox& bbox) const;
+        std::vector<artcc> query_artcc(const geo_bbox& bbox) const;
+        std::vector<pja> query_pjas(const geo_bbox& bbox) const;
+        std::vector<adiz> query_adiz(const geo_bbox& bbox) const;
+        std::vector<tfr> query_tfr(const geo_bbox& bbox) const;
+        std::vector<fss> query_fss(const geo_bbox& bbox) const;
+        std::vector<awos> query_awos(const geo_bbox& bbox) const;
+        std::vector<comm_outlet> query_comm_outlets(const geo_bbox& bbox) const;
 
         // Subdivided segment queries for rendering (tight R-tree bboxes)
-        const std::vector<boundary_segment>& query_artcc_segments(const geo_bbox& bbox);
-        const std::vector<boundary_segment>& query_adiz_segments(const geo_bbox& bbox);
-        const std::vector<tfr_segment>& query_tfr_segments(const geo_bbox& bbox);
-        const std::vector<airspace_segment>& query_class_airspace_segments(
-        const geo_bbox& bbox, const filter_list& class_filter = std::nullopt);
-        const std::vector<sua_segment>& query_sua_segments(
-        const geo_bbox& bbox, const filter_list& type_filter = std::nullopt);
+        std::vector<boundary_segment> query_artcc_segments(const geo_bbox& bbox) const;
+        std::vector<boundary_segment> query_adiz_segments(const geo_bbox& bbox) const;
+        std::vector<tfr_segment> query_tfr_segments(const geo_bbox& bbox) const;
+        std::vector<airspace_segment> query_class_airspace_segments(
+        const geo_bbox& bbox, const filter_list& class_filter = std::nullopt) const;
+        std::vector<sua_segment> query_sua_segments(
+        const geo_bbox& bbox, const filter_list& type_filter = std::nullopt) const;
 
         // Exact-match lookup by identifier. Used for route parsing.
         // May return multiple results — navaid and fix identifiers are not
         // globally unique (duplicates across states/regions). Airport IDs
         // are unique in practice but returned as a vector for consistency.
-        std::vector<airport> lookup_airports(const std::string& id);
-        std::vector<navaid> lookup_navaids(const std::string& id);
-        std::vector<fix> lookup_fixes(const std::string& id);
+        std::vector<airport> lookup_airports(const std::string& id) const;
+        std::vector<navaid> lookup_navaids(const std::string& id) const;
+        std::vector<fix> lookup_fixes(const std::string& id) const;
 
         // Full-text search across the search_fts index. Tokens are split on
         // whitespace; each token is sanitized (alphanumerics only) and given
         // a `*` suffix for prefix matching. Tokens are ANDed. Results are
         // ranked by bm25 with ids weighted higher than name. Returns at most
         // `limit` hits.
-        std::vector<search_hit> search(const std::string& query, int limit);
+        std::vector<search_hit> search(const std::string& query, int limit) const;
 
         // Geographic bounding box for a search hit. Point features return a
         // degenerate bbox (min == max). Returns nullopt if the hit cannot be
         // resolved (missing coords, unknown entity_type, stale rowid).
-        std::optional<geo_bbox> get_hit_bbox(const search_hit& hit);
+        std::optional<geo_bbox> get_hit_bbox(const search_hit& hit) const;
     };
 
 } // namespace nasrbrowse

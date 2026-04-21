@@ -162,7 +162,7 @@ namespace nasrbrowse
     expand_airway(const std::string& airway_id,
                   const std::string& entry_id,
                   const std::string& exit_id,
-                  nasr_database& db)
+                  const nasr_database& db)
     {
         auto segments = db.query_airway_by_id(airway_id);
         if(segments.empty())
@@ -238,7 +238,7 @@ namespace nasrbrowse
     static std::string find_closest_airway_fix(
         const std::string& airway_id,
         double lat, double lon,
-        nasr_database& db)
+        const nasr_database& db)
     {
         auto segments = db.query_airway_by_id(airway_id);
         std::string best;
@@ -256,7 +256,7 @@ namespace nasrbrowse
     // Check if a fix name exists on an airway
     static bool is_on_airway(const std::string& fix_name,
                              const std::string& airway_id,
-                             nasr_database& db)
+                             const nasr_database& db)
     {
         auto segments = db.query_airway_by_id(airway_id);
         for(const auto& seg : segments)
@@ -272,7 +272,7 @@ namespace nasrbrowse
     // ---------------------------------------------------------------
 
     static std::optional<route_waypoint>
-    resolve_waypoint(const std::string& token, nasr_database& db)
+    resolve_waypoint(const std::string& token, const nasr_database& db)
     {
         // Try lat/lon first
         auto ll = parse_latlon(token);
@@ -298,7 +298,7 @@ namespace nasrbrowse
     }
 
     // Check if a token is an airway identifier
-    static bool is_airway(const std::string& token, nasr_database& db)
+    static bool is_airway(const std::string& token, const nasr_database& db)
     {
         auto segs = db.query_airway_by_id(token);
         return !segs.empty();
@@ -341,7 +341,7 @@ namespace nasrbrowse
     // Constructor — parse and resolve, or throw
     // ---------------------------------------------------------------
 
-    flight_route::flight_route(const std::string& text, nasr_database& db)
+    flight_route::flight_route(const std::string& text, const nasr_database& db)
     {
         // Tokenize
         std::vector<std::string> tokens;

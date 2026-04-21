@@ -88,7 +88,7 @@ namespace nasrbrowse
     // antimeridian copy by feature_builder and passed to every feature_type.
     struct build_context
     {
-        nasr_database& db;
+        const nasr_database& db;
         const chart_style& styles;
         const feature_build_request& req;
         double mx_offset;

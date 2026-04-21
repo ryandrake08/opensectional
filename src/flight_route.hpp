@@ -76,7 +76,7 @@ namespace nasrbrowse
 
         // Parse a route string (space-separated waypoints) and resolve
         // against the database. Throws route_parse_error on failure.
-        flight_route(const std::string& text, nasr_database& db);
+        flight_route(const std::string& text, const nasr_database& db);
 
         // Reconstruct the shorthand text from the definition form
         std::string to_text() const;
