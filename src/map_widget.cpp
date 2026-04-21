@@ -13,6 +13,7 @@
 #include "chart_style.hpp"
 #include <algorithm>
 #include <memory>
+#include <string>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_projection.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -168,6 +169,9 @@ namespace
     {
         bool open = false;
         int session_id = 0;
+        // ImGui window ID — refreshed from session_id on each open so ImGui
+        // treats every session as a new window (no stale size/position).
+        std::string window_id;
         int warmup_frames = 0;  // ImGui hides a freshly-created auto-resize
                                 // window for its first frame while it measures
                                 // content. Force a couple of extra renders so
@@ -184,6 +188,7 @@ namespace
     {
         bool open = false;
         int session_id = 0;
+        std::string window_id;     // see pick_popup_state::window_id
         int warmup_frames = 0;
         double anchor_lon = 0.0;
         double anchor_lat = 0.0;
@@ -630,6 +635,7 @@ struct map_widget::impl
                               .anchor_lonlat(f, click_lon, click_lat);
         info_popup.open = true;
         ++info_popup.session_id;
+        info_popup.window_id = "##info_popup_" + std::to_string(info_popup.session_id);
         info_popup.warmup_frames = 2;
         info_popup.anchor_lon = alon;
         info_popup.anchor_lat = alat;
@@ -700,6 +706,7 @@ struct map_widget::impl
         close_info_popup();
         pick_popup.open = true;
         ++pick_popup.session_id;
+        pick_popup.window_id = "##pick_selector_" + std::to_string(pick_popup.session_id);
         pick_popup.warmup_frames = 2;
         pick_popup.click_lon = result.lon;
         pick_popup.click_lat = result.lat;
@@ -726,9 +733,7 @@ struct map_widget::impl
         ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
         ImGui::SetNextWindowBgAlpha(0.9F);
         ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.8F));
-        char window_id[48];
-        std::snprintf(window_id, sizeof(window_id), "##pick_selector_%d", pick_popup.session_id);
-        ImGui::Begin(window_id, nullptr,
+        ImGui::Begin(pick_popup.window_id.c_str(), nullptr,
             ImGuiWindowFlags_NoCollapse |
             ImGuiWindowFlags_NoSavedSettings |
             ImGuiWindowFlags_AlwaysAutoResize |
@@ -821,9 +826,7 @@ struct map_widget::impl
         ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
         ImGui::SetNextWindowBgAlpha(0.9F);
         ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.9F));
-        char window_id[48];
-        std::snprintf(window_id, sizeof(window_id), "##info_popup_%d", info_popup.session_id);
-        ImGui::Begin(window_id, nullptr,
+        ImGui::Begin(info_popup.window_id.c_str(), nullptr,
             ImGuiWindowFlags_NoCollapse |
             ImGuiWindowFlags_NoSavedSettings |
             ImGuiWindowFlags_AlwaysAutoResize |
