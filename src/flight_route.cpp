@@ -314,12 +314,13 @@ namespace nasrbrowse
         out.clear();
         for(const auto& elem : elements)
         {
-            if(auto* wp = std::get_if<route_waypoint>(&elem))
+            if(std::holds_alternative<route_waypoint>(elem))
             {
+                const auto& wp = std::get<route_waypoint>(elem);
                 // Skip if duplicate of last waypoint
-                if(!out.empty() && waypoint_id(*wp) == waypoint_id(out.back()))
+                if(!out.empty() && waypoint_id(wp) == waypoint_id(out.back()))
                     continue;
-                out.push_back(*wp);
+                out.push_back(wp);
             }
             else
             {
@@ -370,8 +371,8 @@ namespace nasrbrowse
                 if(!elements.empty())
                 {
                     auto& prev = elements.back();
-                    if(auto* wp = std::get_if<route_waypoint>(&prev))
-                        entry_id = waypoint_id(*wp);
+                    if(std::holds_alternative<route_waypoint>(prev))
+                        entry_id = waypoint_id(std::get<route_waypoint>(prev));
                     else
                     {
                         auto& aref = std::get<airway_ref>(prev);
@@ -397,10 +398,11 @@ namespace nasrbrowse
                     if(!elements.empty())
                     {
                         auto& prev = elements.back();
-                        if(auto* wp = std::get_if<route_waypoint>(&prev))
+                        if(std::holds_alternative<route_waypoint>(prev))
                         {
-                            lat = waypoint_lat(*wp);
-                            lon = waypoint_lon(*wp);
+                            const auto& wp = std::get<route_waypoint>(prev);
+                            lat = waypoint_lat(wp);
+                            lon = waypoint_lon(wp);
                         }
                         else
                         {
@@ -485,9 +487,9 @@ namespace nasrbrowse
         for(const auto& elem : elements)
         {
             if(!result.empty()) result += ' ';
-            if(auto* wp = std::get_if<route_waypoint>(&elem))
+            if(std::holds_alternative<route_waypoint>(elem))
             {
-                result += waypoint_id(*wp);
+                result += waypoint_id(std::get<route_waypoint>(elem));
             }
             else
             {

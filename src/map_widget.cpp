@@ -527,18 +527,6 @@ struct map_widget::impl
         return std::nullopt;
     }
 
-    // Convert a picked feature (already known to be airport/navaid/fix)
-    // into the route_waypoint variant the route uses.
-    static nasrbrowse::route_waypoint feature_to_waypoint(const nasrbrowse::feature& f)
-    {
-        if(auto* a = std::get_if<nasrbrowse::airport>(&f))
-            return nasrbrowse::airport_ref{a->arpt_id, *a};
-        if(auto* n = std::get_if<nasrbrowse::navaid>(&f))
-            return nasrbrowse::navaid_ref{n->nav_id, *n};
-        auto& x = std::get<nasrbrowse::fix>(f);
-        return nasrbrowse::fix_ref{x.fix_id, x};
-    }
-
     // Resolve a release point to a route_waypoint: prefer the first
     // airport/navaid/fix under the cursor; otherwise lat/lon at the click.
     nasrbrowse::route_waypoint resolve_release_waypoint()
@@ -546,10 +534,21 @@ struct map_widget::impl
         auto pick = pick_at(cursor_ndc_x, cursor_ndc_y);
         for(const auto& f : pick.features)
         {
-            if(std::holds_alternative<nasrbrowse::airport>(f) ||
-               std::holds_alternative<nasrbrowse::navaid>(f) ||
-               std::holds_alternative<nasrbrowse::fix>(f))
-                return feature_to_waypoint(f);
+            if(std::holds_alternative<nasrbrowse::airport>(f))
+            {
+                const auto& a = std::get<nasrbrowse::airport>(f);
+                return nasrbrowse::airport_ref{a.arpt_id, a};
+            }
+            if(std::holds_alternative<nasrbrowse::navaid>(f))
+            {
+                const auto& n = std::get<nasrbrowse::navaid>(f);
+                return nasrbrowse::navaid_ref{n.nav_id, n};
+            }
+            if(std::holds_alternative<nasrbrowse::fix>(f))
+            {
+                const auto& x = std::get<nasrbrowse::fix>(f);
+                return nasrbrowse::fix_ref{x.fix_id, x};
+            }
         }
         return nasrbrowse::route_waypoint{
             nasrbrowse::latlon_ref{pick.lat, pick.lon}};
