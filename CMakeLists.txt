@@ -204,26 +204,21 @@ set(INSTALLER_ICON_ICO  "${CMAKE_BINARY_DIR}/nasrbrowse.ico")
 # if the required tool is missing — installer blocks below make the icon
 # optional.
 if(APPLE AND EXISTS "${ICON_PNG}")
+    # tools/build_macos_icon.sh takes the raw PNG all the way to a .icns
+    # (shape → iconset slicing → icns packaging). CMake just locates the
+    # tools the script depends on and invokes it. IM v7 ships `magick`;
+    # v6 (or the legacy compat wrapper) ships `convert`. Either works.
     find_program(SIPS sips)
     find_program(ICONUTIL iconutil)
-    if(SIPS AND ICONUTIL)
-        set(_iconset "${CMAKE_BINARY_DIR}/nasrbrowse.iconset")
+    find_program(MAGICK NAMES magick convert)
+    if(SIPS AND ICONUTIL AND MAGICK)
+        set(_build_macos_icon "${CMAKE_SOURCE_DIR}/tools/build_macos_icon.sh")
         add_custom_command(
             OUTPUT "${INSTALLER_ICON_ICNS}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${_iconset}"
-            COMMAND ${SIPS} -z 16   16   "${ICON_PNG}" --out "${_iconset}/icon_16x16.png"       > /dev/null
-            COMMAND ${SIPS} -z 32   32   "${ICON_PNG}" --out "${_iconset}/icon_16x16@2x.png"    > /dev/null
-            COMMAND ${SIPS} -z 32   32   "${ICON_PNG}" --out "${_iconset}/icon_32x32.png"       > /dev/null
-            COMMAND ${SIPS} -z 64   64   "${ICON_PNG}" --out "${_iconset}/icon_32x32@2x.png"    > /dev/null
-            COMMAND ${SIPS} -z 128  128  "${ICON_PNG}" --out "${_iconset}/icon_128x128.png"     > /dev/null
-            COMMAND ${SIPS} -z 256  256  "${ICON_PNG}" --out "${_iconset}/icon_128x128@2x.png"  > /dev/null
-            COMMAND ${SIPS} -z 256  256  "${ICON_PNG}" --out "${_iconset}/icon_256x256.png"     > /dev/null
-            COMMAND ${SIPS} -z 512  512  "${ICON_PNG}" --out "${_iconset}/icon_256x256@2x.png"  > /dev/null
-            COMMAND ${SIPS} -z 512  512  "${ICON_PNG}" --out "${_iconset}/icon_512x512.png"     > /dev/null
-            COMMAND ${SIPS} -z 1024 1024 "${ICON_PNG}" --out "${_iconset}/icon_512x512@2x.png"  > /dev/null
-            COMMAND ${ICONUTIL} -c icns -o "${INSTALLER_ICON_ICNS}" "${_iconset}"
-            DEPENDS "${ICON_PNG}"
-            COMMENT "Generating ${INSTALLER_ICON_ICNS} from nasrbrowse.png"
+            COMMAND ${CMAKE_COMMAND} -E env "MAGICK=${MAGICK}"
+                    "${_build_macos_icon}" "${ICON_PNG}" "${INSTALLER_ICON_ICNS}"
+            DEPENDS "${ICON_PNG}" "${_build_macos_icon}"
+            COMMENT "Generating ${INSTALLER_ICON_ICNS}"
             VERBATIM
         )
         add_custom_target(app_icon DEPENDS "${INSTALLER_ICON_ICNS}")
@@ -232,13 +227,18 @@ if(APPLE AND EXISTS "${ICON_PNG}")
 endif()
 
 if(WIN32 AND EXISTS "${ICON_PNG}")
-    find_program(MAGICK magick)
+    # tools/build_windows_icon.sh takes the raw PNG all the way to a .ico
+    # (circle mask → multi-size .ico packaging). CMake just locates the
+    # tools the script depends on and invokes it.
+    find_program(MAGICK NAMES magick convert)
     if(MAGICK)
+        set(_build_windows_icon "${CMAKE_SOURCE_DIR}/tools/build_windows_icon.sh")
         add_custom_command(
             OUTPUT "${INSTALLER_ICON_ICO}"
-            COMMAND ${MAGICK} "${ICON_PNG}" -define icon:auto-resize=16,32,48,64,128,256 "${INSTALLER_ICON_ICO}"
-            DEPENDS "${ICON_PNG}"
-            COMMENT "Generating ${INSTALLER_ICON_ICO} from nasrbrowse.png"
+            COMMAND ${CMAKE_COMMAND} -E env "MAGICK=${MAGICK}"
+                    "${_build_windows_icon}" "${ICON_PNG}" "${INSTALLER_ICON_ICO}"
+            DEPENDS "${ICON_PNG}" "${_build_windows_icon}"
+            COMMENT "Generating ${INSTALLER_ICON_ICO}"
             VERBATIM
         )
         add_custom_target(app_icon DEPENDS "${INSTALLER_ICON_ICO}")
