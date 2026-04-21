@@ -30,6 +30,13 @@ pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 # Third-party libraries
 add_subdirectory(thirdparty/imgui)
 
+# Tests (doctest, opt-in). Built as a separate binary with ctest integration.
+option(BUILD_TESTING "Build unit tests" ON)
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
 # Main executable
 add_executable(nasrbrowse
     # Application sources
