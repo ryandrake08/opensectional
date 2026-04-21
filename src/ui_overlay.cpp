@@ -3,7 +3,6 @@
 #include "ui_sectioned_list.hpp"
 
 #include <array>
-#include <cstdio>
 #include <memory>
 #include <string>
 #include <imgui.h>
@@ -153,10 +152,10 @@ namespace nasrbrowse
             ImGui::Text("%s", r.label);
             ImGui::SameLine(0, spacing);
 
-            char id[32];
-            std::snprintf(id, sizeof(id), "##%s", r.label);
-            if(ImGui::Checkbox(id, &d.vis[r.id]))
+            ImGui::PushID(r.id);
+            if(ImGui::Checkbox("", &d.vis[r.id]))
                 changed = true;
+            ImGui::PopID();
         }
 
         ImGui::End();

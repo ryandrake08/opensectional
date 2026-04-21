@@ -1,6 +1,5 @@
 #include "ui_sectioned_list.hpp"
 
-#include <cstdio>
 #include <cstring>
 #include <imgui.h>
 
@@ -45,15 +44,15 @@ namespace nasrbrowse
             if(sec.items.empty()) continue;
 
             ImGui::TextDisabled("%s", sec.header);
+            ImGui::PushID(s);
             for(int i = 0; i < static_cast<int>(sec.items.size()); ++i)
             {
-                char id[32];
-                std::snprintf(id, sizeof(id), "##sec_%d_%d", s, i);
-                ImGui::PushID(id);
+                ImGui::PushID(i);
                 if(ImGui::Selectable(sec.items[i].c_str(), false))
                     result = std::make_pair(s, i);
                 ImGui::PopID();
             }
+            ImGui::PopID();
         }
         return result;
     }
