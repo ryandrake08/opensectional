@@ -139,27 +139,24 @@ namespace nasrbrowse
         void add_caltrop(polyline_data& pd, float cx, float cy, float hex_r,
                          const line_style& ls)
         {
-            float vx[6], vy[6];
-            for(int i = 0; i < 6; i++)
+            // Three blades with three-fold rotational symmetry. Each blade is
+            // a trapezoid whose inner edge runs along one hex edge of radius
+            // hex_r and whose outer edge is offset by h along that edge's
+            // outward normal.
+            const float h = hex_r * 0.5F;
+            for(int i = 0; i < 3; i++)
             {
-                float angle = glm::radians(60.0F * i);
-                vx[i] = cx + hex_r * std::cos(angle);
-                vy[i] = cy + hex_r * std::sin(angle);
-            }
-            int edges[][2] = {{0, 1}, {2, 3}, {4, 5}};
-            float normal_angles[] = {30.0F, 150.0F, 270.0F};
-            float h = hex_r * 0.5F;
-            for(int e = 0; e < 3; e++)
-            {
-                int a = edges[e][0], b = edges[e][1];
-                float na = glm::radians(normal_angles[e]);
-                float nx = std::cos(na) * h;
-                float ny = std::sin(na) * h;
-                pd.polylines.push_back({
-                    {vx[a], vy[a]}, {vx[b], vy[b]},
-                    {vx[b] + nx, vy[b] + ny}, {vx[a] + nx, vy[a] + ny},
-                    {vx[a], vy[a]},
-                });
+                const float base_deg = 120.0F * i;
+                const glm::vec2 va = {
+                    cx + hex_r * std::cos(glm::radians(base_deg)),
+                    cy + hex_r * std::sin(glm::radians(base_deg))};
+                const glm::vec2 vb = {
+                    cx + hex_r * std::cos(glm::radians(base_deg + 60.0F)),
+                    cy + hex_r * std::sin(glm::radians(base_deg + 60.0F))};
+                const glm::vec2 n = h * glm::vec2{
+                    std::cos(glm::radians(base_deg + 30.0F)),
+                    std::sin(glm::radians(base_deg + 30.0F))};
+                pd.polylines.push_back({va, vb, vb + n, va + n, va});
                 pd.styles.push_back(ls);
             }
         }
