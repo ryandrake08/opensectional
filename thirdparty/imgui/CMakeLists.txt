@@ -6,6 +6,7 @@ add_library(imgui STATIC
     imgui_demo.cpp
     backends/imgui_impl_sdl3.cpp
     backends/imgui_impl_sdlgpu3.cpp
+    misc/cpp/imgui_stdlib.cpp
 )
 
 target_include_directories(imgui PUBLIC

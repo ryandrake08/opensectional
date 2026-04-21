@@ -5,7 +5,9 @@
 #include <array>
 #include <cstdio>
 #include <memory>
+#include <string>
 #include <imgui.h>
+#include <misc/cpp/imgui_stdlib.h>
 
 namespace nasrbrowse
 {
@@ -18,12 +20,12 @@ namespace nasrbrowse
     struct ui_overlay::impl
     {
         layer_visibility vis;
-        char search_buf[64] = {0};
+        std::string search_buf;
         std::vector<search_hit> hits;
 
         // Route panel state: input buffer + cached display data refreshed
         // via set_route_state() after the caller parses a submission.
-        char route_buf[512] = {0};
+        std::string route_buf;
         bool has_route = false;
         std::string route_shorthand;
         std::vector<route_leg> route_legs;
@@ -41,8 +43,7 @@ namespace nasrbrowse
         pimpl->route_legs = compute_legs(route);
         // Snap the input buffer to the canonical shorthand so
         // auto-corrected entry/exit points are reflected.
-        std::snprintf(pimpl->route_buf, sizeof(pimpl->route_buf),
-                      "%s", pimpl->route_shorthand.c_str());
+        pimpl->route_buf = pimpl->route_shorthand;
     }
 
     void ui_overlay::clear_route_state(const std::string& error)
@@ -193,8 +194,7 @@ namespace nasrbrowse
             ImGuiWindowFlags_NoSavedSettings);
 
         ImGui::SetNextItemWidth(static_cast<float>(SEARCH_INPUT_WIDTH_PX));
-        ImGui::InputTextWithHint("##search_input", "Search",
-                                  d.search_buf, sizeof(d.search_buf));
+        ImGui::InputTextWithHint("##search_input", "Search", &d.search_buf);
         bool input_focused = ImGui::IsItemFocused();
         result.search_query = d.search_buf;
 
@@ -246,7 +246,7 @@ namespace nasrbrowse
         if(selected_flat)
         {
             result.selected_hit_index = *selected_flat;
-            d.search_buf[0] = '\0';
+            d.search_buf.clear();
             result.search_query.clear();
         }
 
@@ -266,12 +266,12 @@ namespace nasrbrowse
 
         ImGui::SetNextItemWidth(360.0F);
         bool submit = ImGui::InputText("##route_input",
-            d.route_buf, sizeof(d.route_buf),
+            &d.route_buf,
             ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
         if(ImGui::Button("Set")) submit = true;
         if(submit)
-            result.submit_route_text = std::string(d.route_buf);
+            result.submit_route_text = d.route_buf;
 
         if(!d.route_error.empty())
         {
@@ -285,7 +285,7 @@ namespace nasrbrowse
             if(ImGui::Button("Clear"))
             {
                 result.clear_route = true;
-                d.route_buf[0] = '\0';
+                d.route_buf.clear();
             }
 
             double total = 0;
