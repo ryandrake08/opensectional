@@ -865,7 +865,7 @@ namespace nasrbrowse
                                    const std::string& event,
                                    const std::string& offset_min) -> std::string {
                 if(!clock.empty()) return clock;
-                if(event.empty()) return std::string();
+                if(event.empty()) return {};
                 if(offset_min.empty()) return event;
                 std::string off = offset_min;
                 auto dot = off.find('.');
@@ -898,7 +898,13 @@ namespace nasrbrowse
                 auto start = fmt_endpoint(sc.start_time, sc.start_event, sc.start_event_offset);
                 auto end = fmt_endpoint(sc.end_time, sc.end_event, sc.end_event_offset);
                 std::string val = day;
-                if(!start.empty() || !end.empty()) val += " " + start + "-" + end;
+                if(!start.empty() || !end.empty())
+                {
+                    val += " ";
+                    val += start;
+                    val += "-";
+                    val += end;
+                }
                 rows.push_back({"Schedule", val});
             }
             rows.push_back({"Legal note", v.legal_note});

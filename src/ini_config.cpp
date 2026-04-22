@@ -45,7 +45,7 @@ static std::vector<std::string> split(const std::string& string, const char deli
     return strings;
 }
 
-ini_config::cache_type ini_config::parse(std::istream&& stream)
+ini_config::cache_type ini_config::parse(std::istream&& stream) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
 {
     // rewind stream
     stream.clear();

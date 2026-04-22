@@ -55,9 +55,9 @@ namespace nasrbrowse
         std::array<polyline_data, layer_sdf_count> poly;
         std::vector<label_candidate> labels;
 
-        impl(const char* db_path, const chart_style& cs)
+        impl(const char* db_path, chart_style cs)
             : db(db_path)
-            , styles(cs)
+            , styles(std::move(cs))
             , types(make_feature_types())
         {
         }

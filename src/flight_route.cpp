@@ -386,7 +386,7 @@ namespace nasrbrowse
 
                 // Next token is the exit point
                 ++i;
-                auto exit_id = tokens[i];
+                const auto& exit_id = tokens[i];
 
                 // Auto-correct entry if not on airway
                 auto actual_entry = entry_id;
@@ -440,8 +440,9 @@ namespace nasrbrowse
                 auto expanded = expand_airway(airway_id, actual_entry, actual_exit, db);
                 if(expanded.empty())
                     throw route_parse_error(
-                        "cannot expand " + airway_id +
-                        " from " + actual_entry + " to " + actual_exit,
+                        std::string("cannot expand ").append(airway_id)
+                            .append(" from ").append(actual_entry)
+                            .append(" to ").append(actual_exit),
                         airway_id, ti);
 
                 elements.push_back(airway_ref{

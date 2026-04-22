@@ -135,7 +135,7 @@ namespace
         if(format == sdl::shader_format::metallib)
         {
             bc = get_metallib_bytecode(id);
-            return sdl::shader(dev, bc.data, bc.len, entrypoint, stage, format, num_samplers, num_storage_buffers);
+            return {dev, bc.data, bc.len, entrypoint, stage, format, num_samplers, num_storage_buffers};
         }
 #endif
 #ifdef _WIN32
@@ -144,7 +144,7 @@ namespace
         else
 #endif
             bc = get_spirv_bytecode(id, stage);
-        return sdl::shader(dev, bc.data, bc.len, entrypoint, stage, format, num_samplers, num_storage_buffers);
+        return {dev, bc.data, bc.len, entrypoint, stage, format, num_samplers, num_storage_buffers};
     }
 }
 

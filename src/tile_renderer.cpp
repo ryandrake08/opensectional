@@ -151,9 +151,9 @@ namespace nasrbrowse
         std::vector<fallback_quad> fallback_quads;
         bool fallback_dirty = false;
 
-        impl(sdl::device& dev, const std::string& tile_path)
+        impl(sdl::device& dev, std::string tile_path)
             : dev(dev)
-            , tile_path(tile_path)
+            , tile_path(std::move(tile_path))
             , cache(1024)
         {
         }
