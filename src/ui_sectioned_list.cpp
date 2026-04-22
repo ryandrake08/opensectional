@@ -5,7 +5,7 @@
 
 namespace nasrbrowse
 {
-    const feature_section_def FEATURE_SECTIONS[] = {
+    const std::array<feature_section_def, FEATURE_SECTION_COUNT> FEATURE_SECTIONS = {{
         {"APT",   "AIRPORTS"},
         {"RWY",   "RUNWAYS"},
         {"NAV",   "NAVAIDS"},
@@ -23,9 +23,7 @@ namespace nasrbrowse
         {"ADIZ",  "ADIZ"},
         {"ARTCC", "ARTCC"},
         {"FSS",   "FLIGHT SERVICE"},
-    };
-    const std::size_t FEATURE_SECTION_COUNT =
-        sizeof(FEATURE_SECTIONS) / sizeof(FEATURE_SECTIONS[0]);
+    }};
 
     int feature_section_index(const char* tag)
     {

@@ -1720,12 +1720,12 @@ namespace nasrbrowse
                 return "SFC";
             if(ft_val < 0) return "";
             auto hundreds = (ft_val + 50) / 100;
-            char buf[16];   // Sized to fit any int %03d[A] without truncation
+            std::array<char, 16> buf{};
             if(ft_ref == "MSL" || ft_ref == "STD")
-                std::snprintf(buf, sizeof(buf), "%03d", hundreds);
+                std::snprintf(buf.data(), buf.size(), "%03d", hundreds);
             else
-                std::snprintf(buf, sizeof(buf), "%03dA", hundreds);
-            return buf;
+                std::snprintf(buf.data(), buf.size(), "%03dA", hundreds);
+            return buf.data();
         }
 
         const char* sua_type_label(const std::string& sua_type)

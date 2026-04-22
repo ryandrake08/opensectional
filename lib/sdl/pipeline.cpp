@@ -2,6 +2,7 @@
 #include "device.hpp"
 #include "error.hpp"
 #include "shader.hpp"
+#include <array>
 #include <SDL3/SDL.h>
 #include <cstddef>
 #include <memory>
@@ -24,7 +25,7 @@ namespace sdl
             bool use_vertex_input)
         {
             // Set up standard vertex attributes for vertex_t2f_c4ub_v3f
-            SDL_GPUVertexAttribute attributes[3] = {};
+            std::array<SDL_GPUVertexAttribute, 3> attributes = {};
             attributes[0].location = 0;
             attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
             attributes[0].offset = offsetof(vertex_t2f_c4ub_v3f, s);
@@ -51,7 +52,7 @@ namespace sdl
             {
                 vertex_input_state.vertex_buffer_descriptions = &vertex_buffer_desc;
                 vertex_input_state.num_vertex_buffers = 1;
-                vertex_input_state.vertex_attributes = attributes;
+                vertex_input_state.vertex_attributes = attributes.data();
                 vertex_input_state.num_vertex_attributes = 3;
             }
 
@@ -115,8 +116,8 @@ namespace sdl
                 throw error("Failed to create graphics pipeline");
             }
 
-            static const char* topology_names[] = { "triangle_list", "triangle_strip", "line_list", "line_strip", "point_list" };
-            const char* topo_name = (topology < sizeof(topology_names) / sizeof(topology_names[0])) ? topology_names[topology] : "unknown";
+            static const std::array<const char*, 5> topology_names = {{ "triangle_list", "triangle_strip", "line_list", "line_strip", "point_list" }};
+            const char* topo_name = (static_cast<size_t>(topology) < topology_names.size()) ? topology_names[static_cast<size_t>(topology)] : "unknown";
             SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Pipeline created: %s, depth: %s",
                          topo_name, (depth_format != SDL_GPU_TEXTUREFORMAT_INVALID) ? "yes" : "no");
         }

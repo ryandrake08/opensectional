@@ -1,5 +1,6 @@
 #include "flight_route.hpp"
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cctype>
 #include <cmath>
@@ -82,11 +83,11 @@ namespace nasrbrowse
         if(lon_s == 60) { lon_m++; lon_s = 0; }
         if(lon_m == 60) { lon_d++; lon_m = 0; }
 
-        char buf[16];
-        std::snprintf(buf, sizeof(buf), "%02d%02d%02d%c%03d%02d%02d%c",
+        std::array<char, 16> buf{};
+        std::snprintf(buf.data(), buf.size(), "%02d%02d%02d%c%03d%02d%02d%c",
                       lat_d, lat_m, lat_s, lat_h,
                       lon_d, lon_m, lon_s, lon_h);
-        return buf;
+        return buf.data();
     }
 
     // ---------------------------------------------------------------

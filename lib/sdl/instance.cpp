@@ -1,5 +1,6 @@
 #include "instance.hpp"
 #include "error.hpp"
+#include <array>
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
@@ -26,12 +27,12 @@ namespace sdl
             }
 
             // Map verbosity level to SDL log priority
-            static const SDL_LogPriority levels[] = {
+            static const std::array<SDL_LogPriority, 4> levels = {{
                 SDL_LOG_PRIORITY_ERROR,  // 0: errors only
                 SDL_LOG_PRIORITY_WARN,   // 1: warnings
                 SDL_LOG_PRIORITY_INFO,   // 2: info
                 SDL_LOG_PRIORITY_DEBUG,  // 3: debug
-            };
+            }};
             int clamped = verbosity;
             if(clamped < 0)
                 clamped = 0;

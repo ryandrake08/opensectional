@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -24,8 +25,8 @@ namespace nasrbrowse
         const char* header;
     };
 
-    extern const feature_section_def FEATURE_SECTIONS[];
-    extern const std::size_t FEATURE_SECTION_COUNT;
+    constexpr std::size_t FEATURE_SECTION_COUNT = 17;
+    extern const std::array<feature_section_def, FEATURE_SECTION_COUNT> FEATURE_SECTIONS;
 
     // Returns the index into FEATURE_SECTIONS whose tag matches `tag`, or
     // -1 if unknown.
