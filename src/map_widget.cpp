@@ -200,8 +200,8 @@ struct map_widget::impl
 {
     nasrbrowse::map_view view;
     sdl::device& dev;
-    bool needs_update;
-    bool show_tiles;
+    bool needs_update = true;
+    bool show_tiles = true;
 
     // GPU pipelines (created once at construction)
     sdl::pipeline linelist_pipeline;
@@ -235,11 +235,11 @@ struct map_widget::impl
     nasrbrowse::nasr_database pick_db;
     nasrbrowse::chart_style styles;
     nasrbrowse::layer_visibility vis;
-    double cursor_ndc_x;
-    double cursor_ndc_y;
-    bool dragged;
-    bool imgui_wants_mouse;
-    bool imgui_wants_keyboard;
+    double cursor_ndc_x = 0.0;
+    double cursor_ndc_y = 0.0;
+    bool dragged = false;
+    bool imgui_wants_mouse = false;
+    bool imgui_wants_keyboard = false;
 
     pick_popup_state pick_popup;
     info_popup_state info_popup;
@@ -269,8 +269,6 @@ struct map_widget::impl
     impl(sdl::device& dev, const char* tile_path,
          const char* db_path, const char* conf_path)
         : dev(dev)
-        , needs_update(true)
-        , show_tiles(true)
         , linelist_pipeline(dev,
             load_shader(dev, shader_id::DEFAULT, sdl::shader_stage::vertex),
             load_shader(dev, shader_id::DEFAULT, sdl::shader_stage::fragment),
@@ -301,11 +299,6 @@ struct map_widget::impl
         , render_ctx(dev)
         , pick_db(db_path)
         , styles(conf_path, nasrbrowse::chart_mode::vfr)
-        , cursor_ndc_x(0)
-        , cursor_ndc_y(0)
-        , dragged(false)
-        , imgui_wants_mouse(false)
-        , imgui_wants_keyboard(false)
         , feature_types(nasrbrowse::make_feature_types())
     {
         outline_font.set_outline(1);

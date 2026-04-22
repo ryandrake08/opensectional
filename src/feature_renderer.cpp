@@ -29,13 +29,13 @@ namespace nasrbrowse
 
         // Current view state
         double half_extent_y;
-        double aspect_ratio;
-        int viewport_height;
+        double aspect_ratio = 1.0;
+        int viewport_height = 0;
 
         // Cached query bbox (in lon/lat)
         geo_bbox query_bbox;
-        double last_zoom;
-        bool has_cached_query;
+        double last_zoom = -1.0;
+        bool has_cached_query = false;
 
         // Polyline data received from builder (kept for visibility toggling)
         std::array<polyline_data, layer_sdf_count> poly;
@@ -60,11 +60,7 @@ namespace nasrbrowse
             : dev(dev)
             , builder(db_path, styles)
             , half_extent_y(HALF_CIRCUMFERENCE)
-            , aspect_ratio(1.0)
-            , viewport_height(0)
             , query_bbox{0, 0, 0, 0}
-            , last_zoom(-1)
-            , has_cached_query(false)
         {
         }
 

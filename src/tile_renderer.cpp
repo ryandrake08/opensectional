@@ -116,15 +116,19 @@ namespace nasrbrowse
     {
         sdl::device& dev;
         std::string tile_path;
-        int max_zoom;
+        int max_zoom = 15;
 
         // Current visible tile set
         std::vector<tile_key> visible_tiles;
-        int current_zoom;
+        int current_zoom = 0;
 
         // Cached tile range to avoid redundant cancel+re-request
-        int cached_zoom, cached_tx_min, cached_tx_max, cached_ty_min, cached_ty_max;
-        bool has_cached_range;
+        int cached_zoom = -1;
+        int cached_tx_min = 0;
+        int cached_tx_max = 0;
+        int cached_ty_min = 0;
+        int cached_ty_max = 0;
+        bool has_cached_range = false;
 
         // Cache: tile_key -> weak_ptr to GPU resources
         std::unordered_map<tile_key, std::weak_ptr<tile_gpu>> tile_map;
@@ -145,21 +149,12 @@ namespace nasrbrowse
             std::shared_ptr<tile_gpu> ancestor_gpu;
         };
         std::vector<fallback_quad> fallback_quads;
-        bool fallback_dirty;
+        bool fallback_dirty = false;
 
         impl(sdl::device& dev, const std::string& tile_path)
             : dev(dev)
             , tile_path(tile_path)
-            , max_zoom(15)
-            , current_zoom(0)
-            , cached_zoom(-1)
-            , cached_tx_min(0)
-            , cached_tx_max(0)
-            , cached_ty_min(0)
-            , cached_ty_max(0)
-            , has_cached_range(false)
             , cache(1024)
-            , fallback_dirty(false)
         {
         }
 
