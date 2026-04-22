@@ -617,7 +617,7 @@ namespace nasrbrowse
         template<typename RowMapper>
         auto query_bbox(sqlite::statement& stmt,
                          const geo_bbox& bbox,
-                         RowMapper&& map_row)
+                         const RowMapper& map_row)
         {
             using T = std::invoke_result_t<RowMapper&, sqlite::statement&>;
             std::vector<T> results;
@@ -634,7 +634,7 @@ namespace nasrbrowse
             sqlite::statement& stmt,
             const geo_bbox& bbox,
             const std::optional<std::vector<std::string>>& filter,
-            RowMapper&& map_row)
+            const RowMapper& map_row)
         {
             using T = std::invoke_result_t<RowMapper&, sqlite::statement&>;
             std::vector<T> results;

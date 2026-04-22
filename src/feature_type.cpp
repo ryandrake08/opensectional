@@ -2112,7 +2112,7 @@ namespace nasrbrowse
 
         template<typename Query>
         void build_comm_impl(const build_context& ctx, int layer_id,
-                              const line_style& ls, Query&& q)
+                              const line_style& ls, const Query& q)
         {
             auto radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_COMM);
             for(const auto& f : q)
