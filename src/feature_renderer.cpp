@@ -80,7 +80,7 @@ namespace nasrbrowse
                 return true;
             }
 
-            double z = zoom_level();
+            auto z = zoom_level();
             if(std::abs(z - last_zoom) > REQUERY_ZOOM_THRESHOLD)
             {
                 return true;
@@ -142,8 +142,8 @@ namespace nasrbrowse
 
         if(pimpl->needs_requery(view_bbox))
         {
-            double lon_pad = (view_bbox.lon_max - view_bbox.lon_min) * QUERY_BBOX_PADDING;
-            double lat_pad = (view_bbox.lat_max - view_bbox.lat_min) * QUERY_BBOX_PADDING;
+            auto lon_pad = (view_bbox.lon_max - view_bbox.lon_min) * QUERY_BBOX_PADDING;
+            auto lat_pad = (view_bbox.lat_max - view_bbox.lat_min) * QUERY_BBOX_PADDING;
 
             feature_build_request req;
             req.lon_min = view_bbox.lon_min - lon_pad;
@@ -245,7 +245,7 @@ namespace nasrbrowse
         }
         else if(ctx.current_pass == render_pass_id::line_sdf_0)
         {
-            int vw = static_cast<int>(pimpl->aspect_ratio * pimpl->viewport_height);
+            auto vw = static_cast<int>(pimpl->aspect_ratio * pimpl->viewport_height);
             pimpl->sdf_lines.render(pass, ctx.projection_matrix, view_matrix,
                                     vw, pimpl->viewport_height);
         }

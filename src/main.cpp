@@ -42,12 +42,12 @@ namespace
 
 int main(int argc, char** argv)
 {
-    int verbosity = 0;
+    auto verbosity = 0;
     const char* gpu_driver = nullptr;
     const char* tile_path = nullptr;
     const char* db_path = nullptr;
     const char* conf_path = nullptr;
-    int argi = 1;
+    auto argi = 1;
     while(argi < argc && argv[argi][0] == '-')
     {
         if(std::strcmp(argv[argi], "-h") == 0 || std::strcmp(argv[argi], "--help") == 0)
@@ -142,8 +142,8 @@ int main(int argc, char** argv)
         std::string last_search_query;
         constexpr int SEARCH_RESULT_LIMIT = 12;
 
-        bool needs_render = true;
-        float last_render_ms = 0.0F;
+        auto needs_render = true;
+        auto last_render_ms = 0.0F;
         while(true)
         {
             map->set_imgui_wants_mouse(imgui_ctx.wants_mouse());
@@ -164,7 +164,7 @@ int main(int argc, char** argv)
             }
             if(ui_result.selected_hit_index)
             {
-                int idx = *ui_result.selected_hit_index;
+                auto idx = *ui_result.selected_hit_index;
                 if(idx >= 0 && idx < static_cast<int>(ui.search_results().size()))
                     map->focus_on_hit(ui.search_results()[idx]);
                 ui.set_search_results({});
@@ -222,7 +222,8 @@ int main(int argc, char** argv)
                 sdl::timer render_timer;
                 sdl::command_buffer cmd(dev);
 
-                unsigned width, height;
+                unsigned width;
+                unsigned height;
                 auto swapchain = cmd.acquire_swapchain(win, width, height);
                 if(swapchain)
                 {

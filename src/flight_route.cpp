@@ -40,23 +40,23 @@ namespace nasrbrowse
         if(!is_lon_hemi(token[14]))
             return std::nullopt;
 
-        int lat_d = std::stoi(token.substr(0, 2));
-        int lat_m = std::stoi(token.substr(2, 2));
-        int lat_s = std::stoi(token.substr(4, 2));
-        char lat_h = token[6];
+        auto lat_d = std::stoi(token.substr(0, 2));
+        auto lat_m = std::stoi(token.substr(2, 2));
+        auto lat_s = std::stoi(token.substr(4, 2));
+        auto lat_h = token[6];
 
-        int lon_d = std::stoi(token.substr(7, 3));
-        int lon_m = std::stoi(token.substr(10, 2));
-        int lon_s = std::stoi(token.substr(12, 2));
-        char lon_h = token[14];
+        auto lon_d = std::stoi(token.substr(7, 3));
+        auto lon_m = std::stoi(token.substr(10, 2));
+        auto lon_s = std::stoi(token.substr(12, 2));
+        auto lon_h = token[14];
 
         if(lat_m >= 60 || lat_s >= 60 || lon_m >= 60 || lon_s >= 60)
             return std::nullopt;
         if(lat_d > 90 || lon_d > 180)
             return std::nullopt;
 
-        double lat = lat_d + lat_m / 60.0 + lat_s / 3600.0;
-        double lon = lon_d + lon_m / 60.0 + lon_s / 3600.0;
+        auto lat = lat_d + lat_m / 60.0 + lat_s / 3600.0;
+        auto lon = lon_d + lon_m / 60.0 + lon_s / 3600.0;
         if(lat_h == 'S') lat = -lat;
         if(lon_h == 'W') lon = -lon;
 
@@ -65,20 +65,20 @@ namespace nasrbrowse
 
     static std::string format_latlon(double lat, double lon)
     {
-        char lat_h = lat >= 0 ? 'N' : 'S';
-        char lon_h = lon >= 0 ? 'E' : 'W';
+        auto lat_h = lat >= 0 ? 'N' : 'S';
+        auto lon_h = lon >= 0 ? 'E' : 'W';
         lat = std::abs(lat);
         lon = std::abs(lon);
 
-        int lat_d = static_cast<int>(lat);
-        int lat_m = static_cast<int>((lat - lat_d) * 60.0);
-        int lat_s = static_cast<int>(std::round((lat - lat_d - lat_m / 60.0) * 3600.0));
+        auto lat_d = static_cast<int>(lat);
+        auto lat_m = static_cast<int>((lat - lat_d) * 60.0);
+        auto lat_s = static_cast<int>(std::round((lat - lat_d - lat_m / 60.0) * 3600.0));
         if(lat_s == 60) { lat_m++; lat_s = 0; }
         if(lat_m == 60) { lat_d++; lat_m = 0; }
 
-        int lon_d = static_cast<int>(lon);
-        int lon_m = static_cast<int>((lon - lon_d) * 60.0);
-        int lon_s = static_cast<int>(std::round((lon - lon_d - lon_m / 60.0) * 3600.0));
+        auto lon_d = static_cast<int>(lon);
+        auto lon_m = static_cast<int>((lon - lon_d) * 60.0);
+        auto lon_s = static_cast<int>(std::round((lon - lon_d - lon_m / 60.0) * 3600.0));
         if(lon_s == 60) { lon_m++; lon_s = 0; }
         if(lon_m == 60) { lon_d++; lon_m = 0; }
 
@@ -147,9 +147,9 @@ namespace nasrbrowse
     {
         constexpr double DEG2RAD = 3.14159265358979323846 / 180.0;
         constexpr double EARTH_RADIUS_NM = 3440.065;
-        double dlat = (lat2 - lat1) * DEG2RAD;
-        double dlon = (lon2 - lon1) * DEG2RAD;
-        double a = std::sin(dlat / 2) * std::sin(dlat / 2) +
+        auto dlat = (lat2 - lat1) * DEG2RAD;
+        auto dlon = (lon2 - lon1) * DEG2RAD;
+        auto a = std::sin(dlat / 2) * std::sin(dlat / 2) +
                    std::cos(lat1 * DEG2RAD) * std::cos(lat2 * DEG2RAD) *
                    std::sin(dlon / 2) * std::sin(dlon / 2);
         return 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a)) * EARTH_RADIUS_NM;
@@ -187,7 +187,8 @@ namespace nasrbrowse
         }
 
         // Find entry and exit indices
-        int entry_idx = -1, exit_idx = -1;
+        auto entry_idx = -1;
+        auto exit_idx = -1;
         for(int i = 0; i < static_cast<int>(points.size()); ++i)
         {
             if(points[i].name == entry_id && entry_idx < 0)
@@ -200,7 +201,7 @@ namespace nasrbrowse
             return {};
 
         // Walk forward or backward depending on order
-        int step = (exit_idx > entry_idx) ? 1 : -1;
+        auto step = (exit_idx > entry_idx) ? 1 : -1;
         std::vector<route_waypoint> result;
         for(int i = entry_idx; i != exit_idx + step; i += step)
         {
@@ -242,10 +243,10 @@ namespace nasrbrowse
     {
         auto segments = db.query_airway_by_id(airway_id);
         std::string best;
-        double best_dist = 1e18;
+        auto best_dist = 1e18;
         for(const auto& seg : segments)
         {
-            double d = haversine_nm(lat, lon, seg.from_lat, seg.from_lon);
+            auto d = haversine_nm(lat, lon, seg.from_lat, seg.from_lon);
             if(d < best_dist) { best_dist = d; best = seg.from_point; }
             d = haversine_nm(lat, lon, seg.to_lat, seg.to_lon);
             if(d < best_dist) { best_dist = d; best = seg.to_point; }
@@ -359,7 +360,7 @@ namespace nasrbrowse
 
         for(size_t i = 0; i < tokens.size(); ++i)
         {
-            int ti = static_cast<int>(i);
+            auto ti = static_cast<int>(i);
 
             // Check if this token is an airway
             if(i > 0 && i + 1 < tokens.size() && is_airway(tokens[i], db))
@@ -388,13 +389,14 @@ namespace nasrbrowse
 
                 // Next token is the exit point
                 ++i;
-                std::string exit_id = tokens[i];
+                auto exit_id = tokens[i];
 
                 // Auto-correct entry if not on airway
-                std::string actual_entry = entry_id;
+                auto actual_entry = entry_id;
                 if(!is_on_airway(entry_id, airway_id, db))
                 {
-                    double lat = 0, lon = 0;
+                    auto lat = 0.0;
+                    auto lon = 0.0;
                     if(!elements.empty())
                     {
                         auto& prev = elements.back();
@@ -422,7 +424,7 @@ namespace nasrbrowse
                 }
 
                 // Auto-correct exit if not on airway
-                std::string actual_exit = exit_id;
+                auto actual_exit = exit_id;
                 if(!is_on_airway(exit_id, airway_id, db))
                 {
                     auto exit_wp = resolve_waypoint(exit_id, db);
@@ -519,13 +521,13 @@ namespace nasrbrowse
     {
         constexpr double DEG2RAD = 3.14159265358979323846 / 180.0;
         constexpr double RAD2DEG = 180.0 / 3.14159265358979323846;
-        double rlat1 = lat1 * DEG2RAD;
-        double rlat2 = lat2 * DEG2RAD;
-        double dlon = (lon2 - lon1) * DEG2RAD;
-        double y = std::sin(dlon) * std::cos(rlat2);
-        double x = std::cos(rlat1) * std::sin(rlat2) -
+        auto rlat1 = lat1 * DEG2RAD;
+        auto rlat2 = lat2 * DEG2RAD;
+        auto dlon = (lon2 - lon1) * DEG2RAD;
+        auto y = std::sin(dlon) * std::cos(rlat2);
+        auto x = std::cos(rlat1) * std::sin(rlat2) -
                    std::sin(rlat1) * std::cos(rlat2) * std::cos(dlon);
-        double brg = std::atan2(y, x) * RAD2DEG;
+        auto brg = std::atan2(y, x) * RAD2DEG;
         if(brg < 0) brg += 360.0;
         return brg;
     }
@@ -538,8 +540,10 @@ namespace nasrbrowse
         {
             const auto& a = r.waypoints[i - 1];
             const auto& b = r.waypoints[i];
-            double la = waypoint_lat(a), lo_a = waypoint_lon(a);
-            double lb = waypoint_lat(b), lo_b = waypoint_lon(b);
+            auto la = waypoint_lat(a);
+            auto lo_a = waypoint_lon(a);
+            auto lb = waypoint_lat(b);
+            auto lo_b = waypoint_lon(b);
             legs.push_back({
                 waypoint_id(a),
                 waypoint_id(b),
@@ -551,7 +555,7 @@ namespace nasrbrowse
 
     double total_distance_nm(const std::vector<route_leg>& legs)
     {
-        double t = 0;
+        auto t = 0.0;
         for(const auto& l : legs) t += l.distance_nm;
         return t;
     }
@@ -567,7 +571,7 @@ namespace nasrbrowse
 
         // Find which element owns the segment endpoints
         // Walk through elements, tracking the expanded waypoint index
-        int wp_idx = 0;
+        auto wp_idx = 0;
         for(size_t ei = 0; ei < elements.size(); ++ei)
         {
             if(std::holds_alternative<route_waypoint>(elements[ei]))
@@ -584,10 +588,10 @@ namespace nasrbrowse
             else
             {
                 auto& awy = std::get<airway_ref>(elements[ei]);
-                int awy_start = wp_idx;
+                auto awy_start = wp_idx;
                 // Count how many waypoints this airway contributes
                 // (accounting for dedup with previous)
-                int awy_count = 0;
+                auto awy_count = 0;
                 for(size_t j = 0; j < awy.expanded.size(); ++j)
                 {
                     if(j == 0 && wp_idx > 0)

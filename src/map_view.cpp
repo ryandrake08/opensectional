@@ -12,8 +12,8 @@ namespace nasrbrowse
 
     double lat_to_my(double lat)
     {
-        double lat_rad = lat * M_PI / 180.0;
-        double y = std::log(std::tan(M_PI / 4.0 + lat_rad / 2.0));
+        auto lat_rad = lat * M_PI / 180.0;
+        auto y = std::log(std::tan(M_PI / 4.0 + lat_rad / 2.0));
         return y * EARTH_RADIUS;
     }
 
@@ -24,31 +24,31 @@ namespace nasrbrowse
 
     double my_to_lat(double my)
     {
-        double y = my / EARTH_RADIUS;
-        double lat_rad = 2.0 * std::atan(std::exp(y)) - M_PI / 2.0;
+        auto y = my / EARTH_RADIUS;
+        auto lat_rad = 2.0 * std::atan(std::exp(y)) - M_PI / 2.0;
         return lat_rad * 180.0 / M_PI;
     }
 
     void lonlat_to_tile(double lon, double lat, int zoom, int& tx, int& ty)
     {
-        double n = std::pow(2.0, zoom);
+        auto n = std::pow(2.0, zoom);
         tx = static_cast<int>((lon + 180.0) / 360.0 * n);
-        double lat_rad = lat * M_PI / 180.0;
+        auto lat_rad = lat * M_PI / 180.0;
         ty = static_cast<int>((1.0 - std::log(std::tan(lat_rad) + 1.0 / std::cos(lat_rad)) / M_PI) / 2.0 * n);
     }
 
     void tile_to_lonlat(int tx, int ty, int zoom, double& lon, double& lat)
     {
-        double n = std::pow(2.0, zoom);
+        auto n = std::pow(2.0, zoom);
         lon = tx / n * 360.0 - 180.0;
-        double lat_rad = std::atan(std::sinh(M_PI * (1.0 - 2.0 * ty / n)));
+        auto lat_rad = std::atan(std::sinh(M_PI * (1.0 - 2.0 * ty / n)));
         lat = lat_rad * 180.0 / M_PI;
     }
 
     double zoom_level(double half_extent_y, int viewport_height)
     {
-        double meters_per_pixel = (half_extent_y * 2.0) / viewport_height;
-        double world_size = 2.0 * HALF_CIRCUMFERENCE;
+        auto meters_per_pixel = (half_extent_y * 2.0) / viewport_height;
+        auto world_size = 2.0 * HALF_CIRCUMFERENCE;
         return std::log2(world_size / (256.0 * meters_per_pixel));
     }
 
@@ -56,8 +56,8 @@ namespace nasrbrowse
                             double& x_min, double& y_min,
                             double& x_max, double& y_max)
     {
-        double n = std::pow(2.0, zoom);
-        double tile_size = 2.0 * HALF_CIRCUMFERENCE / n;
+        auto n = std::pow(2.0, zoom);
+        auto tile_size = 2.0 * HALF_CIRCUMFERENCE / n;
         x_min = -HALF_CIRCUMFERENCE + tx * tile_size;
         x_max = x_min + tile_size;
         // Y is flipped: tile y=0 is at top (north)
@@ -118,8 +118,8 @@ namespace nasrbrowse
 
     void map_view::zoom_to_level(int z)
     {
-        double world_size = 2.0 * HALF_CIRCUMFERENCE;
-        double meters_per_pixel = world_size / (256.0 * std::pow(2.0, z));
+        auto world_size = 2.0 * HALF_CIRCUMFERENCE;
+        auto meters_per_pixel = world_size / (256.0 * std::pow(2.0, z));
         half_extent_y = meters_per_pixel * viewport_height * 0.5;
         clamp_extent();
     }
@@ -127,14 +127,14 @@ namespace nasrbrowse
     void map_view::world_to_pixel(double lon, double lat,
                                    float& px, float& py) const
     {
-        double world_x = lon_to_mx(lon);
+        auto world_x = lon_to_mx(lon);
         constexpr double W = 2.0 * HALF_CIRCUMFERENCE;
         while(world_x - center_x > HALF_CIRCUMFERENCE) world_x -= W;
         while(center_x - world_x > HALF_CIRCUMFERENCE) world_x += W;
-        double world_y = lat_to_my(lat);
+        auto world_y = lat_to_my(lat);
 
-        double ndc_x = (world_x - center_x) / (2.0 * half_extent_y);
-        double ndc_y = (world_y - center_y) / (2.0 * half_extent_y);
+        auto ndc_x = (world_x - center_x) / (2.0 * half_extent_y);
+        auto ndc_y = (world_y - center_y) / (2.0 * half_extent_y);
 
         px = static_cast<float>(ndc_x * viewport_height + viewport_width * 0.5);
         py = static_cast<float>((0.5 - ndc_y) * viewport_height);
@@ -155,8 +155,8 @@ namespace nasrbrowse
 
     double map_view::half_extent_for_zoom(double z) const
     {
-        double world_size = 2.0 * HALF_CIRCUMFERENCE;
-        double meters_per_pixel = world_size / (256.0 * std::pow(2.0, z));
+        auto world_size = 2.0 * HALF_CIRCUMFERENCE;
+        auto meters_per_pixel = world_size / (256.0 * std::pow(2.0, z));
         return meters_per_pixel * viewport_height * 0.5;
     }
 
@@ -164,8 +164,8 @@ namespace nasrbrowse
     {
         constexpr double min_zoom = 3.0;
         constexpr double max_zoom = 18.0;
-        double max_extent = half_extent_for_zoom(min_zoom);
-        double min_extent = half_extent_for_zoom(max_zoom);
+        auto max_extent = half_extent_for_zoom(min_zoom);
+        auto min_extent = half_extent_for_zoom(max_zoom);
         if(half_extent_y > max_extent)
             half_extent_y = max_extent;
         if(half_extent_y < min_extent)

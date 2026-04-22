@@ -54,7 +54,7 @@ ini_config::cache_type ini_config::parse(std::istream&& stream)
     ini_config::cache_type model;
     std::string line;
     std::string last_section;
-    int line_number = 0;
+    auto line_number = 0;
 
     while(std::getline(stream, line))
     {
@@ -75,7 +75,7 @@ ini_config::cache_type ini_config::parse(std::istream&& stream)
             {
                 auto key(trim(parts[0]));
                 auto value(trim(parts[1]));
-                std::string full_key = last_section;
+                auto full_key = last_section;
                 full_key += '.';
                 full_key += key;
                 model[full_key].value = value;

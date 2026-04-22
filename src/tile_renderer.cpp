@@ -68,12 +68,15 @@ namespace nasrbrowse
         double mx_min, my_min, mx_max, my_max;
         tile_bounds_meters(key.x, key.y, key.z, mx_min, my_min, mx_max, my_max);
 
-        float x0 = static_cast<float>(mx_min);
-        float x1 = static_cast<float>(mx_max);
-        float y0 = static_cast<float>(my_min);
-        float y1 = static_cast<float>(my_max);
+        auto x0 = static_cast<float>(mx_min);
+        auto x1 = static_cast<float>(mx_max);
+        auto y0 = static_cast<float>(my_min);
+        auto y1 = static_cast<float>(my_max);
 
-        uint8_t r = 255, g = 255, b = 255, a = 255;
+        uint8_t r = 255;
+        uint8_t g = 255;
+        uint8_t b = 255;
+        uint8_t a = 255;
 
         // Two triangles forming a quad
         verts[0] = { u0, v1, r, g, b, a, x0, y0, 0.0F };
@@ -89,19 +92,19 @@ namespace nasrbrowse
     static tile_key ancestor_uv(const tile_key& display_tile, int ancestor_zoom,
                                 float& u0, float& v0, float& u1, float& v1)
     {
-        int dz = display_tile.z - ancestor_zoom;
-        int scale = 1 << dz;
+        auto dz = display_tile.z - ancestor_zoom;
+        auto scale = 1 << dz;
 
         // Wrap x into valid range for the display zoom
-        int n_display = 1 << display_tile.z;
-        int wx = ((display_tile.x % n_display) + n_display) % n_display;
+        auto n_display = 1 << display_tile.z;
+        auto wx = ((display_tile.x % n_display) + n_display) % n_display;
 
-        tile_key ancestor;
+        auto ancestor = tile_key{};
         ancestor.z = ancestor_zoom;
         ancestor.x = wx >> dz;
         ancestor.y = display_tile.y >> dz;
 
-        float inv_scale = 1.0F / static_cast<float>(scale);
+        auto inv_scale = 1.0F / static_cast<float>(scale);
         u0 = static_cast<float>(wx % scale) * inv_scale;
         v0 = static_cast<float>(display_tile.y % scale) * inv_scale;
         u1 = u0 + inv_scale;
@@ -164,8 +167,8 @@ namespace nasrbrowse
         std::string tile_file_path(const tile_key& key) const
         {
             // Wrap x into [0, n-1] for file path (tiles repeat horizontally)
-            int n = 1 << key.z;
-            int wx = ((key.x % n) + n) % n;
+            auto n = 1 << key.z;
+            auto wx = ((key.x % n) + n) % n;
             return tile_path + "/" + std::to_string(key.z) + "/" +
                    std::to_string(wx) + "/" + std::to_string(key.y) + ".png";
         }
@@ -189,8 +192,8 @@ namespace nasrbrowse
             // This tile has no data — request its parent
             if(key.z > 0)
             {
-                int n = 1 << key.z;
-                int wx = ((key.x % n) + n) % n;
+                auto n = 1 << key.z;
+                auto wx = ((key.x % n) + n) % n;
                 request_tile({ key.z - 1, wx / 2, key.y / 2 });
             }
         }
@@ -202,7 +205,7 @@ namespace nasrbrowse
         {
             for(int az = key.z - 1; az >= 0; az--)
             {
-                tile_key ancestor = ancestor_uv(key, az, u0, v0, u1, v1);
+                auto ancestor = ancestor_uv(key, az, u0, v0, u1, v1);
                 auto it = tile_map.find(ancestor);
                 if(it != tile_map.end())
                 {
@@ -230,19 +233,19 @@ namespace nasrbrowse
                                double)
     {
         // Compute ideal zoom level
-        double meters_per_pixel = (vy_max - vy_min) / viewport_height;
-        double world_size = 2.0 * HALF_CIRCUMFERENCE;
-        double ideal_zoom = std::log2(world_size / (256.0 * meters_per_pixel));
-        int zoom = std::max(0, std::min(pimpl->max_zoom, static_cast<int>(std::round(ideal_zoom))));
+        auto meters_per_pixel = (vy_max - vy_min) / viewport_height;
+        auto world_size = 2.0 * HALF_CIRCUMFERENCE;
+        auto ideal_zoom = std::log2(world_size / (256.0 * meters_per_pixel));
+        auto zoom = std::max(0, std::min(pimpl->max_zoom, static_cast<int>(std::round(ideal_zoom))));
         pimpl->current_zoom = zoom;
 
         // Compute visible tile range
-        int n = 1 << zoom;
-        double tile_size = world_size / n;
-        int tx_min = static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tile_size));
-        int tx_max = static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tile_size));
-        int ty_min = static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tile_size));
-        int ty_max = static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tile_size));
+        auto n = 1 << zoom;
+        auto tile_size = world_size / n;
+        auto tx_min = static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tile_size));
+        auto tx_max = static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tile_size));
+        auto ty_min = static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tile_size));
+        auto ty_max = static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tile_size));
 
         // tx is unbounded (wraps around the antimeridian); ty clamps to valid range
         ty_min = std::max(0, ty_min);
@@ -284,10 +287,10 @@ namespace nasrbrowse
         }
 
         // Prefetch: 1-tile border around visible area at current zoom
-        int border_tx_min = tx_min - 1;
-        int border_tx_max = tx_max + 1;
-        int border_ty_min = std::max(0, ty_min - 1);
-        int border_ty_max = std::min(n - 1, ty_max + 1);
+        auto border_tx_min = tx_min - 1;
+        auto border_tx_max = tx_max + 1;
+        auto border_ty_min = std::max(0, ty_min - 1);
+        auto border_ty_max = std::min(n - 1, ty_max + 1);
 
         for(int ty = border_ty_min; ty <= border_ty_max; ty++)
         {
@@ -300,12 +303,12 @@ namespace nasrbrowse
         // Prefetch: zoom +1 tiles overlapping viewport
         if(zoom + 1 <= pimpl->max_zoom)
         {
-            int nz = 1 << (zoom + 1);
-            double tsz = world_size / nz;
-            int ztx_min = static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tsz));
-            int ztx_max = static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tsz));
-            int zty_min = std::max(0, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tsz)));
-            int zty_max = std::min(nz - 1, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tsz)));
+            auto nz = 1 << (zoom + 1);
+            auto tsz = world_size / nz;
+            auto ztx_min = static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tsz));
+            auto ztx_max = static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tsz));
+            auto zty_min = std::max(0, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tsz)));
+            auto zty_max = std::min(nz - 1, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tsz)));
 
             for(int ty = zty_min; ty <= zty_max; ty++)
             {
@@ -319,12 +322,12 @@ namespace nasrbrowse
         // Prefetch: zoom -1 tiles overlapping viewport
         if(zoom - 1 >= 0)
         {
-            int nz = 1 << (zoom - 1);
-            double tsz = world_size / nz;
-            int ztx_min = static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tsz));
-            int ztx_max = static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tsz));
-            int zty_min = std::max(0, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tsz)));
-            int zty_max = std::min(nz - 1, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tsz)));
+            auto nz = 1 << (zoom - 1);
+            auto tsz = world_size / nz;
+            auto ztx_min = static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tsz));
+            auto ztx_max = static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tsz));
+            auto zty_min = std::max(0, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tsz)));
+            auto zty_max = std::min(nz - 1, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tsz)));
 
             for(int ty = zty_min; ty <= zty_max; ty++)
             {
@@ -359,7 +362,7 @@ namespace nasrbrowse
         // Upload newly loaded tiles
         for(auto& result : pimpl->pending_results)
         {
-            std::vector<sdl::vertex_t2f_c4ub_v3f> vertices(6);
+            auto vertices = std::vector<sdl::vertex_t2f_c4ub_v3f>(6);
             get_tile_vertices(result.key, 0.0F, 0.0F, 1.0F, 1.0F, vertices.data());
 
             auto gpu = std::make_shared<tile_gpu>();
@@ -390,8 +393,11 @@ namespace nasrbrowse
                 continue;
             }
 
-            float u0, v0, u1, v1;
-            std::shared_ptr<tile_gpu> ancestor_gpu;
+            auto u0 = 0.0F;
+            auto v0 = 0.0F;
+            auto u1 = 0.0F;
+            auto v1 = 0.0F;
+            auto ancestor_gpu = std::shared_ptr<tile_gpu>();
             if(!pimpl->find_ancestor(key, ancestor_gpu, u0, v0, u1, v1))
             {
                 continue;
@@ -399,7 +405,7 @@ namespace nasrbrowse
 
             pimpl->cache.get(ancestor_gpu);
 
-            std::vector<sdl::vertex_t2f_c4ub_v3f> verts(6);
+            auto verts = std::vector<sdl::vertex_t2f_c4ub_v3f>(6);
             get_tile_vertices(key, u0, v0, u1, v1, verts.data());
 
             auto vbuf = pass.create_and_upload_buffer(pimpl->dev, sdl::buffer_usage::vertex, verts);
@@ -418,7 +424,7 @@ namespace nasrbrowse
             return;
         }
 
-        sdl::uniform_buffer uniforms;
+        auto uniforms = sdl::uniform_buffer{};
         uniforms.projection_matrix = ctx.projection_matrix;
         uniforms.view_matrix = view_matrix;
 

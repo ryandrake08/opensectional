@@ -109,23 +109,23 @@ namespace nasrbrowse
             const line_style& style = pimpl->styles[i];
 
             // Compute bounds
-            glm::vec2 bmin = positions[0];
-            glm::vec2 bmax = positions[0];
+            auto bmin = positions[0];
+            auto bmax = positions[0];
             for(size_t j = 1; j < positions.size(); j++)
             {
                 bmin = glm::min(bmin, positions[j]);
                 bmax = glm::max(bmax, positions[j]);
             }
 
-            uint32_t point_offset = static_cast<uint32_t>(all_points.size());
+            auto point_offset = static_cast<uint32_t>(all_points.size());
 
             for(const auto& p : positions)
             {
                 all_points.emplace_back(p.x, p.y, 0.0F, 0.0F);
             }
 
-            float effective_fill = style.fill_width > 0 ? style.fill_width : style.border_width;
-            polyline_metadata_gpu meta {};
+            auto effective_fill = style.fill_width > 0 ? style.fill_width : style.border_width;
+            auto meta = polyline_metadata_gpu{};
             meta.bounds_min_max = glm::vec4(bmin.x, bmin.y, bmax.x, bmax.y);
             meta.line_color = glm::vec4(style.r, style.g, style.b, style.a);
             meta.border_color = glm::vec4(0.0F, 0.0F, 0.0F, style.a);
@@ -143,8 +143,8 @@ namespace nasrbrowse
         // Add circle instances
         for(const auto& c : pimpl->circles)
         {
-            float effective_fill = c.style.fill_width > 0 ? c.style.fill_width : c.style.border_width;
-            polyline_metadata_gpu meta {};
+            auto effective_fill = c.style.fill_width > 0 ? c.style.fill_width : c.style.border_width;
+            auto meta = polyline_metadata_gpu{};
             meta.bounds_min_max = glm::vec4(
                 c.center.x - c.radius, c.center.y - c.radius,
                 c.center.x + c.radius, c.center.y + c.radius);
@@ -202,16 +202,16 @@ namespace nasrbrowse
             return;
         }
 
-        glm::mat4 pv = projection * view;
-        float vw = static_cast<float>(viewport_width);
-        float vh = static_cast<float>(viewport_height);
+        auto pv = projection * view;
+        auto vw = static_cast<float>(viewport_width);
+        auto vh = static_cast<float>(viewport_height);
 
         glm::vec2 w2s_scale(pv[0][0] * 0.5F * vw,
                             -pv[1][1] * 0.5F * vh);
         glm::vec2 w2s_offset((pv[3][0] + 1.0F) * 0.5F * vw,
                              (1.0F - pv[3][1]) * 0.5F * vh);
 
-        shared_uniform_buffer uniforms {};
+        auto uniforms = shared_uniform_buffer{};
         uniforms.projection_matrix = projection;
         uniforms.view_matrix = view;
         uniforms.viewport_size = glm::vec2(vw, vh);

@@ -109,7 +109,7 @@ namespace nasrbrowse
 
         for(const auto& lc : candidates)
         {
-            sdl::text fill(pimpl->engine, pimpl->font, lc.text.c_str());
+            auto fill = sdl::text(pimpl->engine, pimpl->font, lc.text.c_str());
             auto bounds = fill.get_bounds();
 
             if(lc.upper_text.empty())
@@ -132,21 +132,21 @@ namespace nasrbrowse
             // Composite airspace label
             constexpr float COMPOSITE_GAP = 3.0F;
 
-            sdl::text uf(pimpl->engine, pimpl->font, lc.upper_text.c_str());
-            sdl::text lf(pimpl->engine, pimpl->font, lc.lower_text.c_str());
-            float upper_w = uf.get_bounds().width();
-            float lower_w = lf.get_bounds().width();
-            float right_w = std::max(upper_w, lower_w);
+            auto uf = sdl::text(pimpl->engine, pimpl->font, lc.upper_text.c_str());
+            auto lf = sdl::text(pimpl->engine, pimpl->font, lc.lower_text.c_str());
+            auto upper_w = uf.get_bounds().width();
+            auto lower_w = lf.get_bounds().width();
+            auto right_w = std::max(upper_w, lower_w);
 
             std::string dashes(static_cast<size_t>(right_w / 4.0F + 1.5F), '-');
-            sdl::text df(pimpl->engine, pimpl->font, dashes.c_str());
-            float divider_w = df.get_bounds().width();
+            auto df = sdl::text(pimpl->engine, pimpl->font, dashes.c_str());
+            auto divider_w = df.get_bounds().width();
             right_w = std::max(right_w, divider_w);
 
-            float type_w = bounds.width();
-            float total_w = type_w + COMPOSITE_GAP + right_w;
-            float line_h = bounds.height();
-            float total_h = line_h * 3.0F;
+            auto type_w = bounds.width();
+            auto total_w = type_w + COMPOSITE_GAP + right_w;
+            auto line_h = bounds.height();
+            auto total_h = line_h * 3.0F;
 
             pimpl->labels.push_back(cached_label{
                 .fill = std::move(fill),
@@ -187,9 +187,9 @@ namespace nasrbrowse
                                           const layer_visibility& vis)
     {
         // World-to-screen transform
-        double scale = viewport_height / (2.0 * half_extent_y);
-        double screen_cx = viewport_width * 0.5;
-        double screen_cy = viewport_height * 0.5;
+        auto scale = viewport_height / (2.0 * half_extent_y);
+        auto screen_cx = viewport_width * 0.5;
+        auto screen_cy = viewport_height * 0.5;
 
         // Build sorted index by priority (descending)
         std::vector<size_t> sorted_indices;
@@ -222,12 +222,15 @@ namespace nasrbrowse
             }
 
             // Project world to screen (Y-down)
-            float sx = static_cast<float>(
+            auto sx = static_cast<float>(
                 (lbl.mx - center_x) * scale + screen_cx);
-            float sy = static_cast<float>(
+            auto sy = static_cast<float>(
                 screen_cy - (lbl.my - center_y) * scale);
 
-            float x0, y0, x1, y1;
+            float x0;
+            float y0;
+            float x1;
+            float y1;
             glm::vec3 pos;
 
             if(lbl.upper_fill)
@@ -238,37 +241,37 @@ namespace nasrbrowse
                 x1 = sx + (lbl.width * 0.5F + LABEL_PAD_X);
                 y1 = sy + (lbl.height * 0.5F + LABEL_PAD_Y);
 
-                float proj_y = static_cast<float>(viewport_height) - sy;
+                auto proj_y = static_cast<float>(viewport_height) - sy;
                 pos = {sx, proj_y, 0.0F};
             }
             else if(lbl.angle == 0.0F)
             {
                 // Point label: centered horizontally, offset above symbol
-                float lx = sx - lbl.width * 0.5F;
-                float ly = sy - LABEL_OFFSET_Y - LABEL_HEIGHT;
+                auto lx = sx - lbl.width * 0.5F;
+                auto ly = sy - LABEL_OFFSET_Y - LABEL_HEIGHT;
 
                 x0 = lx - LABEL_PAD_X;
                 y0 = ly - LABEL_PAD_Y;
                 x1 = lx + lbl.width + LABEL_PAD_X;
                 y1 = ly + LABEL_HEIGHT + LABEL_PAD_Y;
 
-                float proj_y = static_cast<float>(viewport_height) - (sy - LABEL_OFFSET_Y);
+                auto proj_y = static_cast<float>(viewport_height) - (sy - LABEL_OFFSET_Y);
                 pos = {lx, proj_y, 0.0F};
             }
             else
             {
                 // Line label: centered on the line, rotated
-                float abs_cos = std::abs(std::cos(lbl.angle));
-                float abs_sin = std::abs(std::sin(lbl.angle));
-                float aabb_w = lbl.width * abs_cos + lbl.height * abs_sin;
-                float aabb_h = lbl.width * abs_sin + lbl.height * abs_cos;
+                auto abs_cos = std::abs(std::cos(lbl.angle));
+                auto abs_sin = std::abs(std::sin(lbl.angle));
+                auto aabb_w = lbl.width * abs_cos + lbl.height * abs_sin;
+                auto aabb_h = lbl.width * abs_sin + lbl.height * abs_cos;
 
                 x0 = sx - (aabb_w * 0.5F + LABEL_PAD_X);
                 y0 = sy - (aabb_h * 0.5F + LABEL_PAD_Y);
                 x1 = sx + (aabb_w * 0.5F + LABEL_PAD_X);
                 y1 = sy + (aabb_h * 0.5F + LABEL_PAD_Y);
 
-                float proj_y = static_cast<float>(viewport_height) - sy;
+                auto proj_y = static_cast<float>(viewport_height) - sy;
                 pos = {sx, proj_y, 0.0F};
             }
 
@@ -279,7 +282,7 @@ namespace nasrbrowse
             }
 
             // Check overlap with already-placed labels
-            bool overlaps = false;
+            auto overlaps = false;
             for(const auto& p : placed)
             {
                 if(x0 < p.x1 && x1 > p.x0 && y0 < p.y1 && y1 > p.y0)
@@ -303,11 +306,11 @@ namespace nasrbrowse
         pimpl->fill_indices.clear();
 
         constexpr float COMPOSITE_GAP = 3.0F;
-        float ofs = static_cast<float>(pimpl->outline_font.get_outline() * 2);
+        auto ofs = static_cast<float>(pimpl->outline_font.get_outline() * 2);
 
         for(size_t i = 0; i < pimpl->visible.size(); i++)
         {
-            size_t idx = pimpl->visible[i];
+            auto idx = pimpl->visible[i];
             const auto& pos = pimpl->positions[i];
             auto& lbl = pimpl->labels[idx];
 
@@ -318,9 +321,9 @@ namespace nasrbrowse
                 //        UPPER
                 //  TYPE ------
                 //        LOWER
-                float left_x = pos.x - lbl.width * 0.5F;
-                float right_x = left_x + lbl.type_width + COMPOSITE_GAP;
-                float mid_y = pos.y;
+                auto left_x = pos.x - lbl.width * 0.5F;
+                auto right_x = left_x + lbl.type_width + COMPOSITE_GAP;
+                auto mid_y = pos.y;
 
                 // TYPE: right-justified, vertically centered
                 glm::vec3 type_pos(right_x - lbl.type_width - COMPOSITE_GAP,
@@ -334,10 +337,10 @@ namespace nasrbrowse
                     FILL_R, FILL_G, FILL_B, FILL_A);
 
                 // Center of right column for centering text
-                float right_cx = right_x + lbl.right_col_width * 0.5F;
+                auto right_cx = right_x + lbl.right_col_width * 0.5F;
 
                 // UPPER: above divider, centered on right column
-                float upper_x = right_cx - lbl.upper_width * 0.5F;
+                auto upper_x = right_cx - lbl.upper_width * 0.5F;
                 glm::vec3 upper_pos(upper_x, mid_y + lbl.line_height * 0.5F, 0.0F);
                 glm::vec3 upper_opos(upper_pos.x - ofs, upper_pos.y + ofs, 0.0F);
                 lbl.upper_outline->append_geometry(
@@ -348,7 +351,7 @@ namespace nasrbrowse
                     FILL_R, FILL_G, FILL_B, FILL_A);
 
                 // DIVIDER: centered on right column
-                float div_x = right_cx - lbl.divider_width * 0.5F;
+                auto div_x = right_cx - lbl.divider_width * 0.5F;
                 glm::vec3 div_pos(div_x, mid_y - lbl.line_height * 0.5F, 0.0F);
                 glm::vec3 div_opos(div_pos.x - ofs, div_pos.y + ofs, 0.0F);
                 lbl.divider_outline->append_geometry(
@@ -359,7 +362,7 @@ namespace nasrbrowse
                     FILL_R, FILL_G, FILL_B, FILL_A);
 
                 // LOWER: below divider, centered on right column
-                float lower_x = right_cx - lbl.lower_width * 0.5F;
+                auto lower_x = right_cx - lbl.lower_width * 0.5F;
                 glm::vec3 lower_pos(lower_x,
                                     mid_y - lbl.line_height * 1.5F, 0.0F);
                 glm::vec3 lower_opos(lower_pos.x - ofs, lower_pos.y + ofs, 0.0F);
@@ -458,12 +461,12 @@ namespace nasrbrowse
         }
 
         // Pixel-space orthographic projection (origin bottom-left, Y-up)
-        glm::mat4 proj = glm::orthoLH_ZO(
+        auto proj = glm::orthoLH_ZO(
             0.0F, static_cast<float>(viewport_width),
             0.0F, static_cast<float>(viewport_height),
             -1.0F, 1.0F);
 
-        sdl::uniform_buffer uniforms;
+        auto uniforms = sdl::uniform_buffer{};
         uniforms.projection_matrix = proj;
         uniforms.y_min = -1e9F;
         uniforms.y_max = 1e9F;
@@ -474,7 +477,7 @@ namespace nasrbrowse
         // Draw outline (all outline texts share the same atlas)
         if(pimpl->outline_vertex_buffer && pimpl->outline_index_buffer)
         {
-            size_t first_visible = pimpl->visible[0];
+            auto first_visible = pimpl->visible[0];
             pass.bind_fragment_texture_sampler(0, pimpl->labels[first_visible].outline, samp);
             pass.bind_vertex_buffer(*pimpl->outline_vertex_buffer);
             pass.bind_index_buffer(*pimpl->outline_index_buffer);
@@ -483,7 +486,7 @@ namespace nasrbrowse
 
         // Draw fill (all fill texts share the same atlas)
         {
-            size_t first_visible = pimpl->visible[0];
+            auto first_visible = pimpl->visible[0];
             pass.bind_fragment_texture_sampler(0, pimpl->labels[first_visible].fill, samp);
             pass.bind_vertex_buffer(*pimpl->fill_vertex_buffer);
             pass.bind_index_buffer(*pimpl->fill_index_buffer);

@@ -30,7 +30,7 @@ namespace nasrbrowse
         {
             while(true)
             {
-                pending_request req;
+                auto req = pending_request{};
                 {
                     std::unique_lock<std::mutex> lock(mutex);
                     cv.wait(lock, [this] { return shutdown || !request_queue.empty(); });

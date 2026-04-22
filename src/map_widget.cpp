@@ -129,8 +129,8 @@ namespace
     sdl::shader load_shader(const sdl::device& dev, shader_id id, sdl::shader_stage_t stage,
                             uint32_t num_samplers = 0, uint32_t num_storage_buffers = 0)
     {
-        const char* entrypoint = (stage == sdl::shader_stage::vertex) ? "vertex_main" : "fragment_main";
-        sdl::shader_format_t format = dev.get_shader_format();
+        const auto* entrypoint = (stage == sdl::shader_stage::vertex) ? "vertex_main" : "fragment_main";
+        auto format = dev.get_shader_format();
         shader_bytecode bc = { nullptr, 0 };
 #ifdef __APPLE__
         if(format == sdl::shader_format::metallib)
@@ -315,12 +315,12 @@ struct map_widget::impl
     {
         grid_vertices.clear();
 
-        double vx_min = view.view_x_min();
-        double vx_max = view.view_x_max();
-        double vy_min = view.view_y_min();
-        double vy_max = view.view_y_max();
-        double range_x = vx_max - vx_min;
-        double range_y = vy_max - vy_min;
+        auto vx_min = view.view_x_min();
+        auto vx_max = view.view_x_max();
+        auto vy_min = view.view_y_min();
+        auto vy_max = view.view_y_max();
+        auto range_x = vx_max - vx_min;
+        auto range_y = vy_max - vy_min;
 
         // Normalize coordinates to -0.5..0.5 for rendering
         auto to_ndc_x = [&](double mx) -> float
@@ -334,8 +334,9 @@ struct map_widget::impl
 
         // Draw grid lines at regular lat/lon intervals
         // Choose interval based on zoom level
-        double approx_zoom = view.zoom_level();
-        double lon_step, lat_step;
+        auto approx_zoom = view.zoom_level();
+        double lon_step;
+        double lat_step;
         if(approx_zoom < 3)
         {
             lon_step = 30.0;
@@ -363,32 +364,35 @@ struct map_widget::impl
         }
 
         // Grid line color: dark gray, semi-transparent
-        uint8_t r = 80, g = 80, b = 80, a = 160;
+        uint8_t r = 80;
+        uint8_t g = 80;
+        uint8_t b = 80;
+        uint8_t a = 160;
 
         // Longitude lines (vertical)
-        double lon_min = nasrbrowse::mx_to_lon(vx_min);
-        double lon_max = nasrbrowse::mx_to_lon(vx_max);
-        double lon_start = std::floor(lon_min / lon_step) * lon_step;
+        auto lon_min = nasrbrowse::mx_to_lon(vx_min);
+        auto lon_max = nasrbrowse::mx_to_lon(vx_max);
+        auto lon_start = std::floor(lon_min / lon_step) * lon_step;
         for(double lon = lon_start; lon <= lon_max; lon += lon_step)
         {
-            double mx = nasrbrowse::lon_to_mx(lon);
-            float nx = to_ndc_x(mx);
-            float ny0 = to_ndc_y(vy_min);
-            float ny1 = to_ndc_y(vy_max);
+            auto mx = nasrbrowse::lon_to_mx(lon);
+            auto nx = to_ndc_x(mx);
+            auto ny0 = to_ndc_y(vy_min);
+            auto ny1 = to_ndc_y(vy_max);
             grid_vertices.push_back({ 0, 0, r, g, b, a, nx, ny0, 0 });
             grid_vertices.push_back({ 0, 0, r, g, b, a, nx, ny1, 0 });
         }
 
         // Latitude lines (horizontal, non-uniform spacing in Mercator)
-        double lat_min = nasrbrowse::my_to_lat(vy_min);
-        double lat_max = nasrbrowse::my_to_lat(vy_max);
-        double lat_start = std::floor(lat_min / lat_step) * lat_step;
+        auto lat_min = nasrbrowse::my_to_lat(vy_min);
+        auto lat_max = nasrbrowse::my_to_lat(vy_max);
+        auto lat_start = std::floor(lat_min / lat_step) * lat_step;
         for(double lat = lat_start; lat <= lat_max; lat += lat_step)
         {
-            double my = nasrbrowse::lat_to_my(lat);
-            float ny = to_ndc_y(my);
-            float nx0 = to_ndc_x(vx_min);
-            float nx1 = to_ndc_x(vx_max);
+            auto my = nasrbrowse::lat_to_my(lat);
+            auto ny = to_ndc_y(my);
+            auto nx0 = to_ndc_x(vx_min);
+            auto nx1 = to_ndc_x(vx_max);
             grid_vertices.push_back({ 0, 0, r, g, b, a, nx0, ny, 0 });
             grid_vertices.push_back({ 0, 0, r, g, b, a, nx1, ny, 0 });
         }
@@ -416,18 +420,18 @@ struct map_widget::impl
         using namespace nasrbrowse;
 
         // NDC → Web Mercator → lon/lat, wrapping lon to [-180, 180] for DB.
-        double world_x = ndc_x * 2.0 * view.half_extent_y + view.center_x;
-        double world_y = ndc_y * 2.0 * view.half_extent_y + view.center_y;
-        double click_lon = mx_to_lon(world_x);
-        double click_lat = my_to_lat(world_y);
+        auto world_x = ndc_x * 2.0 * view.half_extent_y + view.center_x;
+        auto world_y = ndc_y * 2.0 * view.half_extent_y + view.center_y;
+        auto click_lon = mx_to_lon(world_x);
+        auto click_lat = my_to_lat(world_y);
         click_lon = std::fmod(click_lon + 180.0, 360.0);
         if(click_lon < 0) click_lon += 360.0;
         click_lon -= 180.0;
 
         // Point-feature pick box: pixel half-size → world coords.
-        double pick_half_ndc = (PICK_BOX_SIZE_PIXELS * 0.5) / view.viewport_height;
-        double box_world_half = pick_half_ndc * 2.0 * view.half_extent_y;
-        double box_lon_half = mx_to_lon(box_world_half);
+        auto pick_half_ndc = (PICK_BOX_SIZE_PIXELS * 0.5) / view.viewport_height;
+        auto box_world_half = pick_half_ndc * 2.0 * view.half_extent_y;
+        auto box_lon_half = mx_to_lon(box_world_half);
         geo_bbox pick_box{
             click_lon - box_lon_half,
             my_to_lat(world_y - box_world_half),
@@ -455,10 +459,10 @@ struct map_widget::impl
     // without running the feature-type pick pass).
     std::pair<double, double> ndc_to_lonlat(double ndc_x, double ndc_y) const
     {
-        double world_x = ndc_x * 2.0 * view.half_extent_y + view.center_x;
-        double world_y = ndc_y * 2.0 * view.half_extent_y + view.center_y;
-        double lon = nasrbrowse::mx_to_lon(world_x);
-        double lat = nasrbrowse::my_to_lat(world_y);
+        auto world_x = ndc_x * 2.0 * view.half_extent_y + view.center_x;
+        auto world_y = ndc_y * 2.0 * view.half_extent_y + view.center_y;
+        auto lon = nasrbrowse::mx_to_lon(world_x);
+        auto lat = nasrbrowse::my_to_lat(world_y);
         lon = std::fmod(lon + 180.0, 360.0);
         if(lon < 0) lon += 360.0;
         lon -= 180.0;
@@ -470,12 +474,14 @@ struct map_widget::impl
                                             float ax, float ay,
                                             float bx, float by)
     {
-        float dx = bx - ax, dy = by - ay;
-        float len_sq = dx * dx + dy * dy;
-        float t = 0.0F;
+        auto dx = bx - ax;
+        auto dy = by - ay;
+        auto len_sq = dx * dx + dy * dy;
+        auto t = 0.0F;
         if(len_sq > 0) t = ((px - ax) * dx + (py - ay) * dy) / len_sq;
         t = std::clamp(t, 0.0F, 1.0F);
-        float cx = ax + t * dx, cy = ay + t * dy;
+        auto cx = ax + t * dx;
+        auto cy = ay + t * dy;
         return std::sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
     }
 
@@ -484,17 +490,20 @@ struct map_widget::impl
     std::optional<int> hit_route_waypoint(double click_lon, double click_lat) const
     {
         if(!route) return std::nullopt;
-        float cursor_px, cursor_py;
+        float cursor_px;
+        float cursor_py;
         view.world_to_pixel(click_lon, click_lat, cursor_px, cursor_py);
-        const float threshold = PICK_BOX_SIZE_PIXELS * 0.5F;
+        const auto threshold = PICK_BOX_SIZE_PIXELS * 0.5F;
         const auto& wps = route->waypoints;
         for(std::size_t i = 0; i < wps.size(); ++i)
         {
-            float wx, wy;
+            float wx;
+            float wy;
             view.world_to_pixel(
                 nasrbrowse::waypoint_lon(wps[i]),
                 nasrbrowse::waypoint_lat(wps[i]), wx, wy);
-            float dx = wx - cursor_px, dy = wy - cursor_py;
+            auto dx = wx - cursor_px;
+            auto dy = wy - cursor_py;
             if(dx * dx + dy * dy < threshold * threshold)
                 return static_cast<int>(i);
         }
@@ -507,9 +516,10 @@ struct map_widget::impl
     {
         if(!route || route->waypoints.size() < 2) return std::nullopt;
 
-        float cursor_px, cursor_py;
+        float cursor_px;
+        float cursor_py;
         view.world_to_pixel(click_lon, click_lat, cursor_px, cursor_py);
-        const float threshold = PICK_BOX_SIZE_PIXELS * 0.5F;
+        const auto threshold = PICK_BOX_SIZE_PIXELS * 0.5F;
 
         const auto& wps = route->waypoints;
         for(std::size_t i = 1; i < wps.size(); ++i)
@@ -521,7 +531,10 @@ struct map_widget::impl
                 nasrbrowse::waypoint_lon(wps[i]));
             for(std::size_t j = 1; j < arc.size(); ++j)
             {
-                float ax, ay, bx, by;
+                float ax;
+                float ay;
+                float bx;
+                float by;
                 view.world_to_pixel(arc[j - 1].lon, arc[j - 1].lat, ax, ay);
                 view.world_to_pixel(arc[j].lon, arc[j].lat, bx, by);
                 if(point_segment_distance_px(
@@ -584,7 +597,7 @@ struct map_widget::impl
         int i = route_drag.index;
         auto [lon, lat] = ndc_to_lonlat(cursor_ndc_x, cursor_ndc_y);
         auto hit = hit_route_waypoint(lon, lat);
-        bool adjacent = hit && (*hit == i - 1 || *hit == i + 1);
+        auto adjacent = hit && (*hit == i - 1 || *hit == i + 1);
 
         if(adjacent && route->waypoints.size() > 2)
         {
@@ -613,13 +626,14 @@ struct map_widget::impl
     bool compute_popup_anchor(double lon, double lat,
                               ImVec2& pos, ImVec2& pivot) const
     {
-        float ax, ay;
+        float ax;
+        float ay;
         view.world_to_pixel(lon, lat, ax, ay);
         if(ax < 0 || ax > view.viewport_width || ay < 0 || ay > view.viewport_height)
             return false;
 
-        bool right  = ax >= view.viewport_width * 0.5F;
-        bool bottom = ay >= view.viewport_height * 0.5F;
+        auto right  = ax >= view.viewport_width * 0.5F;
+        auto bottom = ay >= view.viewport_height * 0.5F;
 
         pos.x = ax + (right  ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING);
         pos.y = ay + (bottom ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING);
@@ -665,7 +679,7 @@ struct map_widget::impl
 
         auto result = pick_at(cursor_ndc_x, cursor_ndc_y);
 
-        bool route_hit = route && hit_route_segment(result.lon, result.lat).has_value();
+        auto route_hit = route && hit_route_segment(result.lon, result.lat).has_value();
 
         // Route-only click (no other features): select directly without popup.
         if(result.features.empty() && route_hit)
@@ -678,17 +692,20 @@ struct map_widget::impl
         // Exact-point short-circuit: count point features within the
         // exact-pick pixel radius of the click.
         const double exact_threshold_px = PICK_BOX_EXACT_SIZE_PIXELS;
-        int exact_count = 0;
+        auto exact_count = 0;
         const nasrbrowse::feature* exact_hit = nullptr;
         for(const auto& f : result.features)
         {
             auto coord = nasrbrowse::find_feature_type(feature_types, f).point_coord(f);
             if(!coord) continue;
-            float fx, fy;
+            float fx;
+            float fy;
             view.world_to_pixel(coord->first, coord->second, fx, fy);
-            float cx, cy;
+            float cx;
+            float cy;
             view.world_to_pixel(result.lon, result.lat, cx, cy);
-            double dx = fx - cx, dy = fy - cy;
+            double dx = fx - cx;
+            double dy = fy - cy;
             if(std::sqrt(dx * dx + dy * dy) <= exact_threshold_px)
             {
                 ++exact_count;
@@ -743,8 +760,8 @@ struct map_widget::impl
         ImGui::Text("Lat, Long: %.5f, %.5f", pick_popup.click_lat, pick_popup.click_lon);
         ImGui::SameLine();
         // Align close button to right edge of the window content region
-        float btn_w = ImGui::GetFrameHeight();
-        float avail = ImGui::GetContentRegionAvail().x;
+        auto btn_w = ImGui::GetFrameHeight();
+        auto avail = ImGui::GetContentRegionAvail().x;
         if(avail > btn_w)
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btn_w);
         if(ImGui::SmallButton("X##pick_close"))
@@ -760,7 +777,7 @@ struct map_widget::impl
 
             // Group pick features by their canonical feature-section tag,
             // then append a synthetic "ROUTE" section when the route was hit.
-            const std::size_t route_section = nasrbrowse::FEATURE_SECTION_COUNT;
+            const auto route_section = nasrbrowse::FEATURE_SECTION_COUNT;
             std::vector<nasrbrowse::ui_section> sections(route_section + 1);
             std::vector<std::vector<int>> section_feature_index(route_section + 1);
             for(std::size_t s = 0; s < nasrbrowse::FEATURE_SECTION_COUNT; ++s)
@@ -771,14 +788,14 @@ struct map_widget::impl
             {
                 const auto& f = pick_popup.features[i];
                 const auto& t = nasrbrowse::find_feature_type(feature_types, f);
-                int s = nasrbrowse::feature_section_index(t.section_tag());
+                auto s = nasrbrowse::feature_section_index(t.section_tag());
                 if(s < 0) continue;
                 sections[s].items.push_back(t.summary(f));
                 section_feature_index[s].push_back(i);
             }
 
             if(pick_popup.route_hit)
-                sections[route_section].items.push_back("Flight route");
+                sections[route_section].items.emplace_back("Flight route");
 
             auto picked = nasrbrowse::draw_sectioned_selectable_list(sections);
             if(picked)
@@ -790,7 +807,7 @@ struct map_widget::impl
                 }
                 else
                 {
-                    int fi = section_feature_index[picked->first][picked->second];
+                    auto fi = section_feature_index[picked->first][picked->second];
                     open_info_popup(pick_popup.features[fi],
                                     pick_popup.click_lon, pick_popup.click_lat);
                 }
@@ -802,7 +819,7 @@ struct map_widget::impl
 
         ImGui::End();
 
-        bool need_more = pick_popup.warmup_frames > 0;
+        auto need_more = pick_popup.warmup_frames > 0;
         if(need_more) --pick_popup.warmup_frames;
         return need_more;
     }
@@ -834,11 +851,11 @@ struct map_widget::impl
 
         // Title row: feature summary on the left, [X] on the right.
         const auto& L = nasrbrowse::find_feature_type(feature_types, info_popup.feature);
-        std::string title = L.summary(info_popup.feature);
+        auto title = L.summary(info_popup.feature);
         ImGui::TextUnformatted(title.c_str());
         ImGui::SameLine();
-        float btn_w = ImGui::GetFrameHeight();
-        float avail = ImGui::GetContentRegionAvail().x;
+        auto btn_w = ImGui::GetFrameHeight();
+        auto avail = ImGui::GetContentRegionAvail().x;
         if(avail > btn_w)
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btn_w);
         if(ImGui::SmallButton("X##info_close"))
@@ -852,7 +869,7 @@ struct map_widget::impl
         // Two-column layout: fixed-width keys (auto-fit) + fixed-width
         // wrapped values. Using an ImGui table gives us per-cell wrapping
         // while keeping the key column aligned.
-        nasrbrowse::kv_list rows = L.info_kv(info_popup.feature);
+        auto rows = L.info_kv(info_popup.feature);
         const ImGuiTableFlags flags =
             ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX;
         if(ImGui::BeginTable("info_kv", 2, flags))
@@ -860,7 +877,7 @@ struct map_widget::impl
             ImGui::TableSetupColumn("k", ImGuiTableColumnFlags_WidthFixed);
             ImGui::TableSetupColumn("v", ImGuiTableColumnFlags_WidthFixed, INFO_VALUE_WRAP_PX);
 
-            float line_h = ImGui::GetTextLineHeight();
+            auto line_h = ImGui::GetTextLineHeight();
             for(const auto& [key, value] : rows)
             {
                 if(value.empty()) continue;  // hide empty-source fields
@@ -868,12 +885,12 @@ struct map_widget::impl
 
                 // Measure the wrapped value so we can vertically center
                 // the key against it when the value spans multiple lines.
-                ImVec2 val_size = ImGui::CalcTextSize(
+                auto val_size = ImGui::CalcTextSize(
                     value.c_str(), nullptr, false, INFO_VALUE_WRAP_PX);
-                float row_h = val_size.y > line_h ? val_size.y : line_h;
+                auto row_h = val_size.y > line_h ? val_size.y : line_h;
 
                 ImGui::TableSetColumnIndex(0);
-                float y_offset = (row_h - line_h) * 0.5F;
+                auto y_offset = (row_h - line_h) * 0.5F;
                 if(y_offset > 0.0F)
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + y_offset);
                 ImGui::TextUnformatted(key);
@@ -882,7 +899,7 @@ struct map_widget::impl
                 ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + INFO_VALUE_WRAP_PX);
                 // Right-justify the value: push its starting X so the
                 // rendered (wrapped) block ends at the column's right edge.
-                float val_w = val_size.x;
+                auto val_w = val_size.x;
                 if(val_w < INFO_VALUE_WRAP_PX)
                     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (INFO_VALUE_WRAP_PX - val_w));
                 ImGui::TextUnformatted(value.c_str());
@@ -893,7 +910,7 @@ struct map_widget::impl
 
         ImGui::End();
 
-        bool need_more = info_popup.warmup_frames > 0;
+        auto need_more = info_popup.warmup_frames > 0;
         if(need_more) --info_popup.warmup_frames;
         return need_more;
     }
@@ -924,8 +941,8 @@ void map_widget::focus_on_hit(const nasrbrowse::search_hit& hit)
     if(!bbox) return;
 
     auto& d = *pimpl;
-    double cx = (bbox->lon_min + bbox->lon_max) * 0.5;
-    double cy = (bbox->lat_min + bbox->lat_max) * 0.5;
+    auto cx = (bbox->lon_min + bbox->lon_max) * 0.5;
+    auto cy = (bbox->lat_min + bbox->lat_max) * 0.5;
     d.view.center_x = nasrbrowse::lon_to_mx(cx);
     d.view.center_y = nasrbrowse::lat_to_my(cy);
 
@@ -934,7 +951,7 @@ void map_widget::focus_on_hit(const nasrbrowse::search_hit& hit)
     // min_zoom thresholds (navaids appear by ~z9, airports by ~z7, fixes
     // by ~z10 — zoom 12 covers all of them comfortably).
     constexpr int POINT_FOCUS_ZOOM = 12;
-    bool is_point = (bbox->lon_min == bbox->lon_max &&
+    auto is_point = (bbox->lon_min == bbox->lon_max &&
                      bbox->lat_min == bbox->lat_max);
     if(is_point)
     {
@@ -944,13 +961,13 @@ void map_widget::focus_on_hit(const nasrbrowse::search_hit& hit)
     {
         // Fit the bbox with 20% padding. Use the larger of the required
         // vertical / horizontal extents (the latter scaled by aspect ratio).
-        double half_height_m =
+        auto half_height_m =
             (nasrbrowse::lat_to_my(bbox->lat_max) -
              nasrbrowse::lat_to_my(bbox->lat_min)) * 0.5;
-        double half_width_m =
+        auto half_width_m =
             (nasrbrowse::lon_to_mx(bbox->lon_max) -
              nasrbrowse::lon_to_mx(bbox->lon_min)) * 0.5;
-        double needed = std::max(half_height_m,
+        auto needed = std::max(half_height_m,
                                   half_width_m / d.view.aspect_ratio());
         d.view.half_extent_y = needed * 1.2;
         // Force clamp by setting same extent through zoom(1.0).
@@ -1039,20 +1056,21 @@ bool map_widget::draw_imgui()
     // Both popups can coexist in theory, but in practice the selector is
     // dismissed as soon as a feature is chosen. Always draw both so either
     // one's warmup frames propagate upward.
-    bool a = pimpl->draw_pick_imgui();
-    bool b = pimpl->draw_info_imgui();
+    auto a = pimpl->draw_pick_imgui();
+    auto b = pimpl->draw_info_imgui();
 
     if(pimpl->route_drag.mode != impl::route_drag_mode::none && pimpl->route)
     {
         const auto& wps = pimpl->route->waypoints;
         int i = pimpl->route_drag.index;
-        ImVec2 cursor = ImGui::GetMousePos();
+        auto cursor = ImGui::GetMousePos();
         auto* dl = ImGui::GetForegroundDrawList();
-        ImU32 col = IM_COL32(255, 255, 255, 220);
+        auto col = IM_COL32(255, 255, 255, 220);
 
         auto draw_from = [&](int idx)
         {
-            float x, y;
+            float x;
+            float y;
             pimpl->view.world_to_pixel(
                 nasrbrowse::waypoint_lon(wps[idx]),
                 nasrbrowse::waypoint_lat(wps[idx]), x, y);
@@ -1077,7 +1095,7 @@ bool map_widget::draw_imgui()
 void map_widget::cursor_position_event(double xpos, double ypos)
 {
     // Convert from window pixels to NDC via the projection matrix.
-    double ypos_flipped = pimpl->viewport_vec.w - ypos;
+    auto ypos_flipped = pimpl->viewport_vec.w - ypos;
     glm::vec3 pixel_pos(xpos, ypos_flipped, 0.0);
     glm::vec3 pos(glm::unProject(pixel_pos, glm::mat4(1.0F),
                                   pimpl->projection_matrix, pimpl->viewport_vec));
@@ -1096,10 +1114,10 @@ void map_widget::cursor_position_event(double xpos, double ypos)
         }
         else
         {
-            double dx = pos[0] - pimpl->cursor_last_x;
-            double dy = pos[1] - pimpl->cursor_last_y;
-            double dx_meters = -dx * pimpl->view.half_extent_y * 2.0;
-            double dy_meters = -dy * pimpl->view.half_extent_y * 2.0;
+            auto dx = pos[0] - pimpl->cursor_last_x;
+            auto dy = pos[1] - pimpl->cursor_last_y;
+            auto dx_meters = -dx * pimpl->view.half_extent_y * 2.0;
+            auto dy_meters = -dy * pimpl->view.half_extent_y * 2.0;
             pimpl->view.pan_meters(dx_meters, dy_meters);
             pimpl->rebuild_grid();
             pimpl->update_tiles();
@@ -1146,7 +1164,7 @@ void map_widget::key_event(sdl::input_key_t key, sdl::input_action_t action, sdl
         case 'r':
         case 'R':
         {
-            int z = static_cast<int>(pimpl->view.zoom_level()) + 1;
+            auto z = static_cast<int>(pimpl->view.zoom_level()) + 1;
             pimpl->view.zoom_to_level(z);
             pimpl->rebuild_grid();
             pimpl->update_tiles();
@@ -1155,7 +1173,7 @@ void map_widget::key_event(sdl::input_key_t key, sdl::input_action_t action, sdl
         case 'f':
         case 'F':
         {
-            int z = static_cast<int>(pimpl->view.zoom_level()) - 1;
+            auto z = static_cast<int>(pimpl->view.zoom_level()) - 1;
             pimpl->view.zoom_to_level(z);
             pimpl->rebuild_grid();
             pimpl->update_tiles();
@@ -1167,9 +1185,9 @@ void map_widget::key_event(sdl::input_key_t key, sdl::input_action_t action, sdl
 
 void map_widget::scroll_event(double, double yoffset)
 {
-    double factor = (yoffset > 0) ? 0.9 : 1.0 / 0.9;
-    double wx = pimpl->cursor_ndc_x * 2.0 * pimpl->view.half_extent_y + pimpl->view.center_x;
-    double wy = pimpl->cursor_ndc_y * 2.0 * pimpl->view.half_extent_y + pimpl->view.center_y;
+    auto factor = (yoffset > 0) ? 0.9 : 1.0 / 0.9;
+    auto wx = pimpl->cursor_ndc_x * 2.0 * pimpl->view.half_extent_y + pimpl->view.center_x;
+    auto wy = pimpl->cursor_ndc_y * 2.0 * pimpl->view.half_extent_y + pimpl->view.center_y;
     pimpl->view.zoom_at(factor, wx, wy);
     pimpl->rebuild_grid();
     pimpl->update_tiles();
@@ -1197,7 +1215,7 @@ bool map_widget::update()
 {
     if(pimpl->tiles) pimpl->tiles->drain();
 
-    bool new_candidates = pimpl->features.drain();
+    auto new_candidates = pimpl->features.drain();
     if(new_candidates)
     {
         pimpl->labels.set_candidates(pimpl->features.labels());
@@ -1213,7 +1231,7 @@ bool map_widget::update()
             pimpl->vis);
     }
 
-    bool result = pimpl->needs_update
+    auto result = pimpl->needs_update
         || (pimpl->tiles && pimpl->tiles->needs_upload())
         || pimpl->features.needs_upload() || pimpl->labels.needs_upload();
 
@@ -1247,14 +1265,14 @@ void map_widget::set_route_text(const std::string& text)
     const auto& wps = pimpl->route->waypoints;
     if(!wps.empty())
     {
-        double lat_min = nasrbrowse::waypoint_lat(wps[0]);
-        double lat_max = lat_min;
-        double lon_min = nasrbrowse::waypoint_lon(wps[0]);
-        double lon_max = lon_min;
+        auto lat_min = nasrbrowse::waypoint_lat(wps[0]);
+        auto lat_max = lat_min;
+        auto lon_min = nasrbrowse::waypoint_lon(wps[0]);
+        auto lon_max = lon_min;
         for(const auto& wp : wps)
         {
-            double la = nasrbrowse::waypoint_lat(wp);
-            double lo = nasrbrowse::waypoint_lon(wp);
+            auto la = nasrbrowse::waypoint_lat(wp);
+            auto lo = nasrbrowse::waypoint_lon(wp);
             if(la < lat_min) lat_min = la;
             if(la > lat_max) lat_max = la;
             if(lo < lon_min) lon_min = lo;
@@ -1265,7 +1283,7 @@ void map_widget::set_route_text(const std::string& text)
         d.view.center_x = nasrbrowse::lon_to_mx((lon_min + lon_max) * 0.5);
         d.view.center_y = nasrbrowse::lat_to_my((lat_min + lat_max) * 0.5);
 
-        bool is_point = (lon_min == lon_max && lat_min == lat_max);
+        auto is_point = (lon_min == lon_max && lat_min == lat_max);
         if(is_point)
         {
             constexpr int POINT_FOCUS_ZOOM = 12;
@@ -1273,13 +1291,13 @@ void map_widget::set_route_text(const std::string& text)
         }
         else
         {
-            double half_height_m =
+            auto half_height_m =
                 (nasrbrowse::lat_to_my(lat_max) -
                  nasrbrowse::lat_to_my(lat_min)) * 0.5;
-            double half_width_m =
+            auto half_width_m =
                 (nasrbrowse::lon_to_mx(lon_max) -
                  nasrbrowse::lon_to_mx(lon_min)) * 0.5;
-            double needed = std::max(half_height_m,
+            auto needed = std::max(half_height_m,
                                       half_width_m / d.view.aspect_ratio());
             d.view.half_extent_y = needed * 1.2;
             d.view.zoom(1.0);
@@ -1309,7 +1327,7 @@ const std::optional<nasrbrowse::flight_route>& map_widget::route() const
 
 bool map_widget::drain_route_dirty()
 {
-    bool r = pimpl->route_dirty;
+    auto r = pimpl->route_dirty;
     pimpl->route_dirty = false;
     return r;
 }
@@ -1321,11 +1339,11 @@ void map_widget::render_frame(sdl::command_buffer& cmd, sdl::texture& swapchain)
     ctx.projection_matrix = d.projection_matrix;
     ctx.normalized_viewport_width = d.normalized_viewport_width;
 
-    float s = static_cast<float>(1.0 / (2.0 * d.view.half_extent_y));
-    float cx = static_cast<float>(d.view.center_x);
-    float cy = static_cast<float>(d.view.center_y);
-    glm::mat4 view_matrix = glm::scale(glm::mat4(1.0F), glm::vec3(s, s, 1.0F)) *
-                             glm::translate(glm::mat4(1.0F), glm::vec3(-cx, -cy, 0.0F));
+    auto s = static_cast<float>(1.0 / (2.0 * d.view.half_extent_y));
+    auto cx = static_cast<float>(d.view.center_x);
+    auto cy = static_cast<float>(d.view.center_y);
+    auto view_matrix = glm::scale(glm::mat4(1.0F), glm::vec3(s, s, 1.0F)) *
+                        glm::translate(glm::mat4(1.0F), glm::vec3(-cx, -cy, 0.0F));
 
     // Copy phase: upload pending vertex/texture data to GPU
     {

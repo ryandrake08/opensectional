@@ -72,8 +72,8 @@ namespace nasrbrowse
         float last_render_ms, double zoom_level,
         const std::vector<std::unique_ptr<feature_type>>& feature_types)
     {
-        ImGuiIO& io = ImGui::GetIO();
-        ui_overlay_result result;
+        auto& io = ImGui::GetIO();
+        auto result = ui_overlay_result{};
         auto& d = *pimpl;
 
         // Zoom level overlay in the bottom-left corner
@@ -107,7 +107,7 @@ namespace nasrbrowse
             ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoSavedSettings |
             ImGuiWindowFlags_NoInputs);
-        float fps = (last_render_ms > 0.0F) ? 1000.0F / last_render_ms : 0.0F;
+        auto fps = (last_render_ms > 0.0F) ? 1000.0F / last_render_ms : 0.0F;
         ImGui::Text("%6.1f FPS (%5.2f ms)", fps, last_render_ms);
         ImGui::End();
 
@@ -134,19 +134,19 @@ namespace nasrbrowse
         for(const auto& obj : feature_types)
             rows.push_back({obj->label(), obj->layer_id()});
 
-        float max_label_w = 0;
+        auto max_label_w = 0.0F;
         for(const auto& r : rows)
         {
-            float w = ImGui::CalcTextSize(r.label).x;
+            auto w = ImGui::CalcTextSize(r.label).x;
             if(w > max_label_w) max_label_w = w;
         }
 
-        float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+        auto spacing = ImGui::GetStyle().ItemInnerSpacing.x;
         bool& changed = result.visibility_changed;
 
         for(const auto& r : rows)
         {
-            float label_w = ImGui::CalcTextSize(r.label).x;
+            auto label_w = ImGui::CalcTextSize(r.label).x;
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + max_label_w - label_w);
             ImGui::AlignTextToFramePadding();
             ImGui::Text("%s", r.label);
@@ -194,10 +194,10 @@ namespace nasrbrowse
 
         ImGui::SetNextItemWidth(static_cast<float>(SEARCH_INPUT_WIDTH_PX));
         ImGui::InputTextWithHint("##search_input", "Search", &d.search_buf);
-        bool input_focused = ImGui::IsItemFocused();
+        auto input_focused = ImGui::IsItemFocused();
         result.search_query = d.search_buf;
 
-        bool enter_pressed = input_focused &&
+        auto enter_pressed = input_focused &&
                              ImGui::IsKeyPressed(ImGuiKey_Enter, false);
 
         // Group hits by entity_type into the shared feature section list.
@@ -209,7 +209,7 @@ namespace nasrbrowse
         for(int i = 0; i < static_cast<int>(d.hits.size()); ++i)
         {
             const auto& h = d.hits[i];
-            int s = feature_section_index(h.entity_type.c_str());
+            auto s = feature_section_index(h.entity_type.c_str());
             if(s < 0) continue;
 
             std::string label;
@@ -227,7 +227,7 @@ namespace nasrbrowse
         auto picked = draw_sectioned_selectable_list(sections);
 
         // Enter accepts the first visible hit across all sections.
-        std::optional<int> selected_flat;
+        auto selected_flat = std::optional<int>();
         if(picked)
             selected_flat = section_hit_index[picked->first][picked->second];
         else if(enter_pressed && !d.hits.empty())
@@ -264,7 +264,7 @@ namespace nasrbrowse
             ImGuiWindowFlags_NoSavedSettings);
 
         ImGui::SetNextItemWidth(360.0F);
-        bool submit = ImGui::InputText("##route_input",
+        auto submit = ImGui::InputText("##route_input",
             &d.route_buf,
             ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
@@ -287,8 +287,8 @@ namespace nasrbrowse
                 d.route_buf.clear();
             }
 
-            double total = 0;
-            const ImGuiTableFlags flags =
+            auto total = 0.0;
+            const auto flags =
                 ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit;
             if(ImGui::BeginTable("route_legs", 4, flags))
             {

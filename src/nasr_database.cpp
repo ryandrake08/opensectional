@@ -14,7 +14,7 @@ namespace nasrbrowse
                                               int expected_columns)
     {
         auto stmt = db.prepare(sql);
-        int actual = stmt.column_count();
+        auto actual = stmt.column_count();
         if(actual != expected_columns)
         {
             throw std::runtime_error(
@@ -601,7 +601,7 @@ namespace nasrbrowse
             }
             filter_json.clear();
             filter_json.push_back('[');
-            bool first = true;
+            auto first = true;
             for(const auto& v : *filter)
             {
                 if(!first) filter_json.push_back(',');
@@ -820,10 +820,10 @@ namespace nasrbrowse
 
             d.stmt_cls_arsp_shape.reset();
             d.stmt_cls_arsp_shape.bind(1, a.arsp_id);
-            int current_part = -1;
+            auto current_part = -1;
             while (d.stmt_cls_arsp_shape.step())
             {
-                int part_num = d.stmt_cls_arsp_shape.column_int(0);
+                auto part_num = d.stmt_cls_arsp_shape.column_int(0);
                 if (part_num != current_part)
                 {
                     polygon_ring ring;
@@ -888,8 +888,10 @@ namespace nasrbrowse
                 st.lower_ft_ref = d.stmt_sua_strata.column_text(7);
 
                 // Circle metadata, if this stratum is a pure circle.
-                int circle_part = -1;
-                double c_lon = 0, c_lat = 0, c_rad = 0;
+                auto circle_part = -1;
+                auto c_lon = 0.0;
+                auto c_lat = 0.0;
+                auto c_rad = 0.0;
                 d.stmt_sua_circle.reset();
                 d.stmt_sua_circle.bind(1, st.stratum_id);
                 if (d.stmt_sua_circle.step())
@@ -902,10 +904,10 @@ namespace nasrbrowse
 
                 d.stmt_sua_shape.reset();
                 d.stmt_sua_shape.bind(1, st.stratum_id);
-                int current_part = -1;
+                auto current_part = -1;
                 while (d.stmt_sua_shape.step())
                 {
-                    int part_num = d.stmt_sua_shape.column_int(0);
+                    auto part_num = d.stmt_sua_shape.column_int(0);
                     if (part_num != current_part)
                     {
                         sua_ring ring;
@@ -1047,10 +1049,10 @@ namespace nasrbrowse
 
             d.stmt_adiz_shape.reset();
             d.stmt_adiz_shape.bind(1, a.adiz_id);
-            int current_part = -1;
+            auto current_part = -1;
             while (d.stmt_adiz_shape.step())
             {
-                int part_num = d.stmt_adiz_shape.column_int(0);
+                auto part_num = d.stmt_adiz_shape.column_int(0);
                 if (part_num != current_part)
                 {
                     a.parts.push_back({});
@@ -1158,10 +1160,10 @@ namespace nasrbrowse
         std::lock_guard<std::mutex> lock(d.mutex);
         std::vector<boundary_segment> results;
         d.bind_bbox(d.stmt_artcc_seg, bbox);
-        int current_seg = -1;
+        auto current_seg = -1;
         while (d.stmt_artcc_seg.step())
         {
-            int seg_id = d.stmt_artcc_seg.column_int(0);
+            auto seg_id = d.stmt_artcc_seg.column_int(0);
             if (seg_id != current_seg)
             {
                 results.push_back({d.stmt_artcc_seg.column_text(1), {}});
@@ -1180,10 +1182,10 @@ namespace nasrbrowse
         std::lock_guard<std::mutex> lock(d.mutex);
         std::vector<boundary_segment> results;
         d.bind_bbox(d.stmt_adiz_seg, bbox);
-        int current_seg = -1;
+        auto current_seg = -1;
         while (d.stmt_adiz_seg.step())
         {
-            int seg_id = d.stmt_adiz_seg.column_int(0);
+            auto seg_id = d.stmt_adiz_seg.column_int(0);
             if (seg_id != current_seg)
             {
                 results.push_back({{}, {}});
@@ -1202,10 +1204,10 @@ namespace nasrbrowse
         std::lock_guard<std::mutex> lock(d.mutex);
         std::vector<tfr_segment> results;
         d.bind_bbox(d.stmt_tfr_seg, bbox);
-        int current_seg = -1;
+        auto current_seg = -1;
         while (d.stmt_tfr_seg.step())
         {
-            int seg_id = d.stmt_tfr_seg.column_int(0);
+            auto seg_id = d.stmt_tfr_seg.column_int(0);
             if (seg_id != current_seg)
             {
                 results.push_back({d.stmt_tfr_seg.column_int(1),
@@ -1230,14 +1232,14 @@ namespace nasrbrowse
         std::vector<airspace_segment> results;
         d.bind_bbox(d.stmt_cls_arsp_seg, bbox);
         d.bind_filter(d.stmt_cls_arsp_seg, 5, class_filter);
-        int current_seg = -1;
-        bool skip_current = false;
+        auto current_seg = -1;
+        auto skip_current = false;
         while (d.stmt_cls_arsp_seg.step())
         {
-            int seg_id = d.stmt_cls_arsp_seg.column_int(0);
+            auto seg_id = d.stmt_cls_arsp_seg.column_int(0);
             if (seg_id != current_seg)
             {
-                int arsp_id = d.stmt_cls_arsp_seg.column_int(1);
+                auto arsp_id = d.stmt_cls_arsp_seg.column_int(1);
                 skip_current = d.shadowed_arsp_ids.count(arsp_id) != 0;
                 current_seg = seg_id;
                 if (skip_current) continue;
@@ -1261,10 +1263,10 @@ namespace nasrbrowse
         std::vector<sua_segment> results;
         d.bind_bbox(d.stmt_sua_seg, bbox);
         d.bind_filter(d.stmt_sua_seg, 5, type_filter);
-        int current_seg = -1;
+        auto current_seg = -1;
         while (d.stmt_sua_seg.step())
         {
-            int seg_id = d.stmt_sua_seg.column_int(0);
+            auto seg_id = d.stmt_sua_seg.column_int(0);
             if (seg_id != current_seg)
             {
                 results.push_back({d.stmt_sua_seg.column_text(1),
@@ -1330,7 +1332,7 @@ namespace nasrbrowse
     std::optional<geo_bbox> nasr_database::get_hit_bbox(const search_hit& hit) const
     {
         const std::string& entity_type = hit.entity_type;
-        int entity_rowid = hit.entity_rowid;
+        auto entity_rowid = hit.entity_rowid;
         // Per-type SQL. Point entities return a degenerate bbox built from
         // the source table's lat/lon columns; areal entities read their
         // BASE_RTREE; line entities (AWY/MTR) aggregate over their segment

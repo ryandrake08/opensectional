@@ -54,7 +54,7 @@ namespace nasrbrowse
             rings.reserve(1 + holes.size());
             rings.push_back(outer);
             for(const auto& h : holes) rings.push_back(h);
-            std::vector<uint32_t> indices = mapbox::earcut<uint32_t>(rings);
+            auto indices = mapbox::earcut<uint32_t>(rings);
             std::vector<glm::vec2> flat;
             flat.reserve(outer.size() + [&] {
                 size_t s = 0; for(auto& h : holes) s += h.size(); return s;
@@ -69,11 +69,11 @@ namespace nasrbrowse
         void add_circle(polyline_data& pd, float cx, float cy, float r,
                         const line_style& ls)
         {
-            const int n = 16;
+            const auto n = 16;
             std::vector<glm::vec2> pts;
             for(int i = 0; i < n; i++)
             {
-                float angle = 2.0F * static_cast<float>(M_PI) * i / n;
+                auto angle = 2.0F * static_cast<float>(M_PI) * i / n;
                 pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
             }
             pts.push_back(pts.front());
@@ -87,7 +87,7 @@ namespace nasrbrowse
             std::vector<glm::vec2> pts;
             for(int i = 0; i < n; i++)
             {
-                float angle = 2.0F * static_cast<float>(M_PI) * i / n;
+                auto angle = 2.0F * static_cast<float>(M_PI) * i / n;
                 pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
             }
             pts.push_back(pts.front());
@@ -108,7 +108,7 @@ namespace nasrbrowse
             std::vector<glm::vec2> pts;
             for(int i = 0; i < 6; i++)
             {
-                float angle = glm::radians(60.0F * i);
+                auto angle = glm::radians(60.0F * i);
                 pts.emplace_back(cx + r * std::cos(angle), cy + r * std::sin(angle));
             }
             pts.push_back(pts.front());
@@ -129,7 +129,7 @@ namespace nasrbrowse
         void add_center_dot(polyline_data& pd, float cx, float cy, float r,
                             const line_style& ls)
         {
-            float d = r * 0.15F;
+            auto d = r * 0.15F;
             pd.polylines.push_back({
                 {cx - d, cy}, {cx, cy + d}, {cx + d, cy}, {cx, cy - d}, {cx - d, cy}
             });
@@ -143,7 +143,7 @@ namespace nasrbrowse
             // a trapezoid whose inner edge runs along one hex edge of radius
             // hex_r and whose outer edge is offset by h along that edge's
             // outward normal.
-            const float h = hex_r * 0.5F;
+            const auto h = hex_r * 0.5F;
             for(int i = 0; i < 3; i++)
             {
                 const float base_deg = 120.0F * i;
@@ -165,7 +165,7 @@ namespace nasrbrowse
                               float radius, const line_style& ls)
         {
             add_circle_to(pd, cx, cy, radius, ls);
-            float dot_r = radius * 0.2F;
+            auto dot_r = radius * 0.2F;
             add_circle_to(pd, cx, cy, dot_r, ls, 8);
         }
 
@@ -235,10 +235,10 @@ namespace nasrbrowse
         {
             for(size_t i = 0; i + 3 < segs.size(); i += 4)
             {
-                float x0 = cx + segs[i + 0] * w;
-                float y0 = cy + segs[i + 1] * h;
-                float x1 = cx + segs[i + 2] * w;
-                float y1 = cy + segs[i + 3] * h;
+                auto x0 = cx + segs[i + 0] * w;
+                auto y0 = cy + segs[i + 1] * h;
+                auto x1 = cx + segs[i + 2] * w;
+                auto y1 = cy + segs[i + 3] * h;
                 add_seg_to(pd, x0, y0, x1, y1, ls);
             }
         }
@@ -248,11 +248,13 @@ namespace nasrbrowse
         bool point_in_ring(double px, double py,
                         const std::vector<airspace_point>& ring)
         {
-            bool inside = false;
+            auto inside = false;
             for(size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++)
             {
-                double yi = ring[i].lat, yj = ring[j].lat;
-                double xi = ring[i].lon, xj = ring[j].lon;
+                auto yi = ring[i].lat;
+                auto yj = ring[j].lat;
+                auto xi = ring[i].lon;
+                auto xj = ring[j].lon;
                 if(((yi > py) != (yj > py)) &&
                 (px < (xj - xi) * (py - yi) / (yj - yi) + xi))
                 {
@@ -265,7 +267,7 @@ namespace nasrbrowse
         bool point_in_multi_ring(double lon, double lat,
                                 const std::vector<polygon_ring>& rings)
         {
-            bool inside = false;
+            auto inside = false;
             for(const auto& ring : rings)
             {
                 if(point_in_ring(lon, lat, ring.points))
@@ -280,23 +282,23 @@ namespace nasrbrowse
         bool point_in_circle_nm(double px, double py,
                                 double cx, double cy, double radius_nm)
         {
-            double dlat = (py - cy) * 60.0;
-            double dlon = (px - cx) * 60.0 * std::cos(cy * M_PI / 180.0);
+            auto dlat = (py - cy) * 60.0;
+            auto dlon = (px - cx) * 60.0 * std::cos(cy * M_PI / 180.0);
             return (dlat * dlat + dlon * dlon) <= (radius_nm * radius_nm);
         }
 
         double point_to_segment_nm(double px, double py,
                                     double ax, double ay, double bx, double by)
         {
-            double cos_lat = std::cos(py * M_PI / 180.0);
-            double ax_nm = (ax - px) * 60.0 * cos_lat;
-            double ay_nm = (ay - py) * 60.0;
-            double bx_nm = (bx - px) * 60.0 * cos_lat;
-            double by_nm = (by - py) * 60.0;
+            auto cos_lat = std::cos(py * M_PI / 180.0);
+            auto ax_nm = (ax - px) * 60.0 * cos_lat;
+            auto ay_nm = (ay - py) * 60.0;
+            auto bx_nm = (bx - px) * 60.0 * cos_lat;
+            auto by_nm = (by - py) * 60.0;
 
-            double dx = bx_nm - ax_nm;
-            double dy = by_nm - ay_nm;
-            double len2 = dx * dx + dy * dy;
+            auto dx = bx_nm - ax_nm;
+            auto dy = by_nm - ay_nm;
+            auto len2 = dx * dx + dy * dy;
             double t = 0;
             if(len2 > 0)
             {
@@ -304,8 +306,8 @@ namespace nasrbrowse
                 if(t < 0) t = 0;
                 else if(t > 1) t = 1;
             }
-            double cx = ax_nm + t * dx;
-            double cy = ay_nm + t * dy;
+            auto cx = ax_nm + t * dx;
+            auto cy = ay_nm + t * dy;
             return std::sqrt(cx * cx + cy * cy);
         }
 
@@ -430,7 +432,7 @@ namespace nasrbrowse
             for(const auto& nav : ctx.db.query_navaids(ctx.pick_box))
             {
                 if(!ctx.styles.navaid_visible(nav.nav_type, ctx.zoom)) continue;
-                bool keep = (nav.is_low && ctx.vis.altitude.show_low)
+                auto keep = (nav.is_low && ctx.vis.altitude.show_low)
                          || (nav.is_high && ctx.vis.altitude.show_high);
                 if(keep) out.push_back(nav);
             }
@@ -444,7 +446,7 @@ namespace nasrbrowse
                !ctx.styles.fix_visible(false, ctx.zoom)) return;
             for(const auto& f : ctx.db.query_fixes(ctx.pick_box))
             {
-                bool keep = (f.is_low && ctx.vis.altitude.show_low)
+                auto keep = (f.is_low && ctx.vis.altitude.show_low)
                          || (f.is_high && ctx.vis.altitude.show_high);
                 if(keep) out.push_back(f);
             }
@@ -502,7 +504,7 @@ namespace nasrbrowse
                     if(!ctx.vis.altitude.overlaps(stratum.lower_ft_val, stratum.lower_ft_ref,
                                                    stratum.upper_ft_val, stratum.upper_ft_ref))
                         continue;
-                    bool inside = false;
+                    auto inside = false;
                     for(const auto& ring : stratum.parts)
                     {
                         if(point_in_ring(ctx.click_lon, ctx.click_lat, ring.points))
@@ -580,17 +582,17 @@ namespace nasrbrowse
                               std::vector<feature>& out) const
         {
             if(!ctx.vis.altitude.any()) return;
-            bool area_vis = ctx.styles.pja_area_visible(ctx.zoom);
-            bool point_vis = ctx.styles.pja_point_visible(ctx.zoom);
+            auto area_vis = ctx.styles.pja_area_visible(ctx.zoom);
+            auto point_vis = ctx.styles.pja_point_visible(ctx.zoom);
             if(!area_vis && !point_vis) return;
             for(const auto& p : ctx.db.query_pjas(ctx.pick_box))
             {
-                int upper = p.max_altitude_ft_msl > 0 ? p.max_altitude_ft_msl
+                auto upper = p.max_altitude_ft_msl > 0 ? p.max_altitude_ft_msl
                                                         : altitude_filter::UNLIMITED_FT;
                 if(!ctx.vis.altitude.overlaps(0, upper)) continue;
-                bool is_point = (p.radius_nm <= 0);
+                auto is_point = (p.radius_nm <= 0);
                 if(is_point ? !point_vis : !area_vis) continue;
-                bool hit = is_point
+                auto hit = is_point
                     ? (p.lon >= ctx.pick_box.lon_min && p.lon <= ctx.pick_box.lon_max
                     && p.lat >= ctx.pick_box.lat_min && p.lat <= ctx.pick_box.lat_max)
                     : point_in_circle_nm(ctx.click_lon, ctx.click_lat, p.lon, p.lat, p.radius_nm);
@@ -602,8 +604,8 @@ namespace nasrbrowse
                               std::vector<feature>& out) const
         {
             if(!ctx.vis.altitude.low_enabled()) return;
-            bool area_vis = ctx.styles.maa_area_visible(ctx.zoom);
-            bool point_vis = ctx.styles.maa_point_visible(ctx.zoom);
+            auto area_vis = ctx.styles.maa_area_visible(ctx.zoom);
+            auto point_vis = ctx.styles.maa_point_visible(ctx.zoom);
             if(!area_vis && !point_vis) return;
             for(const auto& m : ctx.db.query_maas(ctx.click_box))
             {
@@ -614,7 +616,7 @@ namespace nasrbrowse
                 }
                 else if(m.radius_nm > 0)
                 {
-                    bool is_area = m.shape.empty();
+                    auto is_area = m.shape.empty();
                     if(is_area ? area_vis : point_vis)
                         if(point_in_circle_nm(ctx.click_lon, ctx.click_lat, m.lon, m.lat, m.radius_nm))
                             out.push_back(m);
@@ -631,7 +633,7 @@ namespace nasrbrowse
                 if(!ctx.styles.airway_visible(seg.awy_id, ctx.zoom)) continue;
                 if(!altitude_filter_allows(ctx.vis.altitude, airway_bands(seg.awy_id)))
                     continue;
-                double d = point_to_segment_nm(ctx.click_lon, ctx.click_lat,
+                auto d = point_to_segment_nm(ctx.click_lon, ctx.click_lat,
                     seg.from_lon, seg.from_lat, seg.to_lon, seg.to_lat);
                 if(d <= ctx.pick_radius_nm) out.push_back(seg);
             }
@@ -645,7 +647,7 @@ namespace nasrbrowse
             {
                 if(!altitude_filter_allows(ctx.vis.altitude, mtr_bands(seg.route_type_code)))
                     continue;
-                double d = point_to_segment_nm(ctx.click_lon, ctx.click_lat,
+                auto d = point_to_segment_nm(ctx.click_lon, ctx.click_lat,
                     seg.from_lon, seg.from_lat, seg.to_lon, seg.to_lat);
                 if(d <= ctx.pick_radius_nm) out.push_back(seg);
             }
@@ -658,7 +660,7 @@ namespace nasrbrowse
                !ctx.styles.runway_visible(ctx.zoom)) return;
             for(const auto& rwy : ctx.db.query_runways(ctx.pick_box))
             {
-                double d = point_to_segment_nm(ctx.click_lon, ctx.click_lat,
+                auto d = point_to_segment_nm(ctx.click_lon, ctx.click_lat,
                     rwy.end1_lon, rwy.end1_lat, rwy.end2_lon, rwy.end2_lat);
                 if(d <= ctx.pick_radius_nm) out.push_back(rwy);
             }
@@ -893,8 +895,8 @@ namespace nasrbrowse
             {
                 std::string day = sc.day;
                 if(!sc.day_til.empty()) day += "-" + sc.day_til;
-                std::string start = fmt_endpoint(sc.start_time, sc.start_event, sc.start_event_offset);
-                std::string end = fmt_endpoint(sc.end_time, sc.end_event, sc.end_event_offset);
+                auto start = fmt_endpoint(sc.start_time, sc.start_event, sc.start_event_offset);
+                auto end = fmt_endpoint(sc.end_time, sc.end_event, sc.end_event_offset);
                 std::string val = day;
                 if(!start.empty() || !end.empty()) val += " " + start + "-" + end;
                 rows.push_back({"Schedule", val});
@@ -1095,16 +1097,16 @@ namespace nasrbrowse
             constexpr float APT_RING_WIDTH_PX = 1.0F;
             constexpr float APT_FILL_RADIUS = 0.5F;
 
-            float symbol_r = r * APT_OUTER_SCALE;
-            float ring_geom_r = symbol_r - (APT_RING_WIDTH_PX * 0.5F) / pixels_per_world;
-            line_style ring_ls = {APT_RING_WIDTH_PX, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
+            auto symbol_r = r * APT_OUTER_SCALE;
+            auto ring_geom_r = symbol_r - (APT_RING_WIDTH_PX * 0.5F) / pixels_per_world;
+            auto ring_ls = line_style{APT_RING_WIDTH_PX, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
 
-            bool closed = apt.arpt_status == "CI" || apt.arpt_status == "CP";
-            bool pvt = apt.facility_use_code == "PR";
-            bool mil = is_military_apt(apt);
-            float h = ring_geom_r * LETTER_HEIGHT;
-            line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1.0F, 1.0F, 1.0F, 1.0F, 0};
-            float w = h * LETTER_ASPECT;
+            auto closed = apt.arpt_status == "CI" || apt.arpt_status == "CP";
+            auto pvt = apt.facility_use_code == "PR";
+            auto mil = is_military_apt(apt);
+            auto h = ring_geom_r * LETTER_HEIGHT;
+            auto white_ls = line_style{LETTER_WIDTH_PX, 0, 0, 0, 1.0F, 1.0F, 1.0F, 1.0F, 0};
+            auto w = h * LETTER_ASPECT;
 
             const std::vector<float>* letter = nullptr;
             if(closed)                          letter = &letter_X;
@@ -1118,15 +1120,15 @@ namespace nasrbrowse
 
             if(apt.hard_surface)
             {
-                float geom_r = symbol_r * APT_FILL_RADIUS;
-                float fill_px = symbol_r * pixels_per_world;
-                line_style fill_ls = {fill_px, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
+                auto geom_r = symbol_r * APT_FILL_RADIUS;
+                auto fill_px = symbol_r * pixels_per_world;
+                auto fill_ls = line_style{fill_px, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
                 add_circle_to(pd, cx, cy, geom_r, fill_ls);
                 if(letter) add_letter(pd, *letter, cx, cy, w, h, white_ls);
             }
             else if(letter)
             {
-                line_style filled_ring = ring_ls;
+                auto filled_ring = ring_ls;
                 filled_ring.fill_width = SYMBOL_FILL_PX;
                 add_circle_to(pd, cx, cy, ring_geom_r, filled_ring);
                 add_letter(pd, *letter, cx, cy, w, h, white_ls);
@@ -1144,8 +1146,8 @@ namespace nasrbrowse
             constexpr float NAV_DME_RECT = 0.85F;
             constexpr float NAV_VORDME_WIDTH = 1.1F;
 
-            line_style ls = to_line_style(fs);
-            line_style filled_ls = ls;
+            auto ls = to_line_style(fs);
+            auto filled_ls = ls;
             filled_ls.fill_width = SYMBOL_FILL_PX;
 
             if(nav.nav_type == "NDB")
@@ -1182,7 +1184,7 @@ namespace nasrbrowse
                                     float r, const line_style& ls)
         {
             constexpr float SQRT3_2 = 0.866F;
-            float h = r * SQRT3_2;
+            auto h = r * SQRT3_2;
             pd.polylines.push_back({
                 {cx, cy + r}, {cx - h, cy - r * 0.5F},
                 {cx + h, cy - r * 0.5F}, {cx, cy + r},
@@ -1209,10 +1211,10 @@ namespace nasrbrowse
             {
                 for(int i = 0; i <= ARC_SEGS; i++)
                 {
-                    float t = static_cast<float>(i) / ARC_SEGS;
-                    float angle = a0 - t * (PI / 2);
-                    float px = cx + acx_off + r * std::cos(angle);
-                    float py = cy + acy_off + r * std::sin(angle);
+                    auto t = static_cast<float>(i) / ARC_SEGS;
+                    auto angle = a0 - t * (PI / 2);
+                    auto px = cx + acx_off + r * std::cos(angle);
+                    auto py = cy + acy_off + r * std::sin(angle);
                     star_pts.push_back({px, py});
                 }
             }
@@ -1221,11 +1223,11 @@ namespace nasrbrowse
             pd.styles.push_back(ls);
 
             constexpr int CIRCLE_SEGS = 8;
-            float cr = r * SQRT2_M1;
+            auto cr = r * SQRT2_M1;
             std::vector<glm::vec2> circle_pts;
             for(int i = 0; i <= CIRCLE_SEGS; i++)
             {
-                float angle = 2 * PI * static_cast<float>(i) / CIRCLE_SEGS;
+                auto angle = 2 * PI * static_cast<float>(i) / CIRCLE_SEGS;
                 circle_pts.push_back({cx + cr * std::cos(angle),
                                       cy + cr * std::sin(angle)});
             }
@@ -1236,7 +1238,7 @@ namespace nasrbrowse
         void emit_fix_icon(polyline_data& pd, float cx, float cy, float r,
                            const fix& f, const feature_style& fs)
         {
-            line_style ls = to_line_style(fs);
+            auto ls = to_line_style(fs);
             ls.fill_width = SYMBOL_FILL_PX;
             if(f.use_code == "RP" || f.use_code == "MR")
                 add_triangle_polyline(pd, cx, cy, r, ls);
@@ -1250,11 +1252,11 @@ namespace nasrbrowse
                                      float radius, bool tall, bool lighted,
                                      const line_style& ls)
         {
-            float dot_r = radius * 0.2F;
-            float half_w = radius * 0.7F;
-            float leg_y = cy - dot_r;
-            float apex_y = leg_y + radius * 1.6F;
-            float mast_top = tall ? apex_y + radius * 0.8F : apex_y;
+            auto dot_r = radius * 0.2F;
+            auto half_w = radius * 0.7F;
+            auto leg_y = cy - dot_r;
+            auto apex_y = leg_y + radius * 1.6F;
+            auto mast_top = tall ? apex_y + radius * 0.8F : apex_y;
 
             if(tall)
             {
@@ -1277,19 +1279,19 @@ namespace nasrbrowse
 
             if(lighted)
             {
-                float gap = radius * 0.4F;
-                float ray_len = radius * 0.15F;
+                auto gap = radius * 0.4F;
+                auto ray_len = radius * 0.15F;
                 constexpr float DEG_TO_RAD = static_cast<float>(M_PI) / 180.0F;
                 constexpr std::array<float, 5> angles = {-120, -60, 0, 60, 120};
-                for(float deg : angles)
+                for(auto deg : angles)
                 {
-                    float rad = (90.0F - deg) * DEG_TO_RAD;
-                    float dx = std::cos(rad);
-                    float dy = std::sin(rad);
-                    float x0 = cx + dx * gap;
-                    float y0 = mast_top + dy * gap;
-                    float x1 = cx + dx * (gap + ray_len);
-                    float y1 = mast_top + dy * (gap + ray_len);
+                    auto rad = (90.0F - deg) * DEG_TO_RAD;
+                    auto dx = std::cos(rad);
+                    auto dy = std::sin(rad);
+                    auto x0 = cx + dx * gap;
+                    auto y0 = mast_top + dy * gap;
+                    auto x1 = cx + dx * (gap + ray_len);
+                    auto y1 = mast_top + dy * (gap + ray_len);
                     add_seg_to(pd, x0, y0, x1, y1, ls);
                 }
             }
@@ -1299,7 +1301,7 @@ namespace nasrbrowse
                                  const obstacle& obs, const feature_style& fs)
         {
             auto ls = to_line_style(fs);
-            bool lighted = obs.lighting != "N";
+            auto lighted = obs.lighting != "N";
             add_obstacle_polylines(pd, cx, cy, r, obs.agl_ht >= 1000, lighted, ls);
         }
 
@@ -1316,9 +1318,9 @@ namespace nasrbrowse
             });
             pd.styles.push_back(ls);
 
-            float lh = r * LETTER_HEIGHT;
-            float lw = lh * LETTER_ASPECT;
-            line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
+            auto lh = r * LETTER_HEIGHT;
+            auto lw = lh * LETTER_ASPECT;
+            auto white_ls = line_style{LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
             add_letter(pd, letter_P, cx, cy, lw, lh, white_ls);
         }
 
@@ -1345,9 +1347,9 @@ namespace nasrbrowse
                 throw std::runtime_error("Unknown MAA type: " + m.type);
             }();
 
-            float lh = r * LETTER_HEIGHT;
-            float lw = lh * LETTER_ASPECT;
-            line_style white_ls = {LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
+            auto lh = r * LETTER_HEIGHT;
+            auto lw = lh * LETTER_ASPECT;
+            auto white_ls = line_style{LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
             add_letter(pd, ld, cx, cy, lw, lh, white_ls);
         }
 
@@ -1366,8 +1368,8 @@ namespace nasrbrowse
                 request_bbox(ctx.req),
                 ctx.styles.visible_airport_classes(ctx.req.zoom));
 
-            float r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
-            float pixels_per_world = static_cast<float>(
+            auto r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
+            auto pixels_per_world = static_cast<float>(
                 ctx.req.viewport_height / (2.0 * ctx.req.half_extent_y));
 
             for(const auto& apt : airports)
@@ -1375,14 +1377,14 @@ namespace nasrbrowse
                 if(!ctx.styles.airport_visible(apt, ctx.req.zoom)) continue;
 
                 const auto& cs = ctx.styles.airport_style(apt);
-                float cx = static_cast<float>(lon_to_mx(apt.lon) + ctx.mx_offset);
-                float cy = static_cast<float>(lat_to_my(apt.lat));
+                auto cx = static_cast<float>(lon_to_mx(apt.lon) + ctx.mx_offset);
+                auto cy = static_cast<float>(lat_to_my(apt.lat));
 
                 emit_airport_icon(ctx.poly[layer_airports], cx, cy, r,
                                    pixels_per_world, apt, cs);
 
                 const auto& id = apt.icao_id.empty() ? apt.arpt_id : apt.icao_id;
-                bool towered = apt.twr_type_code.find("ATCT") != std::string::npos;
+                auto towered = apt.twr_type_code.find("ATCT") != std::string::npos;
                 ctx.labels.push_back({
                     .text = id,
                     .mx = lon_to_mx(apt.lon) + ctx.mx_offset,
@@ -1405,10 +1407,10 @@ namespace nasrbrowse
 
             for(const auto& rwy : runways)
             {
-                float x0 = static_cast<float>(lon_to_mx(rwy.end1_lon) + ctx.mx_offset);
-                float y0 = static_cast<float>(lat_to_my(rwy.end1_lat));
-                float x1 = static_cast<float>(lon_to_mx(rwy.end2_lon) + ctx.mx_offset);
-                float y1 = static_cast<float>(lat_to_my(rwy.end2_lat));
+                auto x0 = static_cast<float>(lon_to_mx(rwy.end1_lon) + ctx.mx_offset);
+                auto y0 = static_cast<float>(lat_to_my(rwy.end1_lat));
+                auto x1 = static_cast<float>(lon_to_mx(rwy.end2_lon) + ctx.mx_offset);
+                auto y1 = static_cast<float>(lat_to_my(rwy.end2_lat));
                 ctx.poly[layer_runways].polylines.push_back(
                     {glm::vec2(x0, y0), glm::vec2(x1, y1)});
                 ctx.poly[layer_runways].styles.push_back(to_line_style(fs));
@@ -1423,7 +1425,7 @@ namespace nasrbrowse
 
             const auto& navaids = ctx.db.query_navaids(
                 request_bbox(ctx.req));
-            float r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
+            auto r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
 
             ctx.state.navaid_positions.clear();
             ctx.state.navaid_clearance = r * NAV_CLEARANCE;
@@ -1434,18 +1436,18 @@ namespace nasrbrowse
                    nav.nav_type == "MARINE NDB") continue;
                 if(!ctx.styles.navaid_visible(nav.nav_type, ctx.req.zoom)) continue;
 
-                bool keep = (nav.is_low && ctx.req.altitude.show_low)
+                auto keep = (nav.is_low && ctx.req.altitude.show_low)
                          || (nav.is_high && ctx.req.altitude.show_high);
                 if(!keep) continue;
 
                 const auto& fs = ctx.styles.navaid_style(nav.nav_type);
-                float cx = static_cast<float>(lon_to_mx(nav.lon) + ctx.mx_offset);
-                float cy = static_cast<float>(lat_to_my(nav.lat));
+                auto cx = static_cast<float>(lon_to_mx(nav.lon) + ctx.mx_offset);
+                auto cy = static_cast<float>(lat_to_my(nav.lat));
 
                 ctx.state.navaid_positions.emplace_back(cx, cy);
                 emit_navaid_icon(ctx.poly[layer_navaids], cx, cy, r, nav, fs);
 
-                bool is_vor = nav.nav_type.find("VOR") != std::string::npos
+                auto is_vor = nav.nav_type.find("VOR") != std::string::npos
                            || nav.nav_type == "TACAN" || nav.nav_type == "VORTAC";
                 ctx.labels.push_back({
                     .text = nav.nav_id,
@@ -1462,7 +1464,7 @@ namespace nasrbrowse
         // so text reads left-to-right with up-vector toward screen-up.
         static float segment_angle(float dx, float dy)
         {
-            float a = std::atan2(dy, dx);
+            auto a = std::atan2(dy, dx);
             if(a > static_cast<float>(M_PI_2))
                 a -= static_cast<float>(M_PI);
             else if(a < static_cast<float>(-M_PI_2))
@@ -1500,10 +1502,10 @@ namespace nasrbrowse
 
                 const auto& fs = ctx.styles.airway_style(seg.awy_id);
 
-                double from_mx = lon_to_mx(seg.from_lon) + ctx.mx_offset;
-                double from_my = lat_to_my(seg.from_lat);
-                double to_mx = lon_to_mx(seg.to_lon) + ctx.mx_offset;
-                double to_my = lat_to_my(seg.to_lat);
+                auto from_mx = lon_to_mx(seg.from_lon) + ctx.mx_offset;
+                auto from_my = lat_to_my(seg.from_lat);
+                auto to_mx = lon_to_mx(seg.to_lon) + ctx.mx_offset;
+                auto to_my = lat_to_my(seg.to_lat);
 
                 auto arc = geodesic_interpolate(
                     seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon);
@@ -1517,13 +1519,13 @@ namespace nasrbrowse
                 // Trim endpoints away from navaid icons
                 auto& front = polyline.front();
                 auto& back = polyline.back();
-                float dx = back.x - front.x;
-                float dy = back.y - front.y;
-                float len = std::sqrt(dx * dx + dy * dy);
+                auto dx = back.x - front.x;
+                auto dy = back.y - front.y;
+                auto len = std::sqrt(dx * dx + dy * dy);
                 if(len > 0.0F)
                 {
-                    float ux = dx / len;
-                    float uy = dy / len;
+                    auto ux = dx / len;
+                    auto uy = dy / len;
                     if(ctx.is_at_navaid(front.x, front.y))
                     {
                         front.x += ux * ctx.state.navaid_clearance;
@@ -1560,8 +1562,8 @@ namespace nasrbrowse
 
                 // Place labels every AIRWAY_LABEL_INTERVAL segments,
                 // centered within each group.
-                size_t n = segs.size();
-                size_t start = (n % AIRWAY_LABEL_INTERVAL) / 2;
+                auto n = segs.size();
+                auto start = (n % AIRWAY_LABEL_INTERVAL) / 2;
                 std::unordered_set<size_t> labeled;
                 for(size_t i = start; i < n; i += AIRWAY_LABEL_INTERVAL)
                 {
@@ -1593,8 +1595,8 @@ namespace nasrbrowse
                 for(size_t i = 1; i < n; i++)
                 {
                     if(labeled.count(i)) continue;
-                    float a0 = segment_angle(segs[i - 1].dx, segs[i - 1].dy);
-                    float a1 = segment_angle(segs[i].dx, segs[i].dy);
+                    auto a0 = segment_angle(segs[i - 1].dx, segs[i - 1].dy);
+                    auto a1 = segment_angle(segs[i].dx, segs[i].dy);
                     if(std::abs(a1 - a0) > AIRWAY_LABEL_ANGLE_THRESHOLD)
                     {
                         const auto& s = segs[i];
@@ -1616,23 +1618,23 @@ namespace nasrbrowse
             if(!ctx.req.altitude.any()) return;
             const auto& fixes = ctx.db.query_fixes(
                 request_bbox(ctx.req));
-            float radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_FIX);
+            auto radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_FIX);
 
             for(const auto& f : fixes)
             {
                 if(!ctx.styles.fix_visible(ctx.fix_on_airway(f.fix_id), ctx.req.zoom))
                     continue;
-                bool keep = (f.is_low && ctx.req.altitude.show_low)
+                auto keep = (f.is_low && ctx.req.altitude.show_low)
                          || (f.is_high && ctx.req.altitude.show_high);
                 if(!keep) continue;
 
                 const auto& fs = ctx.styles.fix_style(f.use_code);
-                float cx = static_cast<float>(lon_to_mx(f.lon) + ctx.mx_offset);
-                float cy = static_cast<float>(lat_to_my(f.lat));
+                auto cx = static_cast<float>(lon_to_mx(f.lon) + ctx.mx_offset);
+                auto cy = static_cast<float>(lat_to_my(f.lat));
 
                 emit_fix_icon(ctx.poly[layer_fixes], cx, cy, radius, f, fs);
 
-                bool on_airway = ctx.fix_on_airway(f.fix_id);
+                auto on_airway = ctx.fix_on_airway(f.fix_id);
                 ctx.labels.push_back({
                     .text = f.fix_id,
                     .mx = lon_to_mx(f.lon) + ctx.mx_offset,
@@ -1665,10 +1667,10 @@ namespace nasrbrowse
                 if(!altitude_filter_allows(ctx.req.altitude, mtr_bands(seg.route_type_code)))
                     continue;
 
-                double from_mx = lon_to_mx(seg.from_lon) + ctx.mx_offset;
-                double from_my = lat_to_my(seg.from_lat);
-                double to_mx = lon_to_mx(seg.to_lon) + ctx.mx_offset;
-                double to_my = lat_to_my(seg.to_lat);
+                auto from_mx = lon_to_mx(seg.from_lon) + ctx.mx_offset;
+                auto from_my = lat_to_my(seg.from_lat);
+                auto to_mx = lon_to_mx(seg.to_lon) + ctx.mx_offset;
+                auto to_my = lat_to_my(seg.to_lat);
 
                 auto arc = geodesic_interpolate(
                     seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon);
@@ -1692,7 +1694,7 @@ namespace nasrbrowse
 
             for(const auto& [mtr_id, segs] : label_groups)
             {
-                size_t median = segs.size() / 2;
+                auto median = segs.size() / 2;
                 const auto& ms = segs[median];
                 ctx.labels.push_back({
                     .text = mtr_id,
@@ -1711,7 +1713,7 @@ namespace nasrbrowse
             if(ft_val <= 0 && (ft_ref == "SFC" || ft_ref.empty()))
                 return "SFC";
             if(ft_val < 0) return "";
-            int hundreds = (ft_val + 50) / 100;
+            auto hundreds = (ft_val + 50) / 100;
             char buf[16];   // Sized to fit any int %03d[A] without truncation
             if(ft_ref == "MSL" || ft_ref == "STD")
                 std::snprintf(buf, sizeof(buf), "%03d", hundreds);
@@ -1739,35 +1741,37 @@ namespace nasrbrowse
         {
             if(pts.size() < 2)
             {
-                double mx = lon_to_mx(pts[0].lon) + mx_offset;
-                double my = lat_to_my(pts[0].lat);
+                auto mx = lon_to_mx(pts[0].lon) + mx_offset;
+                auto my = lat_to_my(pts[0].lat);
                 return {mx, my};
             }
 
             // Centroid
-            double sum_mx = 0.0, sum_my = 0.0;
+            auto sum_mx = 0.0;
+            auto sum_my = 0.0;
             for(const auto& p : pts)
             {
                 sum_mx += lon_to_mx(p.lon) + mx_offset;
                 sum_my += lat_to_my(p.lat);
             }
-            double n = static_cast<double>(pts.size());
-            double cx = sum_mx / n;
-            double cy = sum_my / n;
+            auto n = static_cast<double>(pts.size());
+            auto cx = sum_mx / n;
+            auto cy = sum_my / n;
 
             // Longest edge midpoint
-            double best_len2 = 0.0;
-            double best_mx = cx, best_my = cy;
+            auto best_len2 = 0.0;
+            auto best_mx = cx;
+            auto best_my = cy;
             for(size_t i = 0; i < pts.size(); i++)
             {
                 size_t j = (i + 1) % pts.size();
-                double ax = lon_to_mx(pts[i].lon) + mx_offset;
-                double ay = lat_to_my(pts[i].lat);
-                double bx = lon_to_mx(pts[j].lon) + mx_offset;
-                double by = lat_to_my(pts[j].lat);
-                double dx = bx - ax;
-                double dy = by - ay;
-                double len2 = dx * dx + dy * dy;
+                auto ax = lon_to_mx(pts[i].lon) + mx_offset;
+                auto ay = lat_to_my(pts[i].lat);
+                auto bx = lon_to_mx(pts[j].lon) + mx_offset;
+                auto by = lat_to_my(pts[j].lat);
+                auto dx = bx - ax;
+                auto dy = by - ay;
+                auto len2 = dx * dx + dy * dy;
                 if(len2 > best_len2)
                 {
                     best_len2 = len2;
@@ -1788,13 +1792,13 @@ namespace nasrbrowse
             double lat, double lon, double radius_nm, double mx_offset)
         {
             constexpr double NM_TO_DEG_LAT = 1.0 / 60.0;
-            double edge_lat = lat + radius_nm * NM_TO_DEG_LAT * 0.707;
-            double edge_lon = lon + radius_nm * NM_TO_DEG_LAT * 0.707
+            auto edge_lat = lat + radius_nm * NM_TO_DEG_LAT * 0.707;
+            auto edge_lon = lon + radius_nm * NM_TO_DEG_LAT * 0.707
                 / std::cos(lat * M_PI / 180.0);
-            double cmx = lon_to_mx(lon) + mx_offset;
-            double cmy = lat_to_my(lat);
-            double emx = lon_to_mx(edge_lon) + mx_offset;
-            double emy = lat_to_my(edge_lat);
+            auto cmx = lon_to_mx(lon) + mx_offset;
+            auto cmy = lat_to_my(lat);
+            auto emx = lon_to_mx(edge_lon) + mx_offset;
+            auto emy = lat_to_my(edge_lat);
             constexpr double EDGE_WEIGHT = 0.7;
             return {emx * EDGE_WEIGHT + cmx * (1.0 - EDGE_WEIGHT),
                     emy * EDGE_WEIGHT + cmy * (1.0 - EDGE_WEIGHT)};
@@ -1858,8 +1862,8 @@ namespace nasrbrowse
 
         void pja_type::build(const build_context& ctx) const
         {
-            bool area_vis = ctx.styles.pja_area_visible(ctx.req.zoom);
-            bool point_vis = ctx.styles.pja_point_visible(ctx.req.zoom);
+            auto area_vis = ctx.styles.pja_area_visible(ctx.req.zoom);
+            auto point_vis = ctx.styles.pja_point_visible(ctx.req.zoom);
             if(!area_vis && !point_vis) return;
             if(!ctx.req.altitude.any()) return;
 
@@ -1870,7 +1874,7 @@ namespace nasrbrowse
 
             for(const auto& p : pjas)
             {
-                int upper = p.max_altitude_ft_msl > 0 ? p.max_altitude_ft_msl
+                auto upper = p.max_altitude_ft_msl > 0 ? p.max_altitude_ft_msl
                                                         : altitude_filter::UNLIMITED_FT;
                 if(!ctx.req.altitude.overlaps(0, upper)) continue;
 
@@ -1894,9 +1898,9 @@ namespace nasrbrowse
                 }
                 else if(p.radius_nm <= 0.0 && point_vis)
                 {
-                    float cx = static_cast<float>(lon_to_mx(p.lon) + ctx.mx_offset);
-                    float cy = static_cast<float>(lat_to_my(p.lat));
-                    float r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_PJA);
+                    auto cx = static_cast<float>(lon_to_mx(p.lon) + ctx.mx_offset);
+                    auto cy = static_cast<float>(lat_to_my(p.lat));
+                    auto r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_PJA);
                     emit_pja_point_icon(ctx.poly[layer_pja], cx, cy, r,
                                          ctx.styles.pja_point_style());
                 }
@@ -1905,8 +1909,8 @@ namespace nasrbrowse
 
         void maa_type::build(const build_context& ctx) const
         {
-            bool area_vis = ctx.styles.maa_area_visible(ctx.req.zoom);
-            bool point_vis = ctx.styles.maa_point_visible(ctx.req.zoom);
+            auto area_vis = ctx.styles.maa_area_visible(ctx.req.zoom);
+            auto point_vis = ctx.styles.maa_point_visible(ctx.req.zoom);
             if(!area_vis && !point_vis) return;
             if(!ctx.req.altitude.low_enabled()) return;
 
@@ -1915,7 +1919,7 @@ namespace nasrbrowse
 
             for(const auto& m : maas)
             {
-                bool is_area = false;
+                auto is_area = false;
                 if(!m.shape.empty() && area_vis)
                 {
                     auto ls = to_line_style(ctx.styles.maa_area_style());
@@ -1932,16 +1936,17 @@ namespace nasrbrowse
                 }
                 else if(m.lat != 0.0 && point_vis)
                 {
-                    float cx = static_cast<float>(lon_to_mx(m.lon) + ctx.mx_offset);
-                    float cy = static_cast<float>(lat_to_my(m.lat));
-                    float r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
+                    auto cx = static_cast<float>(lon_to_mx(m.lon) + ctx.mx_offset);
+                    auto cy = static_cast<float>(lat_to_my(m.lat));
+                    auto r = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
                     emit_maa_point_icon(ctx.poly[layer_maa], cx, cy, r, m,
                                          ctx.styles.maa_point_style());
                 }
 
                 if(is_area && ctx.req.zoom >= AIRSPACE_LABEL_MIN_ZOOM)
                 {
-                    double mx, my;
+                    double mx;
+                    double my;
                     if(!m.shape.empty())
                     {
                         auto [smx, smy] = polygon_label_pos(m.shape,
@@ -2060,14 +2065,14 @@ namespace nasrbrowse
             if(!ctx.req.altitude.low_enabled()) return;
             const auto& obstacles = ctx.db.query_obstacles(
                 request_bbox(ctx.req));
-            float radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_OBSTACLE);
+            auto radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_OBSTACLE);
 
             for(const auto& obs : obstacles)
             {
                 if(!ctx.styles.obstacle_visible(obs.agl_ht, ctx.req.zoom)) continue;
                 const auto& fs = ctx.styles.obstacle_style(obs.agl_ht);
-                float cx = static_cast<float>(lon_to_mx(obs.lon) + ctx.mx_offset);
-                float cy = static_cast<float>(lat_to_my(obs.lat));
+                auto cx = static_cast<float>(lon_to_mx(obs.lon) + ctx.mx_offset);
+                auto cy = static_cast<float>(lat_to_my(obs.lat));
                 emit_obstacle_icon(ctx.poly[layer_obstacles], cx, cy, radius, obs, fs);
             }
         }
@@ -2115,11 +2120,11 @@ namespace nasrbrowse
         void build_comm_impl(const build_context& ctx, int layer_id,
                               const line_style& ls, Query&& q)
         {
-            float radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_COMM);
+            auto radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_COMM);
             for(const auto& f : q)
             {
-                float cx = static_cast<float>(lon_to_mx(f.lon) + ctx.mx_offset);
-                float cy = static_cast<float>(lat_to_my(f.lat));
+                auto cx = static_cast<float>(lon_to_mx(f.lon) + ctx.mx_offset);
+                auto cy = static_cast<float>(lat_to_my(f.lat));
                 emit_comm_icon(ctx.poly[layer_id], cx, cy, radius, ls);
             }
         }
@@ -2149,9 +2154,9 @@ namespace nasrbrowse
         void emit_halo(polyline_data& out, float cx, float cy,
                         float r_base, float pixels_per_world)
         {
-            float halo_r = r_base * HALO_SCALE;
-            float fill_px = halo_r * pixels_per_world;
-            line_style halo_ls = {fill_px, 0, 0, 0, 1, 1, 1, 1, 0};
+            auto halo_r = r_base * HALO_SCALE;
+            auto fill_px = halo_r * pixels_per_world;
+            auto halo_ls = line_style{fill_px, 0, 0, 0, 1, 1, 1, 1, 0};
             add_circle_to(out, cx, cy, halo_r * 0.5F, halo_ls);
         }
 
@@ -2198,7 +2203,7 @@ namespace nasrbrowse
                                        const line_style& base)
         {
             if(ring.size() < 2) return;
-            line_style ls = base;
+            auto ls = base;
             ls.r = ls.g = ls.b = 1.0F; ls.a = 1.0F;
             ls.line_width = ls.line_width + 2.0F * ls.border_width + 2.0F;
             ls.border_width = 0; ls.dash_length = 0; ls.gap_length = 0;
@@ -2210,7 +2215,7 @@ namespace nasrbrowse
         // variant used for highlighting a full route.
         line_style selection_line_style(const feature_style& fs)
         {
-            line_style ls = to_line_style(fs);
+            auto ls = to_line_style(fs);
             ls.r = ls.g = ls.b = 1.0F; ls.a = 1.0F;
             ls.line_width = ls.line_width + 2.0F * ls.border_width + 2.0F;
             ls.border_width = 0; ls.dash_length = 0; ls.gap_length = 0;
@@ -2310,7 +2315,7 @@ namespace nasrbrowse
             if(v.radius_nm > 0.0)
             {
                 auto fs = ctx.styles.pja_area_style();
-                line_style base = to_line_style(fs);
+                auto base = to_line_style(fs);
                 glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
                 std::vector<glm::vec2> ring;
                 circle_to_ring(v.lon, v.lat, v.radius_nm, ring);
@@ -2333,7 +2338,7 @@ namespace nasrbrowse
             if(!v.shape.empty() || v.radius_nm > 0.0)
             {
                 auto fs = ctx.styles.maa_area_style();
-                line_style base = to_line_style(fs);
+                auto base = to_line_style(fs);
                 glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
                 std::vector<glm::vec2> ring;
                 if(!v.shape.empty()) ring_to_mercator(v.shape, ring);
@@ -2354,7 +2359,7 @@ namespace nasrbrowse
                                             polyline_data& out, polygon_fill_data&) const
         {
             const auto& v = std::get<airway_segment>(f);
-            line_style ls = selection_line_style(ctx.styles.airway_style(v.awy_id));
+            auto ls = selection_line_style(ctx.styles.airway_style(v.awy_id));
             for(const auto& seg : ctx.db.query_airway_by_id(v.awy_id))
             {
                 auto arc = geodesic_interpolate(
@@ -2374,7 +2379,7 @@ namespace nasrbrowse
                                          polyline_data& out, polygon_fill_data&) const
         {
             const auto& v = std::get<mtr_segment>(f);
-            line_style ls = selection_line_style(ctx.styles.mtr_style());
+            auto ls = selection_line_style(ctx.styles.mtr_style());
             for(const auto& seg : ctx.db.query_mtr_by_id(v.mtr_id))
             {
                 auto arc = geodesic_interpolate(
@@ -2395,7 +2400,7 @@ namespace nasrbrowse
         {
             const auto& v = std::get<class_airspace>(f);
             auto fs = ctx.styles.airspace_style(v.airspace_class, v.local_type);
-            line_style base = to_line_style(fs);
+            auto base = to_line_style(fs);
             glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
 
             std::vector<glm::vec2> outer;
@@ -2422,7 +2427,7 @@ namespace nasrbrowse
         {
             const auto& v = std::get<sua>(f);
             auto fs = ctx.styles.sua_style(v.sua_type);
-            line_style base = to_line_style(fs);
+            auto base = to_line_style(fs);
             glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
 
             std::vector<glm::vec2> outer;
@@ -2456,7 +2461,7 @@ namespace nasrbrowse
         {
             const auto& v = std::get<artcc>(f);
             auto fs = ctx.styles.artcc_style(v.altitude);
-            line_style base = to_line_style(fs);
+            auto base = to_line_style(fs);
             glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
             std::vector<glm::vec2> ring;
             ring_to_mercator(v.points, ring);
@@ -2469,7 +2474,7 @@ namespace nasrbrowse
         {
             const auto& v = std::get<tfr>(f);
             auto fs = ctx.styles.tfr_style();
-            line_style base = to_line_style(fs);
+            auto base = to_line_style(fs);
             glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
             std::vector<glm::vec2> ring;
             for(const auto& area : v.areas)
@@ -2485,7 +2490,7 @@ namespace nasrbrowse
         {
             const auto& v = std::get<adiz>(f);
             auto fs = ctx.styles.adiz_style();
-            line_style base = to_line_style(fs);
+            auto base = to_line_style(fs);
             glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
             std::vector<glm::vec2> ring;
             for(const auto& part : v.parts)

@@ -104,12 +104,12 @@ namespace nasrbrowse
             {"yellow", "#FFFF00"}, {"yellowgreen", "#9ACD32"},
         };
 
-        std::string hex = name;
+        auto hex = name;
         if(name.empty()) return false;
 
         if(name[0] != '#')
         {
-            std::string lower = name;
+            auto lower = name;
             for(auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
             auto it = names.find(lower);
             if(it == names.end()) return false;
@@ -127,7 +127,9 @@ namespace nasrbrowse
 
         if(hex.size() == 4) // #RGB
         {
-            int ri = hex_digit(hex[1]), gi = hex_digit(hex[2]), bi = hex_digit(hex[3]);
+            auto ri = hex_digit(hex[1]);
+            auto gi = hex_digit(hex[2]);
+            auto bi = hex_digit(hex[3]);
             if(ri < 0 || gi < 0 || bi < 0) return false;
             r = to_float(ri * 17); g = to_float(gi * 17); b = to_float(bi * 17); a = 1.0F;
             return true;
@@ -174,7 +176,7 @@ namespace nasrbrowse
     static feature_style load_style(const ini_config& ini, const std::string& prefix,
                                      const feature_style& fallback)
     {
-        feature_style s = fallback;
+        auto s = fallback;
         read_into(ini, prefix + "min_zoom", s.min_zoom);
         read_into(ini, prefix + "max_zoom", s.max_zoom);
         read_into(ini, prefix + "color", s.r, s.g, s.b, s.a);
@@ -228,12 +230,12 @@ namespace nasrbrowse
         test.close();
 
         ini_config ini(ini_path);
-        std::string suffix = mode_suffix(mode);
+        auto suffix = mode_suffix(mode);
 
         feature_style defaults;
         for(const char* key : all_keys)
         {
-            std::string prefix = std::string(key) + "." + suffix + ".";
+            auto prefix = std::string(key) + "." + suffix + ".";
             styles[key] = load_style(ini, prefix, defaults);
         }
     }

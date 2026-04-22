@@ -19,8 +19,8 @@ namespace nasrbrowse
     bool build_context::is_at_navaid(float x, float y) const
     {
         constexpr float NAVAID_OVERLAP_TOL = 0.1F;
-        float tol = state.navaid_clearance * NAVAID_OVERLAP_TOL;
-        float tol_sq = tol * tol;
+        auto tol = state.navaid_clearance * NAVAID_OVERLAP_TOL;
+        auto tol_sq = tol * tol;
         for(const auto& np : state.navaid_positions)
         {
             float dx = x - np.x;
@@ -66,7 +66,7 @@ namespace nasrbrowse
         void build_all_features(const geo_bbox& bbox, const feature_build_request& req,
                                  double mx_offset)
         {
-            feature_build_request local = req;
+            auto local = req;
             local.lon_min = bbox.lon_min;
             local.lat_min = bbox.lat_min;
             local.lon_max = bbox.lon_max;
@@ -110,10 +110,10 @@ namespace nasrbrowse
             // Route lines between consecutive waypoints
             for(size_t i = 1; i < wps.size(); ++i)
             {
-                double lat1 = waypoint_lat(wps[i - 1]);
-                double lon1 = waypoint_lon(wps[i - 1]);
-                double lat2 = waypoint_lat(wps[i]);
-                double lon2 = waypoint_lon(wps[i]);
+                auto lat1 = waypoint_lat(wps[i - 1]);
+                auto lon1 = waypoint_lon(wps[i - 1]);
+                auto lat2 = waypoint_lat(wps[i]);
+                auto lon2 = waypoint_lon(wps[i]);
 
                 auto arc = geodesic_interpolate(lat1, lon1, lat2, lon2);
                 std::vector<glm::vec2> polyline;
@@ -146,11 +146,11 @@ namespace nasrbrowse
 
             constexpr double SYMBOL_RADIUS = 0.012;
             constexpr float HALO_SCALE = 1.8F;
-            float r_base = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS);
-            float ppw = static_cast<float>(
+            auto r_base = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS);
+            auto ppw = static_cast<float>(
                 req.viewport_height / (2.0 * req.half_extent_y));
-            float halo_r = r_base * HALO_SCALE;
-            float fill_px = halo_r * ppw;
+            auto halo_r = r_base * HALO_SCALE;
+            auto fill_px = halo_r * ppw;
 
             // White opaque halo matching the point-feature selection halo.
             line_style halo_ls{};
@@ -164,9 +164,9 @@ namespace nasrbrowse
             auto& halo_pd = poly[layer_route_halo];
             for(const auto& wp : wps)
             {
-                float cx = static_cast<float>(
+                auto cx = static_cast<float>(
                     lon_to_mx(waypoint_lon(wp)) + mx_offset);
-                float cy = static_cast<float>(
+                auto cy = static_cast<float>(
                     lat_to_my(waypoint_lat(wp)));
 
                 // Halo circle
@@ -175,8 +175,8 @@ namespace nasrbrowse
                 pts.reserve(HALO_SEGMENTS);
                 for(int s = 0; s < HALO_SEGMENTS; ++s)
                 {
-                    float angle = 2.0F * static_cast<float>(M_PI) * s / HALO_SEGMENTS;
-                    float hr = halo_r * 0.5F;
+                    auto angle = 2.0F * static_cast<float>(M_PI) * s / HALO_SEGMENTS;
+                    auto hr = halo_r * 0.5F;
                     pts.emplace_back(cx + hr * std::cos(angle),
                                      cy + hr * std::sin(angle));
                 }
