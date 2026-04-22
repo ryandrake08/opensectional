@@ -20,7 +20,7 @@
 
 namespace
 {
-    void signal_handler(int)
+    void signal_handler(int /*signum*/)
     {
         sdl::event_manager::push_quit_event();
     }

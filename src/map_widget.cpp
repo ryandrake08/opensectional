@@ -959,7 +959,7 @@ map_widget::feature_types() const
     return pimpl->feature_types;
 }
 
-void map_widget::button_event(sdl::input_button_t button, sdl::input_action_t action, sdl::input_mod_t)
+void map_widget::button_event(sdl::input_button_t button, sdl::input_action_t action, sdl::input_mod_t /*mods*/)
 {
     // Track button state for drag detection.
     if(action == sdl::input_action::release)
@@ -1086,7 +1086,7 @@ void map_widget::cursor_position_event(double xpos, double ypos)
     pimpl->cursor_last_y = pos[1];
 }
 
-void map_widget::key_event(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t)
+void map_widget::key_event(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t /*mods*/)
 {
     // Suppress pan/zoom keybindings while a text input has focus.
     if(pimpl->imgui_wants_keyboard) return;
@@ -1141,7 +1141,7 @@ void map_widget::key_event(sdl::input_key_t key, sdl::input_action_t action, sdl
     }
 }
 
-void map_widget::scroll_event(double, double yoffset)
+void map_widget::scroll_event(double /*xoffset*/, double yoffset)
 {
     auto factor = (yoffset > 0) ? 0.9 : 1.0 / 0.9;
     auto wx = pimpl->cursor_ndc_x * 2.0 * pimpl->view.half_extent_y + pimpl->view.center_x;

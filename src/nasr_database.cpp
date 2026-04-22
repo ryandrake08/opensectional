@@ -1376,11 +1376,12 @@ namespace nasrbrowse
         stmt.bind(1, entity_rowid);
         if(!stmt.step()) return std::nullopt;
 
-        geo_bbox bb;
-        bb.lon_min = stmt.column_double(0);
-        bb.lon_max = stmt.column_double(1);
-        bb.lat_min = stmt.column_double(2);
-        bb.lat_max = stmt.column_double(3);
+        geo_bbox bb{
+            stmt.column_double(0),
+            stmt.column_double(2),
+            stmt.column_double(1),
+            stmt.column_double(3)
+        };
         if(bb.lon_min == 0 && bb.lon_max == 0 && bb.lat_min == 0 && bb.lat_max == 0)
             return std::nullopt;  // null/missing coords
         return bb;

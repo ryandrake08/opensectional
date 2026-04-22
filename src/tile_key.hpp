@@ -7,7 +7,9 @@ namespace nasrbrowse
 {
     struct tile_key
     {
-        int z, x, y;
+        int z = 0;
+        int x = 0;
+        int y = 0;
 
         bool operator==(const tile_key& other) const
         {

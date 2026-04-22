@@ -223,8 +223,8 @@ namespace nasrbrowse
 
     void tile_renderer::update(double vx_min, double vy_min,
                                double vx_max, double vy_max,
-                               double, int viewport_height,
-                               double)
+                               double /*half_extent_y*/, int viewport_height,
+                               double /*aspect_ratio*/)
     {
         // Compute ideal zoom level
         auto meters_per_pixel = (vy_max - vy_min) / viewport_height;

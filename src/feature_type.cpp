@@ -2225,17 +2225,16 @@ namespace nasrbrowse
         point_selection_geom point_selection_geom_for(const T& v,
                                                         const feature_build_request& req)
         {
-            point_selection_geom g;
-            g.cx = static_cast<float>(lon_to_mx(v.lon));
-            g.cy = static_cast<float>(lat_to_my(v.lat));
-            g.r_base = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_AIRPORT);
-            g.pixels_per_world = static_cast<float>(
-                req.viewport_height / (2.0 * req.half_extent_y));
-            return g;
+            return {
+                static_cast<float>(lon_to_mx(v.lon)),
+                static_cast<float>(lat_to_my(v.lat)),
+                static_cast<float>(req.half_extent_y * SYMBOL_RADIUS_AIRPORT),
+                static_cast<float>(req.viewport_height / (2.0 * req.half_extent_y))
+            };
         }
 
         void airport_type::build_selection(const build_context& ctx, const feature& f,
-                                             polyline_data& out, polygon_fill_data&) const
+                                             polyline_data& out, polygon_fill_data& /*fill*/) const
         {
             const auto& v = std::get<airport>(f);
             auto g = point_selection_geom_for(v, ctx.req);
@@ -2245,7 +2244,7 @@ namespace nasrbrowse
         }
 
         void navaid_type::build_selection(const build_context& ctx, const feature& f,
-                                            polyline_data& out, polygon_fill_data&) const
+                                            polyline_data& out, polygon_fill_data& /*fill*/) const
         {
             const auto& v = std::get<navaid>(f);
             auto g = point_selection_geom_for(v, ctx.req);
@@ -2255,7 +2254,7 @@ namespace nasrbrowse
         }
 
         void fix_type::build_selection(const build_context& ctx, const feature& f,
-                                         polyline_data& out, polygon_fill_data&) const
+                                         polyline_data& out, polygon_fill_data& /*fill*/) const
         {
             const auto& v = std::get<fix>(f);
             auto g = point_selection_geom_for(v, ctx.req);
@@ -2264,7 +2263,7 @@ namespace nasrbrowse
         }
 
         void obstacle_type::build_selection(const build_context& ctx, const feature& f,
-                                              polyline_data& out, polygon_fill_data&) const
+                                              polyline_data& out, polygon_fill_data& /*fill*/) const
         {
             const auto& v = std::get<obstacle>(f);
             auto g = point_selection_geom_for(v, ctx.req);
@@ -2273,7 +2272,7 @@ namespace nasrbrowse
         }
 
         void awos_type::build_selection(const build_context& ctx, const feature& f,
-                                          polyline_data& out, polygon_fill_data&) const
+                                          polyline_data& out, polygon_fill_data& /*fill*/) const
         {
             const auto& v = std::get<awos>(f);
             auto g = point_selection_geom_for(v, ctx.req);
@@ -2282,7 +2281,7 @@ namespace nasrbrowse
         }
 
         void comm_outlet_type::build_selection(const build_context& ctx, const feature& f,
-                                                  polyline_data& out, polygon_fill_data&) const
+                                                  polyline_data& out, polygon_fill_data& /*fill*/) const
         {
             const auto& v = std::get<comm_outlet>(f);
             auto g = point_selection_geom_for(v, ctx.req);
@@ -2290,8 +2289,8 @@ namespace nasrbrowse
             emit_comm_icon(out, g.cx, g.cy, g.r_base, to_line_style(ctx.styles.rco_style()));
         }
 
-        void runway_type::build_selection(const build_context&, const feature&,
-                                            polyline_data&, polygon_fill_data&) const
+        void runway_type::build_selection(const build_context& /*ctx*/, const feature& /*f*/,
+                                            polyline_data& /*out*/, polygon_fill_data& /*fill*/) const
         {
             // Runways have no selection overlay in the original code.
         }
@@ -2344,7 +2343,7 @@ namespace nasrbrowse
         }
 
         void airway_type::build_selection(const build_context& ctx, const feature& f,
-                                            polyline_data& out, polygon_fill_data&) const
+                                            polyline_data& out, polygon_fill_data& /*fill*/) const
         {
             const auto& v = std::get<airway_segment>(f);
             auto ls = selection_line_style(ctx.styles.airway_style(v.awy_id));
@@ -2364,7 +2363,7 @@ namespace nasrbrowse
         }
 
         void mtr_type::build_selection(const build_context& ctx, const feature& f,
-                                         polyline_data& out, polygon_fill_data&) const
+                                         polyline_data& out, polygon_fill_data& /*fill*/) const
         {
             const auto& v = std::get<mtr_segment>(f);
             auto ls = selection_line_style(ctx.styles.mtr_style());
@@ -2494,7 +2493,7 @@ namespace nasrbrowse
         public:
             std::pair<double, double>
             anchor_lonlat(const feature& f,
-                           double, double) const override
+                           double /*click_lon*/, double /*click_lat*/) const override
             {
                 const auto& v = std::get<pja>(f);
                 return {v.lon, v.lat};
