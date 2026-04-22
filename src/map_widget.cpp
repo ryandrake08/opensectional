@@ -348,8 +348,10 @@ struct map_widget::impl
         auto lon_min = nasrbrowse::mx_to_lon(vx_min);
         auto lon_max = nasrbrowse::mx_to_lon(vx_max);
         auto lon_start = std::floor(lon_min / lon_step) * lon_step;
-        for(double lon = lon_start; lon <= lon_max; lon += lon_step)
+        auto lon_count = static_cast<int>((lon_max - lon_start) / lon_step) + 1;
+        for(int i = 0; i < lon_count; ++i)
         {
+            auto lon = lon_start + i * lon_step;
             auto mx = nasrbrowse::lon_to_mx(lon);
             auto nx = to_ndc_x(mx);
             auto ny0 = to_ndc_y(vy_min);
@@ -362,8 +364,10 @@ struct map_widget::impl
         auto lat_min = nasrbrowse::my_to_lat(vy_min);
         auto lat_max = nasrbrowse::my_to_lat(vy_max);
         auto lat_start = std::floor(lat_min / lat_step) * lat_step;
-        for(double lat = lat_start; lat <= lat_max; lat += lat_step)
+        auto lat_count = static_cast<int>((lat_max - lat_start) / lat_step) + 1;
+        for(int i = 0; i < lat_count; ++i)
         {
+            auto lat = lat_start + i * lat_step;
             auto my = nasrbrowse::lat_to_my(lat);
             auto ny = to_ndc_y(my);
             auto nx0 = to_ndc_x(vx_min);
