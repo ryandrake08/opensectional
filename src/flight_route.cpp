@@ -145,8 +145,8 @@ namespace nasrbrowse
     // Haversine distance in NM between two lat/lon points
     static double haversine_nm(double lat1, double lon1, double lat2, double lon2)
     {
-        constexpr double DEG2RAD = 3.14159265358979323846 / 180.0;
-        constexpr double EARTH_RADIUS_NM = 3440.065;
+        constexpr auto DEG2RAD = 3.14159265358979323846 / 180.0;
+        constexpr auto EARTH_RADIUS_NM = 3440.065;
         auto dlat = (lat2 - lat1) * DEG2RAD;
         auto dlon = (lon2 - lon1) * DEG2RAD;
         auto a = std::sin(dlat / 2) * std::sin(dlat / 2) +
@@ -519,8 +519,8 @@ namespace nasrbrowse
     static double true_course_deg(double lat1, double lon1,
                                   double lat2, double lon2)
     {
-        constexpr double DEG2RAD = 3.14159265358979323846 / 180.0;
-        constexpr double RAD2DEG = 180.0 / 3.14159265358979323846;
+        constexpr auto DEG2RAD = 3.14159265358979323846 / 180.0;
+        constexpr auto RAD2DEG = 180.0 / 3.14159265358979323846;
         auto rlat1 = lat1 * DEG2RAD;
         auto rlat2 = lat2 * DEG2RAD;
         auto dlon = (lon2 - lon1) * DEG2RAD;
@@ -614,7 +614,7 @@ namespace nasrbrowse
                     for(size_t j = 0; j < awy.expanded.size(); ++j)
                     {
                         replacement.push_back(awy.expanded[j]);
-                        int global_idx = awy_start +
+                        auto global_idx = awy_start +
                             static_cast<int>(j) -
                             (wp_idx > 0 && waypoint_id(awy.expanded[0]) ==
                              waypoint_id(waypoints[wp_idx - 1]) ? 1 : 0);

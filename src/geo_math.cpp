@@ -6,7 +6,7 @@ namespace nasrbrowse
     namespace
     {
         // WGS84 semi-major axis
-        constexpr double EARTH_RADIUS_NM = 6378137.0 / 1852.0;
+        constexpr auto EARTH_RADIUS_NM = 6378137.0 / 1852.0;
     }
 
     std::vector<airspace_point> geodesic_circle(double center_lat, double center_lon,

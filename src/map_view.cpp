@@ -3,7 +3,7 @@
 
 namespace nasrbrowse
 {
-    constexpr double EARTH_RADIUS = 6378137.0;
+    constexpr auto EARTH_RADIUS = 6378137.0;
 
     double lon_to_mx(double lon)
     {
@@ -128,7 +128,7 @@ namespace nasrbrowse
                                    float& px, float& py) const
     {
         auto world_x = lon_to_mx(lon);
-        constexpr double W = 2.0 * HALF_CIRCUMFERENCE;
+        constexpr auto W = 2.0 * HALF_CIRCUMFERENCE;
         while(world_x - center_x > HALF_CIRCUMFERENCE) world_x -= W;
         while(center_x - world_x > HALF_CIRCUMFERENCE) world_x += W;
         auto world_y = lat_to_my(lat);
@@ -142,7 +142,7 @@ namespace nasrbrowse
 
     void map_view::clamp_center()
     {
-        constexpr double W = 2.0 * HALF_CIRCUMFERENCE;
+        constexpr auto W = 2.0 * HALF_CIRCUMFERENCE;
         center_x = std::fmod(center_x + HALF_CIRCUMFERENCE, W);
         if(center_x < 0) center_x += W;
         center_x -= HALF_CIRCUMFERENCE;
@@ -162,8 +162,8 @@ namespace nasrbrowse
 
     void map_view::clamp_extent()
     {
-        constexpr double min_zoom = 3.0;
-        constexpr double max_zoom = 18.0;
+        constexpr auto min_zoom = 3.0;
+        constexpr auto max_zoom = 18.0;
         auto max_extent = half_extent_for_zoom(min_zoom);
         auto min_extent = half_extent_for_zoom(max_zoom);
         if(half_extent_y > max_extent)

@@ -3,7 +3,7 @@
 namespace nasrbrowse
 {
     // Half the Web Mercator circumference in meters (~20037508.34)
-    constexpr double HALF_CIRCUMFERENCE = 20037508.342789244;
+    constexpr auto HALF_CIRCUMFERENCE = 20037508.342789244;
 
     // Convert longitude (degrees) to Web Mercator x (meters)
     double lon_to_mx(double lon);

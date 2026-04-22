@@ -18,13 +18,13 @@ namespace nasrbrowse
 {
     bool build_context::is_at_navaid(float x, float y) const
     {
-        constexpr float NAVAID_OVERLAP_TOL = 0.1F;
+        constexpr auto NAVAID_OVERLAP_TOL = 0.1F;
         auto tol = state.navaid_clearance * NAVAID_OVERLAP_TOL;
         auto tol_sq = tol * tol;
         for(const auto& np : state.navaid_positions)
         {
-            float dx = x - np.x;
-            float dy = y - np.y;
+            auto dx = x - np.x;
+            auto dy = y - np.y;
             if(dx * dx + dy * dy < tol_sq) return true;
         }
         return false;
@@ -144,8 +144,8 @@ namespace nasrbrowse
                 return;
             }
 
-            constexpr double SYMBOL_RADIUS = 0.012;
-            constexpr float HALO_SCALE = 1.8F;
+            constexpr auto SYMBOL_RADIUS = 0.012;
+            constexpr auto HALO_SCALE = 1.8F;
             auto r_base = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS);
             auto ppw = static_cast<float>(
                 req.viewport_height / (2.0 * req.half_extent_y));
@@ -170,7 +170,7 @@ namespace nasrbrowse
                     lat_to_my(waypoint_lat(wp)));
 
                 // Halo circle
-                constexpr int HALO_SEGMENTS = 24;
+                constexpr auto HALO_SEGMENTS = 24;
                 std::vector<glm::vec2> pts;
                 pts.reserve(HALO_SEGMENTS);
                 for(int s = 0; s < HALO_SEGMENTS; ++s)
@@ -199,7 +199,7 @@ namespace nasrbrowse
 
         void build_vertices(const feature_build_request& req)
         {
-            constexpr double WORLD_SIZE = 2.0 * HALF_CIRCUMFERENCE;
+            constexpr auto WORLD_SIZE = 2.0 * HALF_CIRCUMFERENCE;
 
             geo_bbox qbox{req.lon_min, req.lat_min, req.lon_max, req.lat_max};
 

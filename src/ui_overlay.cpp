@@ -13,7 +13,7 @@ namespace nasrbrowse
 
     namespace
     {
-        constexpr int SEARCH_INPUT_WIDTH_PX = 240;
+        constexpr auto SEARCH_INPUT_WIDTH_PX = 240;
     }
 
     struct ui_overlay::impl

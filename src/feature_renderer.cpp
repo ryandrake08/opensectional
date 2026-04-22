@@ -17,8 +17,8 @@
 namespace nasrbrowse
 {
     // Query cache tuning
-    constexpr double REQUERY_ZOOM_THRESHOLD = 0.5;
-    constexpr double QUERY_BBOX_PADDING = 0.5;
+    constexpr auto REQUERY_ZOOM_THRESHOLD = 0.5;
+    constexpr auto QUERY_BBOX_PADDING = 0.5;
 
     struct feature_renderer::impl
     {
@@ -288,7 +288,7 @@ namespace nasrbrowse
         {
             if(pimpl->vis[i] != vis[i]) line_vis_changed = true;
         }
-        bool altitude_changed = pimpl->vis.altitude != vis.altitude;
+        auto altitude_changed = pimpl->vis.altitude != vis.altitude;
 
         pimpl->vis = vis;
 

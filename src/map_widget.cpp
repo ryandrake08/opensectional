@@ -150,14 +150,14 @@ namespace
 }
 
 // Pick box size in pixels (width and height of the pick region for point features)
-constexpr int PICK_BOX_SIZE_PIXELS = 20;
+constexpr auto PICK_BOX_SIZE_PIXELS = 20;
 
 // Exact-point short-circuit radius: a single point feature this close to the
 // cursor skips the candidate-selector popup and logs directly.
-constexpr int PICK_BOX_EXACT_SIZE_PIXELS = 4;
+constexpr auto PICK_BOX_EXACT_SIZE_PIXELS = 4;
 
 // Padding between the click anchor and the selector popup, in pixels.
-constexpr float PICK_POPUP_ANCHOR_PADDING = 12.0F;
+constexpr auto PICK_POPUP_ANCHOR_PADDING = 12.0F;
 
 // SDL left mouse button value
 constexpr uint8_t BUTTON_LEFT = 1;
@@ -594,7 +594,7 @@ struct map_widget::impl
         // the dragged waypoint (but only if the route keeps >= 2
         // waypoints afterward). Otherwise replace it with whatever's
         // under the cursor.
-        int i = route_drag.index;
+        auto i = route_drag.index;
         auto [lon, lat] = ndc_to_lonlat(cursor_ndc_x, cursor_ndc_y);
         auto hit = hit_route_waypoint(lon, lat);
         auto adjacent = hit && (*hit == i - 1 || *hit == i + 1);
@@ -950,7 +950,7 @@ void map_widget::focus_on_hit(const nasrbrowse::search_hit& hit)
     // the feature is guaranteed visible under chart_style's per-type
     // min_zoom thresholds (navaids appear by ~z9, airports by ~z7, fixes
     // by ~z10 — zoom 12 covers all of them comfortably).
-    constexpr int POINT_FOCUS_ZOOM = 12;
+    constexpr auto POINT_FOCUS_ZOOM = 12;
     auto is_point = (bbox->lon_min == bbox->lon_max &&
                      bbox->lat_min == bbox->lat_max);
     if(is_point)
@@ -1062,7 +1062,7 @@ bool map_widget::draw_imgui()
     if(pimpl->route_drag.mode != impl::route_drag_mode::none && pimpl->route)
     {
         const auto& wps = pimpl->route->waypoints;
-        int i = pimpl->route_drag.index;
+        auto i = pimpl->route_drag.index;
         auto cursor = ImGui::GetMousePos();
         auto* dl = ImGui::GetForegroundDrawList();
         auto col = IM_COL32(255, 255, 255, 220);
@@ -1286,7 +1286,7 @@ void map_widget::set_route_text(const std::string& text)
         auto is_point = (lon_min == lon_max && lat_min == lat_max);
         if(is_point)
         {
-            constexpr int POINT_FOCUS_ZOOM = 12;
+            constexpr auto POINT_FOCUS_ZOOM = 12;
             d.view.zoom_to_level(POINT_FOCUS_ZOOM);
         }
         else

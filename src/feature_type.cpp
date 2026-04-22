@@ -31,15 +31,15 @@ namespace nasrbrowse
     {
         // -- Dimensional constants ---------------------------------------------
 
-        constexpr double SYMBOL_RADIUS_AIRPORT  = 0.012;
-        constexpr double SYMBOL_RADIUS_FIX      = 0.012;
-        constexpr double SYMBOL_RADIUS_OBSTACLE = 0.012;
-        constexpr double SYMBOL_RADIUS_COMM     = 0.012;
+        constexpr auto SYMBOL_RADIUS_AIRPORT  = 0.012;
+        constexpr auto SYMBOL_RADIUS_FIX      = 0.012;
+        constexpr auto SYMBOL_RADIUS_OBSTACLE = 0.012;
+        constexpr auto SYMBOL_RADIUS_COMM     = 0.012;
 
-        constexpr float LETTER_HEIGHT   = 0.385F;
-        constexpr float LETTER_ASPECT   = 0.7F;
-        constexpr float LETTER_WIDTH_PX = 2.0F;
-        constexpr float SYMBOL_FILL_PX  = 50.0F;
+        constexpr auto LETTER_HEIGHT   = 0.385F;
+        constexpr auto LETTER_ASPECT   = 0.7F;
+        constexpr auto LETTER_WIDTH_PX = 2.0F;
+        constexpr auto SYMBOL_FILL_PX  = 50.0F;
 
         // -- Polyline geometry helpers -----------------------------------------
 
@@ -146,7 +146,7 @@ namespace nasrbrowse
             const auto h = hex_r * 0.5F;
             for(int i = 0; i < 3; i++)
             {
-                const float base_deg = 120.0F * i;
+                const auto base_deg = 120.0F * i;
                 const glm::vec2 va = {
                     cx + hex_r * std::cos(glm::radians(base_deg)),
                     cy + hex_r * std::sin(glm::radians(base_deg))};
@@ -1044,16 +1044,16 @@ namespace nasrbrowse
         // -- Icon emitters --------------------------------------------------
 
         // Label placement priorities (higher = placed first in overlap pass).
-        constexpr int LABEL_PRIORITY_AIRPORT_TOWERED   = 100;
-        constexpr int LABEL_PRIORITY_AIRPORT_UNTOWERED = 80;
-        constexpr int LABEL_PRIORITY_NAVAID_VOR        = 60;
-        constexpr int LABEL_PRIORITY_NAVAID_NDB        = 40;
-        constexpr int LABEL_PRIORITY_AIRWAY              = 50;
-        constexpr int LABEL_PRIORITY_FIX_AIRWAY        = 30;
-        constexpr int LABEL_PRIORITY_FIX_OTHER         = 20;
-        constexpr int LABEL_PRIORITY_AIRSPACE          = 10;
+        constexpr auto LABEL_PRIORITY_AIRPORT_TOWERED   = 100;
+        constexpr auto LABEL_PRIORITY_AIRPORT_UNTOWERED = 80;
+        constexpr auto LABEL_PRIORITY_NAVAID_VOR        = 60;
+        constexpr auto LABEL_PRIORITY_NAVAID_NDB        = 40;
+        constexpr auto LABEL_PRIORITY_AIRWAY              = 50;
+        constexpr auto LABEL_PRIORITY_FIX_AIRWAY        = 30;
+        constexpr auto LABEL_PRIORITY_FIX_OTHER         = 20;
+        constexpr auto LABEL_PRIORITY_AIRSPACE          = 10;
 
-        constexpr int AIRSPACE_LABEL_MIN_ZOOM = 10;
+        constexpr auto AIRSPACE_LABEL_MIN_ZOOM = 10;
 
         static uint8_t to_u8(float f) { return static_cast<uint8_t>(f * 255.0F); }
 
@@ -1093,9 +1093,9 @@ namespace nasrbrowse
                                 float r, float pixels_per_world,
                                 const airport& apt, const feature_style& cs)
         {
-            constexpr float APT_OUTER_SCALE = 1.2F;
-            constexpr float APT_RING_WIDTH_PX = 1.0F;
-            constexpr float APT_FILL_RADIUS = 0.5F;
+            constexpr auto APT_OUTER_SCALE = 1.2F;
+            constexpr auto APT_RING_WIDTH_PX = 1.0F;
+            constexpr auto APT_FILL_RADIUS = 0.5F;
 
             auto symbol_r = r * APT_OUTER_SCALE;
             auto ring_geom_r = symbol_r - (APT_RING_WIDTH_PX * 0.5F) / pixels_per_world;
@@ -1142,9 +1142,9 @@ namespace nasrbrowse
         void emit_navaid_icon(polyline_data& pd, float cx, float cy, float r,
                                const navaid& nav, const feature_style& fs)
         {
-            constexpr float NAV_NDB_CIRCLE = 0.4F;
-            constexpr float NAV_DME_RECT = 0.85F;
-            constexpr float NAV_VORDME_WIDTH = 1.1F;
+            constexpr auto NAV_NDB_CIRCLE = 0.4F;
+            constexpr auto NAV_DME_RECT = 0.85F;
+            constexpr auto NAV_VORDME_WIDTH = 1.1F;
 
             auto ls = to_line_style(fs);
             auto filled_ls = ls;
@@ -1183,7 +1183,7 @@ namespace nasrbrowse
         void add_triangle_polyline(polyline_data& pd, float cx, float cy,
                                     float r, const line_style& ls)
         {
-            constexpr float SQRT3_2 = 0.866F;
+            constexpr auto SQRT3_2 = 0.866F;
             auto h = r * SQRT3_2;
             pd.polylines.push_back({
                 {cx, cy + r}, {cx - h, cy - r * 0.5F},
@@ -1196,9 +1196,9 @@ namespace nasrbrowse
                                          float cx, float cy, float r,
                                          const line_style& ls)
         {
-            constexpr int ARC_SEGS = 3;
-            constexpr float PI = 3.14159265F;
-            constexpr float SQRT2_M1 = 0.41421356F;
+            constexpr auto ARC_SEGS = 3;
+            constexpr auto PI = 3.14159265F;
+            constexpr auto SQRT2_M1 = 0.41421356F;
 
             struct arc_def { float acx, acy; float start_angle; };
             const std::array<arc_def, 4> arcs = {{
@@ -1222,7 +1222,7 @@ namespace nasrbrowse
             pd.polylines.push_back(std::move(star_pts));
             pd.styles.push_back(ls);
 
-            constexpr int CIRCLE_SEGS = 8;
+            constexpr auto CIRCLE_SEGS = 8;
             auto cr = r * SQRT2_M1;
             std::vector<glm::vec2> circle_pts;
             for(int i = 0; i <= CIRCLE_SEGS; i++)
@@ -1281,7 +1281,7 @@ namespace nasrbrowse
             {
                 auto gap = radius * 0.4F;
                 auto ray_len = radius * 0.15F;
-                constexpr float DEG_TO_RAD = static_cast<float>(M_PI) / 180.0F;
+                constexpr auto DEG_TO_RAD = static_cast<float>(M_PI) / 180.0F;
                 constexpr std::array<float, 5> angles = {-120, -60, 0, 60, 120};
                 for(auto deg : angles)
                 {
@@ -1421,7 +1421,7 @@ namespace nasrbrowse
         {
             if(!ctx.styles.any_navaid_visible(ctx.req.zoom)) return;
             if(!ctx.req.altitude.any()) return;
-            constexpr float NAV_CLEARANCE = 2.0F;
+            constexpr auto NAV_CLEARANCE = 2.0F;
 
             const auto& navaids = ctx.db.query_navaids(
                 request_bbox(ctx.req));
@@ -1472,8 +1472,8 @@ namespace nasrbrowse
             return a;
         }
 
-        constexpr float AIRWAY_LABEL_ANGLE_THRESHOLD = 30.0F * static_cast<float>(M_PI) / 180.0F;
-        constexpr int AIRWAY_LABEL_INTERVAL = 6;
+        constexpr auto AIRWAY_LABEL_ANGLE_THRESHOLD = 30.0F * static_cast<float>(M_PI) / 180.0F;
+        constexpr auto AIRWAY_LABEL_INTERVAL = 6;
 
         void airway_type::build(const build_context& ctx) const
         {
@@ -1764,7 +1764,7 @@ namespace nasrbrowse
             auto best_my = cy;
             for(size_t i = 0; i < pts.size(); i++)
             {
-                size_t j = (i + 1) % pts.size();
+                auto j = (i + 1) % pts.size();
                 auto ax = lon_to_mx(pts[i].lon) + mx_offset;
                 auto ay = lat_to_my(pts[i].lat);
                 auto bx = lon_to_mx(pts[j].lon) + mx_offset;
@@ -1781,7 +1781,7 @@ namespace nasrbrowse
             }
 
             // Blend 70% edge midpoint, 30% centroid
-            constexpr double EDGE_WEIGHT = 0.7;
+            constexpr auto EDGE_WEIGHT = 0.7;
             return {best_mx * EDGE_WEIGHT + cx * (1.0 - EDGE_WEIGHT),
                     best_my * EDGE_WEIGHT + cy * (1.0 - EDGE_WEIGHT)};
         }
@@ -1791,7 +1791,7 @@ namespace nasrbrowse
         static std::pair<double, double> circle_label_pos(
             double lat, double lon, double radius_nm, double mx_offset)
         {
-            constexpr double NM_TO_DEG_LAT = 1.0 / 60.0;
+            constexpr auto NM_TO_DEG_LAT = 1.0 / 60.0;
             auto edge_lat = lat + radius_nm * NM_TO_DEG_LAT * 0.707;
             auto edge_lon = lon + radius_nm * NM_TO_DEG_LAT * 0.707
                 / std::cos(lat * M_PI / 180.0);
@@ -1799,7 +1799,7 @@ namespace nasrbrowse
             auto cmy = lat_to_my(lat);
             auto emx = lon_to_mx(edge_lon) + mx_offset;
             auto emy = lat_to_my(edge_lat);
-            constexpr double EDGE_WEIGHT = 0.7;
+            constexpr auto EDGE_WEIGHT = 0.7;
             return {emx * EDGE_WEIGHT + cmx * (1.0 - EDGE_WEIGHT),
                     emy * EDGE_WEIGHT + cmy * (1.0 - EDGE_WEIGHT)};
         }
@@ -1867,7 +1867,7 @@ namespace nasrbrowse
             if(!area_vis && !point_vis) return;
             if(!ctx.req.altitude.any()) return;
 
-            constexpr double SYMBOL_RADIUS_PJA = SYMBOL_RADIUS_AIRPORT;
+            constexpr auto SYMBOL_RADIUS_PJA = SYMBOL_RADIUS_AIRPORT;
 
             const auto& pjas = ctx.db.query_pjas(
                 request_bbox(ctx.req));
@@ -2149,7 +2149,7 @@ namespace nasrbrowse
 
         // Halo scale used for the filled-disc glow behind a selected point
         // feature: airport_outer (1.2) × 1.5.
-        constexpr float HALO_SCALE = 1.8F;
+        constexpr auto HALO_SCALE = 1.8F;
 
         void emit_halo(polyline_data& out, float cx, float cy,
                         float r_base, float pixels_per_world)

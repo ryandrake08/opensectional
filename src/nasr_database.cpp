@@ -1331,7 +1331,7 @@ namespace nasrbrowse
 
     std::optional<geo_bbox> nasr_database::get_hit_bbox(const search_hit& hit) const
     {
-        const std::string& entity_type = hit.entity_type;
+        const auto& entity_type = hit.entity_type;
         auto entity_rowid = hit.entity_rowid;
         // Per-type SQL. Point entities return a degenerate bbox built from
         // the source table's lat/lon columns; areal entities read their

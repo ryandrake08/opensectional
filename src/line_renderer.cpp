@@ -106,7 +106,7 @@ namespace nasrbrowse
                 continue;
             }
 
-            const line_style& style = pimpl->styles[i];
+            const auto& style = pimpl->styles[i];
 
             // Compute bounds
             auto bmin = positions[0];

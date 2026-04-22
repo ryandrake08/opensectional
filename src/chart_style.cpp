@@ -136,19 +136,19 @@ namespace nasrbrowse
         }
         if(hex.size() == 7) // #RRGGBB
         {
-            int ri = hex_digit(hex[1]) * 16 + hex_digit(hex[2]);
-            int gi = hex_digit(hex[3]) * 16 + hex_digit(hex[4]);
-            int bi = hex_digit(hex[5]) * 16 + hex_digit(hex[6]);
+            auto ri = hex_digit(hex[1]) * 16 + hex_digit(hex[2]);
+            auto gi = hex_digit(hex[3]) * 16 + hex_digit(hex[4]);
+            auto bi = hex_digit(hex[5]) * 16 + hex_digit(hex[6]);
             if(ri < 0 || gi < 0 || bi < 0) return false;
             r = to_float(ri); g = to_float(gi); b = to_float(bi); a = 1.0F;
             return true;
         }
         if(hex.size() == 9) // #RRGGBBAA
         {
-            int ri = hex_digit(hex[1]) * 16 + hex_digit(hex[2]);
-            int gi = hex_digit(hex[3]) * 16 + hex_digit(hex[4]);
-            int bi = hex_digit(hex[5]) * 16 + hex_digit(hex[6]);
-            int ai = hex_digit(hex[7]) * 16 + hex_digit(hex[8]);
+            auto ri = hex_digit(hex[1]) * 16 + hex_digit(hex[2]);
+            auto gi = hex_digit(hex[3]) * 16 + hex_digit(hex[4]);
+            auto bi = hex_digit(hex[5]) * 16 + hex_digit(hex[6]);
+            auto ai = hex_digit(hex[7]) * 16 + hex_digit(hex[8]);
             if(ri < 0 || gi < 0 || bi < 0 || ai < 0) return false;
             r = to_float(ri); g = to_float(gi); b = to_float(bi); a = to_float(ai);
             return true;

@@ -140,7 +140,7 @@ int main(int argc, char** argv)
 
         nasrbrowse::ui_overlay ui;
         std::string last_search_query;
-        constexpr int SEARCH_RESULT_LIMIT = 12;
+        constexpr auto SEARCH_RESULT_LIMIT = 12;
 
         auto needs_render = true;
         auto last_render_ms = 0.0F;
