@@ -11,7 +11,7 @@ namespace sdl
         SDL_GPUDevice* device;         // Non-owning
         SDL_GPUTransferBuffer* handle; // Owning
         uint32_t buffer_capacity;
-        uint32_t current_offset;
+        uint32_t current_offset = 0;
 
         static SDL_GPUTransferBuffer* create_transfer_buffer(SDL_GPUDevice* dev, uint32_t size)
         {
@@ -27,7 +27,6 @@ namespace sdl
             : device(dev)
             , handle(create_transfer_buffer(dev, size))
             , buffer_capacity(size)
-            , current_offset(0)
         {
             if(!handle)
             {
@@ -43,6 +42,11 @@ namespace sdl
             }
             SDL_ReleaseGPUTransferBuffer(device, handle);
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     transfer_buffer::transfer_buffer(const device& dev, uint32_t size) : pimpl(new impl(dev.get(), size))

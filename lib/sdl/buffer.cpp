@@ -36,6 +36,11 @@ namespace sdl
         {
             SDL_ReleaseGPUBuffer(device, handle);
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     buffer::buffer(const device& dev, buffer_usage_t usage, uint32_t num, uint32_t size) : pimpl(new impl(dev.get(),

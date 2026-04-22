@@ -22,6 +22,11 @@ namespace sdl
         {
             TTF_DestroyGPUTextEngine(handle);
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     text_engine::text_engine(const device& dev) : pimpl(new impl(dev)) {}

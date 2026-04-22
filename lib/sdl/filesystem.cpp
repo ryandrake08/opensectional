@@ -8,7 +8,7 @@ namespace sdl
     {
         bool path_exists(const std::string& p)
         {
-            struct stat st;
+            struct stat st{};
             return stat(p.c_str(), &st) == 0;
         }
     }

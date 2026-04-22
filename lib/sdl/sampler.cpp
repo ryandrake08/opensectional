@@ -52,6 +52,11 @@ namespace sdl
         {
             SDL_ReleaseGPUSampler(device, handle);
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     sampler::sampler(

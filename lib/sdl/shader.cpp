@@ -65,6 +65,11 @@ namespace sdl
         {
             SDL_ReleaseGPUShader(device, handle);
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     shader::shader(

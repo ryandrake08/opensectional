@@ -100,6 +100,11 @@ namespace sdl
             SDL_ReleaseWindowFromGPUDevice(handle, window);
             SDL_DestroyGPUDevice(handle);
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     device::device(const sdl::window& win, bool vsync, const char* preferred_driver) : pimpl(new impl(win.get(), vsync, preferred_driver))

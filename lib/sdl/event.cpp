@@ -5,11 +5,11 @@
 
 namespace sdl
 {
-    void event_listener::key_event(input_key_t, input_action_t, input_mod_t) {}
-    void event_listener::button_event(input_button_t, input_action_t, input_mod_t) {}
-    void event_listener::cursor_position_event(double, double) {}
-    void event_listener::scroll_event(double, double) {}
-    void event_listener::framebuffer_size_event(int, int) {}
+    void event_listener::key_event(input_key_t /*key*/, input_action_t /*action*/, input_mod_t /*mods*/) {}
+    void event_listener::button_event(input_button_t /*button*/, input_action_t /*action*/, input_mod_t /*mods*/) {}
+    void event_listener::cursor_position_event(double /*x*/, double /*y*/) {}
+    void event_listener::scroll_event(double /*x*/, double /*y*/) {}
+    void event_listener::framebuffer_size_event(int /*width*/, int /*height*/) {}
 
     struct event_manager::impl
     {

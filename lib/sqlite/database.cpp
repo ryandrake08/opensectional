@@ -7,9 +7,9 @@ namespace sqlite
 {
     struct database::impl
     {
-        sqlite3* db;
+        sqlite3* db = nullptr;
 
-        impl(const char* path, bool read_only) : db(nullptr)
+        impl(const char* path, bool read_only)
         {
             int flags = read_only ? SQLITE_OPEN_READONLY : (SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
             int rc = sqlite3_open_v2(path, &db, flags, nullptr);
@@ -26,6 +26,11 @@ namespace sqlite
         {
             sqlite3_close(db);
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     database::database(const char* path, bool read_only) : pimpl(new impl(path, read_only))

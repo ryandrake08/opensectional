@@ -49,6 +49,11 @@ namespace sdl
                 SDL_ReleaseGPUTexture(device, handle);
             }
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     texture::texture(const device& dev, const surface& surf) : pimpl(new impl(dev.get(), surf.texture_create_info()))

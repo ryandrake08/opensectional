@@ -29,6 +29,11 @@ namespace sdl
                 SDL_LogError(SDL_LOG_CATEGORY_GPU, "Failed to submit GPU command buffer: %s", SDL_GetError());
             }
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     command_buffer::command_buffer(const device& dev) : pimpl(new impl(dev.get()))
@@ -58,8 +63,8 @@ namespace sdl
     optional<texture> command_buffer::acquire_swapchain(const window& win, unsigned& width, unsigned& height)
     {
         SDL_GPUTexture* swapchain = nullptr;
-        Uint32 swapchain_texture_width;
-        Uint32 swapchain_texture_height;
+        Uint32 swapchain_texture_width = 0;
+        Uint32 swapchain_texture_height = 0;
         if(!SDL_WaitAndAcquireGPUSwapchainTexture(pimpl->handle,
                                                   win.get(),
                                                   &swapchain,
@@ -77,6 +82,6 @@ namespace sdl
             height = static_cast<unsigned>(swapchain_texture_height);
             return texture(swapchain);
         }
-        return optional<texture>();
+        return {};
     }
 } // namespace sdl

@@ -29,6 +29,11 @@ namespace sdl
         {
             SDL_DestroyWindow(handle);
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     window::window(const instance& /* inst */, const char* title, int width, int height, window_flags_t flags) : pimpl(new impl(title, width, height, static_cast<SDL_WindowFlags>(flags.value)))

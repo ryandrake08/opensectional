@@ -32,7 +32,11 @@ namespace sdl
                 SDL_LOG_PRIORITY_INFO,   // 2: info
                 SDL_LOG_PRIORITY_DEBUG,  // 3: debug
             };
-            int clamped = (verbosity < 0) ? 0 : (verbosity > 3) ? 3 : verbosity;
+            int clamped = verbosity;
+            if(clamped < 0)
+                clamped = 0;
+            else if(clamped > 3)
+                clamped = 3;
             SDL_SetLogPriorities(levels[clamped]);
 
             int version = SDL_GetVersion();
@@ -83,6 +87,11 @@ namespace sdl
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SDL3 terminated");
             SDL_Quit();
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     instance::instance(int verbosity) : pimpl(new impl(verbosity))

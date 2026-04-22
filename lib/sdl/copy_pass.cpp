@@ -32,6 +32,10 @@ namespace sdl
             SDL_EndGPUCopyPass(handle);
         }
 
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     copy_pass::copy_pass(command_buffer& cmd)

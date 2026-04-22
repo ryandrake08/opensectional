@@ -26,7 +26,7 @@ namespace sdl
             createInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
 
             // Use owning texture constructor with raw device pointer
-            return texture(device, SDL_CreateGPUTexture(device, &createInfo));
+            return {device, SDL_CreateGPUTexture(device, &createInfo)};
         }
 
         impl(SDL_GPUDevice* dev,
@@ -75,8 +75,8 @@ namespace sdl
 
     void depth_buffer::set_size(unsigned width, unsigned height)
     {
-        Uint32 w = static_cast<Uint32>(width);
-        Uint32 h = static_cast<Uint32>(height);
+        auto w = static_cast<Uint32>(width);
+        auto h = static_cast<Uint32>(height);
 
         if(pimpl->width == w && pimpl->height == h)
         {

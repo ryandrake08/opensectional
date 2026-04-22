@@ -102,8 +102,8 @@ namespace sdl
 
         impl(
             SDL_GPUDevice* dev,
-            shader&& vs,
-            shader&& fs,
+            shader&& vs,  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved) — consumed at scope end, not stored
+            shader&& fs,  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
             SDL_GPUTextureFormat swapchain_format,
             SDL_GPUPrimitiveType topology,
             SDL_GPUTextureFormat depth_format,
@@ -125,6 +125,11 @@ namespace sdl
         {
             SDL_ReleaseGPUGraphicsPipeline(device, handle);
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     pipeline::~pipeline() = default;

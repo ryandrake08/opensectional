@@ -66,6 +66,11 @@ namespace sdl
         }
 
         ~impl() noexcept { SDL_EndGPURenderPass(handle); }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     render_pass::render_pass(command_buffer& cmd,

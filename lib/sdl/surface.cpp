@@ -34,8 +34,8 @@ namespace sdl
                     throw error("Failed to create RGBA surface");
                 }
 
-                uint8_t* src = static_cast<uint8_t*>(loaded_surface->pixels);
-                uint8_t* dst = static_cast<uint8_t*>(rgba_surface->pixels);
+                auto* src = static_cast<uint8_t*>(loaded_surface->pixels);
+                auto* dst = static_cast<uint8_t*>(rgba_surface->pixels);
 
                 for(int y = 0; y < loaded_surface->h; y++)
                 {
@@ -80,6 +80,11 @@ namespace sdl
                 SDL_DestroySurface(handle);
             }
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     surface::surface(const char* file_path) : pimpl(new impl(file_path))

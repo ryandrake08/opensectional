@@ -53,6 +53,11 @@ namespace sdl
         {
             TTF_CloseFont(handle);
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     font::font(const text_engine& /* engine */, const char* path, int ptsize) : pimpl(new impl(path, ptsize))

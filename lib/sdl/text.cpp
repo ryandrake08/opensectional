@@ -26,6 +26,11 @@ namespace sdl
         {
             TTF_DestroyText(handle);
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     text::text(const text_engine& engine, const font& f, const char* str, size_t length) : pimpl(new impl(engine.get(), f.get(), str, length))
@@ -146,13 +151,13 @@ namespace sdl
                 continue;
             }
 
-            unsigned int vertex_offset = static_cast<unsigned int>(vertices.size());
+            auto vertex_offset = static_cast<unsigned int>(vertices.size());
 
             for(int i = 0; i < seq->num_vertices; i++)
             {
                 float lx = seq->xy[i].x - cx;
                 float ly = seq->xy[i].y - cy;
-                vertex_t2f_c4ub_v3f vert;
+                vertex_t2f_c4ub_v3f vert{};
                 vert.s = seq->uv[i].x;
                 vert.t = seq->uv[i].y;
                 vert.r = r;

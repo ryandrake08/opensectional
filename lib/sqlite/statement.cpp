@@ -17,6 +17,11 @@ namespace sqlite
         {
             sqlite3_finalize(stmt);
         }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = default;
+        impl& operator=(impl&&) = default;
     };
 
     statement::statement(sqlite3_stmt* stmt) : pimpl(new impl(stmt))
