@@ -260,12 +260,9 @@ namespace nasrbrowse
                              const nasr_database& db)
     {
         auto segments = db.query_airway_by_id(airway_id);
-        for(const auto& seg : segments)
-        {
-            if(seg.from_point == fix_name || seg.to_point == fix_name)
-                return true;
-        }
-        return false;
+        return std::any_of(segments.begin(), segments.end(),
+            [&](const auto& seg)
+            { return seg.from_point == fix_name || seg.to_point == fix_name; });
     }
 
     // ---------------------------------------------------------------
@@ -325,7 +322,7 @@ namespace nasrbrowse
             }
             else
             {
-                auto& awy = std::get<airway_ref>(elem);
+                const auto& awy = std::get<airway_ref>(elem);
                 for(size_t i = 0; i < awy.expanded.size(); ++i)
                 {
                     // Skip first if it duplicates the last output waypoint
@@ -495,7 +492,7 @@ namespace nasrbrowse
             }
             else
             {
-                auto& awy = std::get<airway_ref>(elem);
+                const auto& awy = std::get<airway_ref>(elem);
                 // Entry is already the previous element, so just emit
                 // the airway and exit
                 result += awy.airway_id;
@@ -535,7 +532,7 @@ namespace nasrbrowse
     std::vector<route_leg> compute_legs(const flight_route& r)
     {
         std::vector<route_leg> legs;
-        legs.reserve(r.waypoints.size() > 0 ? r.waypoints.size() - 1 : 0);
+        legs.reserve(!r.waypoints.empty() ? r.waypoints.size() - 1 : 0);
         for(size_t i = 1; i < r.waypoints.size(); ++i)
         {
             const auto& a = r.waypoints[i - 1];

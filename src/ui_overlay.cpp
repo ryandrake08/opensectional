@@ -2,6 +2,7 @@
 #include "feature_type.hpp"
 #include "ui_sectioned_list.hpp"
 
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <string>
@@ -138,7 +139,7 @@ namespace nasrbrowse
         for(const auto& r : rows)
         {
             auto w = ImGui::CalcTextSize(r.label).x;
-            if(w > max_label_w) max_label_w = w;
+            max_label_w = std::max(w, max_label_w);
         }
 
         auto spacing = ImGui::GetStyle().ItemInnerSpacing.x;

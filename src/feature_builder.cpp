@@ -1,4 +1,5 @@
 #include "feature_builder.hpp"
+#include <algorithm>
 #include "chart_style.hpp"
 #include "feature_type.hpp"
 #include "flight_route.hpp"
@@ -21,13 +22,14 @@ namespace nasrbrowse
         constexpr auto NAVAID_OVERLAP_TOL = 0.1F;
         auto tol = state.navaid_clearance * NAVAID_OVERLAP_TOL;
         auto tol_sq = tol * tol;
-        for(const auto& np : state.navaid_positions)
-        {
-            auto dx = x - np.x;
-            auto dy = y - np.y;
-            if(dx * dx + dy * dy < tol_sq) return true;
-        }
-        return false;
+        return std::any_of(state.navaid_positions.begin(),
+            state.navaid_positions.end(),
+            [&](const auto& np)
+            {
+                auto dx = x - np.x;
+                auto dy = y - np.y;
+                return dx * dx + dy * dy < tol_sq;
+            });
     }
 
     bool build_context::fix_on_airway(const std::string& fix_id) const

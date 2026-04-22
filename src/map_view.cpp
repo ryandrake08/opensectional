@@ -1,4 +1,5 @@
 #include "map_view.hpp"
+#include <algorithm>
 #include <cmath>
 
 namespace nasrbrowse
@@ -147,10 +148,8 @@ namespace nasrbrowse
         if(center_x < 0) center_x += W;
         center_x -= HALF_CIRCUMFERENCE;
 
-        if(center_y < -HALF_CIRCUMFERENCE)
-            center_y = -HALF_CIRCUMFERENCE;
-        if(center_y > HALF_CIRCUMFERENCE)
-            center_y = HALF_CIRCUMFERENCE;
+        center_y = std::max(center_y, -HALF_CIRCUMFERENCE);
+        center_y = std::min(center_y, HALF_CIRCUMFERENCE);
     }
 
     double map_view::half_extent_for_zoom(double z) const
@@ -166,10 +165,8 @@ namespace nasrbrowse
         constexpr auto max_zoom = 18.0;
         auto max_extent = half_extent_for_zoom(min_zoom);
         auto min_extent = half_extent_for_zoom(max_zoom);
-        if(half_extent_y > max_extent)
-            half_extent_y = max_extent;
-        if(half_extent_y < min_extent)
-            half_extent_y = min_extent;
+        half_extent_y = std::min(half_extent_y, max_extent);
+        half_extent_y = std::max(half_extent_y, min_extent);
     }
 
 } // namespace nasrbrowse

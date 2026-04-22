@@ -57,7 +57,7 @@ namespace nasrbrowse
             auto indices = mapbox::earcut<uint32_t>(rings);
             std::vector<glm::vec2> flat;
             flat.reserve(outer.size() + [&] {
-                size_t s = 0; for(auto& h : holes) s += h.size(); return s;
+                size_t s = 0; for(const auto& h : holes) s += h.size(); return s;
             }());
             flat.insert(flat.end(), outer.begin(), outer.end());
             for(const auto& h : holes) flat.insert(flat.end(), h.begin(), h.end());
@@ -225,7 +225,7 @@ namespace nasrbrowse
         const std::vector<float> letter_M = {-1,-1, -1,1,  -1,1, 0,.1f,  0,.1f, 1,1,  1,1, 1,-1};
         const std::vector<float> letter_R = {-1,-1, -1,1,  -1,1, 1,1,  1,1, 1,.1f,  1,.1f, -1,.1f,  0,.1f, 1,-1};
         const std::vector<float> letter_P = {-1,-1, -1,1,  -1,1, 1,1,  1,1, 1,.1f,  1,.1f, -1,.1f};
-        const std::vector<float> letter_A = {-1,-1, 0,1,  0,1, 1,-1,  -0.5f,.1f, 0.5f,.1f};
+        const std::vector<float> letter_A = {-1,-1, 0,1,  0,1, 1,-1,  -0.5F,.1f, 0.5F,.1f};
         const std::vector<float> letter_U = {-1,1, -1,-1,  -1,-1, 1,-1,  1,-1, 1,1};
         // clang-format on
 
@@ -1055,14 +1055,14 @@ namespace nasrbrowse
 
         constexpr auto AIRSPACE_LABEL_MIN_ZOOM = 10;
 
-        static uint8_t to_u8(float f) { return static_cast<uint8_t>(f * 255.0F); }
+        uint8_t to_u8(float f) { return static_cast<uint8_t>(f * 255.0F); }
 
-        static geo_bbox request_bbox(const feature_build_request& req)
+        geo_bbox request_bbox(const feature_build_request& req)
         {
             return {req.lon_min, req.lat_min, req.lon_max, req.lat_max};
         }
 
-        static void emit_airspace_label(
+        void emit_airspace_label(
             const build_context& ctx, const std::string& type_text,
             double mx, double my, int layer,
             const std::string& upper, const std::string& lower,
@@ -1462,7 +1462,7 @@ namespace nasrbrowse
 
         // Heading angle from Mercator dx/dy, normalized to [-pi/2, pi/2]
         // so text reads left-to-right with up-vector toward screen-up.
-        static float segment_angle(float dx, float dy)
+        float segment_angle(float dx, float dy)
         {
             auto a = std::atan2(dy, dx);
             if(a > static_cast<float>(M_PI_2))
@@ -1708,7 +1708,7 @@ namespace nasrbrowse
 
         // Format altitude value for airspace labels: round to nearest
         // 100 feet, zero-pad to 3 digits. AGL gets "A" suffix.
-        static std::string format_altitude(int ft_val, const std::string& ft_ref)
+        std::string format_altitude(int ft_val, const std::string& ft_ref)
         {
             if(ft_val <= 0 && (ft_ref == "SFC" || ft_ref.empty()))
                 return "SFC";
@@ -1722,7 +1722,7 @@ namespace nasrbrowse
             return buf;
         }
 
-        static const char* sua_type_label(const std::string& sua_type)
+        const char* sua_type_label(const std::string& sua_type)
         {
             if(sua_type == "PA") return "PRO";
             if(sua_type == "RA") return "RES";
@@ -1736,7 +1736,7 @@ namespace nasrbrowse
         // Pick a label position inside an airspace polygon: midpoint of
         // the longest edge, nudged 30% toward the centroid so the label
         // sits inside the boundary rather than on it.
-        static std::pair<double, double> polygon_label_pos(
+        std::pair<double, double> polygon_label_pos(
             const std::vector<airspace_point>& pts, double mx_offset)
         {
             if(pts.size() < 2)
@@ -1788,7 +1788,7 @@ namespace nasrbrowse
 
         // Label position for a circular airspace: a point on the
         // circumference (upper-right quadrant), nudged 30% toward center.
-        static std::pair<double, double> circle_label_pos(
+        std::pair<double, double> circle_label_pos(
             double lat, double lon, double radius_nm, double mx_offset)
         {
             constexpr auto NM_TO_DEG_LAT = 1.0 / 60.0;

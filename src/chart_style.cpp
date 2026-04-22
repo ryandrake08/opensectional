@@ -1,6 +1,7 @@
 #include "chart_style.hpp"
 #include "ini_config.hpp"
 #include "nasr_database.hpp"
+#include <algorithm>
 #include <array>
 #include <fstream>
 #include <stdexcept>
@@ -470,8 +471,8 @@ namespace nasrbrowse
         static constexpr std::array keys = {
             "airport_class_b", "airport_class_c", "airport_class_d",
             "airport_class_e", "airport_other"};
-        for(const char* k : keys) if(visible(k, zoom)) return true;
-        return false;
+        return std::any_of(keys.begin(), keys.end(),
+            [&](const char* k) { return visible(k, zoom); });
     }
 
     bool chart_style::any_navaid_visible(double zoom) const
@@ -498,8 +499,8 @@ namespace nasrbrowse
             "airway_j", "airway_q", "airway_ar", "airway_rte", "airway_h",
             "airway_m", "airway_l", "airway_y", "airway_w", "airway_n",
             "airway_r", "airway_a", "airway_g", "airway_b"};
-        for(const char* k : keys) if(visible(k, zoom)) return true;
-        return false;
+        return std::any_of(keys.begin(), keys.end(),
+            [&](const char* k) { return visible(k, zoom); });
     }
 
     bool chart_style::any_airspace_visible(double zoom) const
@@ -508,8 +509,8 @@ namespace nasrbrowse
             "airspace_b", "airspace_c", "airspace_d",
             "airspace_e2", "airspace_e3", "airspace_e4",
             "airspace_e5", "airspace_e6", "airspace_e7"};
-        for(const char* k : keys) if(visible(k, zoom)) return true;
-        return false;
+        return std::any_of(keys.begin(), keys.end(),
+            [&](const char* k) { return visible(k, zoom); });
     }
 
     bool chart_style::any_sua_visible(double zoom) const
@@ -517,8 +518,8 @@ namespace nasrbrowse
         static constexpr std::array keys = {
             "sua_prohibited", "sua_restricted", "sua_warning",
             "sua_alert", "sua_moa", "sua_nsa"};
-        for(const char* k : keys) if(visible(k, zoom)) return true;
-        return false;
+        return std::any_of(keys.begin(), keys.end(),
+            [&](const char* k) { return visible(k, zoom); });
     }
 
     bool chart_style::any_artcc_visible(double zoom) const
