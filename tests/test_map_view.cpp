@@ -126,8 +126,7 @@ TEST_CASE("tile_bounds_meters spans a full world at zoom 0")
 {
     // All arithmetic at zoom 0/1 is exact: /1 or /2 on HALF_CIRCUMFERENCE,
     // plus additions whose true results fit in the mantissa.
-    double x_min, y_min, x_max, y_max;
-    tile_bounds_meters(0, 0, 0, x_min, y_min, x_max, y_max);
+    auto [x_min, y_min, x_max, y_max] = tile_bounds_meters(0, 0, 0);
     CHECK(x_min == -HALF_CIRCUMFERENCE);
     CHECK(x_max ==  HALF_CIRCUMFERENCE);
     CHECK(y_min == -HALF_CIRCUMFERENCE);
@@ -136,23 +135,22 @@ TEST_CASE("tile_bounds_meters spans a full world at zoom 0")
 
 TEST_CASE("tile_bounds_meters at zoom 1: all four tiles tile the world")
 {
-    double a[4][4];    // [x_min, y_min, x_max, y_max]
-    tile_bounds_meters(0, 0, 1, a[0][0], a[0][1], a[0][2], a[0][3]);
-    tile_bounds_meters(1, 0, 1, a[1][0], a[1][1], a[1][2], a[1][3]);
-    tile_bounds_meters(0, 1, 1, a[2][0], a[2][1], a[2][2], a[2][3]);
-    tile_bounds_meters(1, 1, 1, a[3][0], a[3][1], a[3][2], a[3][3]);
+    auto nw = tile_bounds_meters(0, 0, 1);
+    auto ne = tile_bounds_meters(1, 0, 1);
+    auto sw = tile_bounds_meters(0, 1, 1);
+    auto se = tile_bounds_meters(1, 1, 1);
 
     // Tile (0,0) is NW corner
-    CHECK(a[0][0] == -HALF_CIRCUMFERENCE);
-    CHECK(a[0][3] ==  HALF_CIRCUMFERENCE);
-    CHECK(a[0][2] == 0.0);
-    CHECK(a[0][1] == 0.0);
+    CHECK(nw.x_min == -HALF_CIRCUMFERENCE);
+    CHECK(nw.y_max ==  HALF_CIRCUMFERENCE);
+    CHECK(nw.x_max == 0.0);
+    CHECK(nw.y_min == 0.0);
 
     // NE/SW/SE quadrants have matching seam coordinates
-    CHECK(a[1][0] == 0.0);
-    CHECK(a[2][3] == 0.0);
-    CHECK(a[3][2] ==  HALF_CIRCUMFERENCE);
-    CHECK(a[3][1] == -HALF_CIRCUMFERENCE);
+    CHECK(ne.x_min == 0.0);
+    CHECK(sw.y_max == 0.0);
+    CHECK(se.x_max ==  HALF_CIRCUMFERENCE);
+    CHECK(se.y_min == -HALF_CIRCUMFERENCE);
 }
 
 TEST_CASE("zoom_level: 256m/pixel at the equator equals zoom 0 for a 256-px viewport")

@@ -5,6 +5,20 @@ namespace nasrbrowse
     // Half the Web Mercator circumference in meters (~20037508.34)
     constexpr auto HALF_CIRCUMFERENCE = 20037508.342789244;
 
+    struct pixel_pos
+    {
+        float x;
+        float y;
+    };
+
+    struct meter_bounds
+    {
+        double x_min;
+        double y_min;
+        double x_max;
+        double y_max;
+    };
+
     // Convert longitude (degrees) to Web Mercator x (meters)
     double lon_to_mx(double lon);
 
@@ -27,9 +41,7 @@ namespace nasrbrowse
     double zoom_level(double half_extent_y, int viewport_height);
 
     // Get Web Mercator bounds (meters) for a tile
-    void tile_bounds_meters(int tx, int ty, int zoom,
-                            double& x_min, double& y_min,
-                            double& x_max, double& y_max);
+    meter_bounds tile_bounds_meters(int tx, int ty, int zoom);
 
     struct map_view
     {
@@ -73,8 +85,7 @@ namespace nasrbrowse
 
         // Convert world lon/lat to pixel coordinates (ImGui display
         // origin, top-left). Handles antimeridian wrap.
-        void world_to_pixel(double lon, double lat,
-                             float& px, float& py) const;
+        pixel_pos world_to_pixel(double lon, double lat) const;
 
     private:
         void clamp_center();

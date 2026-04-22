@@ -65,8 +65,7 @@ namespace nasrbrowse
                                   float u0, float v0, float u1, float v1,
                                   sdl::vertex_t2f_c4ub_v3f* verts)
     {
-        double mx_min, my_min, mx_max, my_max;
-        tile_bounds_meters(key.x, key.y, key.z, mx_min, my_min, mx_max, my_max);
+        auto [mx_min, my_min, mx_max, my_max] = tile_bounds_meters(key.x, key.y, key.z);
 
         auto x0 = static_cast<float>(mx_min);
         auto x1 = static_cast<float>(mx_max);

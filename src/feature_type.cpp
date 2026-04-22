@@ -1945,22 +1945,10 @@ namespace nasrbrowse
 
                 if(is_area && ctx.req.zoom >= AIRSPACE_LABEL_MIN_ZOOM)
                 {
-                    double mx;
-                    double my;
-                    if(!m.shape.empty())
-                    {
-                        auto [smx, smy] = polygon_label_pos(m.shape,
-                                                             ctx.mx_offset);
-                        mx = smx;
-                        my = smy;
-                    }
-                    else
-                    {
-                        auto [cmx, cmy] = circle_label_pos(
-                            m.lat, m.lon, m.radius_nm, ctx.mx_offset);
-                        mx = cmx;
-                        my = cmy;
-                    }
+                    auto [mx, my] = !m.shape.empty()
+                        ? polygon_label_pos(m.shape, ctx.mx_offset)
+                        : circle_label_pos(m.lat, m.lon, m.radius_nm,
+                                           ctx.mx_offset);
                     std::string upper = format_altitude(m.max_alt_ft,
                         m.max_alt_ref.empty() ? "MSL" : m.max_alt_ref);
                     std::string lower = format_altitude(m.min_alt_ft,

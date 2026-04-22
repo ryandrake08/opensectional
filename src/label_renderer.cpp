@@ -227,10 +227,10 @@ namespace nasrbrowse
             auto sy = static_cast<float>(
                 screen_cy - (lbl.my - center_y) * scale);
 
-            float x0;
-            float y0;
-            float x1;
-            float y1;
+            auto x0 = 0.0F;
+            auto y0 = 0.0F;
+            auto x1 = 0.0F;
+            auto y1 = 0.0F;
             glm::vec3 pos;
 
             if(lbl.upper_fill)

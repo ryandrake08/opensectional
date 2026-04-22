@@ -335,33 +335,16 @@ struct map_widget::impl
         // Draw grid lines at regular lat/lon intervals
         // Choose interval based on zoom level
         auto approx_zoom = view.zoom_level();
-        double lon_step;
-        double lat_step;
-        if(approx_zoom < 3)
+        auto grid_step = [&]
         {
-            lon_step = 30.0;
-            lat_step = 30.0;
-        }
-        else if(approx_zoom < 5)
-        {
-            lon_step = 10.0;
-            lat_step = 10.0;
-        }
-        else if(approx_zoom < 7)
-        {
-            lon_step = 5.0;
-            lat_step = 5.0;
-        }
-        else if(approx_zoom < 9)
-        {
-            lon_step = 1.0;
-            lat_step = 1.0;
-        }
-        else
-        {
-            lon_step = 0.5;
-            lat_step = 0.5;
-        }
+            if(approx_zoom < 3) return 30.0;
+            if(approx_zoom < 5) return 10.0;
+            if(approx_zoom < 7) return 5.0;
+            if(approx_zoom < 9) return 1.0;
+            return 0.5;
+        }();
+        auto lon_step = grid_step;
+        auto lat_step = grid_step;
 
         // Grid line color: dark gray, semi-transparent
         uint8_t r = 80;
@@ -490,20 +473,16 @@ struct map_widget::impl
     std::optional<int> hit_route_waypoint(double click_lon, double click_lat) const
     {
         if(!route) return std::nullopt;
-        float cursor_px;
-        float cursor_py;
-        view.world_to_pixel(click_lon, click_lat, cursor_px, cursor_py);
+        auto cursor = view.world_to_pixel(click_lon, click_lat);
         const auto threshold = PICK_BOX_SIZE_PIXELS * 0.5F;
         const auto& wps = route->waypoints;
         for(std::size_t i = 0; i < wps.size(); ++i)
         {
-            float wx;
-            float wy;
-            view.world_to_pixel(
+            auto wp = view.world_to_pixel(
                 nasrbrowse::waypoint_lon(wps[i]),
-                nasrbrowse::waypoint_lat(wps[i]), wx, wy);
-            auto dx = wx - cursor_px;
-            auto dy = wy - cursor_py;
+                nasrbrowse::waypoint_lat(wps[i]));
+            auto dx = wp.x - cursor.x;
+            auto dy = wp.y - cursor.y;
             if(dx * dx + dy * dy < threshold * threshold)
                 return static_cast<int>(i);
         }
@@ -516,9 +495,7 @@ struct map_widget::impl
     {
         if(!route || route->waypoints.size() < 2) return std::nullopt;
 
-        float cursor_px;
-        float cursor_py;
-        view.world_to_pixel(click_lon, click_lat, cursor_px, cursor_py);
+        auto cursor = view.world_to_pixel(click_lon, click_lat);
         const auto threshold = PICK_BOX_SIZE_PIXELS * 0.5F;
 
         const auto& wps = route->waypoints;
@@ -531,14 +508,10 @@ struct map_widget::impl
                 nasrbrowse::waypoint_lon(wps[i]));
             for(std::size_t j = 1; j < arc.size(); ++j)
             {
-                float ax;
-                float ay;
-                float bx;
-                float by;
-                view.world_to_pixel(arc[j - 1].lon, arc[j - 1].lat, ax, ay);
-                view.world_to_pixel(arc[j].lon, arc[j].lat, bx, by);
+                auto a = view.world_to_pixel(arc[j - 1].lon, arc[j - 1].lat);
+                auto b = view.world_to_pixel(arc[j].lon, arc[j].lat);
                 if(point_segment_distance_px(
-                    cursor_px, cursor_py, ax, ay, bx, by) < threshold)
+                    cursor.x, cursor.y, a.x, a.y, b.x, b.y) < threshold)
                     return static_cast<int>(i - 1);
             }
         }
@@ -626,17 +599,15 @@ struct map_widget::impl
     bool compute_popup_anchor(double lon, double lat,
                               ImVec2& pos, ImVec2& pivot) const
     {
-        float ax;
-        float ay;
-        view.world_to_pixel(lon, lat, ax, ay);
-        if(ax < 0 || ax > view.viewport_width || ay < 0 || ay > view.viewport_height)
+        auto anchor = view.world_to_pixel(lon, lat);
+        if(anchor.x < 0 || anchor.x > view.viewport_width || anchor.y < 0 || anchor.y > view.viewport_height)
             return false;
 
-        auto right  = ax >= view.viewport_width * 0.5F;
-        auto bottom = ay >= view.viewport_height * 0.5F;
+        auto right  = anchor.x >= view.viewport_width * 0.5F;
+        auto bottom = anchor.y >= view.viewport_height * 0.5F;
 
-        pos.x = ax + (right  ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING);
-        pos.y = ay + (bottom ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING);
+        pos.x = anchor.x + (right  ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING);
+        pos.y = anchor.y + (bottom ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING);
         pivot = ImVec2(right ? 1.0F : 0.0F, bottom ? 1.0F : 0.0F);
         return true;
     }
@@ -698,14 +669,10 @@ struct map_widget::impl
         {
             auto coord = nasrbrowse::find_feature_type(feature_types, f).point_coord(f);
             if(!coord) continue;
-            float fx;
-            float fy;
-            view.world_to_pixel(coord->first, coord->second, fx, fy);
-            float cx;
-            float cy;
-            view.world_to_pixel(result.lon, result.lat, cx, cy);
-            double dx = fx - cx;
-            double dy = fy - cy;
+            auto fp = view.world_to_pixel(coord->first, coord->second);
+            auto cp = view.world_to_pixel(result.lon, result.lat);
+            double dx = fp.x - cp.x;
+            double dy = fp.y - cp.y;
             if(std::sqrt(dx * dx + dy * dy) <= exact_threshold_px)
             {
                 ++exact_count;
@@ -1069,12 +1036,10 @@ bool map_widget::draw_imgui()
 
         auto draw_from = [&](int idx)
         {
-            float x;
-            float y;
-            pimpl->view.world_to_pixel(
+            auto p = pimpl->view.world_to_pixel(
                 nasrbrowse::waypoint_lon(wps[idx]),
-                nasrbrowse::waypoint_lat(wps[idx]), x, y);
-            dl->AddLine(ImVec2(x, y), cursor, col, 2.0F);
+                nasrbrowse::waypoint_lat(wps[idx]));
+            dl->AddLine(ImVec2(p.x, p.y), cursor, col, 2.0F);
         };
 
         if(pimpl->route_drag.mode == impl::route_drag_mode::segment)

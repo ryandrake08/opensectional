@@ -52,17 +52,16 @@ namespace nasrbrowse
         return std::log2(world_size / (256.0 * meters_per_pixel));
     }
 
-    void tile_bounds_meters(int tx, int ty, int zoom,
-                            double& x_min, double& y_min,
-                            double& x_max, double& y_max)
+    meter_bounds tile_bounds_meters(int tx, int ty, int zoom)
     {
         auto n = std::pow(2.0, zoom);
         auto tile_size = 2.0 * HALF_CIRCUMFERENCE / n;
-        x_min = -HALF_CIRCUMFERENCE + tx * tile_size;
-        x_max = x_min + tile_size;
+        auto x_min = -HALF_CIRCUMFERENCE + tx * tile_size;
+        auto x_max = x_min + tile_size;
         // Y is flipped: tile y=0 is at top (north)
-        y_max = HALF_CIRCUMFERENCE - ty * tile_size;
-        y_min = y_max - tile_size;
+        auto y_max = HALF_CIRCUMFERENCE - ty * tile_size;
+        auto y_min = y_max - tile_size;
+        return {x_min, y_min, x_max, y_max};
     }
 
     map_view::map_view()
@@ -124,8 +123,7 @@ namespace nasrbrowse
         clamp_extent();
     }
 
-    void map_view::world_to_pixel(double lon, double lat,
-                                   float& px, float& py) const
+    pixel_pos map_view::world_to_pixel(double lon, double lat) const
     {
         auto world_x = lon_to_mx(lon);
         constexpr auto W = 2.0 * HALF_CIRCUMFERENCE;
@@ -136,8 +134,10 @@ namespace nasrbrowse
         auto ndc_x = (world_x - center_x) / (2.0 * half_extent_y);
         auto ndc_y = (world_y - center_y) / (2.0 * half_extent_y);
 
-        px = static_cast<float>(ndc_x * viewport_height + viewport_width * 0.5);
-        py = static_cast<float>((0.5 - ndc_y) * viewport_height);
+        return {
+            static_cast<float>(ndc_x * viewport_height + viewport_width * 0.5),
+            static_cast<float>((0.5 - ndc_y) * viewport_height)
+        };
     }
 
     void map_view::clamp_center()

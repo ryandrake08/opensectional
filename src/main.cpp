@@ -222,8 +222,8 @@ int main(int argc, char** argv)
                 sdl::timer render_timer;
                 sdl::command_buffer cmd(dev);
 
-                unsigned width;
-                unsigned height;
+                unsigned width = 0;
+                unsigned height = 0;
                 auto swapchain = cmd.acquire_swapchain(win, width, height);
                 if(swapchain)
                 {
