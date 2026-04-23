@@ -205,7 +205,7 @@ namespace nasrbrowse
         std::vector<ui_section> sections(FEATURE_SECTION_COUNT);
         std::vector<std::vector<int>> section_hit_index(FEATURE_SECTION_COUNT);
         for(std::size_t s = 0; s < FEATURE_SECTION_COUNT; ++s)
-            sections[s].header = FEATURE_SECTIONS[s].header;
+            sections.at(s).header = FEATURE_SECTIONS.at(s).header;
 
         for(int i = 0; i < static_cast<int>(d.hits.size()); ++i)
         {

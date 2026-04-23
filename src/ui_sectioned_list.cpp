@@ -28,7 +28,7 @@ namespace nasrbrowse
     int feature_section_index(const char* tag)
     {
         for(std::size_t i = 0; i < FEATURE_SECTION_COUNT; ++i)
-            if(std::strcmp(FEATURE_SECTIONS[i].tag, tag) == 0)
+            if(std::strcmp(FEATURE_SECTIONS.at(i).tag, tag) == 0)
                 return static_cast<int>(i);
         return -1;
     }

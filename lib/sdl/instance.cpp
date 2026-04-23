@@ -38,7 +38,7 @@ namespace sdl
                 clamped = 0;
             else if(clamped > 3)
                 clamped = 3;
-            SDL_SetLogPriorities(levels[clamped]);
+            SDL_SetLogPriorities(levels.at(clamped));
 
             int version = SDL_GetVersion();
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SDL3 initialized, version: %d.%d.%d",

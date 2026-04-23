@@ -96,11 +96,11 @@ namespace nasrbrowse
             {
                 if(!vis[i]) continue;
                 all_polylines.insert(all_polylines.end(),
-                    poly[i].polylines.begin(), poly[i].polylines.end());
+                    poly.at(i).polylines.begin(), poly.at(i).polylines.end());
                 all_styles.insert(all_styles.end(),
-                    poly[i].styles.begin(), poly[i].styles.end());
+                    poly.at(i).styles.begin(), poly.at(i).styles.end());
                 all_circles.insert(all_circles.end(),
-                    poly[i].circles.begin(), poly[i].circles.end());
+                    poly.at(i).circles.begin(), poly.at(i).circles.end());
             }
 
             // Selection overlay rendered last so it sits on top of every layer.

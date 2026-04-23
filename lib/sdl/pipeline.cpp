@@ -116,8 +116,18 @@ namespace sdl
                 throw error("Failed to create graphics pipeline");
             }
 
-            static const std::array<const char*, 5> topology_names = {{ "triangle_list", "triangle_strip", "line_list", "line_strip", "point_list" }};
-            const char* topo_name = (static_cast<size_t>(topology) < topology_names.size()) ? topology_names[static_cast<size_t>(topology)] : "unknown";
+            const auto* topo_name = [&]
+            {
+                switch(topology)
+                {
+                case SDL_GPU_PRIMITIVETYPE_TRIANGLELIST:  return "triangle_list";
+                case SDL_GPU_PRIMITIVETYPE_TRIANGLESTRIP: return "triangle_strip";
+                case SDL_GPU_PRIMITIVETYPE_LINELIST:      return "line_list";
+                case SDL_GPU_PRIMITIVETYPE_LINESTRIP:     return "line_strip";
+                case SDL_GPU_PRIMITIVETYPE_POINTLIST:     return "point_list";
+                default:                                  return "unknown";
+                }
+            }();
             SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Pipeline created: %s, depth: %s",
                          topo_name, (depth_format != SDL_GPU_TEXTUREFORMAT_INVALID) ? "yes" : "no");
         }

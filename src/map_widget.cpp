@@ -756,7 +756,7 @@ struct map_widget::impl
             std::vector<nasrbrowse::ui_section> sections(route_section + 1);
             std::vector<std::vector<int>> section_feature_index(route_section + 1);
             for(std::size_t s = 0; s < nasrbrowse::FEATURE_SECTION_COUNT; ++s)
-                sections[s].header = nasrbrowse::FEATURE_SECTIONS[s].header;
+                sections.at(s).header = nasrbrowse::FEATURE_SECTIONS.at(s).header;
             sections[route_section].header = "ROUTE";
 
             for(int i = 0; i < static_cast<int>(pick_popup.features.size()); ++i)

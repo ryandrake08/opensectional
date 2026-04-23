@@ -2110,33 +2110,32 @@ namespace nasrbrowse
             }
         }
 
-        template<typename Query>
-        void build_comm_impl(const build_context& ctx, int layer_id,
-                              const line_style& ls, const Query& q)
-        {
-            auto radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_COMM);
-            for(const auto& f : q)
-            {
-                auto cx = static_cast<float>(lon_to_mx(f.lon) + ctx.mx_offset);
-                auto cy = static_cast<float>(lat_to_my(f.lat));
-                emit_comm_icon(ctx.poly[layer_id], cx, cy, radius, ls);
-            }
-        }
-
         void comm_outlet_type::build(const build_context& ctx) const
         {
             if(!ctx.styles.rco_visible(ctx.req.zoom)) return;
             if(!ctx.req.altitude.low_enabled()) return;
-            build_comm_impl(ctx, layer_rco, to_line_style(ctx.styles.rco_style()),
-                             ctx.db.query_comm_outlets(request_bbox(ctx.req)));
+            auto radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_COMM);
+            auto ls = to_line_style(ctx.styles.rco_style());
+            for(const auto& f : ctx.db.query_comm_outlets(request_bbox(ctx.req)))
+            {
+                auto cx = static_cast<float>(lon_to_mx(f.lon) + ctx.mx_offset);
+                auto cy = static_cast<float>(lat_to_my(f.lat));
+                emit_comm_icon(ctx.poly[layer_rco], cx, cy, radius, ls);
+            }
         }
 
         void awos_type::build(const build_context& ctx) const
         {
             if(!ctx.styles.awos_visible(ctx.req.zoom)) return;
             if(!ctx.req.altitude.low_enabled()) return;
-            build_comm_impl(ctx, layer_awos, to_line_style(ctx.styles.awos_style()),
-                             ctx.db.query_awos(request_bbox(ctx.req)));
+            auto radius = static_cast<float>(ctx.req.half_extent_y * SYMBOL_RADIUS_COMM);
+            auto ls = to_line_style(ctx.styles.awos_style());
+            for(const auto& f : ctx.db.query_awos(request_bbox(ctx.req)))
+            {
+                auto cx = static_cast<float>(lon_to_mx(f.lon) + ctx.mx_offset);
+                auto cy = static_cast<float>(lat_to_my(f.lat));
+                emit_comm_icon(ctx.poly[layer_awos], cx, cy, radius, ls);
+            }
         }
 
         // -- build_selection() bodies ---------------------------------------

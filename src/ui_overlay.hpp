@@ -53,8 +53,8 @@ namespace nasrbrowse
             visible.fill(true);
         }
 
-        bool operator[](int id) const { return visible[id]; }
-        bool& operator[](int id) { return visible[id]; }
+        bool operator[](int id) const { return visible.at(id); }
+        bool& operator[](int id) { return visible.at(id); }
     };
 
     struct ui_overlay_result
