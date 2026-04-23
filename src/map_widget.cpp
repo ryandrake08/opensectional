@@ -60,10 +60,14 @@
 
 namespace
 {
+    // Shader data loading, from xxd-produced headers
     enum class shader_id { DEFAULT, LINE, TEXTURED };
 
     struct shader_bytecode { const unsigned char* data; unsigned int len; };
 
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+    // Shader bytecode and font data are generated C arrays that decay to
+    // pointers when stored in shader_bytecode or passed to sdl::font.
     shader_bytecode get_spirv_bytecode(shader_id id, sdl::shader_stage_t stage)
     {
         if(stage == sdl::shader_stage::vertex)
@@ -146,6 +150,13 @@ namespace
             bc = get_spirv_bytecode(id, stage);
         return {dev, bc.data, bc.len, entrypoint, stage, format, num_samplers, num_storage_buffers};
     }
+
+    // Font data loading, from xxd-produced headers
+    sdl::font load_font(sdl::text_engine& engine, int ptsize)
+    {
+        return {engine, NotoSans_Regular_ttf, NotoSans_Regular_ttf_len, ptsize};
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
 }
 
 // Pick box size in pixels (width and height of the pick region for point features)
@@ -290,8 +301,8 @@ struct map_widget::impl
               : nullptr)
         , features(dev, db_path, nasrbrowse::chart_style(conf_path, nasrbrowse::chart_mode::vfr))
         , text_engine(dev)
-        , label_font(text_engine, NotoSans_Regular_ttf, NotoSans_Regular_ttf_len, 13)
-        , outline_font(text_engine, NotoSans_Regular_ttf, NotoSans_Regular_ttf_len, 13)
+        , label_font(load_font(text_engine, 13))
+        , outline_font(load_font(text_engine, 13))
         , text_sampler(dev, sdl::filter::nearest, sdl::filter::nearest,
                        sdl::sampler_address_mode::clamp_to_edge)
         , labels(dev, text_engine, label_font, outline_font)
