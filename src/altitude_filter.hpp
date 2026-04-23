@@ -5,23 +5,25 @@
 namespace nasrbrowse
 {
 
-// Selects which altitude bands the user wants rendered. The 18,000 ft MSL
+// Selects which altitude band the user wants rendered. The 18,000 ft MSL
 // divider is the standard boundary between low-altitude and high-altitude
 // aeronautical depictions (VFR / IFR-low are low-band; IFR-high is high-band).
+// The "unlimited" band covers oceanic ARTCC surfaces (CTA, FIR, CTA/FIR, UTA)
+// which are not split at 18,000 ft.
 //
-// A feature is shown iff at least one enabled band overlaps the feature's
-// altitude relevance. If neither band is enabled, nothing renders.
+// UI enforces mutually-exclusive selection (exactly one band active).
 struct altitude_filter
 {
-    bool show_low = true;   // features relevant below 18,000 ft MSL
-    bool show_high = false; // features relevant at or above 18,000 ft MSL
+    bool show_low = true;        // features relevant below 18,000 ft MSL
+    bool show_high = false;      // features relevant at or above 18,000 ft MSL
+    bool show_unlimited = false; // oceanic / unlimited stratum
 
     static constexpr int DIVIDER_FT = 18000;
 
     // Sentinel written by build_nasr_db for UNL/unlimited upper bounds.
     static constexpr int UNLIMITED_FT = 99999;
 
-    bool any() const { return show_low || show_high; }
+    bool any() const { return show_low || show_high || show_unlimited; }
 
     // True iff a feature occupying [lower_ft, upper_ft] MSL should be shown.
     bool overlaps(int lower_ft, int upper_ft) const
@@ -62,10 +64,13 @@ struct altitude_filter
     // Convenience for features classified by sub-type rather than range.
     bool low_enabled() const { return show_low; }
     bool high_enabled() const { return show_high; }
+    bool unlimited_enabled() const { return show_unlimited; }
 
     bool operator==(const altitude_filter& o) const
     {
-        return show_low == o.show_low && show_high == o.show_high;
+        return show_low == o.show_low
+            && show_high == o.show_high
+            && show_unlimited == o.show_unlimited;
     }
     bool operator!=(const altitude_filter& o) const { return !(*this == o); }
 };
@@ -94,10 +99,13 @@ inline unsigned airway_bands(const std::string& awy_id)
     }
 }
 
-// ARTCC altitude string → altitude band bitmask. LOW → low, HIGH/OCEANIC → high.
+// ARTCC altitude string → altitude band bitmask. LOW → low, HIGH → high,
+// UNLIMITED (oceanic CTA/FIR/UTA) → unlimited.
 inline unsigned artcc_bands(const std::string& altitude)
 {
-    return altitude == "LOW" ? 0b01 : 0b10;
+    if (altitude == "LOW") return 0b001;
+    if (altitude == "HIGH") return 0b010;
+    return 0b100;
 }
 
 // MTR route type → altitude band bitmask. VR (VFR military) is low-only;
@@ -109,7 +117,9 @@ inline unsigned mtr_bands(const std::string& route_type_code)
 
 inline bool altitude_filter_allows(const altitude_filter& af, unsigned bands)
 {
-    return ((bands & 0b01) && af.show_low) || ((bands & 0b10) && af.show_high);
+    return ((bands & 0b001) && af.show_low)
+        || ((bands & 0b010) && af.show_high)
+        || ((bands & 0b100) && af.show_unlimited);
 }
 
 } // namespace nasrbrowse

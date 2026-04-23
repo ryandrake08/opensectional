@@ -3970,14 +3970,31 @@ def build_cls_arsp(conn, shp_zf):
 
 
 def build_artcc(conn, csv_zf):
-    """Import ARTCC boundary polygons from ARB_BASE and ARB_SEG CSVs."""
+    """Import ARTCC boundary polygons from ARB_BASE and ARB_SEG CSVs.
+
+    Natural keys per FAA NASR spec:
+      ARB_BASE  — LOCATION_ID uniquely identifies a center.
+      ARB_SEG   — REC_ID (concat of LOCATION_ID, BNDRY_CODE, point designator)
+                  uniquely identifies a boundary point.
+
+    Our polygon rows carry per-location ARB_BASE fields (ICAO_ID,
+    LOCATION_TYPE, CITY, STATE, COUNTRY_CODE, CROSS_REF) denormalised
+    across the 1..N polygons that share a LOCATION_ID.
+    """
     conn.execute("DROP TABLE IF EXISTS ARTCC_BASE")
     conn.execute("""
         CREATE TABLE ARTCC_BASE (
             ARTCC_ID INTEGER PRIMARY KEY,
             LOCATION_ID TEXT,
             LOCATION_NAME TEXT,
-            ALTITUDE TEXT
+            ALTITUDE TEXT,
+            TYPE TEXT,
+            ICAO_ID TEXT,
+            LOCATION_TYPE TEXT,
+            CITY TEXT,
+            STATE TEXT,
+            COUNTRY_CODE TEXT,
+            CROSS_REF TEXT
         )
     """)
 
@@ -4014,12 +4031,12 @@ def build_artcc(conn, csv_zf):
     base_rows = []
     shp_rows = []
 
-    # Get names from ARB_BASE
+    # Per-location metadata from ARB_BASE, keyed on LOCATION_ID (unique there).
     base_info = {}
     for row in read_csv_rows(csv_zf, "ARB_BASE.csv"):
-        base_info[row["LOCATION_ID"]] = row.get("LOCATION_NAME", "")
+        base_info[row["LOCATION_ID"]] = row
 
-    for (loc_id, altitude, _), points in sorted(boundaries.items()):
+    for (loc_id, altitude, type_), points in sorted(boundaries.items()):
         points.sort(key=lambda p: p[0])  # sort by POINT_SEQ
         if len(points) < 3:
             continue
@@ -4035,7 +4052,20 @@ def build_artcc(conn, csv_zf):
         if current:
             sub_rings.append(current)
 
-        name = base_info.get(loc_id, loc_id)
+        info = base_info.get(loc_id)
+        if info is None:
+            # ARB_SEG references a LOCATION_ID that's not in ARB_BASE. All 26
+            # US-controlled centres in ARB_SEG are present in ARB_BASE, so this
+            # indicates a NASR schema change worth surfacing rather than masking.
+            raise KeyError(f"ARB_SEG LOCATION_ID {loc_id!r} not found in ARB_BASE")
+        name = info.get("LOCATION_NAME", "")
+        icao_id = info.get("ICAO_ID", "")
+        location_type = info.get("LOCATION_TYPE", "")
+        city = info.get("CITY", "")
+        state = info.get("STATE", "")
+        country_code = info.get("COUNTRY_CODE", "")
+        cross_ref = info.get("CROSS_REF", "")
+
         for ring in sub_rings:
             if len(ring) < 3:
                 continue
@@ -4045,11 +4075,15 @@ def build_artcc(conn, csv_zf):
                 if copy[0] != copy[-1]:
                     copy = copy + [copy[0]]
                 artcc_id = len(base_rows) + 1
-                base_rows.append((artcc_id, loc_id, name, altitude))
+                base_rows.append((artcc_id, loc_id, name, altitude, type_,
+                                  icao_id, location_type, city, state,
+                                  country_code, cross_ref))
                 for point_seq, (lon, lat) in enumerate(copy):
                     shp_rows.append((artcc_id, point_seq, lon, lat))
 
-    conn.executemany("INSERT INTO ARTCC_BASE VALUES (?, ?, ?, ?)", base_rows)
+    conn.executemany(
+        "INSERT INTO ARTCC_BASE VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        base_rows)
     conn.executemany("INSERT INTO ARTCC_SHP VALUES (?, ?, ?, ?)", shp_rows)
 
     print(f"  ARTCC_BASE: {len(base_rows)} boundaries")
@@ -4079,6 +4113,7 @@ def build_artcc(conn, csv_zf):
             SEG_ID INTEGER,
             ARTCC_ID INTEGER,
             ALTITUDE TEXT,
+            TYPE TEXT,
             POINT_SEQ INTEGER,
             LON_DECIMAL REAL,
             LAT_DECIMAL REAL
@@ -4092,14 +4127,15 @@ def build_artcc(conn, csv_zf):
 
     seg_data = []
     seg_id = 0
-    for artcc_id, loc_id, name, altitude in base_rows:
+    for row in base_rows:
+        artcc_id, _loc_id, _name, altitude, type_ = row[:5]
         ring = artcc_rings.get(artcc_id, [])
         for chunk in subdivide_ring(ring):
             seg_id += 1
             for point_seq, (lon, lat) in enumerate(chunk):
-                seg_data.append((seg_id, artcc_id, altitude, point_seq, lon, lat))
+                seg_data.append((seg_id, artcc_id, altitude, type_, point_seq, lon, lat))
 
-    conn.executemany("INSERT INTO ARTCC_SEG VALUES (?, ?, ?, ?, ?, ?)", seg_data)
+    conn.executemany("INSERT INTO ARTCC_SEG VALUES (?, ?, ?, ?, ?, ?, ?)", seg_data)
     print(f"  ARTCC_SEG: {seg_id} segments, {len(seg_data)} points")
 
     conn.execute("""

@@ -209,7 +209,8 @@ namespace nasrbrowse
         "airspace_b", "airspace_c", "airspace_d",
         "airspace_e2", "airspace_e3", "airspace_e4",
         "airspace_e5", "airspace_e6", "airspace_e7",
-        "artcc_low", "artcc_high", "artcc_oceanic",
+        "artcc_low", "artcc_high",
+        "artcc_unlimited_cta", "artcc_unlimited_fir", "artcc_unlimited_uta",
         "pja_area", "pja_point",
         "maa_area", "maa_point",
         "adiz",
@@ -348,11 +349,25 @@ namespace nasrbrowse
         return "sua_moa";
     }
 
-    static const char* artcc_key(const std::string& altitude)
+    // Walk the style keys applicable to an ARTCC polygon. Domestic sectors
+    // map by ALTITUDE (LOW/HIGH). Oceanic (UNLIMITED) polygons map by TYPE,
+    // and a CTA/FIR polygon is drawn under both the CTA and FIR styles.
+    template <typename F>
+    static void for_each_artcc_key(const std::string& altitude,
+                                    const std::string& type, F&& f)
     {
-        if(altitude == "HIGH") return "artcc_high";
-        if(altitude == "UNLIMITED") return "artcc_oceanic";
-        return "artcc_low";
+        if(altitude == "LOW") { f("artcc_low"); return; }
+        if(altitude == "HIGH") { f("artcc_high"); return; }
+        if(type == "UTA") { f("artcc_unlimited_uta"); return; }
+        if(type == "CTA") { f("artcc_unlimited_cta"); return; }
+        if(type == "FIR") { f("artcc_unlimited_fir"); return; }
+        if(type == "CTA/FIR")
+        {
+            f("artcc_unlimited_cta");
+            f("artcc_unlimited_fir");
+            return;
+        }
+        f("artcc_low");
     }
 
     // Airport
@@ -411,11 +426,37 @@ namespace nasrbrowse
     const feature_style& chart_style::sua_style(const std::string& sua_type) const
     { return get(sua_key(sua_type)); }
 
-    // ARTCC
-    bool chart_style::artcc_visible(const std::string& altitude, double zoom) const
-    { return visible(artcc_key(altitude), zoom); }
-    const feature_style& chart_style::artcc_style(const std::string& altitude) const
-    { return get(artcc_key(altitude)); }
+    // ARTCC — a single polygon may map to multiple style keys (CTA/FIR → both
+    // CTA and FIR). artcc_visible returns true if any mapped key is visible;
+    // artcc_style returns the primary (first) mapped style, used for selection
+    // highlight and labels. Rendering of all applicable styles is via
+    // for_each_visible_artcc_style on chart_style.
+    bool chart_style::artcc_visible(const std::string& altitude,
+                                     const std::string& type, double zoom) const
+    {
+        bool any_visible = false;
+        for_each_artcc_key(altitude, type, [&](const char* key) {
+            if(visible(key, zoom)) any_visible = true;
+        });
+        return any_visible;
+    }
+    const feature_style& chart_style::artcc_style(const std::string& altitude,
+                                                    const std::string& type) const
+    {
+        const feature_style* first = nullptr;
+        for_each_artcc_key(altitude, type, [&](const char* key) {
+            if(!first) first = &get(key);
+        });
+        return *first;
+    }
+    void chart_style::for_each_visible_artcc_style(
+        const std::string& altitude, const std::string& type, double zoom,
+        const std::function<void(const feature_style&)>& f) const
+    {
+        for_each_artcc_key(altitude, type, [&](const char* key) {
+            if(visible(key, zoom)) f(get(key));
+        });
+    }
 
     // ADIZ
     bool chart_style::adiz_visible(double zoom) const
@@ -526,7 +567,9 @@ namespace nasrbrowse
     {
         return visible("artcc_low", zoom)
             || visible("artcc_high", zoom)
-            || visible("artcc_oceanic", zoom);
+            || visible("artcc_unlimited_cta", zoom)
+            || visible("artcc_unlimited_fir", zoom)
+            || visible("artcc_unlimited_uta", zoom);
     }
 
     // SQL-filter helpers

@@ -307,6 +307,7 @@ namespace nasrbrowse
     struct boundary_segment
     {
         std::string altitude;  // ARTCC only: "LOW", "HIGH", "UNLIMITED"
+        std::string type;      // ARTCC only: "ARTCC", "CTA", "FIR", "CTA/FIR", "UTA"
         std::vector<airspace_point> points;
     };
 
@@ -426,9 +427,16 @@ namespace nasrbrowse
     struct artcc
     {
         int artcc_id;
-        std::string location_id;  // "ZLA", "ZNY", etc.
-        std::string name;
-        std::string altitude;     // "LOW", "HIGH", "UNLIMITED"
+        std::string location_id;    // "ZLA", "ZNY", etc. (ARB_BASE natural key)
+        std::string name;           // LOCATION_NAME
+        std::string altitude;       // "LOW", "HIGH", "UNLIMITED"
+        std::string type;           // "ARTCC", "CTA", "FIR", "CTA/FIR", "UTA"
+        std::string icao_id;        // ICAO identifier when published
+        std::string location_type;  // "ARTCC" or "CERAP"
+        std::string city;
+        std::string state;
+        std::string country_code;
+        std::string cross_ref;
         std::vector<airspace_point> points;
     };
 

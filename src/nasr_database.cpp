@@ -322,14 +322,15 @@ namespace nasrbrowse
             )", 18))
 
             , stmt_artcc(prepare_checked(db, R"(
-                SELECT ARTCC_ID, LOCATION_ID, LOCATION_NAME, ALTITUDE
+                SELECT ARTCC_ID, LOCATION_ID, LOCATION_NAME, ALTITUDE, TYPE,
+                       ICAO_ID, LOCATION_TYPE, CITY, STATE, COUNTRY_CODE, CROSS_REF
                 FROM ARTCC_BASE
                 WHERE ARTCC_ID IN (
                     SELECT id FROM ARTCC_BASE_RTREE
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 4))
+            )", 11))
 
             , stmt_artcc_shape(prepare_checked(db, R"(
                 SELECT LON_DECIMAL, LAT_DECIMAL
@@ -441,7 +442,7 @@ namespace nasrbrowse
             )", 15))
 
             , stmt_artcc_seg(prepare_checked(db, R"(
-                SELECT SEG_ID, ALTITUDE, LON_DECIMAL, LAT_DECIMAL
+                SELECT SEG_ID, ALTITUDE, TYPE, LON_DECIMAL, LAT_DECIMAL
                 FROM ARTCC_SEG
                 WHERE SEG_ID IN (
                     SELECT id FROM ARTCC_SEG_RTREE
@@ -449,7 +450,7 @@ namespace nasrbrowse
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 ORDER BY SEG_ID, POINT_SEQ
-            )", 4))
+            )", 5))
 
             , stmt_adiz_seg(prepare_checked(db, R"(
                 SELECT SEG_ID, LON_DECIMAL, LAT_DECIMAL
@@ -1010,8 +1011,12 @@ namespace nasrbrowse
         return d.query_bbox(d.stmt_artcc,
             bbox, [&](sqlite::statement& s)
         {
-            artcc a{s.column_int(0), s.column_text(1),
-                    s.column_text(2), s.column_text(3), {}};
+            artcc a{s.column_int(0),    s.column_text(1),
+                    s.column_text(2),   s.column_text(3),
+                    s.column_text(4),   s.column_text(5),
+                    s.column_text(6),   s.column_text(7),
+                    s.column_text(8),   s.column_text(9),
+                    s.column_text(10),  {}};
 
             d.stmt_artcc_shape.reset();
             d.stmt_artcc_shape.bind(1, a.artcc_id);
@@ -1166,12 +1171,13 @@ namespace nasrbrowse
             auto seg_id = d.stmt_artcc_seg.column_int(0);
             if (seg_id != current_seg)
             {
-                results.push_back({d.stmt_artcc_seg.column_text(1), {}});
+                results.push_back({d.stmt_artcc_seg.column_text(1),
+                                   d.stmt_artcc_seg.column_text(2), {}});
                 current_seg = seg_id;
             }
             results.back().points.push_back(
-                {d.stmt_artcc_seg.column_double(3),
-                 d.stmt_artcc_seg.column_double(2)});
+                {d.stmt_artcc_seg.column_double(4),
+                 d.stmt_artcc_seg.column_double(3)});
         }
         return results;
     }
@@ -1188,7 +1194,7 @@ namespace nasrbrowse
             auto seg_id = d.stmt_adiz_seg.column_int(0);
             if (seg_id != current_seg)
             {
-                results.push_back({{}, {}});
+                results.push_back({{}, {}, {}});
                 current_seg = seg_id;
             }
             results.back().points.push_back(

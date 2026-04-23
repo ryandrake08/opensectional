@@ -175,10 +175,27 @@ namespace nasrbrowse
             ImGuiWindowFlags_NoCollapse |
             ImGuiWindowFlags_NoSavedSettings);
 
-        if(ImGui::Checkbox("Below 18,000 ft", &d.vis.altitude.show_low))
+        if(ImGui::RadioButton("Below 18,000 ft", d.vis.altitude.show_low))
+        {
+            d.vis.altitude.show_low = true;
+            d.vis.altitude.show_high = false;
+            d.vis.altitude.show_unlimited = false;
             changed = true;
-        if(ImGui::Checkbox("18,000 ft and above", &d.vis.altitude.show_high))
+        }
+        if(ImGui::RadioButton("18,000 ft and above", d.vis.altitude.show_high))
+        {
+            d.vis.altitude.show_low = false;
+            d.vis.altitude.show_high = true;
+            d.vis.altitude.show_unlimited = false;
             changed = true;
+        }
+        if(ImGui::RadioButton("Unlimited", d.vis.altitude.show_unlimited))
+        {
+            d.vis.altitude.show_low = false;
+            d.vis.altitude.show_high = false;
+            d.vis.altitude.show_unlimited = true;
+            changed = true;
+        }
 
         ImGui::End();
 

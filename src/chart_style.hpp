@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -79,9 +80,19 @@ namespace nasrbrowse
         bool sua_visible(const std::string& sua_type, double zoom) const;
         const feature_style& sua_style(const std::string& sua_type) const;
 
-        // ARTCC visibility and style (keyed by altitude)
-        bool artcc_visible(const std::string& altitude, double zoom) const;
-        const feature_style& artcc_style(const std::string& altitude) const;
+        // ARTCC visibility and style (keyed by altitude + type).
+        // A CTA/FIR polygon maps to two style keys; artcc_visible returns
+        // true if either is visible, artcc_style returns the primary.
+        bool artcc_visible(const std::string& altitude,
+                           const std::string& type, double zoom) const;
+        const feature_style& artcc_style(const std::string& altitude,
+                                          const std::string& type) const;
+        // Invoke `f` once per applicable style that is visible at this zoom.
+        // Used by the renderer to draw CTA/FIR polygons twice (under CTA
+        // and FIR styles) while drawing every other polygon once.
+        void for_each_visible_artcc_style(
+            const std::string& altitude, const std::string& type, double zoom,
+            const std::function<void(const feature_style&)>& f) const;
 
         // ADIZ visibility and style
         bool adiz_visible(double zoom) const;

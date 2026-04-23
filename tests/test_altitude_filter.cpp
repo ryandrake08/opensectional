@@ -119,11 +119,11 @@ TEST_CASE("airway_bands: classification by prefix")
     CHECK(airway_bands("Xfoo")   == 0b11);   // unknown prefix → both
 }
 
-TEST_CASE("artcc_bands: LOW vs HIGH/OCEANIC")
+TEST_CASE("artcc_bands: LOW / HIGH / UNLIMITED are three distinct bands")
 {
-    CHECK(artcc_bands("LOW")     == 0b01);
-    CHECK(artcc_bands("HIGH")    == 0b10);
-    CHECK(artcc_bands("OCEANIC") == 0b10);   // anything != LOW is high
+    CHECK(artcc_bands("LOW")       == 0b001);
+    CHECK(artcc_bands("HIGH")      == 0b010);
+    CHECK(artcc_bands("UNLIMITED") == 0b100);
 }
 
 TEST_CASE("mtr_bands: VR is low-only, IR is both")

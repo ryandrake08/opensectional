@@ -545,7 +545,7 @@ namespace nasrbrowse
             if(!ctx.vis.altitude.any()) return;
             for(const auto& a : ctx.db.query_artcc(ctx.click_box))
             {
-                if(!ctx.styles.artcc_visible(a.altitude, ctx.zoom)) continue;
+                if(!ctx.styles.artcc_visible(a.altitude, a.type, ctx.zoom)) continue;
                 if(!altitude_filter_allows(ctx.vis.altitude, artcc_bands(a.altitude)))
                     continue;
                 if(point_in_ring(ctx.click_lon, ctx.click_lat, a.points))
@@ -929,11 +929,20 @@ namespace nasrbrowse
         kv_list artcc_type::info_kv(const feature& f) const
         {
             const auto& v = std::get<artcc>(f);
-            return {
+            kv_list rows{
                 {"Location ID",   v.location_id},
                 {"Name",          v.name},
+                {"ICAO ID",       v.icao_id},
+                {"Location type", v.location_type},
+                {"City",          v.city},
+                {"State",         v.state},
+                {"Country",       v.country_code},
                 {"Altitude band", v.altitude},
+                {"Type",          v.type},
             };
+            if(!v.cross_ref.empty())
+                rows.push_back({"Cross ref", v.cross_ref});
+            return rows;
         }
 
         kv_list tfr_type::info_kv(const feature& f) const
@@ -2077,25 +2086,28 @@ namespace nasrbrowse
             const auto& segs = ctx.db.query_artcc_segments(bbox);
             for(const auto& seg : segs)
             {
-                if(!ctx.styles.artcc_visible(seg.altitude, ctx.req.zoom)) continue;
                 if(!altitude_filter_allows(ctx.req.altitude, artcc_bands(seg.altitude)))
                     continue;
-                auto ls = to_line_style(ctx.styles.artcc_style(seg.altitude));
-                add_polyline(ctx.poly[layer_artcc], seg.points, ls, ctx.mx_offset);
+                ctx.styles.for_each_visible_artcc_style(
+                    seg.altitude, seg.type, ctx.req.zoom,
+                    [&](const feature_style& fs) {
+                        auto ls = to_line_style(fs);
+                        add_polyline(ctx.poly[layer_artcc], seg.points, ls, ctx.mx_offset);
+                    });
             }
 
             if(ctx.req.zoom < AIRSPACE_LABEL_MIN_ZOOM) return;
             const auto& artccs = ctx.db.query_artcc(bbox);
             for(const auto& a : artccs)
             {
-                if(!ctx.styles.artcc_visible(a.altitude, ctx.req.zoom)) continue;
+                if(!ctx.styles.artcc_visible(a.altitude, a.type, ctx.req.zoom)) continue;
                 if(!altitude_filter_allows(ctx.req.altitude, artcc_bands(a.altitude)))
                     continue;
                 if(a.points.empty()) continue;
                 auto [cmx, cmy] = polygon_label_pos(a.points, ctx.mx_offset);
                 emit_airspace_label(ctx, "ARTCC", cmx, cmy, layer_artcc,
                     a.location_id, a.altitude,
-                    ctx.styles.artcc_style(a.altitude));
+                    ctx.styles.artcc_style(a.altitude, a.type));
             }
         }
 
@@ -2498,7 +2510,7 @@ namespace nasrbrowse
                                            polyline_data& out, polygon_fill_data& fill_out) const
         {
             const auto& v = std::get<artcc>(f);
-            auto fs = ctx.styles.artcc_style(v.altitude);
+            auto fs = ctx.styles.artcc_style(v.altitude, v.type);
             auto base = to_line_style(fs);
             glm::vec4 fill_color{fs.r, fs.g, fs.b, 0.25F};
             std::vector<glm::vec2> ring;
