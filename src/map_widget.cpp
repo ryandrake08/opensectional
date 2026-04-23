@@ -328,7 +328,7 @@ struct map_widget::impl
         // Normalize coordinates to -0.5..0.5 for rendering
         auto to_ndc_x = [&](double mx) -> float
         {
-            return static_cast<float>((mx - vx_min) / range_x - 0.5) * view.aspect_ratio();
+            return static_cast<float>(((mx - vx_min) / range_x - 0.5) * view.aspect_ratio());
         };
         auto to_ndc_y = [&](double my) -> float
         {
@@ -459,20 +459,20 @@ struct map_widget::impl
         return {lon, lat};
     }
 
-    // Distance from point (px, py) to the segment (ax, ay)-(bx, by).
-    static float point_segment_distance_px(float px, float py,
-                                            float ax, float ay,
-                                            float bx, float by)
+    // Distance from point p to the segment a-b (pixel space).
+    static double point_segment_distance_px(nasrbrowse::pixel_pos p,
+                                             nasrbrowse::pixel_pos a,
+                                             nasrbrowse::pixel_pos b)
     {
-        auto dx = bx - ax;
-        auto dy = by - ay;
+        auto dx = b.x - a.x;
+        auto dy = b.y - a.y;
         auto len_sq = dx * dx + dy * dy;
-        auto t = 0.0F;
-        if(len_sq > 0) t = ((px - ax) * dx + (py - ay) * dy) / len_sq;
-        t = std::clamp(t, 0.0F, 1.0F);
-        auto cx = ax + t * dx;
-        auto cy = ay + t * dy;
-        return std::sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+        auto t = 0.0;
+        if(len_sq > 0) t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq;
+        t = std::clamp(t, 0.0, 1.0);
+        auto cx = a.x + t * dx;
+        auto cy = a.y + t * dy;
+        return std::sqrt((p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy));
     }
 
     // Return the 0-based waypoint index whose pixel position is within
@@ -517,8 +517,7 @@ struct map_widget::impl
             {
                 auto a = view.world_to_pixel(arc[j - 1].lon, arc[j - 1].lat);
                 auto b = view.world_to_pixel(arc[j].lon, arc[j].lat);
-                if(point_segment_distance_px(
-                    cursor.x, cursor.y, a.x, a.y, b.x, b.y) < threshold)
+                if(point_segment_distance_px(cursor, a, b) < threshold)
                     return static_cast<int>(i - 1);
             }
         }
@@ -610,11 +609,13 @@ struct map_widget::impl
         if(anchor.x < 0 || anchor.x > view.viewport_width || anchor.y < 0 || anchor.y > view.viewport_height)
             return false;
 
-        auto right  = anchor.x >= view.viewport_width * 0.5F;
-        auto bottom = anchor.y >= view.viewport_height * 0.5F;
+        auto right  = anchor.x >= view.viewport_width * 0.5;
+        auto bottom = anchor.y >= view.viewport_height * 0.5;
 
-        pos.x = anchor.x + (right  ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING);
-        pos.y = anchor.y + (bottom ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING);
+        pos.x = static_cast<float>(
+            anchor.x + (right  ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING));
+        pos.y = static_cast<float>(
+            anchor.y + (bottom ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING));
         pivot = ImVec2(right ? 1.0F : 0.0F, bottom ? 1.0F : 0.0F);
         return true;
     }
@@ -678,8 +679,8 @@ struct map_widget::impl
             if(!coord) continue;
             auto fp = view.world_to_pixel(coord->first, coord->second);
             auto cp = view.world_to_pixel(result.lon, result.lat);
-            double dx = fp.x - cp.x;
-            double dy = fp.y - cp.y;
+            auto dx = fp.x - cp.x;
+            auto dy = fp.y - cp.y;
             if(std::sqrt(dx * dx + dy * dy) <= exact_threshold_px)
             {
                 ++exact_count;
@@ -1048,7 +1049,8 @@ bool map_widget::draw_imgui()
             auto p = pimpl->view.world_to_pixel(
                 nasrbrowse::waypoint_lon(wps[idx]),
                 nasrbrowse::waypoint_lat(wps[idx]));
-            dl->AddLine(ImVec2(p.x, p.y), cursor, col, 2.0F);
+            dl->AddLine(ImVec2(static_cast<float>(p.x), static_cast<float>(p.y)),
+                        cursor, col, 2.0F);
         };
 
         if(pimpl->route_drag.mode == impl::route_drag_mode::segment)

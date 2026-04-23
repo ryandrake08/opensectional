@@ -147,29 +147,26 @@ namespace nasrbrowse
             }
 
             constexpr auto SYMBOL_RADIUS = 0.012;
-            constexpr auto HALO_SCALE = 1.8F;
-            auto r_base = static_cast<float>(req.half_extent_y * SYMBOL_RADIUS);
-            auto ppw = static_cast<float>(
-                req.viewport_height / (2.0 * req.half_extent_y));
+            constexpr auto HALO_SCALE = 1.8;
+            auto r_base = req.half_extent_y * SYMBOL_RADIUS;
+            auto ppw = req.viewport_height / (2.0 * req.half_extent_y);
             auto halo_r = r_base * HALO_SCALE;
             auto fill_px = halo_r * ppw;
 
             // White opaque halo matching the point-feature selection halo.
             line_style halo_ls{};
-            halo_ls.line_width = fill_px;
+            halo_ls.line_width = static_cast<float>(fill_px);
             halo_ls.r = 1.0F;
             halo_ls.g = 1.0F;
             halo_ls.b = 1.0F;
             halo_ls.a = 1.0F;
-            halo_ls.fill_width = fill_px;
+            halo_ls.fill_width = static_cast<float>(fill_px);
 
             auto& halo_pd = poly[layer_route_halo];
             for(const auto& wp : wps)
             {
-                auto cx = static_cast<float>(
-                    lon_to_mx(waypoint_lon(wp)) + mx_offset);
-                auto cy = static_cast<float>(
-                    lat_to_my(waypoint_lat(wp)));
+                auto cx = lon_to_mx(waypoint_lon(wp)) + mx_offset;
+                auto cy = lat_to_my(waypoint_lat(wp));
 
                 // Halo circle
                 constexpr auto HALO_SEGMENTS = 24;
@@ -177,10 +174,11 @@ namespace nasrbrowse
                 pts.reserve(HALO_SEGMENTS);
                 for(int s = 0; s < HALO_SEGMENTS; ++s)
                 {
-                    auto angle = 2.0F * static_cast<float>(M_PI) * s / HALO_SEGMENTS;
-                    auto hr = halo_r * 0.5F;
-                    pts.emplace_back(cx + hr * std::cos(angle),
-                                     cy + hr * std::sin(angle));
+                    auto angle = 2.0 * M_PI * s / HALO_SEGMENTS;
+                    auto hr = halo_r * 0.5;
+                    pts.emplace_back(
+                        static_cast<float>(cx + hr * std::cos(angle)),
+                        static_cast<float>(cy + hr * std::sin(angle)));
                 }
                 halo_pd.polylines.push_back(std::move(pts));
                 halo_pd.styles.push_back(halo_ls);

@@ -7,8 +7,8 @@ namespace nasrbrowse
 
     struct pixel_pos
     {
-        float x;
-        float y;
+        double x;
+        double y;
     };
 
     struct meter_bounds

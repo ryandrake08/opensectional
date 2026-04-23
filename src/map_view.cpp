@@ -136,8 +136,8 @@ namespace nasrbrowse
         auto ndc_y = (world_y - center_y) / (2.0 * half_extent_y);
 
         return {
-            static_cast<float>(ndc_x * viewport_height + viewport_width * 0.5),
-            static_cast<float>((0.5 - ndc_y) * viewport_height)
+            ndc_x * viewport_height + viewport_width * 0.5,
+            (0.5 - ndc_y) * viewport_height
         };
     }
 

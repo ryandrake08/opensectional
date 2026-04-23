@@ -103,11 +103,11 @@ namespace nasrbrowse
         ancestor.x = wx >> dz;
         ancestor.y = display_tile.y >> dz;
 
-        auto inv_scale = 1.0F / static_cast<float>(scale);
-        u0 = static_cast<float>(wx % scale) * inv_scale;
-        v0 = static_cast<float>(display_tile.y % scale) * inv_scale;
-        u1 = u0 + inv_scale;
-        v1 = v0 + inv_scale;
+        auto inv_scale = 1.0 / scale;
+        u0 = static_cast<float>((wx % scale) * inv_scale);
+        v0 = static_cast<float>((display_tile.y % scale) * inv_scale);
+        u1 = static_cast<float>(u0 + inv_scale);
+        v1 = static_cast<float>(v0 + inv_scale);
 
         return ancestor;
     }
