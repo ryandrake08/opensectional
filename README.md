@@ -18,7 +18,7 @@ cmake --build build -j
 cd tools && python3 -m venv env && env/bin/pip install -r requirements.txt && cd ..
 
 # 4. Download FAA data (prints build command when done)
-tools/env/bin/python3 tools/download_nasr_data.py nasr_data
+tools/env/bin/python3 tools/download_all.py nasr_data
 
 # 5. Build the NASR database (use the command printed by the download script)
 
@@ -171,7 +171,7 @@ Set up the Python environment, download FAA data, and build the database:
 cd tools && python3 -m venv env && env/bin/pip install -r requirements.txt && cd ..
 
 # Download all FAA data (prints build command when done)
-tools/env/bin/python3 tools/download_nasr_data.py nasr_data
+tools/env/bin/python3 tools/download_all.py nasr_data
 ```
 
 The download script fetches data from the FAA NASR subscription page, the Digital Obstacle File page, and ADIZ boundaries from the FAA ArcGIS service. Use `--preview` for the next cycle's data instead of the current one.
@@ -309,7 +309,7 @@ lib/sqlite/               SQLite RAII wrapper library
 shaders/                  HLSL shaders (cross-compiled to Metal/SPIR-V/DXIL)
 thirdparty/               Vendored dependencies (see "Third-Party Components")
 tools/
-  download_nasr_data.py   FAA data downloader (NASR, DOF, ADIZ)
+  download_all.py         FAA data downloader (supports --only for per-source fetches)
   build_all.py            Orchestrator; runs every per-source ingester
   build_common.py         Shared ingestion helpers (ring/antimeridian/altitude)
   build_nasr.py           NASR CSV subscription ingester (APT/NAV/FIX/AWY/...)

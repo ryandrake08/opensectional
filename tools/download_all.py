@@ -2,19 +2,21 @@
 """Download FAA aeronautical data for NASRBrowse.
 
 Scrapes the FAA NASR subscription page and related sources to download
-all data files needed by build_all.py. Uses conditional requests
-(If-Modified-Since) to avoid re-downloading unchanged files.
+the data files needed by the build_* ingesters.
 
-Sources:
-    - NASR 28-day CSV subscription
-    - Class airspace shapefiles
-    - AIXM 5.0 special use airspace
-    - Digital Obstacle File (DOF)
-    - ADIZ boundaries (ArcGIS FeatureServer)
-    - TFR XNOTAM data (tfr.faa.gov)
+Sources (each maps 1:1 to a build_* script):
+    nasr  — NASR 28-day CSV subscription      (→ build_nasr)
+    shp   — Class airspace shapefiles         (→ build_shp)
+    aixm  — AIXM 5.0 special use airspace     (→ build_aixm)
+    dof   — Digital Obstacle File             (→ build_dof)
+    adiz  — ADIZ boundaries (ArcGIS)          (→ build_adiz)
+    tfr   — TFR XNOTAM data (tfr.faa.gov)     (→ build_tfr)
+
+nasr, shp, and aixm share the FAA subscription page and its
+Current/Preview cycle split; dof, adiz, tfr are independent.
 
 Usage:
-    python3 tools/download_nasr_data.py [--current|--preview] [--output-dir DIR]
+    python3 tools/download_all.py [--preview] [--only NAMES ...] [output_dir]
 """
 
 import argparse
@@ -195,65 +197,89 @@ def download_tfrs(output_dir):
     return tfr_dir
 
 
+SOURCES = ("nasr", "shp", "aixm", "dof", "adiz", "tfr")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Download FAA aeronautical data for NASRBrowse."
     )
     parser.add_argument("--preview", action="store_true",
                         help="Download Preview cycle data instead of Current")
+    parser.add_argument("--only", nargs="+", choices=SOURCES, metavar="SOURCE",
+                        help=f"Download only the named sources (default: all). "
+                             f"Choices: {', '.join(SOURCES)}.")
     parser.add_argument("output_dir", nargs="?", default="./",
                         help="Output directory (default: current working directory)")
     args = parser.parse_args()
 
+    wanted = set(args.only) if args.only else set(SOURCES)
     section = "Preview" if args.preview else "Current"
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    # Scrape NASR subscription page
-    print(f"Fetching NASR subscription page ({section})...")
-    main_soup = fetch_html(_NASR_URL)
-    subpage_soup, subpage_url = find_nasr_subpage(main_soup, section)
+    paths = {}
 
-    # Find download links on the subpage
-    csv_url = find_download_link(subpage_soup, subpage_url,
-                                 "Comma-separated Values (CSV) Data")
-    shp_url = find_download_link(subpage_soup, subpage_url,
-                                 "Shape File Data")
-    aixm_url = find_download_link(subpage_soup, subpage_url,
-                                  "AIXM Data", filename_contains="aixm5.0")
+    # NASR / shp / aixm share the subscription subpage; fetch it once if
+    # any of them is requested.
+    if wanted & {"nasr", "shp", "aixm"}:
+        print(f"Fetching NASR subscription page ({section})...")
+        main_soup = fetch_html(_NASR_URL)
+        subpage_soup, subpage_url = find_nasr_subpage(main_soup, section)
 
-    if not csv_url:
-        raise ValueError("Could not find CSV download link")
-    if not shp_url:
-        raise ValueError("Could not find shapefile download link")
-    if not aixm_url:
-        raise ValueError("Could not find AIXM download link")
+        if "nasr" in wanted:
+            print("Finding NASR CSV link...")
+            url = find_download_link(subpage_soup, subpage_url,
+                                     "Comma-separated Values (CSV) Data")
+            if not url:
+                raise ValueError("Could not find NASR CSV link")
+            print("Downloading NASR CSV data...")
+            paths["nasr"] = download_file(url, output_dir)
 
-    print("\nDownloading NASR CSV data...")
-    csv_path = download_file(csv_url, output_dir)
+        if "shp" in wanted:
+            print("Finding class airspace shapefile link...")
+            url = find_download_link(subpage_soup, subpage_url, "Shape File Data")
+            if not url:
+                raise ValueError("Could not find class airspace shapefile link")
+            print("Downloading class airspace shapefiles...")
+            paths["shp"] = download_file(url, output_dir)
 
-    print("Downloading class airspace shapefiles...")
-    shp_path = download_file(shp_url, output_dir)
+        if "aixm" in wanted:
+            print("Finding SUA AIXM 5.0 link...")
+            url = find_download_link(subpage_soup, subpage_url, "AIXM Data",
+                                     filename_contains="aixm5.0")
+            if not url:
+                raise ValueError("Could not find SUA AIXM 5.0 link")
+            print("Downloading SUA AIXM 5.0 data...")
+            paths["aixm"] = download_file(url, output_dir)
 
-    print("Downloading AIXM 5.0 SUA data...")
-    aixm_path = download_file(aixm_url, output_dir)
+    if "dof" in wanted:
+        print("Finding Digital Obstacle File link...")
+        dof_url = find_dof_link()
+        if not dof_url:
+            raise ValueError("Could not find Digital Obstacle File link")
+        print("Downloading Digital Obstacle File...")
+        paths["dof"] = download_file(dof_url, output_dir)
 
-    # Download DOF
-    print("Finding DOF download link...")
-    dof_url = find_dof_link()
-    print("Downloading Digital Obstacle File...")
-    dof_path = download_file(dof_url, output_dir)
+    if "adiz" in wanted:
+        paths["adiz"] = download_adiz(output_dir)
 
-    # Download ADIZ
-    adiz_path = download_adiz(output_dir)
+    if "tfr" in wanted:
+        paths["tfr"] = download_tfrs(output_dir)
 
-    # Download TFRs
-    tfr_dir = download_tfrs(output_dir)
-
-    # Print summary
-    print(f"\nAll data downloaded to {output_dir}/")
-    print("\nTo build the database, run:")
-    print(f"  python3 tools/build_all.py {csv_path} {shp_path} {aixm_path} {dof_path} {adiz_path} {tfr_dir} nasr.db")
+    # Rebuild hints: one line per source that was downloaded, so users who
+    # ran `--only <x>` get the matching single-source build command.
+    print(f"\nDownloaded to {output_dir}/")
+    print("\nTo rebuild:")
+    if wanted == set(SOURCES):
+        print(f"  python3 tools/build_all.py "
+              f"{paths['nasr']} {paths['shp']} {paths['aixm']} "
+              f"{paths['dof']} {paths['adiz']} {paths['tfr']} nasr.db")
+    else:
+        for name in SOURCES:
+            if name in wanted:
+                print(f"  python3 tools/build_{name}.py {paths[name]} nasr.db")
+        print("  python3 tools/build_search.py nasr.db")
 
 
 if __name__ == "__main__":
