@@ -13,7 +13,7 @@ function(add_nasrbrowse_test name)
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/thirdparty
     )
-    target_compile_options(test_${name} PRIVATE -Wall -Wextra
+    target_compile_options(test_${name} PRIVATE -Wall -Wextra -Werror
         $<$<CONFIG:Debug>:${DEBUG_COMPILE_OPTIONS}>
         $<$<CONFIG:Release>:-O3>
         $<$<CONFIG:RelWithDebInfo>:${RELWITHDEBINFO_COMPILE_OPTIONS}>

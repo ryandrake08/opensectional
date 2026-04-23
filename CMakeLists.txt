@@ -137,7 +137,7 @@ target_include_directories(nasrbrowse PRIVATE
 target_compile_features(nasrbrowse PRIVATE cxx_std_17)
 
 # Compiler warnings (all build types)
-target_compile_options(nasrbrowse PRIVATE -Wall -Wextra)
+target_compile_options(nasrbrowse PRIVATE -Wall -Wextra -Werror)
 
 # Build-type-specific compiler options
 target_compile_options(nasrbrowse PRIVATE
@@ -185,6 +185,41 @@ target_include_directories(nasrbrowse PRIVATE ${SHADER_INCLUDE_DIR} ${CMAKE_BINA
 
 # Ensure shaders and font are built before the executable
 add_dependencies(nasrbrowse shaders embedded_font)
+
+# =============================================================================
+# clang-tidy target
+# =============================================================================
+find_program(RUN_CLANG_TIDY run-clang-tidy)
+find_program(CLANG_TIDY clang-tidy)
+include(ProcessorCount)
+ProcessorCount(NPROC)
+if(NPROC EQUAL 0)
+    set(NPROC 4)
+endif()
+if(RUN_CLANG_TIDY)
+    add_custom_target(clang-tidy
+        COMMAND ${RUN_CLANG_TIDY}
+            -p ${CMAKE_BINARY_DIR}
+            -j ${NPROC}
+            -source-filter "^${CMAKE_SOURCE_DIR}/(src|lib)/.*\\.cpp$$"
+            -quiet
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Running clang-tidy on src/ and lib/ (${NPROC} jobs)"
+        VERBATIM
+    )
+elseif(CLANG_TIDY)
+    file(GLOB _TIDY_SOURCES
+        ${CMAKE_SOURCE_DIR}/src/*.cpp
+        ${CMAKE_SOURCE_DIR}/lib/sdl/*.cpp
+        ${CMAKE_SOURCE_DIR}/lib/sqlite/*.cpp
+        ${CMAKE_SOURCE_DIR}/lib/imgui/*.cpp)
+    add_custom_target(clang-tidy
+        COMMAND ${CLANG_TIDY} -p ${CMAKE_BINARY_DIR} ${_TIDY_SOURCES}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Running clang-tidy on src/ and lib/ (sequential)"
+        VERBATIM
+    )
+endif()
 
 # =============================================================================
 # Installer / packaging
