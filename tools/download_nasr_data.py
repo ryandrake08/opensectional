@@ -2,7 +2,7 @@
 """Download FAA aeronautical data for NASRBrowse.
 
 Scrapes the FAA NASR subscription page and related sources to download
-all data files needed by build_nasr_db.py. Uses conditional requests
+all data files needed by build_all.py. Uses conditional requests
 (If-Modified-Since) to avoid re-downloading unchanged files.
 
 Sources:
@@ -253,7 +253,7 @@ def main():
     # Print summary
     print(f"\nAll data downloaded to {output_dir}/")
     print("\nTo build the database, run:")
-    print(f"  python3 tools/build_nasr_db.py {csv_path} {shp_path} {aixm_path} {dof_path} {adiz_path} {tfr_dir} nasr.db")
+    print(f"  python3 tools/build_all.py {csv_path} {shp_path} {aixm_path} {dof_path} {adiz_path} {tfr_dir} nasr.db")
 
 
 if __name__ == "__main__":

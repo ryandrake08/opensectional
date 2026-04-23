@@ -176,7 +176,7 @@ tools/env/bin/python3 tools/download_nasr_data.py nasr_data
 
 The download script fetches data from the FAA NASR subscription page, the Digital Obstacle File page, and ADIZ boundaries from the FAA ArcGIS service. Use `--preview` for the next cycle's data instead of the current one.
 
-`build_nasr_db.py` reads the downloaded ZIP files (no manual extraction needed) and produces a SQLite database. All spatial tables have R-tree indexes for efficient bounding-box queries. Column names match FAA NASR naming conventions.
+`build_all.py` orchestrates the per-source ingesters (`build_nasr.py` for the NASR CSV subscription, `build_shp.py` for class airspace, `build_aixm.py` for SUA, `build_dof.py` for obstacles, `build_adiz.py` for the ADIZ GeoJSON, `build_tfr.py` for TFR XNOTAMs, and `build_search.py` for the FTS5 index). Each ingester reads its ZIP or directory directly (no manual extraction) and can be re-run on its own when that source updates. All spatial tables have R-tree indexes for bounding-box queries. Column names match FAA NASR naming conventions.
 
 **Airports & Runways**
 - `APT_BASE` — 19,606 airports with coordinates, elevation, ownership, facility use
@@ -310,7 +310,15 @@ shaders/                  HLSL shaders (cross-compiled to Metal/SPIR-V/DXIL)
 thirdparty/               Vendored dependencies (see "Third-Party Components")
 tools/
   download_nasr_data.py   FAA data downloader (NASR, DOF, ADIZ)
-  build_nasr_db.py        Database builder (reads downloaded data files)
+  build_all.py            Orchestrator; runs every per-source ingester
+  build_common.py         Shared ingestion helpers (ring/antimeridian/altitude)
+  build_nasr.py           NASR CSV subscription ingester (APT/NAV/FIX/AWY/...)
+  build_shp.py            Class airspace shapefile ingester
+  build_aixm.py           AIXM 5.0 SUA ingester
+  build_dof.py            Digital Obstacle File ingester
+  build_adiz.py           ADIZ GeoJSON ingester
+  build_tfr.py            TFR XNOTAM directory ingester
+  build_search.py         FTS5 search index builder (run last)
   render_basemap.py       Natural Earth basemap tile renderer
   build-mingw-deps.sh     Cross-compile Windows dependencies
   test_nasr_queries.py    Database query correctness and performance tests

@@ -1,0 +1,177 @@
+"""Helpers shared across the per-source ingestion scripts.
+
+Kept deliberately small: utilities here are imported by two or more of
+build_nasr / build_shp / build_aixm / build_adiz / build_tfr. Source-local
+helpers live next to the build_* function that uses them.
+"""
+
+import os
+import re
+import sqlite3
+
+
+# Sentinel for "unlimited" altitude. Any real altitude compared against
+# this will register as below it. Stored as an INT in the DB.
+ALT_UNLIMITED_FT = 99999
+
+
+def parse_altitude(text):
+    """Parse an FAA altitude string into a (value_ft, ref) pair.
+
+    Returns one of these refs:
+      "MSL"   — value is feet above mean sea level.
+      "SFC"   — value is feet above ground level (AGL).
+      "STD"   — value is a flight level (pressure altitude in
+                hundreds of ft); stored as the equivalent ft number
+                (FL180 → 18000) but the STD ref preserves the
+                pressure-altitude semantics.
+      "OTHER" — no meaningful numeric (UNL/unlimited); value is
+                ALT_UNLIMITED_FT as a sentinel.
+
+    Examples (input → (value, ref)):
+      "5000 FT MSL"     → (5000,  "MSL")
+      "GND FT SFC"      → (0,     "SFC")
+      "1500 FT SFC"     → (1500,  "SFC")
+      "180 FL STD"      → (18000, "STD")
+      "UNL OTHER", "UNL"→ (ALT_UNLIMITED_FT, "OTHER")
+      "" / None         → (None, None)
+
+    Two altitudes may be compared numerically only when their refs
+    match. The conversion of SFC → MSL requires knowing the ground
+    elevation, which we deliberately do not have; comparisons across
+    references should be guarded by `same_ref` checks.
+    """
+    if text is None:
+        return (None, None)
+    s = str(text).strip().upper()
+    if not s:
+        return (None, None)
+    if s.startswith("UNL"):
+        return (ALT_UNLIMITED_FT, "OTHER")
+    if s.startswith("GND") or s.startswith("SFC"):
+        return (0, "SFC")
+    m = re.match(r"(\d+)\s*FL", s)
+    if m:
+        return (int(m.group(1)) * 100, "STD")
+    m = re.match(r"(\d+)", s)
+    if m:
+        # Numeric without explicit ref — disambiguate via the trailing
+        # word. Default to MSL for backward compat with strings that
+        # lack a reference token (rare; mainly historical data).
+        v = int(m.group(1))
+        if "SFC" in s or "AGL" in s:
+            return (v, "SFC")
+        if "STD" in s or " FL" in s.replace("FT FL", " FL"):
+            return (v, "STD")
+        return (v, "MSL")
+    return (None, None)
+
+
+def parse_altitude_ft_msl(text):
+    """Backward-compat wrapper: returns the int part of `parse_altitude`.
+
+    Loses the reference; only safe to use where the caller already
+    accepts the MSL-conflation semantics (e.g. as a sort key or for
+    legacy fields). Prefer `parse_altitude` when the reference matters.
+    """
+    v, _ = parse_altitude(text)
+    return v
+
+
+def subdivide_ring(points, max_points=32):
+    """Split a polygon ring into overlapping chunks for tighter R-tree bboxes.
+
+    Each chunk has at most max_points points and overlaps the next by 1 point.
+    The final chunk wraps back to include the first point to close the ring
+    visually.  Returns a list of point lists.
+    """
+    n = len(points)
+
+    # Ensure ring is closed
+    closed = points
+    if points[0] != points[-1]:
+        closed = points + [points[0]]
+        n = len(closed)
+
+    if n <= max_points:
+        return [closed]
+
+    stride = max_points - 1  # overlap by 1
+    chunks = []
+    offset = 0
+    while offset < n - 1:
+        end = min(offset + max_points, n)
+        chunk = closed[offset:end]
+        # If this is the last chunk and it doesn't reach the closing point,
+        # append the first point to visually close the ring
+        if end == n and chunk[-1] != closed[0]:
+            chunk.append(closed[0])
+        chunks.append(chunk)
+        offset += stride
+
+    return chunks
+
+
+def handle_antimeridian(points):
+    """Handle geometry that crosses the antimeridian (±180° longitude).
+
+    If no crossing is detected, returns [points] unchanged.
+    If a crossing is detected, returns two copies of the geometry:
+    one with longitudes unwrapped to the west (extending past -180)
+    and one shifted +360 to the east (extending past +180).
+    Both copies are complete rings; viewport culling hides the offscreen one.
+    """
+    # Detect if any segment crosses (longitude jump > 180°)
+    has_crossing = False
+    for i in range(len(points) - 1):
+        if abs(points[i + 1][0] - points[i][0]) > 180:
+            has_crossing = True
+            break
+    if not has_crossing:
+        return [points]
+
+    # Unwrap longitudes to be continuous (no ±360 jumps)
+    unwrapped = [points[0]]
+    for i in range(1, len(points)):
+        lon, lat = points[i]
+        prev_lon = unwrapped[i - 1][0]
+        while lon - prev_lon > 180:
+            lon -= 360
+        while lon - prev_lon < -180:
+            lon += 360
+        unwrapped.append((lon, lat))
+
+    # Create second copy shifted by ±360 to cover the other side
+    shifted = [(lon + 360, lat) for lon, lat in unwrapped]
+    if unwrapped[0][0] > 0:
+        shifted = [(lon - 360, lat) for lon, lat in unwrapped]
+        return [shifted, unwrapped]
+    return [unwrapped, shifted]
+
+
+def simplify_ring(points, epsilon):
+    """Simplify a polygon ring using Shapely's GEOS-backed RDP.
+
+    Points are (lon, lat) tuples. Epsilon is in degrees.
+    """
+    if len(points) <= 3:
+        return points
+    from shapely.geometry import LineString
+    simplified = LineString(points).simplify(epsilon, preserve_topology=False)
+    return list(simplified.coords)
+
+
+def open_output_db(path, fresh=False):
+    """Open the output SQLite DB with the ingestion PRAGMAs.
+
+    If `fresh` is True, any existing file at `path` is removed first — only
+    the orchestrator (build_all) passes this. Per-source scripts always open
+    with fresh=False so they preserve other sources' tables.
+    """
+    if fresh and os.path.exists(path):
+        os.remove(path)
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA journal_mode=OFF")
+    conn.execute("PRAGMA synchronous=OFF")
+    conn.execute("PRAGMA cache_size=-200000")  # 200 MB
+    return conn
