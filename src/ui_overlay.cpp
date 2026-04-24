@@ -23,12 +23,10 @@ namespace nasrbrowse
         std::string search_buf;
         std::vector<search_hit> hits;
 
-        // Route panel state: input buffer + cached display data refreshed
-        // via set_route_state() after the caller parses a submission.
+        // Route panel state: input buffer + whether a route is active.
+        // Refreshed via set_route_state() / clear_route_state().
         std::string route_buf;
         bool has_route = false;
-        std::string route_shorthand;
-        std::vector<route_leg> route_legs;
         std::string route_error;
     };
 
@@ -39,18 +37,14 @@ namespace nasrbrowse
     {
         pimpl->route_error.clear();
         pimpl->has_route = true;
-        pimpl->route_shorthand = route.to_text();
-        pimpl->route_legs = compute_legs(route);
         // Snap the input buffer to the canonical shorthand so
         // auto-corrected entry/exit points are reflected.
-        pimpl->route_buf = pimpl->route_shorthand;
+        pimpl->route_buf = route.to_text();
     }
 
     void ui_overlay::clear_route_state(const std::string& error)
     {
         pimpl->has_route = false;
-        pimpl->route_shorthand.clear();
-        pimpl->route_legs.clear();
         pimpl->route_error = error;
     }
 
@@ -304,33 +298,6 @@ namespace nasrbrowse
                 result.clear_route = true;
                 d.route_buf.clear();
             }
-
-            auto total = 0.0;
-            const auto flags =
-                ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit;
-            if(ImGui::BeginTable("route_legs", 4, flags))
-            {
-                ImGui::TableSetupColumn("From");
-                ImGui::TableSetupColumn("To");
-                ImGui::TableSetupColumn("Dist (nm)");
-                ImGui::TableSetupColumn("Course (T)");
-                ImGui::TableHeadersRow();
-                for(const auto& leg : d.route_legs)
-                {
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::TextUnformatted(leg.from_id.c_str());
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::TextUnformatted(leg.to_id.c_str());
-                    ImGui::TableSetColumnIndex(2);
-                    ImGui::Text("%.1f", leg.distance_nm);
-                    ImGui::TableSetColumnIndex(3);
-                    ImGui::Text("%03.0f", leg.true_course_deg);
-                    total += leg.distance_nm;
-                }
-                ImGui::EndTable();
-            }
-            ImGui::Text("Total: %.1f nm", total);
         }
 
         ImGui::End();

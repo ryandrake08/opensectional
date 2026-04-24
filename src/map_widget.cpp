@@ -190,7 +190,6 @@ namespace
         double click_lon = 0.0;
         double click_lat = 0.0;
         std::vector<nasrbrowse::feature> features;
-        bool route_hit = false;
     };
 
     // Info-popup state: details for a single selected feature.
@@ -259,6 +258,14 @@ struct map_widget::impl
     std::optional<nasrbrowse::flight_route> route;
     bool route_selected = false;
     bool route_dirty = false;
+
+    // Route info-popup state: sibling to info_popup/pick_popup, but its
+    // visibility is driven by `route_selected` rather than a separate flag.
+    double route_popup_anchor_lon = 0.0;
+    double route_popup_anchor_lat = 0.0;
+    int route_popup_session_id = 0;
+    std::string route_popup_window_id;
+    int route_popup_warmup_frames = 0;
 
     // Route drag state. Waypoint hit takes priority over segment hit so
     // dragging an existing waypoint doesn't get mistaken for an insert.
@@ -589,11 +596,52 @@ struct map_widget::impl
         notify_route_changed();
     }
 
-    void set_route_selected(bool selected)
+    void set_route_selected(bool selected,
+                            double anchor_lon = 0.0, double anchor_lat = 0.0)
     {
+        if(selected)
+        {
+            route_popup_anchor_lon = anchor_lon;
+            route_popup_anchor_lat = anchor_lat;
+            if(!route_selected)
+            {
+                ++route_popup_session_id;
+                route_popup_window_id = "##route_info_popup_" +
+                                        std::to_string(route_popup_session_id);
+                route_popup_warmup_frames = 2;
+            }
+        }
         if(route_selected == selected) return;
         route_selected = selected;
         features.set_route_selected(selected);
+        needs_update = true;
+        update_tiles();
+    }
+
+    // Geographic centroid of the route's waypoints. Used as the popup
+    // anchor when the route is selected programmatically (no click point).
+    std::pair<double, double> route_centroid() const
+    {
+        auto sum_lon = 0.0;
+        auto sum_lat = 0.0;
+        const auto& wps = route->waypoints;
+        for(const auto& wp : wps)
+        {
+            sum_lon += nasrbrowse::waypoint_lon(wp);
+            sum_lat += nasrbrowse::waypoint_lat(wp);
+        }
+        auto n = static_cast<double>(wps.size());
+        return {sum_lon / n, sum_lat / n};
+    }
+
+    // Erase the active route entirely. Flags `route_dirty` so the main
+    // loop syncs ui_overlay's input buffer on the next iteration.
+    void erase_route()
+    {
+        route.reset();
+        features.set_route(std::nullopt);
+        set_route_selected(false);
+        route_dirty = true;
         needs_update = true;
         update_tiles();
     }
@@ -654,22 +702,12 @@ struct map_widget::impl
     {
         pick_popup.open = false;
         pick_popup.features.clear();
-        pick_popup.route_hit = false;
 
         auto result = pick_at(cursor_ndc_x, cursor_ndc_y);
 
-        auto route_hit = route && hit_route_segment(result.lon, result.lat).has_value();
-
-        // Route-only click (no other features): select directly without popup.
-        if(result.features.empty() && route_hit)
-        {
-            close_info_popup();
-            set_route_selected(true);
-            return;
-        }
-
         // Exact-point short-circuit: count point features within the
-        // exact-pick pixel radius of the click.
+        // exact-pick pixel radius of the click. A precise click on a
+        // feature wins over the route, even if the feature lies on it.
         const double exact_threshold_px = PICK_BOX_EXACT_SIZE_PIXELS;
         auto exact_count = 0;
         const nasrbrowse::feature* exact_hit = nullptr;
@@ -694,8 +732,23 @@ struct map_widget::impl
             return;
         }
 
-        // Opening the selector supersedes any stale info popup.
+        // Route hit: select directly and skip the pick dialog. The route
+        // has its own info popup so there's no reason to offer it as a
+        // selector row alongside feature candidates.
+        auto route_hit = route && hit_route_segment(result.lon, result.lat).has_value();
+        if(route_hit)
+        {
+            close_info_popup();
+            set_route_selected(true, result.lon, result.lat);
+            return;
+        }
+
+        if(result.features.empty()) return;
+
+        // Opening the selector supersedes any stale info popup or route
+        // selection, matching the behavior of the info popup.
         close_info_popup();
+        set_route_selected(false);
         pick_popup.open = true;
         ++pick_popup.session_id;
         pick_popup.window_id = "##pick_selector_" + std::to_string(pick_popup.session_id);
@@ -703,7 +756,6 @@ struct map_widget::impl
         pick_popup.click_lon = result.lon;
         pick_popup.click_lat = result.lat;
         pick_popup.features = std::move(result.features);
-        pick_popup.route_hit = route_hit;
         needs_update = true;
     }
 
@@ -747,18 +799,15 @@ struct map_widget::impl
             return false;
         }
 
-        if(!pick_popup.features.empty() || pick_popup.route_hit)
+        if(!pick_popup.features.empty())
         {
             ImGui::Separator();
 
-            // Group pick features by their canonical feature-section tag,
-            // then append a synthetic "ROUTE" section when the route was hit.
-            const auto route_section = nasrbrowse::FEATURE_SECTION_COUNT;
-            std::vector<nasrbrowse::ui_section> sections(route_section + 1);
-            std::vector<std::vector<int>> section_feature_index(route_section + 1);
+            // Group pick features by their canonical feature-section tag.
+            std::vector<nasrbrowse::ui_section> sections(nasrbrowse::FEATURE_SECTION_COUNT);
+            std::vector<std::vector<int>> section_feature_index(nasrbrowse::FEATURE_SECTION_COUNT);
             for(std::size_t s = 0; s < nasrbrowse::FEATURE_SECTION_COUNT; ++s)
                 sections.at(s).header = nasrbrowse::FEATURE_SECTIONS.at(s).header;
-            sections[route_section].header = "ROUTE";
 
             for(int i = 0; i < static_cast<int>(pick_popup.features.size()); ++i)
             {
@@ -770,26 +819,14 @@ struct map_widget::impl
                 section_feature_index[s].push_back(i);
             }
 
-            if(pick_popup.route_hit)
-                sections[route_section].items.emplace_back("Flight route");
-
             auto picked = nasrbrowse::draw_sectioned_selectable_list(sections);
             if(picked)
             {
-                if(static_cast<std::size_t>(picked->first) == route_section)
-                {
-                    close_info_popup();
-                    set_route_selected(true);
-                }
-                else
-                {
-                    auto fi = section_feature_index[picked->first][picked->second];
-                    open_info_popup(pick_popup.features[fi],
-                                    pick_popup.click_lon, pick_popup.click_lat);
-                }
+                auto fi = section_feature_index[picked->first][picked->second];
+                open_info_popup(pick_popup.features[fi],
+                                pick_popup.click_lon, pick_popup.click_lat);
                 pick_popup.open = false;
                 pick_popup.features.clear();
-                pick_popup.route_hit = false;
             }
         }
 
@@ -889,6 +926,86 @@ struct map_widget::impl
 
         auto need_more = info_popup.warmup_frames > 0;
         if(need_more) --info_popup.warmup_frames;
+        return need_more;
+    }
+
+    // Draw the info popup for the active flight route. Visibility is keyed
+    // on `route_selected`; off-screen anchor deselects the route.
+    bool draw_route_info_imgui()
+    {
+        if(!route_selected || !route) return false;
+
+        ImVec2 pos;
+        ImVec2 pivot;
+        if(!compute_popup_anchor(route_popup_anchor_lon,
+                                 route_popup_anchor_lat, pos, pivot))
+        {
+            set_route_selected(false);
+            return false;
+        }
+
+        ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
+        ImGui::SetNextWindowBgAlpha(0.9F);
+        ImGui::SetNextWindowSizeConstraints(
+            ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.9F));
+        ImGui::Begin(route_popup_window_id.c_str(), nullptr,
+            ImGuiWindowFlags_NoCollapse |
+            ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoTitleBar);
+
+        // Title row: "Flight route" on the left, [X] on the right.
+        ImGui::TextUnformatted("Flight route");
+        ImGui::SameLine();
+        auto btn_w = ImGui::GetFrameHeight();
+        auto avail = ImGui::GetContentRegionAvail().x;
+        if(avail > btn_w)
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btn_w);
+        if(ImGui::SmallButton("X##route_info_close"))
+        {
+            set_route_selected(false);
+            ImGui::End();
+            return false;
+        }
+        ImGui::Separator();
+
+        auto legs = nasrbrowse::compute_legs(*route);
+        const auto flags =
+            ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit;
+        if(ImGui::BeginTable("route_info_legs", 4, flags))
+        {
+            ImGui::TableSetupColumn("From");
+            ImGui::TableSetupColumn("To");
+            ImGui::TableSetupColumn("Dist (nm)");
+            ImGui::TableSetupColumn("Course (T)");
+            ImGui::TableHeadersRow();
+            for(const auto& leg : legs)
+            {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted(leg.from_id.c_str());
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextUnformatted(leg.to_id.c_str());
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%.1f", leg.distance_nm);
+                ImGui::TableSetColumnIndex(3);
+                ImGui::Text("%03.0f", leg.true_course_deg);
+            }
+            ImGui::EndTable();
+        }
+        ImGui::Text("Total: %.1f nm", nasrbrowse::total_distance_nm(legs));
+
+        if(ImGui::Button("Delete route"))
+        {
+            erase_route();
+            ImGui::End();
+            return false;
+        }
+
+        ImGui::End();
+
+        auto need_more = route_popup_warmup_frames > 0;
+        if(need_more) --route_popup_warmup_frames;
         return need_more;
     }
 };
@@ -1003,13 +1120,13 @@ void map_widget::button_event(sdl::input_button_t button, sdl::input_action_t ac
             {
                 pimpl->route_drag.mode = impl::route_drag_mode::waypoint;
                 pimpl->route_drag.index = *wp;
-                pimpl->set_route_selected(true);
+                pimpl->set_route_selected(true, lon, lat);
             }
             else if(auto seg = pimpl->hit_route_segment(lon, lat))
             {
                 pimpl->route_drag.mode = impl::route_drag_mode::segment;
                 pimpl->route_drag.index = *seg;
-                pimpl->set_route_selected(true);
+                pimpl->set_route_selected(true, lon, lat);
             }
         }
     }
@@ -1035,6 +1152,7 @@ bool map_widget::draw_imgui()
     // one's warmup frames propagate upward.
     auto a = pimpl->draw_pick_imgui();
     auto b = pimpl->draw_info_imgui();
+    auto c = pimpl->draw_route_info_imgui();
 
     if(pimpl->route_drag.mode != impl::route_drag_mode::none && pimpl->route)
     {
@@ -1065,7 +1183,7 @@ bool map_widget::draw_imgui()
         }
     }
 
-    return a || b;
+    return a || b || c;
 }
 
 void map_widget::cursor_position_event(double xpos, double ypos)
@@ -1234,13 +1352,15 @@ void map_widget::set_route_text(const std::string& text)
     // May throw route_parse_error; caller handles.
     pimpl->route.emplace(text, pimpl->pick_db);
     pimpl->features.set_route(pimpl->route);
-    pimpl->route_selected = true;
 
     // Fit the view to the route's bounding box (20% padding), so the
     // pilot sees the whole route after pressing Set.
     const auto& wps = pimpl->route->waypoints;
     if(!wps.empty())
     {
+        auto [cx, cy] = pimpl->route_centroid();
+        pimpl->set_route_selected(true, cx, cy);
+
         auto lat_min = nasrbrowse::waypoint_lat(wps[0]);
         auto lat_max = lat_min;
         auto lon_min = nasrbrowse::waypoint_lon(wps[0]);
@@ -1289,11 +1409,7 @@ void map_widget::set_route_text(const std::string& text)
 
 void map_widget::clear_route()
 {
-    pimpl->route.reset();
-    pimpl->features.set_route(std::nullopt);
-    pimpl->route_selected = false;
-    pimpl->needs_update = true;
-    pimpl->update_tiles();
+    pimpl->erase_route();
 }
 
 const std::optional<nasrbrowse::flight_route>& map_widget::route() const
