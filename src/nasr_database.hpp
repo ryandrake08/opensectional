@@ -540,6 +540,9 @@ namespace nasrbrowse
         // May return multiple results — navaid and fix identifiers are not
         // globally unique (duplicates across states/regions). Airport IDs
         // are unique in practice but returned as a vector for consistency.
+        // Airports with an assigned ICAO ID are matched only by that ICAO ID
+        // (e.g. "KSAC"); their bare FAA ID (e.g. "SAC") is treated as a
+        // navaid/fix token. Airports without an ICAO ID match on FAA ID.
         std::vector<airport> lookup_airports(const std::string& id) const;
         std::vector<navaid> lookup_navaids(const std::string& id) const;
         std::vector<fix> lookup_fixes(const std::string& id) const;

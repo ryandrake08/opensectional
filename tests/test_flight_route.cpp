@@ -65,6 +65,17 @@ TEST_CASE("route beginning with lat/lon and ending at navaid")
     CHECK(std::holds_alternative<latlon_ref>(route.waypoints[0]));
 }
 
+TEST_CASE("bare FAA ID of an ICAO-assigned airport resolves to a navaid")
+{
+    // "SAC" is both the FAA ID of KSAC (Sacramento Executive) and the
+    // ID of the SACRAMENTO VORTAC. User-entered routes should prefer
+    // the navaid; the ICAO ID "KSAC" is required to pick the airport.
+    flight_route route("SAC KSAC", test_db());
+    REQUIRE(route.waypoints.size() == 2);
+    CHECK(std::holds_alternative<navaid_ref>(route.waypoints[0]));
+    CHECK(std::holds_alternative<airport_ref>(route.waypoints[1]));
+}
+
 TEST_CASE("unknown waypoint throws route_parse_error")
 {
     try

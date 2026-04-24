@@ -552,7 +552,8 @@ namespace nasrbrowse
                        END AS airspace_class
                 FROM APT_BASE a
                 LEFT JOIN CLS_ARSP c ON c.SITE_NO = a.SITE_NO
-                WHERE a.ARPT_ID = ?1 OR a.ICAO_ID = ?1
+                WHERE a.ICAO_ID = ?1
+                   OR (a.ARPT_ID = ?1 AND a.ICAO_ID = '')
             )", 26))
 
             , stmt_lookup_navaid(prepare_checked(db, R"(
