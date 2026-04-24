@@ -164,7 +164,7 @@ namespace nasrbrowse
                        FROM_LAT, FROM_LON, TO_LAT, TO_LON,
                        AWY_SEG_GAP_FLAG, MIN_ENROUTE_ALT, MAG_COURSE_DIST
                 FROM AWY_SEG
-                WHERE AWY_SEG_GAP_FLAG != 'Y' AND AWY_ID = ?1
+                WHERE AWY_ID = ?1
             )", 12))
 
             , stmt_adjacent_airways(prepare_checked(db, R"(

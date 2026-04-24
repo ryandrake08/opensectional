@@ -161,7 +161,20 @@ Shaders are cross-compiled automatically during the build:
 
 ## Data Preparation
 
-NASRBrowse requires two data sources prepared offline:
+NASRBrowse draws on the following upstream data sources.
+
+| Data | Source | Website | Cadence | Ingester |
+|---|---|---|---|---|
+| NASR CSV subscription | FAA | https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/ | 28-day cycle | build_nasr.py |
+| Class airspace shapefiles | FAA | https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/ | 28-day cycle | build_shp.py |
+| Special use airspace (AIXM 5.0) | FAA | https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/ | 28-day cycle | build_aixm.py |
+| Digital Obstacle File | FAA | https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dof/ | 56-day cycle | build_dof.py |
+| ADIZ boundaries | FAA | https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/ArcGIS/rest/services/Airspace/FeatureServer | Irregular | build_adiz.py |
+| Temporary flight restrictions | FAA | https://tfr.faa.gov/ | Continuous (as NOTAMs are issued) | build_tfr.py |
+| Natural Earth basemap | Natural Earth | https://www.naturalearthdata.com/ | Irregular | render_basemap.py |
+
+Two offline artifacts are produced from these sources: the aviation database and the
+basemap tile directory.
 
 ### 1. NASR Database
 
@@ -257,6 +270,12 @@ For a basemap derived from FAA aeronav charts, generate XYZ tile pyramids using 
 | Drag route waypoint → adjacent waypoint | Delete the dragged waypoint |
 
 Type a route string in the "Route" panel at the top-center, e.g. `O61 LIN V459 LOPES KTSP`, and press Enter or click **Set**. Waypoints may be airports, navaids, fixes, or raw lat/lon (`DDMMSSXDDDMMSSY`, e.g. `383412N1210305W`). Three-token runs `ENTRY AIRWAY EXIT` expand airway shorthand into individual fixes (auto-correcting ENTRY/EXIT to the closest airway fix if needed).
+
+After a route is parsed or drag-edited, NASRBrowse rewrites it into its most compact airway-aware form:
+
+- **Airway compaction.** A run of three or more consecutive waypoints that are sequential fixes on a common airway is collapsed into that airway's shorthand. `SLI DODGR DARTS BERRI KIMMO` becomes `SLI V459 KIMMO`.
+- **Colinear coercion.** A user-typed direct leg A→B is rewritten to airway shorthand when both endpoints share an airway *and* every intermediate fix of that airway lies within 0.5 NM of the direct great-circle path. The check is iterative from the near edge, so effectively-straight airways spanning hundreds of miles still coerce even when the midpoint shows a larger global cross-track. If any intermediate fails the tolerance, the leg is left alone — the user's typed direct route is always preserved.
+- **Discontinuous airways.** When an airway has a published gap (for example `V23` between `FRAME` and `EBTUW`) and a traversal crosses it, the route splits into two airway segments joined by an explicit bridge waypoint. `KSMF V23 KBFL` becomes `KSMF CAPTO V23 EBTUW FRAME V23 EHF KBFL`.
 
 ### Command Line Options
 

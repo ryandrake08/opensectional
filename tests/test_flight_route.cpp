@@ -189,6 +189,44 @@ TEST_CASE("coerce does not affect pairs that are already adjacent on an airway")
     CHECK(route.elements.size() == 2);
 }
 
+TEST_CASE("expand_airway splits at published discontinuities")
+{
+    // V23 has a gap_flag='Y' segment between FRAME and EBTUW, so a
+    // traversal that crosses it must bridge with explicit waypoints.
+    // KSMF auto-corrects the entry to CAPTO (high seq) and KBFL
+    // auto-corrects the exit to EHF (low seq), so the walk passes
+    // right through the gap. The collapse pass then re-emits CAPTO
+    // as a leading waypoint of its airway_ref, matching the form a
+    // user would naturally type.
+    flight_route route("KSMF V23 KBFL", test_db());
+    CHECK(route.to_text() == "KSMF CAPTO V23 EBTUW FRAME V23 EHF KBFL");
+
+    // elements: KSMF_wp, CAPTO_wp, airway_ref(CAPTO->EBTUW),
+    //           FRAME_wp, airway_ref(FRAME->EHF), KBFL_wp
+    REQUIRE(route.elements.size() == 6);
+    CHECK(waypoint_id(std::get<route_waypoint>(route.elements[0])) == "KSMF");
+    CHECK(waypoint_id(std::get<route_waypoint>(route.elements[1])) == "CAPTO");
+    REQUIRE(std::holds_alternative<airway_ref>(route.elements[2]));
+    CHECK(std::get<airway_ref>(route.elements[2]).airway_id == "V23");
+    CHECK(std::get<airway_ref>(route.elements[2]).entry_id == "CAPTO");
+    CHECK(std::get<airway_ref>(route.elements[2]).exit_id == "EBTUW");
+    CHECK(waypoint_id(std::get<route_waypoint>(route.elements[3])) == "FRAME");
+    REQUIRE(std::holds_alternative<airway_ref>(route.elements[4]));
+    CHECK(std::get<airway_ref>(route.elements[4]).entry_id == "FRAME");
+    CHECK(std::get<airway_ref>(route.elements[4]).exit_id == "EHF");
+    CHECK(waypoint_id(std::get<route_waypoint>(route.elements[5])) == "KBFL");
+}
+
+TEST_CASE("coerce does not connect fixes across a published airway gap")
+{
+    // EBTUW and FRAME are both on V23 but only as endpoints of its
+    // gap segment. A user-typed direct "EBTUW FRAME" must stay direct.
+    flight_route route("EBTUW FRAME", test_db());
+    CHECK(route.to_text() == "EBTUW FRAME");
+    REQUIRE(route.waypoints.size() == 2);
+    CHECK(route.elements.size() == 2);
+}
+
 TEST_CASE("coerce's iterative anchor handles long airways a single-pass check would reject")
 {
     // AR16 goes PERMT -> LENDS -> GRUBR -> SNABS -> SEELO over 279 NM.

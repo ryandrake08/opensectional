@@ -2412,6 +2412,7 @@ namespace nasrbrowse
             auto ls = selection_line_style(ctx.styles.airway_style(v.awy_id));
             for(const auto& seg : ctx.db.query_airway_by_id(v.awy_id))
             {
+                if(seg.gap_flag == "Y") continue;
                 auto arc = geodesic_interpolate(
                     seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon);
                 std::vector<glm::vec2> polyline;

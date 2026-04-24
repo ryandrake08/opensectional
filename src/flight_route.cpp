@@ -186,12 +186,17 @@ namespace nasrbrowse
     // One point on an airway — the fix name plus its coordinates as
     // stored on the airway segment. `lat`/`lon` are authoritative for
     // the airway's geometry; the same name may resolve to a nearby
-    // navaid or fix via resolve_awy_point.
+    // navaid or fix via resolve_awy_point. `gap_after` marks a
+    // discontinuity in the airway: the segment from this point to the
+    // next one in the list is a published AWY_SEG row with gap_flag='Y'
+    // — the airway does not actually connect them, and a route that
+    // traverses this pair must bridge it with an explicit direct leg.
     struct awy_point
     {
         std::string name;
         double lat;
         double lon;
+        bool gap_after = false;
     };
 
     // Resolve an airway point's name to the closest navaid/fix, falling
@@ -222,7 +227,8 @@ namespace nasrbrowse
     }
 
     // Build an ordered list of unique (name, lat, lon) points along an
-    // airway. Segments are sorted by point_seq.
+    // airway, including the gap_after marker for published
+    // discontinuities. Segments are sorted by point_seq.
     static std::vector<awy_point>
     airway_points(const std::string& airway_id, const nasr_database& db)
     {
@@ -234,15 +240,27 @@ namespace nasrbrowse
         for(const auto& seg : segments)
         {
             if(points.empty() || points.back().name != seg.from_point)
-                points.push_back({seg.from_point, seg.from_lat, seg.from_lon});
-            points.push_back({seg.to_point, seg.to_lat, seg.to_lon});
+                points.push_back({seg.from_point, seg.from_lat, seg.from_lon, false});
+            if(seg.gap_flag == "Y")
+                points.back().gap_after = true;
+            points.push_back({seg.to_point, seg.to_lat, seg.to_lon, false});
         }
         return points;
     }
 
-    // Build an ordered list of unique waypoints along an airway from
-    // entry_id to exit_id. Returns empty on failure.
-    static std::vector<route_waypoint>
+    // Walk an airway from entry_id to exit_id, splitting at any
+    // published discontinuities. Returns one or more elements:
+    //
+    //   - A continuous traversal produces a single airway_ref.
+    //   - A traversal crossing N gaps produces N+1 airway_refs
+    //     interleaved with N explicit bridge waypoints.
+    //   - An "empty" section (entry adjacent to exit via just a gap)
+    //     is emitted as two bare waypoints rather than a degenerate
+    //     airway_ref over a single fix.
+    //
+    // Returns an empty vector on failure (unknown entry/exit, or
+    // entry == exit).
+    static std::vector<route_element>
     expand_airway(const std::string& airway_id,
                   const std::string& entry_id,
                   const std::string& exit_id,
@@ -265,9 +283,63 @@ namespace nasrbrowse
             return {};
 
         auto step = (exit_idx > entry_idx) ? 1 : -1;
-        std::vector<route_waypoint> result;
-        for(int i = entry_idx; i != exit_idx + step; i += step)
-            result.push_back(resolve_awy_point(points[i], db));
+
+        // Is the segment between points[pos] and points[pos+step] a gap?
+        auto crosses_gap = [&](int pos)
+        {
+            auto g = (step == 1) ? pos : pos + step;
+            return g >= 0 && g < static_cast<int>(points.size())
+                   && points[g].gap_after;
+        };
+
+        // Finalize a contiguous section of length `section.size()` as
+        // either an airway_ref (>= 2 points) or a bare waypoint (1).
+        // A 0-length section is skipped.
+        auto flush = [&](std::vector<route_waypoint>& section,
+                          std::vector<route_element>& out)
+        {
+            if(section.size() >= 2)
+            {
+                out.push_back(airway_ref{
+                    airway_id,
+                    waypoint_id(section.front()),
+                    waypoint_id(section.back()),
+                    section});
+            }
+            else if(section.size() == 1)
+            {
+                out.push_back(section.front());
+            }
+            section.clear();
+        };
+
+        std::vector<route_element> result;
+        std::vector<route_waypoint> section;
+        auto i = entry_idx;
+        while(true)
+        {
+            section.push_back(resolve_awy_point(points[i], db));
+            if(i == exit_idx) break;
+            if(crosses_gap(i))
+            {
+                flush(section, result);
+                // Step across the gap and emit the far side as an
+                // explicit bridge waypoint, which also seeds the next
+                // section.
+                i += step;
+                auto bridge = resolve_awy_point(points[i], db);
+                result.push_back(bridge);
+                section.push_back(std::move(bridge));
+                if(i == exit_idx) break;
+            }
+            i += step;
+        }
+        // The last point (exit) is already in `section`, and the
+        // bridge-seeding branch above already pushed its duplicate to
+        // `result`. Avoid re-emitting when the section collapsed to
+        // just that bridge.
+        if(section.size() >= 2)
+            flush(section, result);
         return result;
     }
 
@@ -481,8 +553,11 @@ namespace nasrbrowse
                             .append(" to ").append(actual_exit),
                         airway_id, ti);
 
-                elements.push_back(airway_ref{
-                    airway_id, actual_entry, actual_exit, std::move(expanded)});
+                // expand_airway may have split at a discontinuity,
+                // producing multiple airway_refs interleaved with
+                // bridge waypoints.
+                for(auto& elem : expanded)
+                    elements.push_back(std::move(elem));
 
                 // If exit was auto-corrected, add the original exit as a
                 // separate waypoint
@@ -795,6 +870,15 @@ namespace nasrbrowse
                         if(points[k].name == id_b) { idx_b = k; break; }
                     if(idx_a < 0 || idx_b < 0 || idx_a == idx_b) continue;
 
+                    // A published gap anywhere in the walk means the
+                    // airway does not actually connect a and b. Skip.
+                    auto lo = std::min(idx_a, idx_b);
+                    auto hi = std::max(idx_a, idx_b);
+                    auto has_gap = false;
+                    for(auto k = lo; k < hi; ++k)
+                        if(points[k].gap_after) { has_gap = true; break; }
+                    if(has_gap) continue;
+
                     auto step = (idx_b > idx_a) ? 1 : -1;
                     auto anchor_lat = waypoint_lat(a);
                     auto anchor_lon = waypoint_lon(a);
@@ -883,6 +967,11 @@ namespace nasrbrowse
                                 if(nxt < 0 ||
                                    nxt >= static_cast<int>(points.size()))
                                     break;
+                                // Stop at a published discontinuity:
+                                // even if the names line up, the airway
+                                // does not connect pos to nxt.
+                                auto gap_idx = std::min(pos, nxt);
+                                if(points[gap_idx].gap_after) break;
                                 if(points[nxt].name != waypoint_id(waypoints[k + 1]))
                                     break;
                                 ++k;
