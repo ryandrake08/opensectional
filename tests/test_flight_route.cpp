@@ -126,14 +126,81 @@ TEST_CASE("airway_ize leaves 2-waypoint routes alone")
     CHECK(std::holds_alternative<route_waypoint>(route.elements[1]));
 }
 
-TEST_CASE("airway_ize does not collapse non-adjacent fixes on the same airway")
+TEST_CASE("airway_ize does not collapse fixes skipping a bent airway's intermediates")
 {
-    // DODGR and BERRI are both on V459 but skip DARTS — don't collapse.
-    flight_route route("DODGR BERRI KIMMO", test_db());
-    REQUIRE(route.waypoints.size() == 3);
-    CHECK(route.elements.size() == 3);
+    // A337 goes JUNIE -> AXIDE -> FONUG -> SNAPP -> TEEDE -> TEGOD
+    // with large bends: AXIDE is already ~4.5 NM off the direct
+    // JUNIE->TEGOD great circle, far outside the 0.5 NM tolerance.
+    // The user's "direct JUNIE TEGOD" must be preserved.
+    flight_route route("JUNIE TEGOD", test_db());
+    REQUIRE(route.waypoints.size() == 2);
+    CHECK(route.elements.size() == 2);
+    CHECK(std::holds_alternative<route_waypoint>(route.elements[0]));
+    CHECK(std::holds_alternative<route_waypoint>(route.elements[1]));
+    CHECK(route.to_text() == "JUNIE TEGOD");
+}
+
+TEST_CASE("coerce fills colinear intermediates on a visually straight airway")
+{
+    // V459 is a visually-straight run: SLI -> DODGR -> DARTS -> BERRI
+    // -> KIMMO. The user typed SLI KIMMO direct, but every intermediate
+    // has XTE < 0.001 NM from the direct great circle, so coerce
+    // inserts them and the collapse pass folds the run into shorthand.
+    flight_route route("SLI KIMMO", test_db());
+    CHECK(route.to_text() == "SLI V459 KIMMO");
+    REQUIRE(route.elements.size() == 2);
+    REQUIRE(std::holds_alternative<airway_ref>(route.elements[1]));
+    const auto& aref = std::get<airway_ref>(route.elements[1]);
+    CHECK(aref.airway_id == "V459");
+    CHECK(aref.entry_id == "SLI");
+    CHECK(aref.exit_id == "KIMMO");
+}
+
+TEST_CASE("coerce does not fire when endpoints share no airway")
+{
+    // O61 is an airport (not on any airway) and KMER is also an
+    // airport. Direct leg must stay direct.
+    flight_route route("O61 KMER", test_db());
+    CHECK(route.to_text() == "O61 KMER");
+    CHECK(route.elements.size() == 2);
     for(const auto& e : route.elements)
         CHECK(std::holds_alternative<route_waypoint>(e));
+}
+
+TEST_CASE("coerce is all-or-nothing: one bent intermediate vetoes the whole run")
+{
+    // JUNIE and TEGOD are the endpoints of A337. Even though they share
+    // an airway, AXIDE alone is ~4.5 NM off the direct line, which
+    // exceeds the 0.5 NM tolerance on the very first check. Nothing
+    // gets inserted — not even the failing AXIDE.
+    flight_route route("JUNIE TEGOD", test_db());
+    REQUIRE(route.waypoints.size() == 2);
+    CHECK(waypoint_id(route.waypoints[0]) == "JUNIE");
+    CHECK(waypoint_id(route.waypoints[1]) == "TEGOD");
+}
+
+TEST_CASE("coerce does not affect pairs that are already adjacent on an airway")
+{
+    // SLI and DODGR are adjacent on V459 (no intermediates to insert).
+    // Coerce has nothing to do; collapse also leaves it alone because
+    // length-2 runs aren't worth collapsing.
+    flight_route route("SLI DODGR", test_db());
+    CHECK(route.to_text() == "SLI DODGR");
+    CHECK(route.elements.size() == 2);
+}
+
+TEST_CASE("coerce's iterative anchor handles long airways a single-pass check would reject")
+{
+    // AR16 goes PERMT -> LENDS -> GRUBR -> SNABS -> SEELO over 279 NM.
+    // The mid fix's XTE from the direct PERMT->SEELO great circle is
+    // 0.82 NM (would fail a 0.5 NM single-pass threshold), but each
+    // hop's XTE from the current anchor is <0.5 NM, so the iterative
+    // coerce succeeds and collapses into AR16 shorthand.
+    flight_route route("PERMT SEELO", test_db());
+    CHECK(route.to_text() == "PERMT AR16 SEELO");
+    REQUIRE(route.elements.size() == 2);
+    REQUIRE(std::holds_alternative<airway_ref>(route.elements[1]));
+    CHECK(std::get<airway_ref>(route.elements[1]).airway_id == "AR16");
 }
 
 TEST_CASE("airway_ize re-collapses after delete_waypoint flattens an airway")

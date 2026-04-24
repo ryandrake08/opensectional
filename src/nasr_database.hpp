@@ -504,6 +504,13 @@ namespace nasrbrowse
         // flight_route::airway_ize to detect sequential-fix runs.
         std::vector<std::string> adjacent_airways(const std::string& a,
                                                    const std::string& b) const;
+
+        // Return airway IDs that contain `fix_name` as either endpoint
+        // of any segment. Used by the coerce pass in airway_ize to
+        // find candidate airways shared between two non-adjacent
+        // waypoints.
+        std::vector<std::string> airways_containing(
+            const std::string& fix_name) const;
         std::vector<maa> query_maas(const geo_bbox& bbox) const;
         std::vector<class_airspace> query_class_airspace(const geo_bbox& bbox) const;
         std::vector<runway> query_runways(const geo_bbox& bbox) const;

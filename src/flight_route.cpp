@@ -157,29 +157,79 @@ namespace nasrbrowse
         return 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a)) * EARTH_RADIUS_NM;
     }
 
-    // Build an ordered list of unique waypoints along an airway from
-    // entry_id to exit_id. Segments are sorted by point_seq. Returns
-    // empty on failure.
-    static std::vector<route_waypoint>
-    expand_airway(const std::string& airway_id,
-                  const std::string& entry_id,
-                  const std::string& exit_id,
-                  const nasr_database& db)
+    // Signed cross-track distance in NM from point (lat_p, lon_p) to the
+    // great circle through (lat1, lon1) and (lat2, lon2). Absolute value
+    // is the perpendicular distance from the point to the great circle.
+    static double cross_track_nm(double lat1, double lon1,
+                                  double lat2, double lon2,
+                                  double lat_p, double lon_p)
+    {
+        constexpr auto DEG2RAD = 3.14159265358979323846 / 180.0;
+        constexpr auto EARTH_RADIUS_NM = 3440.065;
+        auto d13 = haversine_nm(lat1, lon1, lat_p, lon_p);
+        if(d13 == 0.0) return 0.0;
+        auto rla1 = lat1 * DEG2RAD;
+        auto rla2 = lat2 * DEG2RAD;
+        auto rla3 = lat_p * DEG2RAD;
+        auto dlon12 = (lon2 - lon1) * DEG2RAD;
+        auto dlon13 = (lon_p - lon1) * DEG2RAD;
+        auto b12 = std::atan2(std::sin(dlon12) * std::cos(rla2),
+                              std::cos(rla1) * std::sin(rla2) -
+                              std::sin(rla1) * std::cos(rla2) * std::cos(dlon12));
+        auto b13 = std::atan2(std::sin(dlon13) * std::cos(rla3),
+                              std::cos(rla1) * std::sin(rla3) -
+                              std::sin(rla1) * std::cos(rla3) * std::cos(dlon13));
+        return std::asin(std::sin(d13 / EARTH_RADIUS_NM) *
+                         std::sin(b13 - b12)) * EARTH_RADIUS_NM;
+    }
+
+    // One point on an airway — the fix name plus its coordinates as
+    // stored on the airway segment. `lat`/`lon` are authoritative for
+    // the airway's geometry; the same name may resolve to a nearby
+    // navaid or fix via resolve_awy_point.
+    struct awy_point
+    {
+        std::string name;
+        double lat;
+        double lon;
+    };
+
+    // Resolve an airway point's name to the closest navaid/fix, falling
+    // back to a bare lat/lon if neither matches. Duplicate navaid/fix
+    // names are disambiguated by proximity to the airway's coordinates.
+    static route_waypoint resolve_awy_point(const awy_point& p,
+                                             const nasr_database& db)
+    {
+        auto navs = db.lookup_navaids(p.name);
+        if(!navs.empty())
+        {
+            auto& best = *std::min_element(navs.begin(), navs.end(),
+                [&](const navaid& a, const navaid& b)
+                { return haversine_nm(p.lat, p.lon, a.lat, a.lon) <
+                         haversine_nm(p.lat, p.lon, b.lat, b.lon); });
+            return navaid_ref{p.name, std::move(best)};
+        }
+        auto fixes = db.lookup_fixes(p.name);
+        if(!fixes.empty())
+        {
+            auto& best = *std::min_element(fixes.begin(), fixes.end(),
+                [&](const fix& a, const fix& b)
+                { return haversine_nm(p.lat, p.lon, a.lat, a.lon) <
+                         haversine_nm(p.lat, p.lon, b.lat, b.lon); });
+            return fix_ref{p.name, std::move(best)};
+        }
+        return latlon_ref{p.lat, p.lon};
+    }
+
+    // Build an ordered list of unique (name, lat, lon) points along an
+    // airway. Segments are sorted by point_seq.
+    static std::vector<awy_point>
+    airway_points(const std::string& airway_id, const nasr_database& db)
     {
         auto segments = db.query_airway_by_id(airway_id);
-        if(segments.empty())
-            return {};
-
         std::sort(segments.begin(), segments.end(),
                   [](const airway_segment& a, const airway_segment& b)
                   { return a.point_seq < b.point_seq; });
-
-        // Build ordered list of (name, lat, lon) from segments
-        struct awy_point
-        {
-            std::string name;
-            double lat, lon;
-        };
         std::vector<awy_point> points;
         for(const auto& seg : segments)
         {
@@ -187,8 +237,20 @@ namespace nasrbrowse
                 points.push_back({seg.from_point, seg.from_lat, seg.from_lon});
             points.push_back({seg.to_point, seg.to_lat, seg.to_lon});
         }
+        return points;
+    }
 
-        // Find entry and exit indices
+    // Build an ordered list of unique waypoints along an airway from
+    // entry_id to exit_id. Returns empty on failure.
+    static std::vector<route_waypoint>
+    expand_airway(const std::string& airway_id,
+                  const std::string& entry_id,
+                  const std::string& exit_id,
+                  const nasr_database& db)
+    {
+        auto points = airway_points(airway_id, db);
+        if(points.empty()) return {};
+
         auto entry_idx = -1;
         auto exit_idx = -1;
         for(int i = 0; i < static_cast<int>(points.size()); ++i)
@@ -202,38 +264,10 @@ namespace nasrbrowse
         if(entry_idx < 0 || exit_idx < 0 || entry_idx == exit_idx)
             return {};
 
-        // Walk forward or backward depending on order
         auto step = (exit_idx > entry_idx) ? 1 : -1;
         std::vector<route_waypoint> result;
         for(int i = entry_idx; i != exit_idx + step; i += step)
-        {
-            auto& p = points[i];
-            // Try to resolve as navaid first, then fix.
-            // Pick the one closest to the airway's known coordinates.
-            auto navs = db.lookup_navaids(p.name);
-            if(!navs.empty())
-            {
-                auto& best = *std::min_element(navs.begin(), navs.end(),
-                    [&](const navaid& a, const navaid& b)
-                    { return haversine_nm(p.lat, p.lon, a.lat, a.lon) <
-                             haversine_nm(p.lat, p.lon, b.lat, b.lon); });
-                result.push_back(navaid_ref{p.name, std::move(best)});
-                continue;
-            }
-            auto fixes = db.lookup_fixes(p.name);
-            if(!fixes.empty())
-            {
-                auto& best = *std::min_element(fixes.begin(), fixes.end(),
-                    [&](const fix& a, const fix& b)
-                    { return haversine_nm(p.lat, p.lon, a.lat, a.lon) <
-                             haversine_nm(p.lat, p.lon, b.lat, b.lon); });
-                result.push_back(fix_ref{p.name, std::move(best)});
-                continue;
-            }
-            // Fallback: use the coordinates from the airway data
-            result.push_back(latlon_ref{p.lat, p.lon});
-        }
-
+            result.push_back(resolve_awy_point(points[i], db));
         return result;
     }
 
@@ -674,48 +708,151 @@ namespace nasrbrowse
     // ---------------------------------------------------------------
     // airway_ize
     //
-    // Walk `waypoints` and detect the longest run starting at each
-    // index i where waypoints[i..j] are consecutive points of a common
-    // airway (in either forward or reverse order). Collapse runs of
-    // length >= 3 into a single airway_ref element. A length-2 run
-    // isn't worth collapsing — "A AWY B" has more tokens than "A B".
+    // Two passes over `waypoints`:
+    //
+    // 1. Coerce pass — for each consecutive pair (a, b) that the user
+    //    typed as a direct leg, check whether both lie on a common
+    //    airway and all intermediate fixes of that airway are colinear
+    //    (within COERCE_XTE_NM) with the user's direct path. If so,
+    //    insert the intermediates so the collapse pass can fold them
+    //    into shorthand. Colinearity is checked iteratively: the GC
+    //    shortens as each intermediate is accepted, so slightly-bent
+    //    long airways still pass as long as every local hop is on-line.
+    //    All-or-nothing: if any intermediate fails, the pair is left
+    //    untouched rather than partially filled.
+    //
+    // 2. Collapse pass — walk `waypoints` and detect runs of three or
+    //    more consecutive points that form a sequential path along a
+    //    common airway. Collapse each run into an airway_ref element.
+    //    A length-2 run isn't collapsed — "A AWY B" has more tokens
+    //    than "A B".
     // ---------------------------------------------------------------
+
+    // Tight tolerance: false positives silently reroute the user, so
+    // only coerce airways that are effectively a single straight line.
+    // 0.5 NM is an order of magnitude tighter than enroute airway
+    // width (4 NM each side of centerline).
+    static constexpr auto COERCE_XTE_NM = 0.5;
 
     void flight_route::airway_ize(const nasr_database& db)
     {
-        if(waypoints.size() < 3) return;
+        if(waypoints.size() < 2) return;
 
-        // Per-call cache of airway_id -> ordered list of fix names.
-        // Airways are fetched at most once each per airway_ize call.
-        std::unordered_map<std::string, std::vector<std::string>> awy_cache;
+        // Per-call cache of airway_id -> ordered list of points.
+        std::unordered_map<std::string, std::vector<awy_point>> awy_cache;
 
         auto get_airway_points = [&](const std::string& awy_id)
-            -> const std::vector<std::string>&
+            -> const std::vector<awy_point>&
         {
             auto it = awy_cache.find(awy_id);
             if(it != awy_cache.end()) return it->second;
-
-            auto segments = db.query_airway_by_id(awy_id);
-            std::sort(segments.begin(), segments.end(),
-                      [](const airway_segment& a, const airway_segment& b)
-                      { return a.point_seq < b.point_seq; });
-            std::vector<std::string> points;
-            for(const auto& seg : segments)
-            {
-                if(points.empty() || points.back() != seg.from_point)
-                    points.push_back(seg.from_point);
-                points.push_back(seg.to_point);
-            }
-            return awy_cache.emplace(awy_id, std::move(points)).first->second;
+            return awy_cache.emplace(awy_id, airway_points(awy_id, db))
+                .first->second;
         };
+
+        // -----------------------------------------------------------
+        // Coerce pass
+        // -----------------------------------------------------------
+        //
+        // For each pair (waypoints[i], waypoints[i+1]), find common
+        // airways and try to insert all intermediates if they are
+        // colinear. If successful, advance past the inserted range.
+        {
+            auto i = size_t{0};
+            while(i + 1 < waypoints.size())
+            {
+                const auto& a = waypoints[i];
+                const auto& b = waypoints[i + 1];
+                auto id_a = waypoint_id(a);
+                auto id_b = waypoint_id(b);
+
+                // Find airways containing both a and b.
+                auto aa = db.airways_containing(id_a);
+                auto ab = db.airways_containing(id_b);
+                std::sort(aa.begin(), aa.end());
+                std::sort(ab.begin(), ab.end());
+                std::vector<std::string> common;
+                std::set_intersection(aa.begin(), aa.end(),
+                                      ab.begin(), ab.end(),
+                                      std::back_inserter(common));
+
+                // Pick the airway that yields the most accepted
+                // intermediates. Ties broken by lexicographic order
+                // for determinism.
+                std::vector<route_waypoint> best_inserts;
+                for(const auto& awy_id : common)
+                {
+                    const auto& points = get_airway_points(awy_id);
+
+                    // First occurrence of each name. Airway fix names
+                    // are unique in practice; if they ever aren't, we
+                    // err on the side of coercing less rather than more.
+                    auto idx_a = -1;
+                    for(auto k = 0; k < static_cast<int>(points.size()); ++k)
+                        if(points[k].name == id_a) { idx_a = k; break; }
+                    auto idx_b = -1;
+                    for(auto k = 0; k < static_cast<int>(points.size()); ++k)
+                        if(points[k].name == id_b) { idx_b = k; break; }
+                    if(idx_a < 0 || idx_b < 0 || idx_a == idx_b) continue;
+
+                    auto step = (idx_b > idx_a) ? 1 : -1;
+                    auto anchor_lat = waypoint_lat(a);
+                    auto anchor_lon = waypoint_lon(a);
+                    auto end_lat = waypoint_lat(b);
+                    auto end_lon = waypoint_lon(b);
+                    std::vector<route_waypoint> accepted;
+                    auto ok = true;
+                    for(auto k = idx_a + step; k != idx_b; k += step)
+                    {
+                        const auto& p = points[k];
+                        // Guard against a name collision where an
+                        // intermediate happens to have the same name
+                        // as the endpoint.
+                        if(p.name == id_a || p.name == id_b) { ok = false; break; }
+                        auto xt = cross_track_nm(anchor_lat, anchor_lon,
+                                                  end_lat, end_lon,
+                                                  p.lat, p.lon);
+                        if(std::abs(xt) > COERCE_XTE_NM) { ok = false; break; }
+                        accepted.push_back(resolve_awy_point(p, db));
+                        anchor_lat = p.lat;
+                        anchor_lon = p.lon;
+                    }
+                    if(ok && accepted.size() > best_inserts.size())
+                        best_inserts = std::move(accepted);
+                }
+
+                if(!best_inserts.empty())
+                {
+                    auto inserted = best_inserts.size();
+                    waypoints.insert(waypoints.begin() + i + 1,
+                                     std::make_move_iterator(best_inserts.begin()),
+                                     std::make_move_iterator(best_inserts.end()));
+                    i += inserted + 1;
+                }
+                else
+                {
+                    ++i;
+                }
+            }
+        }
+
+        // -----------------------------------------------------------
+        // Collapse pass
+        // -----------------------------------------------------------
+        //
+        // If the coerce pass inserted anything, waypoints.size() is
+        // guaranteed >= 3 here (we entered with >= 2 and only grew).
+        // So size < 3 means coerce did nothing and elements still
+        // matches waypoints — preserve any existing airway_ref the
+        // user typed for an adjacent pair.
+        if(waypoints.size() < 3) return;
 
         std::vector<route_element> new_elements;
         auto i = size_t{0};
         while(i < waypoints.size())
         {
-            // Try to find the longest run starting at i.
             std::string best_awy;
-            auto best_end = i;  // inclusive end of the best run
+            auto best_end = i;
 
             if(i + 1 < waypoints.size())
             {
@@ -727,22 +864,17 @@ namespace nasrbrowse
                 {
                     const auto& points = get_airway_points(awy_id);
 
-                    // Search all occurrences of id_i in the airway, then
-                    // try extending in each direction. Fix names can
-                    // repeat on a single airway (rare but possible), so
-                    // we try every anchor.
                     for(size_t start = 0; start < points.size(); ++start)
                     {
-                        if(points[start] != id_i) continue;
+                        if(points[start].name != id_i) continue;
                         for(auto dir : {1, -1})
                         {
                             auto next_pos = static_cast<int>(start) + dir;
                             if(next_pos < 0 ||
                                next_pos >= static_cast<int>(points.size()))
                                 continue;
-                            if(points[next_pos] != id_i1) continue;
+                            if(points[next_pos].name != id_i1) continue;
 
-                            // Extend
                             auto k = i + 1;
                             auto pos = next_pos;
                             while(k + 1 < waypoints.size())
@@ -751,7 +883,7 @@ namespace nasrbrowse
                                 if(nxt < 0 ||
                                    nxt >= static_cast<int>(points.size()))
                                     break;
-                                if(points[nxt] != waypoint_id(waypoints[k + 1]))
+                                if(points[nxt].name != waypoint_id(waypoints[k + 1]))
                                     break;
                                 ++k;
                                 pos = nxt;
@@ -769,10 +901,6 @@ namespace nasrbrowse
 
             if(best_end - i >= 2)
             {
-                // Collapse waypoints[i..best_end] into a waypoint
-                // followed by an airway_ref. The airway_ref's expanded
-                // list includes the entry waypoint; expand_elements
-                // dedupes it against the preceding waypoint element.
                 new_elements.push_back(waypoints[i]);
                 airway_ref aref;
                 aref.airway_id = best_awy;
