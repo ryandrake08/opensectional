@@ -354,7 +354,7 @@ namespace nasrbrowse
     // and a CTA/FIR polygon is drawn under both the CTA and FIR styles.
     template <typename F>
     static void for_each_artcc_key(const std::string& altitude,
-                                    const std::string& type, F&& f)
+                                    const std::string& type, const F& f)
     {
         if(altitude == "LOW") { f("artcc_low"); return; }
         if(altitude == "HIGH") { f("artcc_high"); return; }
