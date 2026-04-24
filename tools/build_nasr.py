@@ -367,6 +367,13 @@ def build_awy(conn, csv_zf):
         FROM AWY_SEG
     """)
 
+    # Adjacent-fix lookup used by flight_route airway-ize. The two
+    # indexes let SQLite's OR-term optimizer resolve each branch of
+    # `(FROM_POINT=?1 AND TO_POINT=?2) OR (FROM_POINT=?2 AND TO_POINT=?1)`
+    # with a direct index seek instead of a full table scan.
+    conn.execute("CREATE INDEX idx_awy_seg_from_to ON AWY_SEG(FROM_POINT, TO_POINT)")
+    conn.execute("CREATE INDEX idx_awy_seg_to_from ON AWY_SEG(TO_POINT, FROM_POINT)")
+
 
 def build_pja(conn, csv_zf):
     """Import parachute jump areas (point + radius)."""

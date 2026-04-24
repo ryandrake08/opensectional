@@ -498,6 +498,12 @@ namespace nasrbrowse
         // Used to highlight an entire route when one segment is selected.
         std::vector<airway_segment> query_airway_by_id(const std::string& awy_id) const;
         std::vector<mtr_segment> query_mtr_by_id(const std::string& mtr_id) const;
+
+        // Return airway IDs for which `a` and `b` appear as adjacent
+        // points on at least one segment (either direction). Used by
+        // flight_route::airway_ize to detect sequential-fix runs.
+        std::vector<std::string> adjacent_airways(const std::string& a,
+                                                   const std::string& b) const;
         std::vector<maa> query_maas(const geo_bbox& bbox) const;
         std::vector<class_airspace> query_class_airspace(const geo_bbox& bbox) const;
         std::vector<runway> query_runways(const geo_bbox& bbox) const;

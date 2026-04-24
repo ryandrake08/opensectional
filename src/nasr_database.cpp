@@ -33,6 +33,7 @@ namespace nasrbrowse
         sqlite::statement stmt_fixes;
         sqlite::statement stmt_airways;
         sqlite::statement stmt_airway_by_id;
+        sqlite::statement stmt_adjacent_airways;
         sqlite::statement stmt_mtrs;
         sqlite::statement stmt_mtr_by_id;
         sqlite::statement stmt_maas;
@@ -164,6 +165,13 @@ namespace nasrbrowse
                 FROM AWY_SEG
                 WHERE AWY_SEG_GAP_FLAG != 'Y' AND AWY_ID = ?1
             )", 12))
+
+            , stmt_adjacent_airways(prepare_checked(db, R"(
+                SELECT DISTINCT AWY_ID FROM AWY_SEG
+                WHERE AWY_SEG_GAP_FLAG != 'Y'
+                  AND ((FROM_POINT = ?1 AND TO_POINT = ?2)
+                    OR (FROM_POINT = ?2 AND TO_POINT = ?1))
+            )", 1))
 
             , stmt_mtrs(prepare_checked(db, R"(
                 SELECT MTR_ID, ROUTE_TYPE_CODE, FROM_POINT, TO_POINT,
@@ -758,6 +766,20 @@ namespace nasrbrowse
                 s.column_double(7), s.column_double(8),
                 s.column_text(9), s.column_text(10), s.column_text(11)});
         }
+        return out;
+    }
+
+    std::vector<std::string> nasr_database::adjacent_airways(
+        const std::string& a, const std::string& b) const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        auto& s = pimpl->stmt_adjacent_airways;
+        s.reset();
+        s.bind(1, a);
+        s.bind(2, b);
+        std::vector<std::string> out;
+        while(s.step())
+            out.push_back(s.column_text(0));
         return out;
     }
 

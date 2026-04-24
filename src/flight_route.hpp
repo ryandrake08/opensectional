@@ -83,15 +83,27 @@ namespace nasrbrowse
 
         // Insert a waypoint between expanded waypoints at `segment_index`
         // and `segment_index + 1`. Updates both elements and waypoints.
-        void insert_waypoint(int segment_index, route_waypoint wp);
+        // Re-runs airway_ize so any sequential runs of fixes collapse
+        // back into shorthand form.
+        void insert_waypoint(int segment_index, route_waypoint wp,
+                             const nasr_database& db);
 
         // Replace the waypoint at `waypoint_index` with `wp`. Flattens the
-        // route into explicit waypoints (any airway shorthand is lost).
-        void replace_waypoint(int waypoint_index, route_waypoint wp);
+        // route into explicit waypoints, then re-runs airway_ize.
+        void replace_waypoint(int waypoint_index, route_waypoint wp,
+                              const nasr_database& db);
 
-        // Remove the waypoint at `waypoint_index`. Flattens the route.
-        // Callers must ensure the resulting route still has >= 2 waypoints.
-        void delete_waypoint(int waypoint_index);
+        // Remove the waypoint at `waypoint_index`. Flattens the route,
+        // then re-runs airway_ize. Callers must ensure the resulting
+        // route still has >= 2 waypoints.
+        void delete_waypoint(int waypoint_index, const nasr_database& db);
+
+        // Collapse runs of 3+ consecutive waypoints that form a
+        // sequential path along a common airway into airway_ref
+        // elements. Called automatically by the constructor and by the
+        // mutation methods; exposed for tests and callers that mutate
+        // `waypoints` directly.
+        void airway_ize(const nasr_database& db);
     };
 
     // One leg of an expanded route, from one waypoint to the next.

@@ -571,7 +571,8 @@ struct map_widget::impl
         if(!route) return;
         if(mode == route_drag_mode::segment)
         {
-            route->insert_waypoint(route_drag.index, resolve_release_waypoint());
+            route->insert_waypoint(route_drag.index,
+                                   resolve_release_waypoint(), pick_db);
             notify_route_changed();
             return;
         }
@@ -587,11 +588,11 @@ struct map_widget::impl
 
         if(adjacent && route->waypoints.size() > 2)
         {
-            route->delete_waypoint(i);
+            route->delete_waypoint(i, pick_db);
         }
         else
         {
-            route->replace_waypoint(i, resolve_release_waypoint());
+            route->replace_waypoint(i, resolve_release_waypoint(), pick_db);
         }
         notify_route_changed();
     }
