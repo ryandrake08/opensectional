@@ -248,6 +248,12 @@ struct map_widget::impl
     double cursor_ndc_y = 0.0;
     bool dragged = false;
     bool imgui_wants_mouse = false;
+    // True while a left-button drag that originated on the map
+    // (i.e. ImGui did not own the mouse at press time) is in
+    // progress. Gates pan in cursor_position_event so dragging an
+    // ImGui scrollbar or selecting text in a text box does not
+    // also pan the map.
+    bool pan_drag_active = false;
     bool imgui_wants_keyboard = false;
 
     pick_popup_state pick_popup;
@@ -1108,6 +1114,11 @@ void map_widget::button_event(sdl::input_button_t button, sdl::input_action_t ac
     if(action.value != 0) // press
     {
         pimpl->dragged = false;
+        // Capture ImGui ownership at press time. A drag that
+        // started inside an ImGui widget (scrollbar, text input,
+        // etc.) must NOT pan the map even if the cursor leaves
+        // the widget mid-drag.
+        pimpl->pan_drag_active = !pimpl->imgui_wants_mouse;
         // If the press landed on a route waypoint or leg, start a drag;
         // this suppresses the normal pan + pick. The route gets selected
         // implicitly so the drag has the same visual affordance as a
@@ -1135,6 +1146,7 @@ void map_widget::button_event(sdl::input_button_t button, sdl::input_action_t ac
     {
         auto mode = pimpl->route_drag.mode;
         pimpl->route_drag.mode = impl::route_drag_mode::none;
+        pimpl->pan_drag_active = false;
         if(mode != impl::route_drag_mode::none && pimpl->dragged)
         {
             pimpl->handle_route_drag_release(mode);
@@ -1207,7 +1219,7 @@ void map_widget::cursor_position_event(double xpos, double ypos)
             // Rubber-band follows cursor; force a redraw.
             pimpl->needs_update = true;
         }
-        else
+        else if(pimpl->pan_drag_active)
         {
             auto dx = pos[0] - pimpl->cursor_last_x;
             auto dy = pos[1] - pimpl->cursor_last_y;
