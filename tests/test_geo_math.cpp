@@ -7,26 +7,6 @@
 
 using namespace nasrbrowse;
 
-namespace
-{
-    // WGS84 semi-major axis, nautical miles. Mirrors the constant in
-    // geo_math.cpp so tests remain decoupled from internal changes.
-    constexpr double EARTH_RADIUS_NM = 6378137.0 / 1852.0;
-
-    // Great-circle distance in nautical miles (haversine).
-    double haversine_nm(double lat1, double lon1, double lat2, double lon2)
-    {
-        double rlat1 = lat1 * M_PI / 180.0;
-        double rlat2 = lat2 * M_PI / 180.0;
-        double dlat = rlat2 - rlat1;
-        double dlon = (lon2 - lon1) * M_PI / 180.0;
-        double a = std::sin(dlat * 0.5) * std::sin(dlat * 0.5)
-                 + std::cos(rlat1) * std::cos(rlat2)
-                   * std::sin(dlon * 0.5) * std::sin(dlon * 0.5);
-        return 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a)) * EARTH_RADIUS_NM;
-    }
-}
-
 TEST_CASE("geodesic_circle returns n+1 points (closed ring)")
 {
     auto pts = geodesic_circle(37.0, -122.0, 10.0, 48);

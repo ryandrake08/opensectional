@@ -42,6 +42,49 @@ namespace nasrbrowse
         return pts;
     }
 
+    double haversine_nm(double lat1, double lon1, double lat2, double lon2)
+    {
+        auto rlat1 = lat1 * M_PI / 180.0;
+        auto rlat2 = lat2 * M_PI / 180.0;
+        auto dlat = rlat2 - rlat1;
+        auto dlon = (lon2 - lon1) * M_PI / 180.0;
+        auto a = std::sin(dlat * 0.5) * std::sin(dlat * 0.5) +
+                 std::cos(rlat1) * std::cos(rlat2) *
+                 std::sin(dlon * 0.5) * std::sin(dlon * 0.5);
+        return 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a)) * EARTH_RADIUS_NM;
+    }
+
+    double point_to_segment_distance_nm(double lat_a, double lon_a,
+                                         double lat_b, double lon_b,
+                                         double lat_p, double lon_p)
+    {
+        // Local equirectangular projection about the segment midpoint.
+        // 1° latitude ≈ 60 nm everywhere; 1° longitude depends on
+        // latitude. Using a single cos(lat) factor is accurate to a
+        // small fraction of a percent for segment lengths of a few
+        // hundred nautical miles.
+        constexpr auto NM_PER_DEG = 60.0;
+        auto mid_lat = (lat_a + lat_b) * 0.5;
+        auto nm_per_deg_lon = NM_PER_DEG * std::cos(mid_lat * M_PI / 180.0);
+
+        auto bx = (lon_b - lon_a) * nm_per_deg_lon;
+        auto by = (lat_b - lat_a) * NM_PER_DEG;
+        auto px = (lon_p - lon_a) * nm_per_deg_lon;
+        auto py = (lat_p - lat_a) * NM_PER_DEG;
+
+        auto ab_len_sq = bx * bx + by * by;
+        if(ab_len_sq == 0.0)
+            return std::sqrt(px * px + py * py);
+
+        auto t = (px * bx + py * by) / ab_len_sq;
+        if(t < 0.0) t = 0.0;
+        else if(t > 1.0) t = 1.0;
+
+        auto fx = t * bx;
+        auto fy = t * by;
+        return std::sqrt((px - fx) * (px - fx) + (py - fy) * (py - fy));
+    }
+
     std::vector<airspace_point> geodesic_interpolate(double lat1, double lon1,
                                                      double lat2, double lon2,
                                                      double max_segment_nm)

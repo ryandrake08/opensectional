@@ -28,6 +28,13 @@ namespace nasrbrowse
         std::string route_buf;
         bool has_route = false;
         std::string route_error;
+        // True while a sigil-bearing route is being expanded on a
+        // background thread. Drives a spinner-and-label indicator in
+        // the route panel.
+        bool planning = false;
+        // Planner knobs surfaced in the route panel.
+        float max_leg_nm = 80.0F;  // ImGui::InputFloat takes float
+        bool use_airways = false;
     };
 
     ui_overlay::ui_overlay() : pimpl(std::make_unique<impl>()) {}
@@ -46,6 +53,18 @@ namespace nasrbrowse
     {
         pimpl->has_route = false;
         pimpl->route_error = error;
+    }
+
+    void ui_overlay::set_route_planning(bool pending)
+    {
+        pimpl->planning = pending;
+    }
+
+    void ui_overlay::set_route_planner_defaults(double max_leg_nm,
+                                                  bool use_airways)
+    {
+        pimpl->max_leg_nm = static_cast<float>(max_leg_nm);
+        pimpl->use_airways = use_airways;
     }
 
     void ui_overlay::set_search_results(std::vector<search_hit> hits)
@@ -275,23 +294,50 @@ namespace nasrbrowse
             ImGuiWindowFlags_NoCollapse |
             ImGuiWindowFlags_NoSavedSettings);
 
+        ImGui::BeginDisabled(d.planning);
         ImGui::SetNextItemWidth(360.0F);
         auto submit = ImGui::InputText("##route_input",
             &d.route_buf,
             ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
         if(ImGui::Button("Set")) submit = true;
-        if(submit)
-            result.submit_route_text = d.route_buf;
 
-        if(!d.route_error.empty())
+        // Planner knobs. Always rendered so the user can change
+        // them between submissions; disabled while a plan is
+        // running so a mid-plan change can't desync the UI vs.
+        // the in-flight options.
+        ImGui::Checkbox("Use airways", &d.use_airways);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90.0F);
+        ImGui::InputFloat("Max leg (nm)", &d.max_leg_nm, 0.0F, 0.0F, "%.0f");
+        d.max_leg_nm = std::max(d.max_leg_nm, 1.0F);
+        ImGui::EndDisabled();
+        if(submit && !d.planning)
+            result.submit_route_text = d.route_buf;
+        result.route_max_leg_nm = d.max_leg_nm;
+        result.route_use_airways = d.use_airways;
+
+        if(d.planning)
+        {
+            // Simple animated ellipsis: one, two, or three dots
+            // depending on which frame bucket we're in. Keeps the
+            // indicator active-looking without a custom widget.
+            static const std::array<const char*, 3> dots = {
+                "Planning route.",
+                "Planning route..",
+                "Planning route..."};
+            auto bucket = static_cast<std::size_t>(
+                ImGui::GetTime() * 3.0) % dots.size();
+            ImGui::TextUnformatted(dots.at(bucket));
+        }
+        else if(!d.route_error.empty())
         {
             ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
             ImGui::TextWrapped("%s", d.route_error.c_str());
             ImGui::PopStyleColor();
         }
 
-        if(d.has_route)
+        if(d.has_route && !d.planning)
         {
             if(ImGui::Button("Clear"))
             {

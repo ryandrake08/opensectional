@@ -1,4 +1,9 @@
+#include "ini_config.hpp"
 #include "map_widget.hpp"
+#include "nasr_database.hpp"
+#include "route_plan_config.hpp"
+#include "route_planner.hpp"
+#include "route_submitter.hpp"
 #include "ui_overlay.hpp"
 #include <cstring>
 #include <csignal>
@@ -138,7 +143,22 @@ int main(int argc, char** argv)
         event_mgr.add_listener(map);
         map->framebuffer_size_event(1280, 1024);
 
+        // Sigil expansion runs on its own database/planner instance
+        // so map_widget can stay focused on rendering. SQLite opens
+        // are cheap and read-only.
+        nasrbrowse::nasr_database planner_db(db_path);
+        nasrbrowse::route_planner planner(planner_db);
+        nasrbrowse::route_submitter submitter(planner);
+
+        // Load route-planner preference defaults from the same ini
+        // that drives chart styling. The GUI overrides max_leg and
+        // the use-airways toggle on a per-submission basis.
+        ini_config plan_ini(conf_path);
+        auto plan_options = nasrbrowse::load_route_plan_options(plan_ini);
+
         nasrbrowse::ui_overlay ui;
+        ui.set_route_planner_defaults(plan_options.max_leg_length_nm,
+                                       plan_options.use_airways);
         std::string last_search_query;
         constexpr auto SEARCH_RESULT_LIMIT = 12;
 
@@ -189,18 +209,44 @@ int main(int argc, char** argv)
             }
             else if(ui_result.submit_route_text)
             {
-                try
+                // Snapshot the GUI knobs into the planner options
+                // for this submission. ini-driven preferences are
+                // already in `plan_options`; we just overlay
+                // max_leg and use-airways from the UI.
+                auto opts = plan_options;
+                opts.max_leg_length_nm = ui_result.route_max_leg_nm;
+                opts.use_airways = ui_result.route_use_airways;
+                submitter.submit(*ui_result.submit_route_text, opts);
+                needs_render = true;
+            }
+
+            // Keep frames flowing while an async plan is in progress
+            // so the UI can animate its indicator.
+            auto plan_pending = submitter.pending();
+            ui.set_route_planning(plan_pending);
+            if(plan_pending) needs_render = true;
+
+            try
+            {
+                if(auto expanded = submitter.drain())
                 {
-                    map->set_route_text(*ui_result.submit_route_text);
-                    if(map->route())
-                        ui.set_route_state(*map->route());
-                    else
+                    if(expanded->empty())
+                    {
+                        map->clear_route();
                         ui.clear_route_state();
+                    }
+                    else
+                    {
+                        map->set_route_text(*expanded);
+                        if(map->route()) ui.set_route_state(*map->route());
+                        else ui.clear_route_state();
+                    }
+                    needs_render = true;
                 }
-                catch(const nasrbrowse::route_parse_error& e)
-                {
-                    ui.clear_route_state(e.what());
-                }
+            }
+            catch(const nasrbrowse::route_parse_error& e)
+            {
+                ui.clear_route_state(e.what());
                 needs_render = true;
             }
 

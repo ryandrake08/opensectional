@@ -72,6 +72,11 @@ namespace nasrbrowse
         std::optional<std::string> submit_route_text;
         // True for one frame when the user clicks "Clear".
         bool clear_route = false;
+
+        // Current route-planner knobs. Read every frame; the caller
+        // funnels these into route_planner::options on submission.
+        double route_max_leg_nm = 80.0;
+        bool   route_use_airways = false;
     };
 
     class ui_overlay
@@ -98,6 +103,19 @@ namespace nasrbrowse
         // Clear the route panel (no active route). `error` is shown in red
         // if non-empty — typically the message from a failed parse.
         void clear_route_state(const std::string& error = "");
+
+        // Toggle an async-planning indicator shown beneath the route
+        // input. Caller sets this to true when a sigil-bearing route
+        // is being expanded on a background thread, and back to
+        // false when the plan completes.
+        void set_route_planning(bool pending);
+
+        // Seed the planner-knob state shown in the route panel.
+        // Typically called once at startup with values loaded from
+        // ini. The current values are echoed back through
+        // ui_overlay_result::route_max_leg_nm / route_use_airways
+        // every frame so the caller doesn't need to mirror state.
+        void set_route_planner_defaults(double max_leg_nm, bool use_airways);
 
         // Draw FPS display, zoom level, layer checkboxes, and the search box.
         // `feature_types` supplies the labels+ids for the feature-layer

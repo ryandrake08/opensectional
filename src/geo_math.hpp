@@ -26,4 +26,17 @@ namespace nasrbrowse
                                                       double lat2, double lon2,
                                                       double max_segment_nm = GEODESIC_INTERPOLATION_THRESHOLD_NM);
 
+    // Great-circle distance between two lat/lon points, in nautical
+    // miles. Spherical-earth approximation.
+    double haversine_nm(double lat1, double lon1, double lat2, double lon2);
+
+    // Distance, in nautical miles, from point P to the nearest point
+    // on the line segment from A to B. When P projects beyond an
+    // endpoint, the returned distance is just the haversine to that
+    // endpoint. Uses a local planar approximation — accurate to well
+    // under 1% for segments of a few hundred nautical miles.
+    double point_to_segment_distance_nm(double lat_a, double lon_a,
+                                         double lat_b, double lon_b,
+                                         double lat_p, double lon_p);
+
 } // namespace nasrbrowse

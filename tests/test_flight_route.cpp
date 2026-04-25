@@ -2,6 +2,7 @@
 #include "doctest/doctest.h"
 
 #include "flight_route.hpp"
+#include "route_planner.hpp"
 
 #include <cmath>
 #include <string>
@@ -15,6 +16,12 @@ static nasr_database& test_db()
 {
     static nasr_database db("nasr.db");
     return db;
+}
+
+static const route_planner& test_planner()
+{
+    static route_planner planner(test_db());
+    return planner;
 }
 
 TEST_CASE("latlon waypoint parses DDMMSSXDDDMMSSY and round-trips")
@@ -283,4 +290,60 @@ TEST_CASE("single waypoint route is rejected")
         CHECK(std::string(e.what()).find("at least two") != std::string::npos);
         CHECK(e.token_index == -1);
     }
+}
+
+// ---- Stage 3: sigil pipeline ----
+
+TEST_CASE("flight_route rejects raw '?' tokens")
+{
+    // '?' is a preprocessor directive, not part of flight_route's
+    // grammar. Callers must run the text through
+    // route_planner::expand_sigils first.
+    CHECK_THROWS_AS(flight_route("KSMF ? KBFL", test_db()),
+                    route_parse_error);
+}
+
+TEST_CASE("expand_sigils + flight_route plans between two airports")
+{
+    auto expanded = test_planner().expand_sigils("KSMF ? KBFL", route_planner::options{});
+    flight_route route(expanded, test_db());
+    REQUIRE(route.waypoints.size() > 2);
+    CHECK(waypoint_id(route.waypoints.front()) == "KSMF");
+    CHECK(waypoint_id(route.waypoints.back()) == "KBFL");
+}
+
+TEST_CASE("expand_sigils preserves intermediate via waypoints")
+{
+    // KSMF ? LIN ? KBFL plans KSMF→LIN, then LIN→KBFL. LIN must
+    // survive as a waypoint.
+    auto expanded = test_planner().expand_sigils("KSMF ? LIN ? KBFL", route_planner::options{});
+    flight_route route(expanded, test_db());
+    CHECK(waypoint_id(route.waypoints.front()) == "KSMF");
+    CHECK(waypoint_id(route.waypoints.back()) == "KBFL");
+    bool has_lin = false;
+    for(const auto& wp : route.waypoints)
+        if(waypoint_id(wp) == "LIN") { has_lin = true; break; }
+    CHECK(has_lin);
+}
+
+TEST_CASE("expand_sigils leaves direct segments alone")
+{
+    // KSMF ? LIN KBFL plans only the first leg; LIN→KBFL is direct.
+    auto expanded = test_planner().expand_sigils("KSMF ? LIN KBFL", route_planner::options{});
+    flight_route route(expanded, test_db());
+    CHECK(waypoint_id(route.waypoints.front()) == "KSMF");
+    CHECK(waypoint_id(route.waypoints.back()) == "KBFL");
+}
+
+TEST_CASE("planned route round-trips through to_text")
+{
+    auto expanded = test_planner().expand_sigils("KSMF ? KBFL", route_planner::options{});
+    flight_route route(expanded, test_db());
+    auto text = route.to_text();
+    CHECK(text.find('?') == std::string::npos);
+    flight_route reparsed(text, test_db());
+    REQUIRE(reparsed.waypoints.size() == route.waypoints.size());
+    for(std::size_t i = 0; i < route.waypoints.size(); ++i)
+        CHECK(waypoint_id(reparsed.waypoints[i])
+              == waypoint_id(route.waypoints[i]));
 }

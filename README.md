@@ -1,6 +1,6 @@
 # NASRBrowse
 
-A desktop application for visualizing FAA NASR (National Airspace System Resource) data on an interactive map. Displays airports, navaids, fixes, airways, airspace boundaries, TFRs, military training routes, obstacles, weather stations, and communication outlets as vector overlays on a raster basemap. Features include rotated airway/MTR labels, composite airspace labels with altitude bounds, overlap-eliminated text placement, and interactive flight-route planning with drag-to-edit waypoints. Geographic features use spherical geometry (great-circle arcs, geodesic circles).
+A desktop application for visualizing FAA NASR (National Airspace System Resource) data on an interactive map. Displays airports, navaids, fixes, airways, airspace boundaries, TFRs, military training routes, obstacles, weather stations, and communication outlets as vector overlays on a raster basemap. Features include rotated airway/MTR labels, composite airspace labels with altitude bounds, overlap-eliminated text placement, interactive flight-route planning with drag-to-edit waypoints, and A\* route pathfinding driven by a `?` sigil in the route text. Geographic features use spherical geometry (great-circle arcs, geodesic circles).
 
 ## Quick Start
 
@@ -277,6 +277,22 @@ After a route is parsed or drag-edited, NASRBrowse rewrites it into its most com
 - **Colinear coercion.** A user-typed direct leg A→B is rewritten to airway shorthand when both endpoints share an airway *and* every intermediate fix of that airway lies within 0.5 NM of the direct great-circle path. The check is iterative from the near edge, so effectively-straight airways spanning hundreds of miles still coerce even when the midpoint shows a larger global cross-track. If any intermediate fails the tolerance, the leg is left alone — the user's typed direct route is always preserved.
 - **Discontinuous airways.** When an airway has a published gap (for example `V23` between `FRAME` and `EBTUW`) and a traversal crosses it, the route splits into two airway segments joined by an explicit bridge waypoint. `KSMF V23 KBFL` becomes `KSMF CAPTO V23 EBTUW FRAME V23 EHF KBFL`.
 
+### A\* route pathfinding
+
+Insert a `?` between two waypoints (or between a waypoint and an airway token) and NASRBrowse's A\* planner expands it into a sigil-free route before parsing. Examples:
+
+| Input | Result |
+|---|---|
+| `KSMF ? KBFL` | Plans intermediate fixes/navaids/airports between the two airports. |
+| `KSMF ? LIN ? KBFL` | Plans `KSMF → LIN`, then `LIN → KBFL`. |
+| `KSMF ? LIN KBFL` | Plans `KSMF → LIN`; `LIN → KBFL` stays direct. |
+| `KSMF ? V23 ? KBFL` | Picks V23 entry/exit by *project-and-walk* (project the airport onto V23, pick the adjacent fix nearer the other endpoint), then plans the off-airway segments. |
+| `KSMF V23 ? KBFL` | Haversine-nearest entry (existing behavior), project-and-walk exit, plan the exit→KBFL leg. |
+
+The "Use airways" checkbox in the Route panel turns on the airway-class preference (Victor PREFER by default, etc.) and forces airway-routable navaids and WP/RP/CN/MR fixes to INCLUDE for that submission. The "Max leg (nm)" input next to it caps any single A\* hop at the chosen distance. While planning runs on a background thread the input is disabled and an animated indicator is shown. Cross-country plans (e.g. `KSFO ? KJFK`) take a couple of seconds; short hops are imperceptible.
+
+Routing preferences are configured in the `[route_plan]` section of `nasrbrowse.ini`. Each waypoint subtype (airport, balloonport, seaplane base, gliderport, heliport, ultralight, VOR, VORTAC, VOR/DME, DME, NDB, NDB/DME, VFR fix) and each airway class (Victor, Jet, RNAV, color, other) takes one of `PREFER` / `INCLUDE` / `AVOID` / `REJECT` (cost multipliers 0.8 / 1.0 / 1.25 / 1000). A separate `route_airway_gap` key controls how A\* prices crossings of published airway discontinuities — `PREFER` makes following a named airway through its gaps cost-attractive; `INCLUDE` is neutral; `AVOID`/`REJECT` push the planner toward switching airways.
+
 ### Command Line Options
 
 | Option | Description |
@@ -313,12 +329,15 @@ src/                      Application sources
   feature_builder.cpp     Background worker: builds polyline geometry from DB results
   feature_type.cpp        Per-feature-type build/pick/selection logic (polymorphic)
   flight_route.cpp        Route data model, shorthand parser, airway expansion, leg computation
+  route_planner.cpp       In-memory A* route planner (catalog, airway adjacency, project-and-walk, sigil expansion)
+  route_plan_config.cpp   Loads [route_plan] preferences (per-subtype/airway costs) into route_planner::options
+  route_submitter.cpp     Background-thread wrapper around route_planner::expand_sigils
   line_renderer.cpp       SDF polyline rendering (lines, dashes, borders, circles)
   label_renderer.cpp      Text label placement, overlap elimination, and rendering (supports rotated and composite labels)
   nasr_database.cpp       SQLite query interface with R-tree spatial queries
   chart_style.cpp         INI-based zoom-dependent feature styling
   tile_loader.cpp         Background tile I/O
-  ui_overlay.cpp          ImGui UI (FPS, layer checkboxes, search, altitude filter, route input/info)
+  ui_overlay.cpp          ImGui UI (FPS, layer checkboxes, search, altitude filter, route input/info, planner knobs)
   ui_sectioned_list.cpp   Grouped selectable list widget (pick popup, search results)
   render_context.cpp      Render state (projection matrix, sampler)
   ini_config.cpp          INI file parser

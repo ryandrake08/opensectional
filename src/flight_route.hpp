@@ -1,6 +1,7 @@
 #pragma once
 
 #include "nasr_database.hpp"
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -8,6 +9,14 @@
 
 namespace nasrbrowse
 {
+    // Parse a NASR-shorthand coordinate token (DDMMSSXDDDMMSSY) into
+    // decimal degrees. Returns nullopt if the token is not in that
+    // exact format. Used by the route parser and by
+    // route_planner::expand_sigils to accept coordinate literals
+    // wherever a point waypoint is expected.
+    struct latlon_ref;
+    std::optional<latlon_ref> parse_latlon(const std::string& token);
+
     // A resolved waypoint on a route — one of the four point types
     struct airport_ref
     {
@@ -74,8 +83,15 @@ namespace nasrbrowse
         std::vector<route_element> elements;
         std::vector<route_waypoint> waypoints;
 
-        // Parse a route string (space-separated waypoints) and resolve
-        // against the database. Throws route_parse_error on failure.
+        // Parse a route string and resolve against the database.
+        // The grammar is a sequence of space-separated tokens:
+        //   - a waypoint ID (airport / navaid / fix), or
+        //   - a DDMMSSXDDDMMSSY coordinate literal, or
+        //   - an airway ID, which must appear as the middle of an
+        //     `ENTRY AIRWAY EXIT` triple. ENTRY and EXIT are
+        //     auto-corrected to the nearest published fix on the
+        //     airway when necessary.
+        // Throws route_parse_error on failure.
         flight_route(const std::string& text, const nasr_database& db);
 
         // Reconstruct the shorthand text from the definition form
@@ -85,7 +101,7 @@ namespace nasrbrowse
         // and `segment_index + 1`. Updates both elements and waypoints.
         // Re-runs airway_ize so any sequential runs of fixes collapse
         // back into shorthand form.
-        void insert_waypoint(int segment_index, route_waypoint wp,
+        void insert_waypoint(int segment_index, const route_waypoint& wp,
                              const nasr_database& db);
 
         // Replace the waypoint at `waypoint_index` with `wp`. Flattens the

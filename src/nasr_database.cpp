@@ -71,6 +71,14 @@ namespace nasrbrowse
         sqlite::statement stmt_lookup_navaid;
         sqlite::statement stmt_lookup_fix;
 
+        sqlite::statement stmt_load_routable_airports;
+        sqlite::statement stmt_load_routable_navaids;
+        sqlite::statement stmt_load_routable_fixes;
+        sqlite::statement stmt_load_airway_edges;
+        sqlite::statement stmt_rtree_bbox_airports;
+        sqlite::statement stmt_rtree_bbox_navaids;
+        sqlite::statement stmt_rtree_bbox_fixes;
+
         // Serializes access to `db` and the prepared statements above.
         // Each public query method acquires this lock for its duration.
         mutable std::mutex mutex;
@@ -577,6 +585,68 @@ namespace nasrbrowse
                 FROM FIX_BASE
                 WHERE FIX_ID = ?1
             )", 11))
+
+            , stmt_load_routable_airports(prepare_checked(db, R"(
+                SELECT rowid,
+                       COALESCE(NULLIF(ICAO_ID, ''), ARPT_ID) AS id,
+                       SITE_TYPE_CODE,
+                       CAST(LAT_DECIMAL AS REAL) AS lat,
+                       CAST(LONG_DECIMAL AS REAL) AS lon
+                FROM APT_BASE
+                WHERE FACILITY_USE_CODE = 'PU'
+                  AND ARPT_STATUS = 'O'
+                  AND lat != 0
+                  AND lon != 0
+            )", 5))
+
+            , stmt_load_routable_navaids(prepare_checked(db, R"(
+                SELECT rowid, NAV_ID, NAV_TYPE,
+                       CAST(LAT_DECIMAL AS REAL) AS lat,
+                       CAST(LONG_DECIMAL AS REAL) AS lon
+                FROM NAV_BASE
+                WHERE NAV_STATUS != 'SHUTDOWN'
+                  AND NAV_TYPE NOT IN (
+                      'TACAN', 'VOT', 'FAN MARKER',
+                      'MARINE NDB', 'MARINE NDB/DME',
+                      'CONSOLAN', 'UHF/NDB')
+                  AND lat != 0
+                  AND lon != 0
+            )", 5))
+
+            , stmt_load_routable_fixes(prepare_checked(db, R"(
+                SELECT rowid, FIX_ID, FIX_USE_CODE,
+                       CAST(LAT_DECIMAL AS REAL) AS lat,
+                       CAST(LONG_DECIMAL AS REAL) AS lon
+                FROM FIX_BASE
+                WHERE FIX_USE_CODE NOT IN ('MW', 'NRS', 'RADAR')
+                  AND lat != 0
+                  AND lon != 0
+            )", 5))
+
+            , stmt_load_airway_edges(prepare_checked(db, R"(
+                SELECT FROM_POINT, FROM_LAT, FROM_LON,
+                       TO_POINT, TO_LAT, TO_LON, AWY_ID,
+                       AWY_SEG_GAP_FLAG = 'Y' AS is_gap
+                FROM AWY_SEG
+            )", 8))
+
+            , stmt_rtree_bbox_airports(prepare_checked(db, R"(
+                SELECT id FROM APT_BASE_RTREE
+                WHERE max_lon >= ?1 AND min_lon <= ?3
+                  AND max_lat >= ?2 AND min_lat <= ?4
+            )", 1))
+
+            , stmt_rtree_bbox_navaids(prepare_checked(db, R"(
+                SELECT id FROM NAV_BASE_RTREE
+                WHERE max_lon >= ?1 AND min_lon <= ?3
+                  AND max_lat >= ?2 AND min_lat <= ?4
+            )", 1))
+
+            , stmt_rtree_bbox_fixes(prepare_checked(db, R"(
+                SELECT id FROM FIX_BASE_RTREE
+                WHERE max_lon >= ?1 AND min_lon <= ?3
+                  AND max_lat >= ?2 AND min_lat <= ?4
+            )", 1))
         {
             // Precompute the set of shadowed ARSP_IDs. Any class airspace
             // that has a lower-class neighbor at the same non-empty IDENT
@@ -1498,6 +1568,92 @@ namespace nasrbrowse
                 s.column_int(9) != 0, s.column_int(10) != 0});
         }
         return out;
+    }
+
+    namespace
+    {
+        std::vector<route_node_row> drain_route_nodes(sqlite::statement& s)
+        {
+            std::vector<route_node_row> out;
+            while(s.step())
+                out.push_back(route_node_row{
+                    s.column_int(0), s.column_text(1), s.column_text(2),
+                    s.column_double(3), s.column_double(4)});
+            return out;
+        }
+    }
+
+    std::vector<route_node_row> nasr_database::load_routable_airports() const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        auto& s = pimpl->stmt_load_routable_airports;
+        s.reset();
+        return drain_route_nodes(s);
+    }
+
+    std::vector<route_node_row> nasr_database::load_routable_navaids() const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        auto& s = pimpl->stmt_load_routable_navaids;
+        s.reset();
+        return drain_route_nodes(s);
+    }
+
+    std::vector<route_node_row> nasr_database::load_routable_fixes() const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        auto& s = pimpl->stmt_load_routable_fixes;
+        s.reset();
+        return drain_route_nodes(s);
+    }
+
+    std::vector<route_airway_edge_row> nasr_database::load_airway_edges() const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        auto& s = pimpl->stmt_load_airway_edges;
+        s.reset();
+        std::vector<route_airway_edge_row> out;
+        while(s.step())
+            out.push_back(route_airway_edge_row{
+                s.column_text(0), s.column_double(1), s.column_double(2),
+                s.column_text(3), s.column_double(4), s.column_double(5),
+                s.column_text(6), s.column_int(7) != 0});
+        return out;
+    }
+
+    namespace
+    {
+        std::vector<int> drain_rtree_rowids(sqlite::statement& s,
+                                             const geo_bbox& bbox)
+        {
+            s.reset();
+            s.bind(1, bbox.lon_min);
+            s.bind(2, bbox.lat_min);
+            s.bind(3, bbox.lon_max);
+            s.bind(4, bbox.lat_max);
+            std::vector<int> out;
+            while(s.step())
+                out.push_back(s.column_int(0));
+            return out;
+        }
+    }
+
+    std::vector<int> nasr_database::query_airport_rowids_bbox(const geo_bbox& bbox) const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        return drain_rtree_rowids(pimpl->stmt_rtree_bbox_airports, bbox);
+    }
+
+    std::vector<int> nasr_database::query_navaid_rowids_bbox(const geo_bbox& bbox) const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        return drain_rtree_rowids(pimpl->stmt_rtree_bbox_navaids, bbox);
+    }
+
+    std::vector<int> nasr_database::query_fix_rowids_bbox(const geo_bbox& bbox) const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        return drain_rtree_rowids(pimpl->stmt_rtree_bbox_fixes, bbox);
     }
 
 } // namespace nasrbrowse

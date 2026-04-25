@@ -469,6 +469,47 @@ namespace nasrbrowse
         std::string name;
     };
 
+    // One row per routable waypoint. Used by route_planner to build
+    // its flat waypoint catalog. `rowid` is the source table's rowid
+    // (APT_BASE / NAV_BASE / FIX_BASE) — retained so that R*Tree
+    // neighbor queries on those tables can be mapped back to
+    // in-memory node indices. `id` is the canonical identifier:
+    // ICAO_ID for ICAO-assigned airports, else ARPT_ID; NAV_ID for
+    // navaids; FIX_ID for fixes. `type_code` is the source table's
+    // SITE_TYPE_CODE / NAV_TYPE / FIX_USE_CODE — route_planner uses
+    // it to classify each node into a fine-grained subtype for
+    // cost-modifier lookup.
+    struct route_node_row
+    {
+        int rowid;
+        std::string id;
+        std::string type_code;
+        double lat;
+        double lon;
+    };
+
+    // One row per airway segment. Used by route_planner to build
+    // its airway adjacency map. The endpoint coordinates are
+    // carried so that ID collisions across states (e.g. multiple
+    // fixes named "IL") can be disambiguated by choosing the
+    // geographically closest match. `is_gap` is true for
+    // AWY_SEG_GAP_FLAG='Y' rows — published discontinuities where
+    // the airway "exists on paper" between the two fixes but does
+    // not actually connect them. The planner keeps gap edges in
+    // the graph (so the airway-ID metadata survives) but applies a
+    // separate cost factor controlled by `options::gap_cost`.
+    struct route_airway_edge_row
+    {
+        std::string from_id;
+        double from_lat;
+        double from_lon;
+        std::string to_id;
+        double to_lat;
+        double to_lon;
+        std::string awy_id;
+        bool is_gap;
+    };
+
     class nasr_database
     {
         struct impl;
@@ -558,6 +599,35 @@ namespace nasrbrowse
         // degenerate bbox (min == max). Returns nullopt if the hit cannot be
         // resolved (missing coords, unknown entity_type, stale rowid).
         std::optional<geo_bbox> get_hit_bbox(const search_hit& hit) const;
+
+        // --- Route planner loaders ---
+        //
+        // Full-table scans with inline filters used once at
+        // route_planner construction time to build the in-memory A*
+        // graph. Filters:
+        //   airports: FACILITY_USE_CODE='PU' AND ARPT_STATUS='O';
+        //             `id` is ICAO_ID when non-empty else ARPT_ID.
+        //   navaids:  NAV_STATUS != 'SHUTDOWN'; excludes TACAN, VOT,
+        //             FAN MARKER, MARINE NDB, MARINE NDB/DME,
+        //             CONSOLAN, UHF/NDB.
+        //   fixes:    FIX_USE_CODE not in (MW, NRS, RADAR).
+        //   airway edges: GAP_FLAG != 'Y' — gaps are not real airway
+        //             connections and are treated as direct legs.
+        //
+        // `rowid` is the source table's rowid — used to translate
+        // *_RTREE query hits to in-memory node indices during A*.
+        std::vector<route_node_row> load_routable_airports() const;
+        std::vector<route_node_row> load_routable_navaids() const;
+        std::vector<route_node_row> load_routable_fixes() const;
+        std::vector<route_airway_edge_row> load_airway_edges() const;
+
+        // Fast bbox range queries against the *_RTREE virtual tables.
+        // Return the source base-table rowids of features inside the
+        // bbox. Called per A* expansion during route planning — these
+        // are the cheapest spatial queries the database offers.
+        std::vector<int> query_airport_rowids_bbox(const geo_bbox&) const;
+        std::vector<int> query_navaid_rowids_bbox(const geo_bbox&) const;
+        std::vector<int> query_fix_rowids_bbox(const geo_bbox&) const;
     };
 
 } // namespace nasrbrowse

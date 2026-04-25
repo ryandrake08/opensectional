@@ -16,7 +16,7 @@ namespace nasrbrowse
     static bool is_lat_hemi(char c) { return c == 'N' || c == 'S'; }
     static bool is_lon_hemi(char c) { return c == 'E' || c == 'W'; }
 
-    static std::optional<latlon_ref> parse_latlon(const std::string& token)
+    std::optional<latlon_ref> parse_latlon(const std::string& token)
     {
         // Format: DDMMSSXDDDMMSSY (15 chars)
         // DD = lat degrees (2 digits)
@@ -746,7 +746,8 @@ namespace nasrbrowse
             r.elements.push_back(w);
     }
 
-    void flight_route::insert_waypoint(int segment_index, route_waypoint wp,
+    void flight_route::insert_waypoint(int segment_index,
+                                        const route_waypoint& wp,
                                         const nasr_database& db)
     {
         assert(segment_index >= 0 &&

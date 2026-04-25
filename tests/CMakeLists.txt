@@ -39,5 +39,16 @@ add_nasrbrowse_test(ini_config  ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
 # flight_route pulls in the DB layer and needs the sqlite wrapper
 add_nasrbrowse_test(flight_route
     ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
-    ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp)
+    ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
+    ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
+    ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
 target_link_libraries(test_flight_route PRIVATE sqlite_wrapper)
+
+add_nasrbrowse_test(route_planner
+    ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
+    ${CMAKE_SOURCE_DIR}/src/route_plan_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/ini_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
+    ${CMAKE_SOURCE_DIR}/src/geo_math.cpp
+    ${CMAKE_SOURCE_DIR}/src/flight_route.cpp)
+target_link_libraries(test_route_planner PRIVATE sqlite_wrapper)
