@@ -6,10 +6,10 @@
 #include "map_view.hpp"
 #include "nasr_database.hpp"
 #include "pick_result.hpp"
+#include "ui_popup_manager.hpp"
 #include "render_context.hpp"
 #include "tile_renderer.hpp"
 #include "ui_overlay.hpp"
-#include "ui_sectioned_list.hpp"
 #include "chart_style.hpp"
 #include <algorithm>
 #include <memory>
@@ -156,44 +156,8 @@ constexpr auto PICK_BOX_SIZE_PIXELS = 20;
 // cursor skips the candidate-selector popup and logs directly.
 constexpr auto PICK_BOX_EXACT_SIZE_PIXELS = 4;
 
-// Padding between the click anchor and the selector popup, in pixels.
-constexpr auto PICK_POPUP_ANCHOR_PADDING = 12.0F;
-
 // SDL left mouse button value
 constexpr uint8_t BUTTON_LEFT = 1;
-
-namespace
-{
-    // Selector-popup state. Lives in map_widget::impl.
-    struct pick_popup_state
-    {
-        bool open = false;
-        int session_id = 0;
-        // ImGui window ID — refreshed from session_id on each open so ImGui
-        // treats every session as a new window (no stale size/position).
-        std::string window_id;
-        int warmup_frames = 0;  // ImGui hides a freshly-created auto-resize
-                                // window for its first frame while it measures
-                                // content. Force a couple of extra renders so
-                                // the popup actually appears without needing a
-                                // subsequent mouse event to wake the main loop.
-        double click_lon = 0.0;
-        double click_lat = 0.0;
-        std::vector<nasrbrowse::feature> features;
-    };
-
-    // Info-popup state: details for a single selected feature.
-    struct info_popup_state
-    {
-        bool open = false;
-        int session_id = 0;
-        std::string window_id;     // see pick_popup_state::window_id
-        int warmup_frames = 0;
-        double anchor_lon = 0.0;
-        double anchor_lat = 0.0;
-        nasrbrowse::feature feature{nasrbrowse::airport{}};
-    };
-}
 
 struct map_widget::impl : public sdl::event_listener
 {
@@ -240,22 +204,12 @@ struct map_widget::impl : public sdl::event_listener
     bool pan_drag_active = false;
     bool imgui_wants_keyboard = false;
 
-    pick_popup_state pick_popup;
-    info_popup_state info_popup;
+    nasrbrowse::popup_manager popups;
 
     std::vector<std::unique_ptr<nasrbrowse::feature_type>> feature_types;
 
     std::optional<nasrbrowse::flight_route> route;
-    bool route_selected = false;
     bool route_dirty = false;
-
-    // Route info-popup state: sibling to info_popup/pick_popup, but its
-    // visibility is driven by `route_selected` rather than a separate flag.
-    double route_popup_anchor_lon = 0.0;
-    double route_popup_anchor_lat = 0.0;
-    int route_popup_session_id = 0;
-    std::string route_popup_window_id;
-    int route_popup_warmup_frames = 0;
 
     // Route drag state. Waypoint hit takes priority over segment hit so
     // dragging an existing waypoint doesn't get mistaken for an insert.
@@ -588,20 +542,15 @@ struct map_widget::impl : public sdl::event_listener
     void set_route_selected(bool selected,
                             double anchor_lon = 0.0, double anchor_lat = 0.0)
     {
-        if(selected)
+        if(popups.route_open() == selected)
         {
-            route_popup_anchor_lon = anchor_lon;
-            route_popup_anchor_lat = anchor_lat;
-            if(!route_selected)
-            {
-                ++route_popup_session_id;
-                route_popup_window_id = "##route_info_popup_" +
-                                        std::to_string(route_popup_session_id);
-                route_popup_warmup_frames = 2;
-            }
+            // Already in the requested state. Update the anchor if the
+            // caller passed new coords for an already-open popup.
+            if(selected) popups.open_route(anchor_lon, anchor_lat);
+            return;
         }
-        if(route_selected == selected) return;
-        route_selected = selected;
+        if(selected) popups.open_route(anchor_lon, anchor_lat);
+        else         popups.close_route();
         features.set_route_selected(selected);
         needs_update = true;
         update_tiles();
@@ -635,41 +584,13 @@ struct map_widget::impl : public sdl::event_listener
         update_tiles();
     }
 
-    // Convert a world lon/lat into pixel coordinates relative to the
-    // Compute where to place a popup anchored at world coord (lon, lat).
-    // Returns true and fills pos/pivot when the anchor is on-screen.
-    // Returns false when off-screen (popup should dismiss).
-    bool compute_popup_anchor(double lon, double lat,
-                              ImVec2& pos, ImVec2& pivot) const
-    {
-        auto anchor = view.world_to_pixel(lon, lat);
-        if(anchor.x < 0 || anchor.x > view.viewport_width || anchor.y < 0 || anchor.y > view.viewport_height)
-            return false;
-
-        auto right  = anchor.x >= view.viewport_width * 0.5;
-        auto bottom = anchor.y >= view.viewport_height * 0.5;
-
-        pos.x = static_cast<float>(
-            anchor.x + (right  ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING));
-        pos.y = static_cast<float>(
-            anchor.y + (bottom ? -PICK_POPUP_ANCHOR_PADDING : PICK_POPUP_ANCHOR_PADDING));
-        pivot = ImVec2(right ? 1.0F : 0.0F, bottom ? 1.0F : 0.0F);
-        return true;
-    }
-
     // Open (or replace) the info popup showing details for a selected feature.
     void open_info_popup(const nasrbrowse::feature& f,
                           double click_lon, double click_lat)
     {
         auto [alon, alat] = nasrbrowse::find_feature_type(feature_types, f)
                               .anchor_lonlat(f, click_lon, click_lat);
-        info_popup.open = true;
-        ++info_popup.session_id;
-        info_popup.window_id = "##info_popup_" + std::to_string(info_popup.session_id);
-        info_popup.warmup_frames = 2;
-        info_popup.anchor_lon = alon;
-        info_popup.anchor_lat = alat;
-        info_popup.feature = f;
+        popups.open_info(f, alon, alat);
         features.set_selection(f);
         set_route_selected(false);
         update_tiles();
@@ -678,7 +599,7 @@ struct map_widget::impl : public sdl::event_listener
 
     void close_info_popup()
     {
-        info_popup.open = false;
+        popups.close_info();
         features.set_selection(std::nullopt);
         update_tiles();
         needs_update = true;
@@ -689,8 +610,7 @@ struct map_widget::impl : public sdl::event_listener
     // the selector popup.
     void handle_pick()
     {
-        pick_popup.open = false;
-        pick_popup.features.clear();
+        popups.close_pick();
 
         auto result = pick_at(cursor_ndc_x, cursor_ndc_y);
 
@@ -738,238 +658,46 @@ struct map_widget::impl : public sdl::event_listener
         // selection, matching the behavior of the info popup.
         close_info_popup();
         set_route_selected(false);
-        pick_popup.open = true;
-        ++pick_popup.session_id;
-        pick_popup.window_id = "##pick_selector_" + std::to_string(pick_popup.session_id);
-        pick_popup.warmup_frames = 2;
-        pick_popup.click_lon = result.lon;
-        pick_popup.click_lat = result.lat;
-        pick_popup.features = std::move(result.features);
+        popups.open_pick(std::move(result.features), result.lon, result.lat);
         needs_update = true;
     }
 
-    // Draw the selector popup during an ImGui frame. Called from the main
-    // loop between new_frame and end_frame. Also auto-dismisses if the
-    // anchor point has scrolled out of the viewport.
-    // Returns true if another render frame is needed.
-    bool draw_pick_imgui()
+    // Draw all popups via the popup_manager. Returns true if another
+    // render frame is needed for warmup.
+    bool draw_popups()
     {
-        if(!pick_popup.open) return false;
+        const auto* route_ptr = route ? &*route : nullptr;
+        auto out = popups.draw(view, feature_types, route_ptr);
 
-        ImVec2 pos;
-        ImVec2 pivot;
-        if(!compute_popup_anchor(pick_popup.click_lon, pick_popup.click_lat, pos, pivot))
+        // Apply side effects of user actions.
+        if(out.pick_selected)
         {
-            pick_popup.open = false;
-            return false;
+            // Pick selection → open info popup. Manager already closed pick.
+            open_info_popup(out.pick_selected->picked,
+                            out.pick_selected->click_lon,
+                            out.pick_selected->click_lat);
         }
-
-        ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
-        ImGui::SetNextWindowBgAlpha(0.9F);
-        ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.8F));
-        imgui::scoped_window window(pick_popup.window_id.c_str(),
-            ImGuiWindowFlags_NoCollapse |
-            ImGuiWindowFlags_NoSavedSettings |
-            ImGuiWindowFlags_AlwaysAutoResize |
-            ImGuiWindowFlags_NoTitleBar);
-
-        // Header row: lat/long on the left, [X] on the right
-        ImGui::Text("Lat, Long: %.5f, %.5f", pick_popup.click_lat, pick_popup.click_lon);
-        if(imgui::right_aligned_close_button("X##pick_close"))
+        if(out.info_dismissed)
         {
-            pick_popup.open = false;
-            return false;
+            features.set_selection(std::nullopt);
+            update_tiles();
+            needs_update = true;
         }
-
-        if(!pick_popup.features.empty())
+        if(out.route_dismissed)
         {
-            ImGui::Separator();
-
-            // Group pick features by their canonical feature-section tag.
-            std::vector<nasrbrowse::ui_section> sections(nasrbrowse::FEATURE_SECTION_COUNT);
-            std::vector<std::vector<int>> section_feature_index(nasrbrowse::FEATURE_SECTION_COUNT);
-            for(std::size_t s = 0; s < nasrbrowse::FEATURE_SECTION_COUNT; ++s)
-                sections.at(s).header = nasrbrowse::FEATURE_SECTIONS.at(s).header;
-
-            for(int i = 0; i < static_cast<int>(pick_popup.features.size()); ++i)
-            {
-                const auto& f = pick_popup.features[i];
-                const auto& t = nasrbrowse::find_feature_type(feature_types, f);
-                auto s = nasrbrowse::feature_section_index(t.section_tag());
-                if(s < 0) continue;
-                sections[s].items.push_back(t.summary(f));
-                section_feature_index[s].push_back(i);
-            }
-
-            auto picked = nasrbrowse::draw_sectioned_selectable_list(sections);
-            if(picked)
-            {
-                auto fi = section_feature_index[picked->first][picked->second];
-                open_info_popup(pick_popup.features[fi],
-                                pick_popup.click_lon, pick_popup.click_lat);
-                pick_popup.open = false;
-                pick_popup.features.clear();
-            }
+            // Manager already closed the popup; sync the renderer flag.
+            features.set_route_selected(false);
+            needs_update = true;
+            update_tiles();
         }
-
-        auto need_more = pick_popup.warmup_frames > 0;
-        if(need_more) --pick_popup.warmup_frames;
-        return need_more;
-    }
-
-    // Max width of the value column (in pixels); anything longer wraps.
-    static constexpr float INFO_VALUE_WRAP_PX = 280.0F;
-
-    // Draw the info popup for the currently selected feature. Returns true
-    // while warming up (first measurement frame).
-    bool draw_info_imgui()
-    {
-        if(!info_popup.open) return false;
-
-        ImVec2 pos;
-        ImVec2 pivot;
-        if(!compute_popup_anchor(info_popup.anchor_lon, info_popup.anchor_lat, pos, pivot))
+        if(out.route_delete)
         {
-            close_info_popup();
-            return false;
-        }
-
-        ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
-        ImGui::SetNextWindowBgAlpha(0.9F);
-        ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.9F));
-        imgui::scoped_window window(info_popup.window_id.c_str(),
-            ImGuiWindowFlags_NoCollapse |
-            ImGuiWindowFlags_NoSavedSettings |
-            ImGuiWindowFlags_AlwaysAutoResize |
-            ImGuiWindowFlags_NoTitleBar);
-
-        // Title row: feature summary on the left, [X] on the right.
-        const auto& L = nasrbrowse::find_feature_type(feature_types, info_popup.feature);
-        auto title = L.summary(info_popup.feature);
-        ImGui::TextUnformatted(title.c_str());
-        if(imgui::right_aligned_close_button("X##info_close"))
-        {
-            close_info_popup();
-            return false;
-        }
-        ImGui::Separator();
-
-        // Two-column layout: fixed-width keys (auto-fit) + fixed-width
-        // wrapped values. Using an ImGui table gives us per-cell wrapping
-        // while keeping the key column aligned.
-        auto rows = L.info_kv(info_popup.feature);
-        const ImGuiTableFlags flags =
-            ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX;
-        if(imgui::scoped_table table("info_kv", 2, flags); table)
-        {
-            ImGui::TableSetupColumn("k", ImGuiTableColumnFlags_WidthFixed);
-            ImGui::TableSetupColumn("v", ImGuiTableColumnFlags_WidthFixed, INFO_VALUE_WRAP_PX);
-
-            auto line_h = ImGui::GetTextLineHeight();
-            for(const auto& [key, value] : rows)
-            {
-                if(value.empty()) continue;  // hide empty-source fields
-                ImGui::TableNextRow();
-
-                // Measure the wrapped value so we can vertically center
-                // the key against it when the value spans multiple lines.
-                auto val_size = ImGui::CalcTextSize(
-                    value.c_str(), nullptr, false, INFO_VALUE_WRAP_PX);
-                auto row_h = val_size.y > line_h ? val_size.y : line_h;
-
-                ImGui::TableSetColumnIndex(0);
-                auto y_offset = (row_h - line_h) * 0.5F;
-                if(y_offset > 0.0F)
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + y_offset);
-                ImGui::TextUnformatted(key);
-
-                ImGui::TableSetColumnIndex(1);
-                ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + INFO_VALUE_WRAP_PX);
-                // Right-justify the value: push its starting X so the
-                // rendered (wrapped) block ends at the column's right edge.
-                auto val_w = val_size.x;
-                if(val_w < INFO_VALUE_WRAP_PX)
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (INFO_VALUE_WRAP_PX - val_w));
-                ImGui::TextUnformatted(value.c_str());
-                ImGui::PopTextWrapPos();
-            }
-        }
-
-        auto need_more = info_popup.warmup_frames > 0;
-        if(need_more) --info_popup.warmup_frames;
-        return need_more;
-    }
-
-    // Draw the info popup for the active flight route. Visibility is keyed
-    // on `route_selected`; off-screen anchor deselects the route.
-    bool draw_route_info_imgui()
-    {
-        if(!route_selected || !route) return false;
-
-        ImVec2 pos;
-        ImVec2 pivot;
-        if(!compute_popup_anchor(route_popup_anchor_lon,
-                                 route_popup_anchor_lat, pos, pivot))
-        {
-            set_route_selected(false);
-            return false;
-        }
-
-        ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
-        ImGui::SetNextWindowBgAlpha(0.9F);
-        ImGui::SetNextWindowSizeConstraints(
-            ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.9F));
-        imgui::scoped_window window(route_popup_window_id.c_str(),
-            ImGuiWindowFlags_NoCollapse |
-            ImGuiWindowFlags_NoSavedSettings |
-            ImGuiWindowFlags_AlwaysAutoResize |
-            ImGuiWindowFlags_NoTitleBar);
-
-        // Title row: "Flight route" on the left, [X] on the right.
-        ImGui::TextUnformatted("Flight route");
-        if(imgui::right_aligned_close_button("X##route_info_close"))
-        {
-            set_route_selected(false);
-            return false;
-        }
-        ImGui::Separator();
-
-        auto legs = route->compute_legs();
-        const auto flags =
-            ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit;
-        if(imgui::scoped_table table("route_info_legs", 4, flags); table)
-        {
-            ImGui::TableSetupColumn("From");
-            ImGui::TableSetupColumn("To");
-            ImGui::TableSetupColumn("Dist (nm)");
-            ImGui::TableSetupColumn("Course (T)");
-            ImGui::TableHeadersRow();
-            for(const auto& leg : legs)
-            {
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::TextUnformatted(leg.from_id.c_str());
-                ImGui::TableSetColumnIndex(1);
-                ImGui::TextUnformatted(leg.to_id.c_str());
-                ImGui::TableSetColumnIndex(2);
-                ImGui::Text("%.1f", leg.distance_nm);
-                ImGui::TableSetColumnIndex(3);
-                ImGui::Text("%03.0f", leg.true_course_deg);
-            }
-        }
-        double total_nm = 0.0;
-        for(const auto& l : legs) total_nm += l.distance_nm;
-        ImGui::Text("Total: %.1f nm", total_nm);
-
-        if(ImGui::Button("Delete route"))
-        {
+            // Manager already closed the popup; erase the route entirely.
+            features.set_route_selected(false);
             erase_route();
-            return false;
         }
 
-        auto need_more = route_popup_warmup_frames > 0;
-        if(need_more) --route_popup_warmup_frames;
-        return need_more;
+        return out.needs_more_frames;
     }
 
     void button_event(sdl::input_button_t button, sdl::input_action_t action, sdl::input_mod_t /*mods*/) override
@@ -1241,12 +969,7 @@ map_widget::feature_types() const
 
 bool map_widget::draw_imgui()
 {
-    // Both popups can coexist in theory, but in practice the selector is
-    // dismissed as soon as a feature is chosen. Always draw both so either
-    // one's warmup frames propagate upward.
-    auto a = pimpl->draw_pick_imgui();
-    auto b = pimpl->draw_info_imgui();
-    auto c = pimpl->draw_route_info_imgui();
+    auto need_more = pimpl->draw_popups();
 
     if(pimpl->route_drag.mode != impl::route_drag_mode::none && pimpl->route)
     {
@@ -1277,7 +1000,7 @@ bool map_widget::draw_imgui()
         }
     }
 
-    return a || b || c;
+    return need_more;
 }
 
 std::shared_ptr<sdl::event_listener> map_widget::event_listener()
