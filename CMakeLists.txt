@@ -102,7 +102,10 @@ target_compile_options(sdl_wrapper PRIVATE
 )
 
 # ImGui C++ wrapper library
-add_library(imgui_wrapper STATIC lib/imgui/context.cpp)
+add_library(imgui_wrapper STATIC
+    lib/imgui/context.cpp
+    lib/imgui/scoped.cpp
+)
 target_compile_features(imgui_wrapper PRIVATE cxx_std_11)
 target_include_directories(imgui_wrapper PRIVATE ${CMAKE_SOURCE_DIR}/lib)
 target_link_libraries(imgui_wrapper PUBLIC sdl_wrapper imgui)

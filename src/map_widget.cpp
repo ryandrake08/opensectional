@@ -19,6 +19,7 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <unordered_set>
 #include <imgui.h>
+#include <imgui/scoped.hpp>
 #include <iostream>
 #include <sdl/buffer.hpp>
 #include <sdl/command_buffer.hpp>
@@ -766,7 +767,7 @@ struct map_widget::impl : public sdl::event_listener
         ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
         ImGui::SetNextWindowBgAlpha(0.9F);
         ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.8F));
-        ImGui::Begin(pick_popup.window_id.c_str(), nullptr,
+        imgui::scoped_window window(pick_popup.window_id.c_str(),
             ImGuiWindowFlags_NoCollapse |
             ImGuiWindowFlags_NoSavedSettings |
             ImGuiWindowFlags_AlwaysAutoResize |
@@ -774,16 +775,9 @@ struct map_widget::impl : public sdl::event_listener
 
         // Header row: lat/long on the left, [X] on the right
         ImGui::Text("Lat, Long: %.5f, %.5f", pick_popup.click_lat, pick_popup.click_lon);
-        ImGui::SameLine();
-        // Align close button to right edge of the window content region
-        auto btn_w = ImGui::GetFrameHeight();
-        auto avail = ImGui::GetContentRegionAvail().x;
-        if(avail > btn_w)
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btn_w);
-        if(ImGui::SmallButton("X##pick_close"))
+        if(imgui::right_aligned_close_button("X##pick_close"))
         {
             pick_popup.open = false;
-            ImGui::End();
             return false;
         }
 
@@ -818,8 +812,6 @@ struct map_widget::impl : public sdl::event_listener
             }
         }
 
-        ImGui::End();
-
         auto need_more = pick_popup.warmup_frames > 0;
         if(need_more) --pick_popup.warmup_frames;
         return need_more;
@@ -845,7 +837,7 @@ struct map_widget::impl : public sdl::event_listener
         ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
         ImGui::SetNextWindowBgAlpha(0.9F);
         ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.9F));
-        ImGui::Begin(info_popup.window_id.c_str(), nullptr,
+        imgui::scoped_window window(info_popup.window_id.c_str(),
             ImGuiWindowFlags_NoCollapse |
             ImGuiWindowFlags_NoSavedSettings |
             ImGuiWindowFlags_AlwaysAutoResize |
@@ -855,15 +847,9 @@ struct map_widget::impl : public sdl::event_listener
         const auto& L = nasrbrowse::find_feature_type(feature_types, info_popup.feature);
         auto title = L.summary(info_popup.feature);
         ImGui::TextUnformatted(title.c_str());
-        ImGui::SameLine();
-        auto btn_w = ImGui::GetFrameHeight();
-        auto avail = ImGui::GetContentRegionAvail().x;
-        if(avail > btn_w)
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btn_w);
-        if(ImGui::SmallButton("X##info_close"))
+        if(imgui::right_aligned_close_button("X##info_close"))
         {
             close_info_popup();
-            ImGui::End();
             return false;
         }
         ImGui::Separator();
@@ -874,7 +860,7 @@ struct map_widget::impl : public sdl::event_listener
         auto rows = L.info_kv(info_popup.feature);
         const ImGuiTableFlags flags =
             ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX;
-        if(ImGui::BeginTable("info_kv", 2, flags))
+        if(imgui::scoped_table table("info_kv", 2, flags); table)
         {
             ImGui::TableSetupColumn("k", ImGuiTableColumnFlags_WidthFixed);
             ImGui::TableSetupColumn("v", ImGuiTableColumnFlags_WidthFixed, INFO_VALUE_WRAP_PX);
@@ -907,10 +893,7 @@ struct map_widget::impl : public sdl::event_listener
                 ImGui::TextUnformatted(value.c_str());
                 ImGui::PopTextWrapPos();
             }
-            ImGui::EndTable();
         }
-
-        ImGui::End();
 
         auto need_more = info_popup.warmup_frames > 0;
         if(need_more) --info_popup.warmup_frames;
@@ -936,7 +919,7 @@ struct map_widget::impl : public sdl::event_listener
         ImGui::SetNextWindowBgAlpha(0.9F);
         ImGui::SetNextWindowSizeConstraints(
             ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.9F));
-        ImGui::Begin(route_popup_window_id.c_str(), nullptr,
+        imgui::scoped_window window(route_popup_window_id.c_str(),
             ImGuiWindowFlags_NoCollapse |
             ImGuiWindowFlags_NoSavedSettings |
             ImGuiWindowFlags_AlwaysAutoResize |
@@ -944,15 +927,9 @@ struct map_widget::impl : public sdl::event_listener
 
         // Title row: "Flight route" on the left, [X] on the right.
         ImGui::TextUnformatted("Flight route");
-        ImGui::SameLine();
-        auto btn_w = ImGui::GetFrameHeight();
-        auto avail = ImGui::GetContentRegionAvail().x;
-        if(avail > btn_w)
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btn_w);
-        if(ImGui::SmallButton("X##route_info_close"))
+        if(imgui::right_aligned_close_button("X##route_info_close"))
         {
             set_route_selected(false);
-            ImGui::End();
             return false;
         }
         ImGui::Separator();
@@ -960,7 +937,7 @@ struct map_widget::impl : public sdl::event_listener
         auto legs = route->compute_legs();
         const auto flags =
             ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit;
-        if(ImGui::BeginTable("route_info_legs", 4, flags))
+        if(imgui::scoped_table table("route_info_legs", 4, flags); table)
         {
             ImGui::TableSetupColumn("From");
             ImGui::TableSetupColumn("To");
@@ -979,7 +956,6 @@ struct map_widget::impl : public sdl::event_listener
                 ImGui::TableSetColumnIndex(3);
                 ImGui::Text("%03.0f", leg.true_course_deg);
             }
-            ImGui::EndTable();
         }
         double total_nm = 0.0;
         for(const auto& l : legs) total_nm += l.distance_nm;
@@ -988,11 +964,8 @@ struct map_widget::impl : public sdl::event_listener
         if(ImGui::Button("Delete route"))
         {
             erase_route();
-            ImGui::End();
             return false;
         }
-
-        ImGui::End();
 
         auto need_more = route_popup_warmup_frames > 0;
         if(need_more) --route_popup_warmup_frames;
