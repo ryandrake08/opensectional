@@ -1,12 +1,6 @@
 #pragma once
 
 #include <glm/glm.hpp>
-#include <sdl/sampler.hpp>
-
-namespace sdl
-{
-    class device;
-}
 
 namespace nasrbrowse
 {
@@ -21,12 +15,9 @@ namespace nasrbrowse
 
     struct render_context
     {
-        explicit render_context(const sdl::device& dev);
-
-        render_pass_id current_pass;
-        glm::mat4 projection_matrix;
-        float normalized_viewport_width;
-        sdl::sampler sampler;
+        render_pass_id current_pass = render_pass_id::trianglelist_0;
+        glm::mat4 projection_matrix{1.0F};
+        float normalized_viewport_width = 1.0F;
     };
 
 } // namespace nasrbrowse

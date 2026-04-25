@@ -1,5 +1,6 @@
 #include "label_renderer.hpp"
 #include "render_context.hpp"
+#include <NotoSans_Regular_ttf.h>
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -15,6 +16,18 @@
 #include <sdl/text_engine.hpp>
 #include <sdl/types.hpp>
 #include <vector>
+
+namespace
+{
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+    // Font data is a generated C array that decays to a pointer when
+    // passed to sdl::font.
+    sdl::font load_font(sdl::text_engine& engine, int ptsize)
+    {
+        return {engine, NotoSans_Regular_ttf, NotoSans_Regular_ttf_len, ptsize};
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+}
 
 namespace nasrbrowse
 {
@@ -59,9 +72,10 @@ namespace nasrbrowse
     struct label_renderer::impl
     {
         sdl::device& dev;
-        sdl::text_engine& engine;
-        sdl::font& font;
-        sdl::font& outline_font;
+        sdl::text_engine engine;
+        sdl::font font;
+        sdl::font outline_font;
+        sdl::sampler sampler;
         // Cached label text objects (rebuilt only on set_candidates)
         std::vector<cached_label> labels;
 
@@ -84,19 +98,20 @@ namespace nasrbrowse
 
         bool dirty = false;
 
-        impl(sdl::device& dev, sdl::text_engine& engine,
-             sdl::font& font, sdl::font& outline_font)
+        explicit impl(sdl::device& dev)
             : dev(dev)
-            , engine(engine)
-            , font(font)
-            , outline_font(outline_font)
+            , engine(dev)
+            , font(load_font(engine, 13))
+            , outline_font(load_font(engine, 13))
+            , sampler(dev, sdl::filter::nearest, sdl::filter::nearest,
+                      sdl::sampler_address_mode::clamp_to_edge)
         {
+            outline_font.set_outline(1);
         }
     };
 
-    label_renderer::label_renderer(sdl::device& dev, sdl::text_engine& engine,
-                                   sdl::font& font, sdl::font& outline_font)
-        : pimpl(std::make_unique<impl>(dev, engine, font, outline_font))
+    label_renderer::label_renderer(sdl::device& dev)
+        : pimpl(std::make_unique<impl>(dev))
     {
     }
 
@@ -446,7 +461,6 @@ namespace nasrbrowse
 
     void label_renderer::render(sdl::render_pass& pass,
                                 const render_context& ctx,
-                                const sdl::sampler& samp,
                                 int viewport_width,
                                 int viewport_height) const
     {
@@ -478,7 +492,7 @@ namespace nasrbrowse
         if(pimpl->outline_vertex_buffer && pimpl->outline_index_buffer)
         {
             auto first_visible = pimpl->visible[0];
-            pass.bind_fragment_texture_sampler(0, pimpl->labels[first_visible].outline, samp);
+            pass.bind_fragment_texture_sampler(0, pimpl->labels[first_visible].outline, pimpl->sampler);
             pass.bind_vertex_buffer(*pimpl->outline_vertex_buffer);
             pass.bind_index_buffer(*pimpl->outline_index_buffer);
             pass.draw_indexed(static_cast<uint32_t>(pimpl->outline_indices.size()));
@@ -487,7 +501,7 @@ namespace nasrbrowse
         // Draw fill (all fill texts share the same atlas)
         {
             auto first_visible = pimpl->visible[0];
-            pass.bind_fragment_texture_sampler(0, pimpl->labels[first_visible].fill, samp);
+            pass.bind_fragment_texture_sampler(0, pimpl->labels[first_visible].fill, pimpl->sampler);
             pass.bind_vertex_buffer(*pimpl->fill_vertex_buffer);
             pass.bind_index_buffer(*pimpl->fill_index_buffer);
             pass.draw_indexed(static_cast<uint32_t>(pimpl->fill_indices.size()));

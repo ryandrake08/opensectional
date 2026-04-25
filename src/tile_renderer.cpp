@@ -11,6 +11,7 @@
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
 #include <sdl/render_pass.hpp>
+#include <sdl/sampler.hpp>
 #include <sdl/surface.hpp>
 #include <sdl/texture.hpp>
 #include <sdl/types.hpp>
@@ -115,6 +116,7 @@ namespace nasrbrowse
     struct tile_renderer::impl
     {
         sdl::device& dev;
+        sdl::sampler sampler;
         std::string tile_path;
         int max_zoom = 15;
 
@@ -153,6 +155,8 @@ namespace nasrbrowse
 
         impl(sdl::device& dev, std::string tile_path)
             : dev(dev)
+            , sampler(dev, sdl::filter::linear, sdl::filter::linear,
+                      sdl::sampler_address_mode::clamp_to_edge)
             , tile_path(std::move(tile_path))
             , cache(1024)
         {
@@ -441,7 +445,7 @@ namespace nasrbrowse
             pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
             pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
             pass.bind_vertex_buffer(*gpu->vertex_buffer);
-            pass.bind_fragment_texture_sampler(0, *gpu->tex, ctx.sampler);
+            pass.bind_fragment_texture_sampler(0, *gpu->tex, pimpl->sampler);
             pass.draw(6);
         }
 
@@ -451,7 +455,7 @@ namespace nasrbrowse
             pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
             pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
             pass.bind_vertex_buffer(*quad.vertex_buffer);
-            pass.bind_fragment_texture_sampler(0, *quad.ancestor_gpu->tex, ctx.sampler);
+            pass.bind_fragment_texture_sampler(0, *quad.ancestor_gpu->tex, pimpl->sampler);
             pass.draw(6);
         }
     }

@@ -52,7 +52,6 @@ add_executable(nasrbrowse
     src/line_renderer.cpp
     src/main.cpp
     src/nasr_database.cpp
-    src/render_context.cpp
     src/route_plan_config.cpp
     src/route_planner.cpp
     src/route_submitter.cpp

@@ -24,12 +24,9 @@
 #include <sdl/command_buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
-#include <sdl/font.hpp>
 #include <sdl/pipeline.hpp>
 #include <sdl/render_pass.hpp>
-#include <sdl/sampler.hpp>
 #include <sdl/shader.hpp>
-#include <sdl/text_engine.hpp>
 #include <sdl/types.hpp>
 #include <sstream>
 #include <vector>
@@ -55,9 +52,6 @@
 #include <textured_vert_dxil.h>
 #endif
 
-// Embedded font
-#include <NotoSans_Regular_ttf.h>
-
 namespace
 {
     // Shader data loading, from xxd-produced headers
@@ -66,8 +60,8 @@ namespace
     struct shader_bytecode { const unsigned char* data; unsigned int len; };
 
     // NOLINTBEGIN(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-    // Shader bytecode and font data are generated C arrays that decay to
-    // pointers when stored in shader_bytecode or passed to sdl::font.
+    // Shader bytecode is a generated C array that decays to a pointer
+    // when stored in shader_bytecode.
     shader_bytecode get_spirv_bytecode(shader_id id, sdl::shader_stage_t stage)
     {
         if(stage == sdl::shader_stage::vertex)
@@ -150,12 +144,6 @@ namespace
             bc = get_spirv_bytecode(id, stage);
         return {dev, bc.data, bc.len, entrypoint, stage, format, num_samplers, num_storage_buffers};
     }
-
-    // Font data loading, from xxd-produced headers
-    sdl::font load_font(sdl::text_engine& engine, int ptsize)
-    {
-        return {engine, NotoSans_Regular_ttf, NotoSans_Regular_ttf_len, ptsize};
-    }
     // NOLINTEND(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
 }
 
@@ -227,12 +215,6 @@ struct map_widget::impl
     // Grid line vertex buffer (rebuilt on viewport change)
     std::vector<sdl::vertex_t2f_c4ub_v3f> grid_vertices;
     std::unique_ptr<sdl::buffer> grid_buffer;
-
-    // Text rendering (owned; only label_renderer uses these)
-    sdl::text_engine text_engine;
-    sdl::font label_font;
-    sdl::font outline_font;
-    sdl::sampler text_sampler;
 
     // Label renderer
     nasrbrowse::label_renderer labels;
@@ -313,18 +295,11 @@ struct map_widget::impl
               ? std::make_unique<nasrbrowse::tile_renderer>(dev, tile_path)
               : nullptr)
         , features(dev, db_path, nasrbrowse::chart_style(conf_path, nasrbrowse::chart_mode::vfr))
-        , text_engine(dev)
-        , label_font(load_font(text_engine, 13))
-        , outline_font(load_font(text_engine, 13))
-        , text_sampler(dev, sdl::filter::nearest, sdl::filter::nearest,
-                       sdl::sampler_address_mode::clamp_to_edge)
-        , labels(dev, text_engine, label_font, outline_font)
-        , render_ctx(dev)
+        , labels(dev)
         , pick_db(db_path)
         , styles(conf_path, nasrbrowse::chart_mode::vfr)
         , feature_types(nasrbrowse::make_feature_types())
     {
-        outline_font.set_outline(1);
     }
 
     void rebuild_grid()
@@ -1504,6 +1479,5 @@ void map_widget::render_frame(sdl::command_buffer& cmd, sdl::texture& swapchain)
     // Text labels (reuse textured pipeline)
     pass.bind_pipeline(d.textured_pipeline);
     ctx.current_pass = nasrbrowse::render_pass_id::text_labels_0;
-    d.labels.render(pass, ctx, d.text_sampler,
-                     d.view.viewport_width, d.view.viewport_height);
+    d.labels.render(pass, ctx, d.view.viewport_width, d.view.viewport_height);
 }
