@@ -11,7 +11,6 @@
 #include <exception>
 #include <imgui/context.hpp>
 #include <iostream>
-#include <memory>
 #include <sdl/command_buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
@@ -139,9 +138,8 @@ int main(int argc, char** argv)
             imgui_ctx.process_event(event);
         });
 
-        auto map = std::make_shared<map_widget>(dev, tile_path, db_path, conf_path);
-        event_mgr.add_listener(map);
-        map->framebuffer_size_event(1280, 1024);
+        map_widget map(dev, tile_path, db_path, conf_path, 1280, 1024);
+        event_mgr.add_listener(map.event_listener());
 
         // Sigil expansion runs on its own database/planner instance
         // so map_widget can stay focused on rendering. SQLite opens
@@ -166,27 +164,27 @@ int main(int argc, char** argv)
         auto last_render_ms = 0.0F;
         while(true)
         {
-            map->set_imgui_wants_mouse(imgui_ctx.wants_mouse());
-            map->set_imgui_wants_keyboard(imgui_ctx.wants_keyboard());
+            map.set_imgui_wants_mouse(imgui_ctx.wants_mouse());
+            map.set_imgui_wants_keyboard(imgui_ctx.wants_keyboard());
 
             if(event_mgr.dispatch_events()) break;
 
-            needs_render = map->update();
+            needs_render = map.update();
 
             imgui_ctx.new_frame();
 
-            auto ui_result = ui.draw(last_render_ms, map->zoom_level(),
-                                      map->feature_types());
+            auto ui_result = ui.draw(last_render_ms, map.zoom_level(),
+                                      map.feature_types());
             if(ui_result.visibility_changed)
             {
-                map->set_visibility(ui.visibility());
+                map.set_visibility(ui.visibility());
                 needs_render = true;
             }
             if(ui_result.selected_hit_index)
             {
                 auto idx = *ui_result.selected_hit_index;
                 if(idx >= 0 && idx < static_cast<int>(ui.search_results().size()))
-                    map->focus_on_hit(ui.search_results()[idx]);
+                    map.focus_on_hit(ui.search_results()[idx]);
                 ui.set_search_results({});
                 last_search_query.clear();
                 needs_render = true;
@@ -197,13 +195,13 @@ int main(int argc, char** argv)
                 ui.set_search_results(
                     last_search_query.empty()
                         ? std::vector<nasrbrowse::search_hit>{}
-                        : map->search(last_search_query, SEARCH_RESULT_LIMIT));
+                        : map.search(last_search_query, SEARCH_RESULT_LIMIT));
                 needs_render = true;
             }
 
             if(ui_result.clear_route)
             {
-                map->clear_route();
+                map.clear_route();
                 ui.clear_route_state();
                 needs_render = true;
             }
@@ -232,13 +230,13 @@ int main(int argc, char** argv)
                 {
                     if(expanded->empty())
                     {
-                        map->clear_route();
+                        map.clear_route();
                         ui.clear_route_state();
                     }
                     else
                     {
-                        map->set_route_text(*expanded);
-                        if(map->route()) ui.set_route_state(*map->route());
+                        map.set_route_text(*expanded);
+                        if(map.route()) ui.set_route_state(*map.route());
                         else ui.clear_route_state();
                     }
                     needs_render = true;
@@ -250,14 +248,14 @@ int main(int argc, char** argv)
                 needs_render = true;
             }
 
-            if(map->drain_route_dirty())
+            if(map.drain_route_dirty())
             {
-                if(map->route()) ui.set_route_state(*map->route());
+                if(map.route()) ui.set_route_state(*map.route());
                 else ui.clear_route_state();
                 needs_render = true;
             }
 
-            if(map->draw_imgui()) needs_render = true;
+            if(map.draw_imgui()) needs_render = true;
             if(imgui_ctx.wants_mouse()) needs_render = true;
             if(imgui_ctx.warming_up()) needs_render = true;
 
@@ -273,7 +271,7 @@ int main(int argc, char** argv)
                 auto swapchain = cmd.acquire_swapchain(win, width, height);
                 if(swapchain)
                 {
-                    map->render_frame(cmd, *swapchain);
+                    map.render_frame(cmd, *swapchain);
                     imgui_ctx.render(cmd, *swapchain);
                 }
 

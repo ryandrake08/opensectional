@@ -2,7 +2,6 @@
 #include "flight_route.hpp"
 #include <memory>
 #include <optional>
-#include <sdl/event.hpp>
 #include <string>
 #include <vector>
 
@@ -10,6 +9,7 @@ namespace sdl
 {
     class command_buffer;
     class device;
+    struct event_listener;
     class texture;
 }
 
@@ -23,17 +23,18 @@ namespace nasrbrowse
 // The main map widget: owns the tile renderer, feature renderer, label
 // renderer, pick/info popups, GPU pipelines, and map view (pan/zoom).
 // Handles all user input and dispatches render passes.
-class map_widget : public sdl::event_listener
+class map_widget
 {
     struct impl;
-    std::unique_ptr<impl> pimpl;
+    std::shared_ptr<impl> pimpl;
 
 public:
     // `tile_path` may be null if no basemap is available.
     // `conf_path` is the chart style INI.
     map_widget(sdl::device& dev, const char* tile_path,
-               const char* db_path, const char* conf_path);
-    ~map_widget() override;
+               const char* db_path, const char* conf_path,
+               int viewport_width, int viewport_height);
+    ~map_widget();
 
     // Apply per-layer and altitude-band visibility from the UI overlay.
     void set_visibility(const nasrbrowse::layer_visibility& vis);
@@ -80,12 +81,11 @@ public:
     // Returns true if another frame is needed for popup warmup.
     bool draw_imgui();
 
-    // sdl::event_listener interface
-    void key_event(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t mod) override;
-    void button_event(sdl::input_button_t button, sdl::input_action_t action, sdl::input_mod_t mod) override;
-    void cursor_position_event(double xpos, double ypos) override;
-    void scroll_event(double xoffset, double yoffset) override;
-    void framebuffer_size_event(int width, int height) override;
+    // The SDL event listener for this widget. Register with
+    // sdl::event_manager::add_listener. The listener owns its own
+    // shared lifetime, so it stays alive for as long as the event
+    // manager keeps a reference even if the map_widget is destroyed.
+    std::shared_ptr<sdl::event_listener> event_listener();
 
     // Drain async results and check if rendering is needed.
     bool update();

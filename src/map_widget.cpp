@@ -24,6 +24,7 @@
 #include <sdl/command_buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
+#include <sdl/event.hpp>
 #include <sdl/pipeline.hpp>
 #include <sdl/render_pass.hpp>
 #include <sdl/shader.hpp>
@@ -193,7 +194,7 @@ namespace
     };
 }
 
-struct map_widget::impl
+struct map_widget::impl : public sdl::event_listener
 {
     nasrbrowse::map_view view;
     sdl::device& dev;
@@ -272,7 +273,8 @@ struct map_widget::impl
     double cursor_last_y = 0;
 
     impl(sdl::device& dev, const char* tile_path,
-         const char* db_path, const char* conf_path)
+         const char* db_path, const char* conf_path,
+         int viewport_width, int viewport_height)
         : dev(dev)
         , linelist_pipeline(dev,
             load_shader(dev, shader_id::DEFAULT, sdl::shader_stage::vertex),
@@ -300,6 +302,7 @@ struct map_widget::impl
         , styles(conf_path, nasrbrowse::chart_mode::vfr)
         , feature_types(nasrbrowse::make_feature_types())
     {
+        set_viewport(viewport_width, viewport_height);
     }
 
     void rebuild_grid()
@@ -995,11 +998,194 @@ struct map_widget::impl
         if(need_more) --route_popup_warmup_frames;
         return need_more;
     }
+
+    void button_event(sdl::input_button_t button, sdl::input_action_t action, sdl::input_mod_t /*mods*/) override
+    {
+        // Track button state for drag detection.
+        if(action == sdl::input_action::release)
+            buttons_down.erase(button);
+        else
+            buttons_down.insert(button);
+
+        if(button.value != BUTTON_LEFT)
+            return;
+
+        if(action.value != 0) // press
+        {
+            dragged = false;
+            // Capture ImGui ownership at press time. A drag that
+            // started inside an ImGui widget (scrollbar, text input,
+            // etc.) must NOT pan the map even if the cursor leaves
+            // the widget mid-drag.
+            pan_drag_active = !imgui_wants_mouse;
+            // If the press landed on a route waypoint or leg, start a drag;
+            // this suppresses the normal pan + pick. The route gets selected
+            // implicitly so the drag has the same visual affordance as a
+            // drag on an already-selected route.
+            // Waypoint hit takes priority over segment hit.
+            if(route && !imgui_wants_mouse)
+            {
+                auto [lon, lat] = ndc_to_lonlat(cursor_ndc_x, cursor_ndc_y);
+                if(auto wp = hit_route_waypoint(lon, lat))
+                {
+                    route_drag.mode = route_drag_mode::waypoint;
+                    route_drag.index = *wp;
+                    set_route_selected(true, lon, lat);
+                }
+                else if(auto seg = hit_route_segment(lon, lat))
+                {
+                    route_drag.mode = route_drag_mode::segment;
+                    route_drag.index = *seg;
+                    set_route_selected(true, lon, lat);
+                }
+            }
+        }
+        else // release
+        {
+            auto mode = route_drag.mode;
+            route_drag.mode = route_drag_mode::none;
+            pan_drag_active = false;
+            if(mode != route_drag_mode::none && dragged)
+            {
+                handle_route_drag_release(mode);
+            }
+            else if(!dragged && !imgui_wants_mouse)
+            {
+                handle_pick();
+            }
+        }
+    }
+
+    void cursor_position_event(double xpos, double ypos) override
+    {
+        // Convert from window pixels to NDC via the projection matrix.
+        auto ypos_flipped = viewport_vec.w - ypos;
+        glm::vec3 pixel_pos(xpos, ypos_flipped, 0.0);
+        glm::vec3 pos(glm::unProject(pixel_pos, glm::mat4(1.0F),
+                                      projection_matrix, viewport_vec));
+
+        cursor_ndc_x = pos[0];
+        cursor_ndc_y = pos[1];
+
+        // If any button is held, dispatch as a drag.
+        if(!buttons_down.empty())
+        {
+            dragged = true;
+            if(route_drag.mode != route_drag_mode::none)
+            {
+                // Rubber-band follows cursor; force a redraw.
+                needs_update = true;
+            }
+            else if(pan_drag_active)
+            {
+                auto dx = pos[0] - cursor_last_x;
+                auto dy = pos[1] - cursor_last_y;
+                auto dx_meters = -dx * view.half_extent_y * 2.0;
+                auto dy_meters = -dy * view.half_extent_y * 2.0;
+                view.pan_meters(dx_meters, dy_meters);
+                rebuild_grid();
+                update_tiles();
+            }
+        }
+
+        cursor_last_x = pos[0];
+        cursor_last_y = pos[1];
+    }
+
+    void key_event(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t /*mods*/) override
+    {
+        // Suppress pan/zoom keybindings while a text input has focus.
+        if(imgui_wants_keyboard) return;
+
+        if(action != sdl::input_action::release)
+        {
+            switch(key.value)
+            {
+            case 'w':
+            case 'W':
+                view.pan(0.0, 0.1);
+                rebuild_grid();
+                update_tiles();
+                break;
+            case 's':
+            case 'S':
+                view.pan(0.0, -0.1);
+                rebuild_grid();
+                update_tiles();
+                break;
+            case 'a':
+            case 'A':
+                view.pan(-0.1, 0.0);
+                rebuild_grid();
+                update_tiles();
+                break;
+            case 'd':
+            case 'D':
+                view.pan(0.1, 0.0);
+                rebuild_grid();
+                update_tiles();
+                break;
+            case 'r':
+            case 'R':
+            {
+                auto z = static_cast<int>(view.zoom_level()) + 1;
+                view.zoom_to_level(z);
+                rebuild_grid();
+                update_tiles();
+                break;
+            }
+            case 'f':
+            case 'F':
+            {
+                auto z = static_cast<int>(view.zoom_level()) - 1;
+                view.zoom_to_level(z);
+                rebuild_grid();
+                update_tiles();
+                break;
+            }
+            }
+        }
+    }
+
+    void scroll_event(double /*xoffset*/, double yoffset) override
+    {
+        auto factor = (yoffset > 0) ? 0.9 : 1.0 / 0.9;
+        auto wx = cursor_ndc_x * 2.0 * view.half_extent_y + view.center_x;
+        auto wy = cursor_ndc_y * 2.0 * view.half_extent_y + view.center_y;
+        view.zoom_at(factor, wx, wy);
+        rebuild_grid();
+        update_tiles();
+    }
+
+    void set_viewport(int width, int height)
+    {
+        if(height == 0) return;
+        auto fwidth = static_cast<float>(width);
+        auto fheight = static_cast<float>(height);
+        viewport_vec = glm::vec4(0.0F, 0.0F, fwidth, fheight);
+        normalized_viewport_width = fwidth / fheight;
+        projection_matrix = glm::orthoLH_ZO(
+            -normalized_viewport_width * 0.5F,
+             normalized_viewport_width * 0.5F,
+            -0.5F, 0.5F, -1.0F, 1.0F);
+
+        view.viewport_width = width;
+        view.viewport_height = height;
+        rebuild_grid();
+        update_tiles();
+    }
+
+    void framebuffer_size_event(int width, int height) override
+    {
+        set_viewport(width, height);
+    }
 };
 
 map_widget::map_widget(sdl::device& dev, const char* tile_path,
-                       const char* db_path, const char* conf_path)
-    : pimpl(std::make_unique<impl>(dev, tile_path, db_path, conf_path))
+                       const char* db_path, const char* conf_path,
+                       int viewport_width, int viewport_height)
+    : pimpl(std::make_shared<impl>(dev, tile_path, db_path, conf_path,
+                                    viewport_width, viewport_height))
 {
 }
 
@@ -1080,64 +1266,6 @@ map_widget::feature_types() const
     return pimpl->feature_types;
 }
 
-void map_widget::button_event(sdl::input_button_t button, sdl::input_action_t action, sdl::input_mod_t /*mods*/)
-{
-    // Track button state for drag detection.
-    if(action == sdl::input_action::release)
-        pimpl->buttons_down.erase(button);
-    else
-        pimpl->buttons_down.insert(button);
-
-    if(button.value != BUTTON_LEFT)
-        return;
-
-    if(action.value != 0) // press
-    {
-        pimpl->dragged = false;
-        // Capture ImGui ownership at press time. A drag that
-        // started inside an ImGui widget (scrollbar, text input,
-        // etc.) must NOT pan the map even if the cursor leaves
-        // the widget mid-drag.
-        pimpl->pan_drag_active = !pimpl->imgui_wants_mouse;
-        // If the press landed on a route waypoint or leg, start a drag;
-        // this suppresses the normal pan + pick. The route gets selected
-        // implicitly so the drag has the same visual affordance as a
-        // drag on an already-selected route.
-        // Waypoint hit takes priority over segment hit.
-        if(pimpl->route && !pimpl->imgui_wants_mouse)
-        {
-            auto [lon, lat] = pimpl->ndc_to_lonlat(
-                pimpl->cursor_ndc_x, pimpl->cursor_ndc_y);
-            if(auto wp = pimpl->hit_route_waypoint(lon, lat))
-            {
-                pimpl->route_drag.mode = impl::route_drag_mode::waypoint;
-                pimpl->route_drag.index = *wp;
-                pimpl->set_route_selected(true, lon, lat);
-            }
-            else if(auto seg = pimpl->hit_route_segment(lon, lat))
-            {
-                pimpl->route_drag.mode = impl::route_drag_mode::segment;
-                pimpl->route_drag.index = *seg;
-                pimpl->set_route_selected(true, lon, lat);
-            }
-        }
-    }
-    else // release
-    {
-        auto mode = pimpl->route_drag.mode;
-        pimpl->route_drag.mode = impl::route_drag_mode::none;
-        pimpl->pan_drag_active = false;
-        if(mode != impl::route_drag_mode::none && pimpl->dragged)
-        {
-            pimpl->handle_route_drag_release(mode);
-        }
-        else if(!pimpl->dragged && !pimpl->imgui_wants_mouse)
-        {
-            pimpl->handle_pick();
-        }
-    }
-}
-
 bool map_widget::draw_imgui()
 {
     // Both popups can coexist in theory, but in practice the selector is
@@ -1179,123 +1307,9 @@ bool map_widget::draw_imgui()
     return a || b || c;
 }
 
-void map_widget::cursor_position_event(double xpos, double ypos)
+std::shared_ptr<sdl::event_listener> map_widget::event_listener()
 {
-    // Convert from window pixels to NDC via the projection matrix.
-    auto ypos_flipped = pimpl->viewport_vec.w - ypos;
-    glm::vec3 pixel_pos(xpos, ypos_flipped, 0.0);
-    glm::vec3 pos(glm::unProject(pixel_pos, glm::mat4(1.0F),
-                                  pimpl->projection_matrix, pimpl->viewport_vec));
-
-    pimpl->cursor_ndc_x = pos[0];
-    pimpl->cursor_ndc_y = pos[1];
-
-    // If any button is held, dispatch as a drag.
-    if(!pimpl->buttons_down.empty())
-    {
-        pimpl->dragged = true;
-        if(pimpl->route_drag.mode != impl::route_drag_mode::none)
-        {
-            // Rubber-band follows cursor; force a redraw.
-            pimpl->needs_update = true;
-        }
-        else if(pimpl->pan_drag_active)
-        {
-            auto dx = pos[0] - pimpl->cursor_last_x;
-            auto dy = pos[1] - pimpl->cursor_last_y;
-            auto dx_meters = -dx * pimpl->view.half_extent_y * 2.0;
-            auto dy_meters = -dy * pimpl->view.half_extent_y * 2.0;
-            pimpl->view.pan_meters(dx_meters, dy_meters);
-            pimpl->rebuild_grid();
-            pimpl->update_tiles();
-        }
-    }
-
-    pimpl->cursor_last_x = pos[0];
-    pimpl->cursor_last_y = pos[1];
-}
-
-void map_widget::key_event(sdl::input_key_t key, sdl::input_action_t action, sdl::input_mod_t /*mods*/)
-{
-    // Suppress pan/zoom keybindings while a text input has focus.
-    if(pimpl->imgui_wants_keyboard) return;
-
-    if(action != sdl::input_action::release)
-    {
-        switch(key.value)
-        {
-        case 'w':
-        case 'W':
-            pimpl->view.pan(0.0, 0.1);
-            pimpl->rebuild_grid();
-            pimpl->update_tiles();
-            break;
-        case 's':
-        case 'S':
-            pimpl->view.pan(0.0, -0.1);
-            pimpl->rebuild_grid();
-            pimpl->update_tiles();
-            break;
-        case 'a':
-        case 'A':
-            pimpl->view.pan(-0.1, 0.0);
-            pimpl->rebuild_grid();
-            pimpl->update_tiles();
-            break;
-        case 'd':
-        case 'D':
-            pimpl->view.pan(0.1, 0.0);
-            pimpl->rebuild_grid();
-            pimpl->update_tiles();
-            break;
-        case 'r':
-        case 'R':
-        {
-            auto z = static_cast<int>(pimpl->view.zoom_level()) + 1;
-            pimpl->view.zoom_to_level(z);
-            pimpl->rebuild_grid();
-            pimpl->update_tiles();
-            break;
-        }
-        case 'f':
-        case 'F':
-        {
-            auto z = static_cast<int>(pimpl->view.zoom_level()) - 1;
-            pimpl->view.zoom_to_level(z);
-            pimpl->rebuild_grid();
-            pimpl->update_tiles();
-            break;
-        }
-        }
-    }
-}
-
-void map_widget::scroll_event(double /*xoffset*/, double yoffset)
-{
-    auto factor = (yoffset > 0) ? 0.9 : 1.0 / 0.9;
-    auto wx = pimpl->cursor_ndc_x * 2.0 * pimpl->view.half_extent_y + pimpl->view.center_x;
-    auto wy = pimpl->cursor_ndc_y * 2.0 * pimpl->view.half_extent_y + pimpl->view.center_y;
-    pimpl->view.zoom_at(factor, wx, wy);
-    pimpl->rebuild_grid();
-    pimpl->update_tiles();
-}
-
-void map_widget::framebuffer_size_event(int width, int height)
-{
-    if(height == 0) return;
-    auto fwidth = static_cast<float>(width);
-    auto fheight = static_cast<float>(height);
-    pimpl->viewport_vec = glm::vec4(0.0F, 0.0F, fwidth, fheight);
-    pimpl->normalized_viewport_width = fwidth / fheight;
-    pimpl->projection_matrix = glm::orthoLH_ZO(
-        -pimpl->normalized_viewport_width * 0.5F,
-         pimpl->normalized_viewport_width * 0.5F,
-        -0.5F, 0.5F, -1.0F, 1.0F);
-
-    pimpl->view.viewport_width = width;
-    pimpl->view.viewport_height = height;
-    pimpl->rebuild_grid();
-    pimpl->update_tiles();
+    return pimpl;
 }
 
 bool map_widget::update()
