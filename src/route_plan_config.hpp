@@ -4,7 +4,7 @@
 
 class ini_config;
 
-namespace nasrbrowse
+namespace osect
 {
     // Build a `route_planner::options` value from the [route_plan]
     // section of an ini file, applying g3xfplan-style defaults for
@@ -14,4 +14,4 @@ namespace nasrbrowse
     // PREFER / INCLUDE / AVOID / REJECT (case-insensitive).
     route_planner::options load_route_plan_options(const ini_config& ini);
 
-} // namespace nasrbrowse
+} // namespace osect

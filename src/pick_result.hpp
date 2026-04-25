@@ -4,7 +4,7 @@
 #include <variant>
 #include <vector>
 
-namespace nasrbrowse
+namespace osect
 {
     using feature = std::variant<
         airport,
@@ -32,4 +32,4 @@ namespace nasrbrowse
         std::vector<feature> features;
     };
 
-} // namespace nasrbrowse
+} // namespace osect

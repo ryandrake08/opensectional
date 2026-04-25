@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace nasrbrowse
+namespace osect
 {
     struct airport;
 
@@ -150,4 +150,4 @@ namespace nasrbrowse
         filter_list visible_sua_types(double zoom) const;             // SUA_TYPE: RA,PA,WA,AA,NSA
     };
 
-} // namespace nasrbrowse
+} // namespace osect

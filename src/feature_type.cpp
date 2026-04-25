@@ -25,7 +25,7 @@ namespace util {
     template <> struct nth<1, glm::vec2> { static float get(const glm::vec2& p) { return p.y; } };
 }}
 
-namespace nasrbrowse
+namespace osect
 {
     namespace
     {

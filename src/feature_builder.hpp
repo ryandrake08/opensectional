@@ -12,7 +12,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace nasrbrowse
+namespace osect
 {
     class chart_style;
     class nasr_database;
@@ -140,4 +140,4 @@ namespace nasrbrowse
         std::optional<feature_build_result> drain_result();
     };
 
-} // namespace nasrbrowse
+} // namespace osect

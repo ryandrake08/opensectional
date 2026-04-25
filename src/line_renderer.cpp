@@ -6,7 +6,7 @@
 #include <sdl/render_pass.hpp>
 #include <sdl/types.hpp>
 
-namespace nasrbrowse
+namespace osect
 {
     // Shared uniform buffer (same for all instances)
     struct shared_uniform_buffer
@@ -227,4 +227,4 @@ namespace nasrbrowse
         pass.draw(6, pimpl->instance_count);
     }
 
-} // namespace nasrbrowse
+} // namespace osect

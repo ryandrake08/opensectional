@@ -1,7 +1,7 @@
 #include "geo_math.hpp"
 #include <cmath>
 
-namespace nasrbrowse
+namespace osect
 {
     namespace
     {
@@ -134,4 +134,4 @@ namespace nasrbrowse
         return pts;
     }
 
-} // namespace nasrbrowse
+} // namespace osect

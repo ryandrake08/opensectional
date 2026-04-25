@@ -12,7 +12,7 @@ namespace sdl
     class render_pass;
 }
 
-namespace nasrbrowse
+namespace osect
 {
 
     class line_renderer
@@ -46,4 +46,4 @@ namespace nasrbrowse
                     int viewport_height) const;
     };
 
-} // namespace nasrbrowse
+} // namespace osect

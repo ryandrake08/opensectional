@@ -14,7 +14,7 @@
 #include <sdl/render_pass.hpp>
 #include <sdl/types.hpp>
 
-namespace nasrbrowse
+namespace osect
 {
     // Query cache tuning
     constexpr auto REQUERY_ZOOM_THRESHOLD = 0.5;
@@ -66,7 +66,7 @@ namespace nasrbrowse
 
         double zoom_level() const
         {
-            return nasrbrowse::zoom_level(half_extent_y, viewport_height);
+            return osect::zoom_level(half_extent_y, viewport_height);
         }
 
         bool needs_requery(const geo_bbox& bbox) const
@@ -300,4 +300,4 @@ namespace nasrbrowse
         }
     }
 
-} // namespace nasrbrowse
+} // namespace osect

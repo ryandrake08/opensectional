@@ -7,7 +7,7 @@
 #include <string>
 #include <unordered_set>
 
-namespace nasrbrowse
+namespace osect
 {
     // Prepare a statement and validate its column count at startup
     static sqlite::statement prepare_checked(sqlite::database& db, const char* sql,
@@ -1656,4 +1656,4 @@ namespace nasrbrowse
         return drain_rtree_rowids(pimpl->stmt_rtree_bbox_fixes, bbox);
     }
 
-} // namespace nasrbrowse
+} // namespace osect

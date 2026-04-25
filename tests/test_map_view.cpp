@@ -5,7 +5,7 @@
 
 #include <cmath>
 
-using namespace nasrbrowse;
+using namespace osect;
 
 TEST_CASE("HALF_CIRCUMFERENCE matches the Web Mercator reference value")
 {

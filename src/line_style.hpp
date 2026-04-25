@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-namespace nasrbrowse
+namespace osect
 {
 
     struct line_style
@@ -23,4 +23,4 @@ namespace nasrbrowse
         line_style style;
     };
 
-} // namespace nasrbrowse
+} // namespace osect

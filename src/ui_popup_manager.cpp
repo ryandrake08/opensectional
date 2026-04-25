@@ -7,7 +7,7 @@
 #include <imgui/scoped.hpp>
 #include <string>
 
-namespace nasrbrowse
+namespace osect
 {
 
     namespace
@@ -427,4 +427,4 @@ namespace nasrbrowse
         return out;
     }
 
-} // namespace nasrbrowse
+} // namespace osect

@@ -3,7 +3,7 @@
 #include "geo_types.hpp"
 #include <vector>
 
-namespace nasrbrowse
+namespace osect
 {
     // Number of line segments used to approximate a geodesic circle
     constexpr auto GEODESIC_CIRCLE_SEGMENTS = 48;
@@ -39,4 +39,4 @@ namespace nasrbrowse
                                          double lat_b, double lon_b,
                                          double lat_p, double lon_p);
 
-} // namespace nasrbrowse
+} // namespace osect

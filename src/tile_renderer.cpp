@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace nasrbrowse
+namespace osect
 {
     struct tile_gpu
     {
@@ -32,31 +32,31 @@ namespace nasrbrowse
             return key == other.key;
         }
     };
-} // namespace nasrbrowse
+} // namespace osect
 
 namespace std
 {
     template<>
-    struct hash<std::shared_ptr<nasrbrowse::tile_gpu>>
+    struct hash<std::shared_ptr<osect::tile_gpu>>
     {
-        size_t operator()(const std::shared_ptr<nasrbrowse::tile_gpu>& p) const
+        size_t operator()(const std::shared_ptr<osect::tile_gpu>& p) const
         {
-            return std::hash<nasrbrowse::tile_key>()(p->key);
+            return std::hash<osect::tile_key>()(p->key);
         }
     };
 
     template<>
-    struct equal_to<std::shared_ptr<nasrbrowse::tile_gpu>>
+    struct equal_to<std::shared_ptr<osect::tile_gpu>>
     {
-        bool operator()(const std::shared_ptr<nasrbrowse::tile_gpu>& a,
-                        const std::shared_ptr<nasrbrowse::tile_gpu>& b) const
+        bool operator()(const std::shared_ptr<osect::tile_gpu>& a,
+                        const std::shared_ptr<osect::tile_gpu>& b) const
         {
             return a->key == b->key;
         }
     };
 } // namespace std
 
-namespace nasrbrowse
+namespace osect
 {
     // Generate 6 vertices for a tile quad in Web Mercator meters.
     // UV coordinates specify the sub-region of the texture to sample
@@ -460,4 +460,4 @@ namespace nasrbrowse
         }
     }
 
-} // namespace nasrbrowse
+} // namespace osect

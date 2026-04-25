@@ -1,6 +1,6 @@
 #pragma once
 
-namespace nasrbrowse
+namespace osect
 {
     // Half the Web Mercator circumference in meters (~20037508.34)
     constexpr auto HALF_CIRCUMFERENCE = 20037508.342789244;
@@ -93,4 +93,4 @@ namespace nasrbrowse
         void clamp_extent();
     };
 
-} // namespace nasrbrowse
+} // namespace osect

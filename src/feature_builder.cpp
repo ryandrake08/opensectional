@@ -15,7 +15,7 @@
 #include <thread>
 #include <vector>
 
-namespace nasrbrowse
+namespace osect
 {
     bool build_context::is_at_navaid(float x, float y) const
     {
@@ -298,4 +298,4 @@ namespace nasrbrowse
         return result;
     }
 
-} // namespace nasrbrowse
+} // namespace osect

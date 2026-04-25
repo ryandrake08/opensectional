@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-namespace nasrbrowse
+namespace osect
 {
     enum class render_pass_id
     {
@@ -20,4 +20,4 @@ namespace nasrbrowse
         float normalized_viewport_width = 1.0F;
     };
 
-} // namespace nasrbrowse
+} // namespace osect

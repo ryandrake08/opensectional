@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download FAA aeronautical data for NASRBrowse.
+"""Download FAA aeronautical data for OpenSectional.
 
 Scrapes the FAA NASR subscription page and related sources to download
 the data files needed by the build_* ingesters.
@@ -202,7 +202,7 @@ SOURCES = ("nasr", "shp", "aixm", "dof", "adiz", "tfr")
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Download FAA aeronautical data for NASRBrowse."
+        description="Download FAA aeronautical data for OpenSectional."
     )
     parser.add_argument("--preview", action="store_true",
                         help="Download Preview cycle data instead of Current")
@@ -274,12 +274,12 @@ def main():
     if wanted == set(SOURCES):
         print(f"  python3 tools/build_all.py "
               f"{paths['nasr']} {paths['shp']} {paths['aixm']} "
-              f"{paths['dof']} {paths['adiz']} {paths['tfr']} nasr.db")
+              f"{paths['dof']} {paths['adiz']} {paths['tfr']} osect.db")
     else:
         for name in SOURCES:
             if name in wanted:
-                print(f"  python3 tools/build_{name}.py {paths[name]} nasr.db")
-        print("  python3 tools/build_search.py nasr.db")
+                print(f"  python3 tools/build_{name}.py {paths[name]} osect.db")
+        print("  python3 tools/build_search.py osect.db")
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-namespace nasrbrowse
+namespace osect
 {
     struct ui_section
     {
@@ -42,4 +42,4 @@ namespace nasrbrowse
     std::optional<std::pair<int, int>> draw_sectioned_selectable_list(
         const std::vector<ui_section>& sections);
 
-} // namespace nasrbrowse
+} // namespace osect

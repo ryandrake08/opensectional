@@ -36,8 +36,8 @@ namespace
             << "  -v, -vv, -vvv              Increase verbosity\n"
             << "  -g, --gpu <driver>         GPU driver: vulkan, metal, direct3d12\n"
             << "  -b, --basemap <path>       Basemap tile directory\n"
-            << "  -d, --database <nasr.db>   NASR SQLite database\n"
-            << "  -c, --conf <nasrbrowse.ini> Chart style config\n"
+            << "  -d, --database <osect.db>   NASR SQLite database\n"
+            << "  -c, --conf <osect.ini> Chart style config\n"
             << "\n"
             << "When a path option is omitted, the asset is loaded from next to\n"
             << "the executable (installer layout) or the current directory.\n";
@@ -94,10 +94,10 @@ int main(int argc, char** argv)
     std::string db_path_owned;
     if(!db_path)
     {
-        db_path_owned = sdl::resolve_bundled_asset("nasr.db");
+        db_path_owned = sdl::resolve_bundled_asset("osect.db");
         if(db_path_owned.empty())
         {
-            std::cerr << "No nasr.db supplied and none found next to the executable or in the current directory." << std::endl;
+            std::cerr << "No osect.db supplied and none found next to the executable or in the current directory." << std::endl;
             print_usage(std::cerr, argv[0]);
             return EXIT_FAILURE;
         }
@@ -112,8 +112,8 @@ int main(int argc, char** argv)
     std::string ini_path_owned;
     if(!conf_path)
     {
-        ini_path_owned = sdl::resolve_bundled_asset("nasrbrowse.ini");
-        conf_path = ini_path_owned.empty() ? "nasrbrowse.ini" : ini_path_owned.c_str();
+        ini_path_owned = sdl::resolve_bundled_asset("osect.ini");
+        conf_path = ini_path_owned.empty() ? "osect.ini" : ini_path_owned.c_str();
     }
 
     std::signal(SIGINT, signal_handler);
@@ -126,7 +126,7 @@ int main(int argc, char** argv)
     {
         sdl::instance sdl_ctx(verbosity);
         auto win_flags = sdl::window_flags::resizable | sdl::window_flags::high_pixel_density;
-        sdl::window win(sdl_ctx, "NASRBrowse", 1280, 1024, win_flags);
+        sdl::window win(sdl_ctx, "OpenSectional", 1280, 1024, win_flags);
 
         const char* default_driver = "vulkan";
         sdl::device dev(win, true, gpu_driver ? gpu_driver : default_driver);
@@ -144,17 +144,17 @@ int main(int argc, char** argv)
         // Sigil expansion runs on its own database/planner instance
         // so map_widget can stay focused on rendering. SQLite opens
         // are cheap and read-only.
-        nasrbrowse::nasr_database planner_db(db_path);
-        nasrbrowse::route_planner planner(planner_db);
-        nasrbrowse::route_submitter submitter(planner);
+        osect::nasr_database planner_db(db_path);
+        osect::route_planner planner(planner_db);
+        osect::route_submitter submitter(planner);
 
         // Load route-planner preference defaults from the same ini
         // that drives chart styling. The GUI overrides max_leg and
         // the use-airways toggle on a per-submission basis.
         ini_config plan_ini(conf_path);
-        auto plan_options = nasrbrowse::load_route_plan_options(plan_ini);
+        auto plan_options = osect::load_route_plan_options(plan_ini);
 
-        nasrbrowse::ui_overlay ui;
+        osect::ui_overlay ui;
         ui.set_route_planner_defaults(plan_options.max_leg_length_nm,
                                        plan_options.use_airways);
         std::string last_search_query;
@@ -194,7 +194,7 @@ int main(int argc, char** argv)
                 last_search_query = ui_result.search_query;
                 ui.set_search_results(
                     last_search_query.empty()
-                        ? std::vector<nasrbrowse::search_hit>{}
+                        ? std::vector<osect::search_hit>{}
                         : map.search(last_search_query, SEARCH_RESULT_LIMIT));
                 needs_render = true;
             }
@@ -242,7 +242,7 @@ int main(int argc, char** argv)
                     needs_render = true;
                 }
             }
-            catch(const nasrbrowse::route_parse_error& e)
+            catch(const osect::route_parse_error& e)
             {
                 ui.clear_route_state(e.what());
                 needs_render = true;

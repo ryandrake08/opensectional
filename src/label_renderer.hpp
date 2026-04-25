@@ -13,7 +13,7 @@ namespace sdl
     class render_pass;
 }
 
-namespace nasrbrowse
+namespace osect
 {
     struct render_context;
 
@@ -43,4 +43,4 @@ namespace nasrbrowse
                     int viewport_width, int viewport_height) const;
     };
 
-} // namespace nasrbrowse
+} // namespace osect

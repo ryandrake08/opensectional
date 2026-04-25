@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace nasrbrowse
+namespace osect
 {
 
 // Selects which altitude band the user wants rendered. The 18,000 ft MSL
@@ -122,4 +122,4 @@ inline bool altitude_filter_allows(const altitude_filter& af, unsigned bands)
         || ((bands & 0b100) && af.show_unlimited);
 }
 
-} // namespace nasrbrowse
+} // namespace osect

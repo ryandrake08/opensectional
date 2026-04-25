@@ -10,7 +10,7 @@
 #include "flight_route.hpp"
 #include "nasr_database.hpp"  // for search_hit (POD struct, not the class)
 
-namespace nasrbrowse
+namespace osect
 {
     class feature_type;
 
@@ -128,4 +128,4 @@ namespace nasrbrowse
         const layer_visibility& visibility() const;
     };
 
-} // namespace nasrbrowse
+} // namespace osect

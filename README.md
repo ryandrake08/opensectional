@@ -1,4 +1,4 @@
-# NASRBrowse
+# OpenSectional
 
 A desktop application for visualizing FAA NASR (National Airspace System Resource) data on an interactive map. Displays airports, navaids, fixes, airways, airspace boundaries, TFRs, military training routes, obstacles, weather stations, and communication outlets as vector overlays on a raster basemap. Features include rotated airway/MTR labels, composite airspace labels with altitude bounds, overlap-eliminated text placement, interactive flight-route planning with drag-to-edit waypoints, and A\* route pathfinding driven by a `?` sigil in the route text. Geographic features use spherical geometry (great-circle arcs, geodesic circles).
 
@@ -22,19 +22,19 @@ tools/env/bin/python3 tools/download_all.py nasr_data
 
 # 5. Build the NASR database (use the command printed by the download script)
 
-# 6. Run. With no options, nasrbrowse looks for nasr.db, basemap/, and
-#    nasrbrowse.ini next to the executable (installer layout) or in the
+# 6. Run. With no options, osect looks for osect.db, basemap/, and
+#    osect.ini next to the executable (installer layout) or in the
 #    current working directory (dev).
-./build/nasrbrowse
+./build/osect
 
 # Override any asset path explicitly:
-./build/nasrbrowse -d nasr.db -b basemap -c nasrbrowse.ini
+./build/osect -d osect.db -b basemap -c osect.ini
 
 # Verbosity: -v (warnings), -vv (info), -vvv (debug)
-./build/nasrbrowse -vv
+./build/osect -vv
 
 # Full usage:
-./build/nasrbrowse --help
+./build/osect --help
 ```
 
 ## Dependencies
@@ -82,11 +82,11 @@ cmake -B build-mingw -DCMAKE_TOOLCHAIN_FILE=mingw-w64-toolchain.cmake -DCMAKE_BU
 cmake --build build-mingw -j
 ```
 
-The resulting `build-mingw/nasrbrowse.exe` is self-contained (all dependencies statically linked, font embedded). The target machine needs a Vulkan-capable GPU with up-to-date drivers.
+The resulting `build-mingw/osect.exe` is self-contained (all dependencies statically linked, font embedded). The target machine needs a Vulkan-capable GPU with up-to-date drivers.
 
 ## Installers
 
-Once `nasr.db`, `basemap/`, and `nasrbrowse.ini` exist in the source tree (see [Data Preparation](#data-preparation)), CPack produces end-user installers that bundle the application together with all three assets.
+Once `osect.db`, `basemap/`, and `osect.ini` exist in the source tree (see [Data Preparation](#data-preparation)), CPack produces end-user installers that bundle the application together with all three assets.
 
 ### macOS (DragNDrop DMG)
 
@@ -96,16 +96,16 @@ cmake --build build -j
 cd build && cpack
 ```
 
-Produces `NASRBrowse-0.1.0-Darwin.dmg`. `nasrbrowse.app` bundles the Homebrew SDL3 dylibs into `Contents/Frameworks/` via `fixup_bundle` at install time, so the DMG is self-contained.
+Produces `OpenSectional-0.1.0-Darwin.dmg`. `OpenSectional.app` bundles the Homebrew SDL3 dylibs into `Contents/Frameworks/` via `fixup_bundle` at install time, so the DMG is self-contained.
 
 The installer is unsigned; to distribute outside your own machine, sign and notarize after `cpack`:
 
 ```bash
 codesign --deep --force --options runtime --sign "Developer ID Application: Your Name (TEAMID)" \
-    build/_CPack_Packages/Darwin/DragNDrop/NASRBrowse-0.1.0-Darwin/ALL_IN_ONE/nasrbrowse.app
-xcrun notarytool submit build/NASRBrowse-0.1.0-Darwin.dmg \
+    build/_CPack_Packages/Darwin/DragNDrop/OpenSectional-0.1.0-Darwin/ALL_IN_ONE/OpenSectional.app
+xcrun notarytool submit build/OpenSectional-0.1.0-Darwin.dmg \
     --apple-id <your-apple-id> --team-id TEAMID --password <app-specific-password> --wait
-xcrun stapler staple build/NASRBrowse-0.1.0-Darwin.dmg
+xcrun stapler staple build/OpenSectional-0.1.0-Darwin.dmg
 ```
 
 ### Windows (NSIS)
@@ -118,21 +118,21 @@ cmake --build build-mingw -j
 cd build-mingw && cpack -G NSIS
 ```
 
-Produces `NASRBrowse-0.1.0-win64.exe`. Installs into `Program Files\NASRBrowse\`, creates a Start Menu shortcut, and registers an uninstaller. Bundles the MinGW C++ runtime DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`); SDL3/SDL3_image/SDL3_ttf/sqlite3 are statically linked by `build-mingw-deps.sh`.
+Produces `OpenSectional-0.1.0-win64.exe`. Installs into `Program Files\OpenSectional\`, creates a Start Menu shortcut, and registers an uninstaller. Bundles the MinGW C++ runtime DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`); SDL3/SDL3_image/SDL3_ttf/sqlite3 are statically linked by `build-mingw-deps.sh`.
 
 NSIS (`makensis`) must be installed on the build host. Debian/Ubuntu: `sudo apt install nsis`.
 
 ### App icon
 
-`nasrbrowse.png` (1024×1024) is the app icon source. The build generates `nasrbrowse.icns` (macOS, via `sips` + `iconutil`) or `nasrbrowse.ico` (Windows, via ImageMagick `magick`) into the build directory and hands it to the installer. If the required tool is missing, the icon step is skipped silently and the installer ships without a custom icon.
+`osect.png` (1024×1024) is the app icon source. The build generates `osect.icns` (macOS, via `sips` + `iconutil`) or `osect.ico` (Windows, via ImageMagick `magick`) into the build directory and hands it to the installer. If the required tool is missing, the icon step is skipped silently and the installer ships without a custom icon.
 
 ### Asset gap
 
-`nasr.db` and `basemap/` are not in source control (too large, rebuilt from FAA / Natural Earth sources). `cpack` aborts with `Installer asset missing: ...` until they have been generated. See [Data Preparation](#data-preparation).
+`osect.db` and `basemap/` are not in source control (too large, rebuilt from FAA / Natural Earth sources). `cpack` aborts with `Installer asset missing: ...` until they have been generated. See [Data Preparation](#data-preparation).
 
 ### GPU Backend
 
-NASRBrowse defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` or `--gpu direct3d12` to override. The shader format is selected at runtime based on the active backend.
+OpenSectional defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` or `--gpu direct3d12` to override. The shader format is selected at runtime based on the active backend.
 
 ### Shader Compiler Toolchain
 
@@ -161,7 +161,7 @@ Shaders are cross-compiled automatically during the build:
 
 ## Data Preparation
 
-NASRBrowse draws on the following upstream data sources.
+OpenSectional draws on the following upstream data sources.
 
 | Data | Source | Website | Cadence | Ingester |
 |---|---|---|---|---|
@@ -235,7 +235,7 @@ The download script fetches data from the FAA NASR subscription page, the Digita
 
 ### 2. Basemap Tiles
 
-NASRBrowse requires a basemap tile directory in standard XYZ layout (`{z}/{x}/{y}.png`). The recommended basemap is rendered from Natural Earth public domain data.
+OpenSectional requires a basemap tile directory in standard XYZ layout (`{z}/{x}/{y}.png`). The recommended basemap is rendered from Natural Earth public domain data.
 
 #### Natural Earth basemap (recommended)
 
@@ -253,7 +253,7 @@ On first run, the script reprojects the source data to EPSG:3857 and saves a `*_
 
 #### FAA VFR raster charts (alternative)
 
-For a basemap derived from FAA aeronav charts, generate XYZ tile pyramids using [aeronav2tiles](https://github.com/ryandrake08/aeronav) or a similar tool and point nasrbrowse at the output directory.
+For a basemap derived from FAA aeronav charts, generate XYZ tile pyramids using [aeronav2tiles](https://github.com/ryandrake08/aeronav) or a similar tool and point osect at the output directory.
 
 ## Controls
 
@@ -271,7 +271,7 @@ For a basemap derived from FAA aeronav charts, generate XYZ tile pyramids using 
 
 Type a route string in the "Route" panel at the top-center, e.g. `O61 LIN V459 LOPES KTSP`, and press Enter or click **Set**. Waypoints may be airports, navaids, fixes, or raw lat/lon (`DDMMSSXDDDMMSSY`, e.g. `383412N1210305W`). Three-token runs `ENTRY AIRWAY EXIT` expand airway shorthand into individual fixes (auto-correcting ENTRY/EXIT to the closest airway fix if needed).
 
-After a route is parsed or drag-edited, NASRBrowse rewrites it into its most compact airway-aware form:
+After a route is parsed or drag-edited, OpenSectional rewrites it into its most compact airway-aware form:
 
 - **Airway compaction.** A run of three or more consecutive waypoints that are sequential fixes on a common airway is collapsed into that airway's shorthand. `SLI DODGR DARTS BERRI KIMMO` becomes `SLI V459 KIMMO`.
 - **Colinear coercion.** A user-typed direct leg A→B is rewritten to airway shorthand when both endpoints share an airway *and* every intermediate fix of that airway lies within 0.5 NM of the direct great-circle path. The check is iterative from the near edge, so effectively-straight airways spanning hundreds of miles still coerce even when the midpoint shows a larger global cross-track. If any intermediate fails the tolerance, the leg is left alone — the user's typed direct route is always preserved.
@@ -279,7 +279,7 @@ After a route is parsed or drag-edited, NASRBrowse rewrites it into its most com
 
 ### A\* route pathfinding
 
-Insert a `?` between two waypoints (or between a waypoint and an airway token) and NASRBrowse's A\* planner expands it into a sigil-free route before parsing. Examples:
+Insert a `?` between two waypoints (or between a waypoint and an airway token) and OpenSectional's A\* planner expands it into a sigil-free route before parsing. Examples:
 
 | Input | Result |
 |---|---|
@@ -291,7 +291,7 @@ Insert a `?` between two waypoints (or between a waypoint and an airway token) a
 
 The "Use airways" checkbox in the Route panel turns on the airway-class preference (Victor PREFER by default, etc.) and forces airway-routable navaids and WP/RP/CN/MR fixes to INCLUDE for that submission. The "Max leg (nm)" input next to it caps any single A\* hop at the chosen distance. While planning runs on a background thread the input is disabled and an animated indicator is shown. Cross-country plans (e.g. `KSFO ? KJFK`) take a couple of seconds; short hops are imperceptible.
 
-Routing preferences are configured in the `[route_plan]` section of `nasrbrowse.ini`. Each waypoint subtype (airport, balloonport, seaplane base, gliderport, heliport, ultralight, VOR, VORTAC, VOR/DME, DME, NDB, NDB/DME, VFR fix) and each airway class (Victor, Jet, RNAV, color, other) takes one of `PREFER` / `INCLUDE` / `AVOID` / `REJECT` (cost multipliers 0.8 / 1.0 / 1.25 / 1000). A separate `route_airway_gap` key controls how A\* prices crossings of published airway discontinuities — `PREFER` makes following a named airway through its gaps cost-attractive; `INCLUDE` is neutral; `AVOID`/`REJECT` push the planner toward switching airways.
+Routing preferences are configured in the `[route_plan]` section of `osect.ini`. Each waypoint subtype (airport, balloonport, seaplane base, gliderport, heliport, ultralight, VOR, VORTAC, VOR/DME, DME, NDB, NDB/DME, VFR fix) and each airway class (Victor, Jet, RNAV, color, other) takes one of `PREFER` / `INCLUDE` / `AVOID` / `REJECT` (cost multipliers 0.8 / 1.0 / 1.25 / 1000). A separate `route_airway_gap` key controls how A\* prices crossings of published airway discontinuities — `PREFER` makes following a named airway through its gaps cost-attractive; `INCLUDE` is neutral; `AVOID`/`REJECT` push the planner toward switching airways.
 
 ### Command Line Options
 
@@ -365,8 +365,8 @@ tools/
 ## Testing
 
 ```bash
-# Run database query tests (requires a built nasr.db)
-tools/env/bin/python3 tools/test_nasr_queries.py nasr.db
+# Run database query tests (requires a built osect.db)
+tools/env/bin/python3 tools/test_nasr_queries.py osect.db
 ```
 
 ## Third-Party Components

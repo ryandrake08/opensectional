@@ -19,7 +19,7 @@
 #include <utility>
 #include <vector>
 
-namespace nasrbrowse
+namespace osect
 {
     struct layer_visibility;
     class chart_style;

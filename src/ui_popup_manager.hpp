@@ -5,7 +5,7 @@
 #include <optional>
 #include <vector>
 
-namespace nasrbrowse
+namespace osect
 {
     class feature_type;
     class flight_route;
@@ -83,4 +83,4 @@ namespace nasrbrowse
                                      bool is_segment_drag,
                                      std::size_t index);
 
-} // namespace nasrbrowse
+} // namespace osect

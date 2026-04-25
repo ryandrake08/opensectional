@@ -7,7 +7,7 @@
 #include <sstream>
 #include <unordered_map>
 
-namespace nasrbrowse
+namespace osect
 {
     // ---------------------------------------------------------------
     // Lat/lon parsing and formatting (file-local)
@@ -1067,4 +1067,4 @@ namespace nasrbrowse
         elements = std::move(new_elements);
     }
 
-} // namespace nasrbrowse
+} // namespace osect

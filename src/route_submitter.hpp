@@ -6,7 +6,7 @@
 #include <optional>
 #include <string>
 
-namespace nasrbrowse
+namespace osect
 {
     // Async wrapper around route_planner::expand_sigils. Runs sigil
     // expansion on a background thread so the UI can show a progress
@@ -41,4 +41,4 @@ namespace nasrbrowse
         std::optional<std::string> drain();
     };
 
-} // namespace nasrbrowse
+} // namespace osect

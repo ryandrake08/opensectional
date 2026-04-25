@@ -3,7 +3,7 @@
 
 #include "altitude_filter.hpp"
 
-using namespace nasrbrowse;
+using namespace osect;
 
 TEST_CASE("default filter shows low band only")
 {

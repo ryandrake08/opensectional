@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace nasrbrowse
+namespace osect
 {
     class nasr_database;
 
@@ -174,4 +174,4 @@ namespace nasrbrowse
         }
     };
 
-} // namespace nasrbrowse
+} // namespace osect

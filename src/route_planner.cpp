@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace nasrbrowse
+namespace osect
 {
     namespace
     {
@@ -716,4 +716,4 @@ namespace nasrbrowse
         return joined;
     }
 
-} // namespace nasrbrowse
+} // namespace osect

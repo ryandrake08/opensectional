@@ -13,7 +13,7 @@ namespace sdl
     class texture;
 }
 
-namespace nasrbrowse
+namespace osect
 {
     struct layer_visibility;
     struct search_hit;
@@ -37,20 +37,20 @@ public:
     ~map_widget();
 
     // Apply per-layer and altitude-band visibility from the UI overlay.
-    void set_visibility(const nasrbrowse::layer_visibility& vis);
+    void set_visibility(const osect::layer_visibility& vis);
 
     // Recenter the map on a search hit and zoom to fit.
-    void focus_on_hit(const nasrbrowse::search_hit& hit);
+    void focus_on_hit(const osect::search_hit& hit);
 
     // The ordered list of toggleable feature_types. Used by the UI
     // overlay to build its layer-visibility checkboxes.
-    const std::vector<std::unique_ptr<nasrbrowse::feature_type>>& feature_types() const;
+    const std::vector<std::unique_ptr<osect::feature_type>>& feature_types() const;
 
     // Run a full-text search against the NASR database.
-    std::vector<nasrbrowse::search_hit> search(const std::string& query, int limit);
+    std::vector<osect::search_hit> search(const std::string& query, int limit);
 
     // Parse `text` as a flight route and activate it. Empty text clears
-    // the route. Throws nasrbrowse::route_parse_error on parse failure —
+    // the route. Throws osect::route_parse_error on parse failure —
     // the caller is responsible for surfacing the message.
     void set_route_text(const std::string& text);
 
@@ -58,7 +58,7 @@ public:
     void clear_route();
 
     // Currently active route (nullopt if none).
-    const std::optional<nasrbrowse::flight_route>& route() const;
+    const std::optional<osect::flight_route>& route() const;
 
     // Returns true once if the route was mutated internally (e.g. via
     // segment drag-insert) since the last call; used by main() to re-push

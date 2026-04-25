@@ -7,7 +7,7 @@
 #include <thread>
 #include <unordered_set>
 
-namespace nasrbrowse
+namespace osect
 {
     struct tile_loader::impl
     {
@@ -118,4 +118,4 @@ namespace nasrbrowse
         return results;
     }
 
-} // namespace nasrbrowse
+} // namespace osect

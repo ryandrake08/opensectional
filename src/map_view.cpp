@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace nasrbrowse
+namespace osect
 {
     constexpr auto EARTH_RADIUS = 6378137.0;
 
@@ -113,7 +113,7 @@ namespace nasrbrowse
 
     double map_view::zoom_level() const
     {
-        return nasrbrowse::zoom_level(half_extent_y, viewport_height);
+        return osect::zoom_level(half_extent_y, viewport_height);
     }
 
     void map_view::zoom_to_level(int z)
@@ -169,4 +169,4 @@ namespace nasrbrowse
         half_extent_y = std::max(half_extent_y, min_extent);
     }
 
-} // namespace nasrbrowse
+} // namespace osect

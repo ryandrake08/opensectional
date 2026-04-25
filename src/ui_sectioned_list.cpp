@@ -3,7 +3,7 @@
 #include <cstring>
 #include <imgui.h>
 
-namespace nasrbrowse
+namespace osect
 {
     const std::array<feature_section_def, FEATURE_SECTION_COUNT> FEATURE_SECTIONS = {{
         {"APT",   "AIRPORTS"},
@@ -54,4 +54,4 @@ namespace nasrbrowse
         }
         return result;
     }
-} // namespace nasrbrowse
+} // namespace osect

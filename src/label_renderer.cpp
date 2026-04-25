@@ -29,7 +29,7 @@ namespace
     // NOLINTEND(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
 }
 
-namespace nasrbrowse
+namespace osect
 {
     // Label layout constants
     constexpr auto LABEL_HEIGHT = 16.0F;
@@ -508,4 +508,4 @@ namespace nasrbrowse
         }
     }
 
-} // namespace nasrbrowse
+} // namespace osect

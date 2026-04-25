@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <functional>
 
-namespace nasrbrowse
+namespace osect
 {
     struct tile_key
     {
@@ -16,14 +16,14 @@ namespace nasrbrowse
             return z == other.z && x == other.x && y == other.y;
         }
     };
-} // namespace nasrbrowse
+} // namespace osect
 
 namespace std
 {
     template<>
-    struct hash<nasrbrowse::tile_key>
+    struct hash<osect::tile_key>
     {
-        size_t operator()(const nasrbrowse::tile_key& k) const
+        size_t operator()(const osect::tile_key& k) const
         {
             size_t h = 0;
             h ^= std::hash<int>()(k.z) + 0x9e3779b9 + (h << 6) + (h >> 2);

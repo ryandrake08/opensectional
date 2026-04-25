@@ -20,7 +20,7 @@ namespace
 
         explicit tmp_ini(const std::string& contents)
         {
-            char tmpl[] = "/tmp/nasrbrowse_test_XXXXXX";
+            char tmpl[] = "/tmp/osect_test_XXXXXX";
             int fd = mkstemp(tmpl);
             REQUIRE(fd >= 0);
             close(fd);

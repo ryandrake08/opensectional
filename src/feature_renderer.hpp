@@ -12,7 +12,7 @@ namespace sdl
     class render_pass;
 }
 
-namespace nasrbrowse
+namespace osect
 {
     struct render_context;
     struct layer_visibility;
@@ -66,4 +66,4 @@ namespace nasrbrowse
         void set_route_selected(bool selected);
     };
 
-} // namespace nasrbrowse
+} // namespace osect

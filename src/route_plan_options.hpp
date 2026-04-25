@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace nasrbrowse
+namespace osect
 {
     // Cost-modifier presets used by route_plan_options. Values
     // match g3xfplan: PREFER discounts, INCLUDE is neutral, AVOID
@@ -104,4 +104,4 @@ namespace nasrbrowse
         }
     };
 
-} // namespace nasrbrowse
+} // namespace osect

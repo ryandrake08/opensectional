@@ -6,7 +6,7 @@
 #include <cctype>
 #include <stdexcept>
 
-namespace nasrbrowse
+namespace osect
 {
     namespace
     {
@@ -123,4 +123,4 @@ namespace nasrbrowse
         return o;
     }
 
-} // namespace nasrbrowse
+} // namespace osect

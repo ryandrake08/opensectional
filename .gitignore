@@ -10,7 +10,7 @@ mingw-deps
 mingw-deps-build
 tools/env*
 nasr_data
-nasr.db
+osect.db
 basemap
 vfr
 IMPLEMENTATION_PLAN.md

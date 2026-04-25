@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace nasrbrowse
+namespace osect
 {
     // Column order follows APT_BASE table (minus SITE_NO), with computed columns at end
     struct airport
@@ -630,4 +630,4 @@ namespace nasrbrowse
         std::vector<int> query_fix_rowids_bbox(const geo_bbox&) const;
     };
 
-} // namespace nasrbrowse
+} // namespace osect

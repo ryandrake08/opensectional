@@ -490,7 +490,7 @@ def test_performance(conn):
 
 
 def main():
-    db_path = sys.argv[1] if len(sys.argv) > 1 else "nasr.db"
+    db_path = sys.argv[1] if len(sys.argv) > 1 else "osect.db"
     conn = sqlite3.connect(db_path)
 
     all_passed = test_correctness(conn)

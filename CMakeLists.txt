@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.10)
-project(nasrbrowse CXX)
+project(osect CXX)
 
 # Package metadata (used by CPack on both platforms and by the macOS bundle)
 set(MAJOR_VERSION "0")
 set(MINOR_VERSION "1")
 set(BUILD_VERSION "0")
 set(APPLICATION_VERSION "${MAJOR_VERSION}.${MINOR_VERSION}.${BUILD_VERSION}")
-set(BUNDLE_IDENTIFIER "org.existens.nasrbrowse")
+set(BUNDLE_IDENTIFIER "org.existens.opensectional")
 
 # Export compile commands
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -38,7 +38,7 @@ if(BUILD_TESTING)
 endif()
 
 # Main executable
-add_executable(nasrbrowse
+add_executable(osect
     # Application sources
     src/ini_config.cpp
     src/geo_math.cpp
@@ -134,37 +134,37 @@ target_compile_options(sqlite_wrapper PRIVATE
 )
 
 # Include directories
-target_include_directories(nasrbrowse PRIVATE
+target_include_directories(osect PRIVATE
     ${CMAKE_SOURCE_DIR}/src    # For #include "layer.hpp" etc.
     ${CMAKE_SOURCE_DIR}/thirdparty
 )
 
 # C++ standard
-target_compile_features(nasrbrowse PRIVATE cxx_std_17)
+target_compile_features(osect PRIVATE cxx_std_17)
 
 # Compiler warnings (all build types)
-target_compile_options(nasrbrowse PRIVATE -Wall -Wextra -Werror)
+target_compile_options(osect PRIVATE -Wall -Wextra -Werror)
 
 # Build-type-specific compiler options
-target_compile_options(nasrbrowse PRIVATE
+target_compile_options(osect PRIVATE
     $<$<CONFIG:Debug>:${DEBUG_COMPILE_OPTIONS}>
     $<$<CONFIG:Release>:-O3>
     $<$<CONFIG:RelWithDebInfo>:${RELWITHDEBINFO_COMPILE_OPTIONS}>
 )
 
 # Build-type-specific definitions
-target_compile_definitions(nasrbrowse PRIVATE
+target_compile_definitions(osect PRIVATE
     $<$<CONFIG:Debug>:DEBUG=1>
 )
 
 # Build-type-specific linker options
-target_link_options(nasrbrowse PRIVATE
+target_link_options(osect PRIVATE
     $<$<CONFIG:Debug>:${DEBUG_COMPILE_OPTIONS}>
     $<$<CONFIG:RelWithDebInfo>:${RELWITHDEBINFO_COMPILE_OPTIONS}>
 )
 
 # Link libraries
-target_link_libraries(nasrbrowse PRIVATE
+target_link_libraries(osect PRIVATE
     imgui_wrapper
     sqlite_wrapper
 )
@@ -187,10 +187,10 @@ add_custom_target(embedded_font DEPENDS ${FONT_HEADER})
 add_subdirectory(shaders)
 
 # Add shader and font headers to include path
-target_include_directories(nasrbrowse PRIVATE ${SHADER_INCLUDE_DIR} ${CMAKE_BINARY_DIR})
+target_include_directories(osect PRIVATE ${SHADER_INCLUDE_DIR} ${CMAKE_BINARY_DIR})
 
 # Ensure shaders and font are built before the executable
-add_dependencies(nasrbrowse shaders embedded_font)
+add_dependencies(osect shaders embedded_font)
 
 # =============================================================================
 # clang-tidy target
@@ -233,13 +233,13 @@ endif()
 #
 # Prebuilt assets that ship with the installer. They are not in source control;
 # regenerate them via tools/ before running `cpack`.
-set(BUNDLED_DB      "${CMAKE_SOURCE_DIR}/nasr.db")
+set(BUNDLED_DB      "${CMAKE_SOURCE_DIR}/osect.db")
 set(BUNDLED_BASEMAP "${CMAKE_SOURCE_DIR}/basemap")
-set(BUNDLED_INI     "${CMAKE_SOURCE_DIR}/nasrbrowse.ini")
+set(BUNDLED_INI     "${CMAKE_SOURCE_DIR}/osect.ini")
 
-set(ICON_PNG            "${CMAKE_SOURCE_DIR}/nasrbrowse.png")
-set(INSTALLER_ICON_ICNS "${CMAKE_BINARY_DIR}/nasrbrowse.icns")
-set(INSTALLER_ICON_ICO  "${CMAKE_BINARY_DIR}/nasrbrowse.ico")
+set(ICON_PNG            "${CMAKE_SOURCE_DIR}/osect.png")
+set(INSTALLER_ICON_ICNS "${CMAKE_BINARY_DIR}/osect.icns")
+set(INSTALLER_ICON_ICO  "${CMAKE_BINARY_DIR}/osect.ico")
 
 # Platform-specific icon generation from the master PNG. Skipped silently
 # if the required tool is missing — installer blocks below make the icon
@@ -263,7 +263,7 @@ if(APPLE AND EXISTS "${ICON_PNG}")
             VERBATIM
         )
         add_custom_target(app_icon DEPENDS "${INSTALLER_ICON_ICNS}")
-        add_dependencies(nasrbrowse app_icon)
+        add_dependencies(osect app_icon)
     endif()
 endif()
 
@@ -283,7 +283,7 @@ if(WIN32 AND EXISTS "${ICON_PNG}")
             VERBATIM
         )
         add_custom_target(app_icon DEPENDS "${INSTALLER_ICON_ICO}")
-        add_dependencies(nasrbrowse app_icon)
+        add_dependencies(osect app_icon)
     endif()
 endif()
 
@@ -299,27 +299,28 @@ if(APPLE)
     # =========================================================================
     # macOS: bundle + DragNDrop DMG
     # =========================================================================
-    set_target_properties(nasrbrowse PROPERTIES
+    set_target_properties(osect PROPERTIES
+        OUTPUT_NAME "OpenSectional"
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_BUNDLE_NAME "NASRBrowse"
+        MACOSX_BUNDLE_BUNDLE_NAME "OpenSectional"
         MACOSX_BUNDLE_BUNDLE_VERSION "${APPLICATION_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${APPLICATION_VERSION}"
         MACOSX_BUNDLE_GUI_IDENTIFIER "${BUNDLE_IDENTIFIER}"
         MACOSX_BUNDLE_COPYRIGHT "existens.org"
     )
     if(TARGET app_icon)
-        set_target_properties(nasrbrowse PROPERTIES
-            MACOSX_BUNDLE_ICON_FILE "nasrbrowse.icns")
-        target_sources(nasrbrowse PRIVATE "${INSTALLER_ICON_ICNS}")
+        set_target_properties(osect PROPERTIES
+            MACOSX_BUNDLE_ICON_FILE "osect.icns")
+        target_sources(osect PRIVATE "${INSTALLER_ICON_ICNS}")
         set_source_files_properties("${INSTALLER_ICON_ICNS}" PROPERTIES
             MACOSX_PACKAGE_LOCATION Resources
             GENERATED TRUE)
     endif()
 
-    install(TARGETS nasrbrowse BUNDLE DESTINATION .)
+    install(TARGETS osect BUNDLE DESTINATION .)
 
     # Bundled assets go into Contents/Resources/ alongside the icon
-    set(_rsrc "nasrbrowse.app/Contents/Resources")
+    set(_rsrc "OpenSectional.app/Contents/Resources")
     install(FILES "${BUNDLED_DB}"  DESTINATION "${_rsrc}")
     install(FILES "${BUNDLED_INI}" DESTINATION "${_rsrc}")
     install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION "${_rsrc}")
@@ -328,17 +329,17 @@ if(APPLE)
     # install time. Runs inside the install prefix so paths resolve correctly.
     install(CODE "
         include(BundleUtilities)
-        set(_bundle \"\${CMAKE_INSTALL_PREFIX}/nasrbrowse.app\")
+        set(_bundle \"\${CMAKE_INSTALL_PREFIX}/OpenSectional.app\")
         fixup_bundle(\"\${_bundle}\" \"\" \"/usr/local/lib;/opt/homebrew/lib\")
     " COMPONENT applications)
 
     set(CPACK_GENERATOR "DragNDrop")
-    set(CPACK_PACKAGE_NAME "NASRBrowse")
+    set(CPACK_PACKAGE_NAME "OpenSectional")
     set(CPACK_PACKAGE_VENDOR "existens.org")
     set(CPACK_PACKAGE_VERSION_MAJOR "${MAJOR_VERSION}")
     set(CPACK_PACKAGE_VERSION_MINOR "${MINOR_VERSION}")
     set(CPACK_PACKAGE_VERSION_PATCH "${BUILD_VERSION}")
-    set(CPACK_DMG_VOLUME_NAME "NASRBrowse ${APPLICATION_VERSION}")
+    set(CPACK_DMG_VOLUME_NAME "OpenSectional ${APPLICATION_VERSION}")
     set(CPACK_DMG_FORMAT "UDZO")
     if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE")
         set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
@@ -353,7 +354,7 @@ elseif(WIN32)
     # =========================================================================
     # Windows: flat install tree + NSIS installer
     # =========================================================================
-    install(TARGETS nasrbrowse RUNTIME DESTINATION bin)
+    install(TARGETS osect RUNTIME DESTINATION bin)
     install(FILES "${BUNDLED_DB}"  DESTINATION bin)
     install(FILES "${BUNDLED_INI}" DESTINATION bin)
     install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION bin)
@@ -378,22 +379,22 @@ elseif(WIN32)
     endforeach()
 
     set(CPACK_GENERATOR "NSIS")
-    set(CPACK_PACKAGE_NAME "NASRBrowse")
+    set(CPACK_PACKAGE_NAME "OpenSectional")
     set(CPACK_PACKAGE_VENDOR "existens.org")
     set(CPACK_PACKAGE_VERSION_MAJOR "${MAJOR_VERSION}")
     set(CPACK_PACKAGE_VERSION_MINOR "${MINOR_VERSION}")
     set(CPACK_PACKAGE_VERSION_PATCH "${BUILD_VERSION}")
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "NASRBrowse")
-    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "FAA NASR chart viewer")
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "OpenSectional")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Open source chart viewer and flight planner")
     if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE")
         set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
     endif()
 
-    set(CPACK_NSIS_DISPLAY_NAME "NASRBrowse")
-    set(CPACK_NSIS_PACKAGE_NAME "NASRBrowse")
+    set(CPACK_NSIS_DISPLAY_NAME "OpenSectional")
+    set(CPACK_NSIS_PACKAGE_NAME "OpenSectional")
     set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
     set(CPACK_NSIS_MODIFY_PATH OFF)
-    set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\\\nasrbrowse.exe")
+    set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\\\osect.exe")
     if(TARGET app_icon)
         set(CPACK_NSIS_MUI_ICON    "${INSTALLER_ICON_ICO}")
         set(CPACK_NSIS_MUI_UNIICON "${INSTALLER_ICON_ICO}")
@@ -401,9 +402,9 @@ elseif(WIN32)
 
     # Start menu shortcut
     set(CPACK_NSIS_CREATE_ICONS_EXTRA
-        "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\NASRBrowse.lnk' '$INSTDIR\\\\bin\\\\nasrbrowse.exe'")
+        "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\OpenSectional.lnk' '$INSTDIR\\\\bin\\\\osect.exe'")
     set(CPACK_NSIS_DELETE_ICONS_EXTRA
-        "Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\NASRBrowse.lnk'")
+        "Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\OpenSectional.lnk'")
 
     _require_asset("${BUNDLED_DB}")
     _require_asset("${BUNDLED_BASEMAP}")

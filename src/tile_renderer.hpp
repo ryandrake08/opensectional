@@ -10,7 +10,7 @@ namespace sdl
     class render_pass;
 }
 
-namespace nasrbrowse
+namespace osect
 {
     struct render_context;
 
@@ -42,4 +42,4 @@ namespace nasrbrowse
         void render(sdl::render_pass& pass, const render_context& ctx, const glm::mat4& view_matrix) const;
     };
 
-} // namespace nasrbrowse
+} // namespace osect

@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
-namespace nasrbrowse
+namespace osect
 {
     static std::string mode_suffix(chart_mode mode)
     {
@@ -618,4 +618,4 @@ namespace nasrbrowse
         return out;
     }
 
-} // namespace nasrbrowse
+} // namespace osect

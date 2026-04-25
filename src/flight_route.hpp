@@ -7,7 +7,7 @@
 #include <variant>
 #include <vector>
 
-namespace nasrbrowse
+namespace osect
 {
     // Parse a NASR-shorthand coordinate token (DDMMSSXDDDMMSSY) into
     // decimal degrees. Returns nullopt if the token is not in that
@@ -159,4 +159,4 @@ namespace nasrbrowse
                                   const route_waypoint& wp);
     };
 
-} // namespace nasrbrowse
+} // namespace osect

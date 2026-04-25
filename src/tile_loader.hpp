@@ -10,7 +10,7 @@ namespace sdl
     class surface;
 }
 
-namespace nasrbrowse
+namespace osect
 {
 
     struct tile_load_result
@@ -48,4 +48,4 @@ namespace nasrbrowse
         std::vector<tile_load_result> drain_results();
     };
 
-} // namespace nasrbrowse
+} // namespace osect

@@ -6,7 +6,7 @@
 #include <atomic>
 #include <thread>
 
-namespace nasrbrowse
+namespace osect
 {
     struct route_submitter::impl
     {
@@ -59,4 +59,4 @@ namespace nasrbrowse
         return std::move(d.result);
     }
 
-} // namespace nasrbrowse
+} // namespace osect

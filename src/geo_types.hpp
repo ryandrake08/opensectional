@@ -1,6 +1,6 @@
 #pragma once
 
-namespace nasrbrowse
+namespace osect
 {
     struct geo_bbox
     {
@@ -16,4 +16,4 @@ namespace nasrbrowse
         double lon;
     };
 
-} // namespace nasrbrowse
+} // namespace osect
