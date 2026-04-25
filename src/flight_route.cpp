@@ -377,30 +377,84 @@ namespace nasrbrowse
     // Resolve a single token to a waypoint (airport > navaid > fix)
     // ---------------------------------------------------------------
 
+    // Pick the index of the candidate nearest to (hint_lat, hint_lon).
+    // When `hint` is empty or the candidate list has one entry, returns 0
+    // (preserving the historical "first match wins" behavior).
+    template <typename T>
+    static std::size_t nearest_index(
+        const std::vector<T>& candidates,
+        const std::optional<std::pair<double, double>>& hint)
+    {
+        if(!hint || candidates.size() <= 1) return 0;
+        std::size_t best = 0;
+        auto best_d = haversine_nm(hint->first, hint->second,
+                                    candidates[0].lat, candidates[0].lon);
+        for(std::size_t i = 1; i < candidates.size(); ++i)
+        {
+            auto d = haversine_nm(hint->first, hint->second,
+                                   candidates[i].lat, candidates[i].lon);
+            if(d < best_d) { best_d = d; best = i; }
+        }
+        return best;
+    }
+
+    // `hint`, when set, is the lat/lon of the nearest already-resolved
+    // waypoint — used to disambiguate ID collisions where the database
+    // contains multiple navaids or fixes sharing a name (e.g. several
+    // "IL" fixes in different states). The candidate geographically
+    // closest to the hint wins.
     static std::optional<route_waypoint>
-    resolve_waypoint(const std::string& token, const nasr_database& db)
+    resolve_waypoint(const std::string& token, const nasr_database& db,
+                      const std::optional<std::pair<double, double>>& hint
+                          = std::nullopt)
     {
         // Try lat/lon first
         auto ll = parse_latlon(token);
         if(ll) return route_waypoint{*ll};
 
-        // Try airport
+        // Try airport — IDs are unique in practice, no disambiguation needed.
         auto apts = db.lookup_airports(token);
         if(!apts.empty())
             return route_waypoint{airport_ref{token, std::move(apts.front())}};
 
-        // Try navaid (take first if multiple — disambiguation by
-        // proximity to adjacent waypoints can be added later)
+        // Try navaid
         auto navs = db.lookup_navaids(token);
         if(!navs.empty())
-            return route_waypoint{navaid_ref{token, std::move(navs.front())}};
+        {
+            auto i = nearest_index(navs, hint);
+            return route_waypoint{navaid_ref{token, std::move(navs[i])}};
+        }
 
         // Try fix
         auto fixes = db.lookup_fixes(token);
         if(!fixes.empty())
-            return route_waypoint{fix_ref{token, std::move(fixes.front())}};
+        {
+            auto i = nearest_index(fixes, hint);
+            return route_waypoint{fix_ref{token, std::move(fixes[i])}};
+        }
 
         return std::nullopt;
+    }
+
+    // Lat/lon of the last already-resolved waypoint in `elements`,
+    // for passing to resolve_waypoint as a disambiguation hint. When
+    // the last element is an airway_ref, returns the coords of its
+    // last expanded waypoint; when `elements` is empty, returns
+    // nullopt.
+    static std::optional<std::pair<double, double>>
+    hint_from_elements(const std::vector<route_element>& elements)
+    {
+        if(elements.empty()) return std::nullopt;
+        const auto& last = elements.back();
+        if(std::holds_alternative<route_waypoint>(last))
+        {
+            const auto& wp = std::get<route_waypoint>(last);
+            return std::pair{waypoint_lat(wp), waypoint_lon(wp)};
+        }
+        const auto& awy = std::get<airway_ref>(last);
+        if(awy.expanded.empty()) return std::nullopt;
+        const auto& wp = awy.expanded.back();
+        return std::pair{waypoint_lat(wp), waypoint_lon(wp)};
     }
 
     // Check if a token is an airway identifier
@@ -532,7 +586,8 @@ namespace nasrbrowse
                 auto actual_exit = exit_id;
                 if(!is_on_airway(exit_id, airway_id, db))
                 {
-                    auto exit_wp = resolve_waypoint(exit_id, db);
+                    auto exit_wp = resolve_waypoint(exit_id, db,
+                                                     hint_from_elements(elements));
                     if(!exit_wp)
                         throw route_parse_error(
                             "unknown waypoint: " + exit_id,
@@ -563,7 +618,8 @@ namespace nasrbrowse
                 // separate waypoint
                 if(actual_exit != exit_id)
                 {
-                    auto exit_wp = resolve_waypoint(exit_id, db);
+                    auto exit_wp = resolve_waypoint(exit_id, db,
+                                                     hint_from_elements(elements));
                     if(!exit_wp)
                         throw route_parse_error(
                             "unknown waypoint: " + exit_id,
@@ -573,7 +629,8 @@ namespace nasrbrowse
             }
             else
             {
-                auto wp = resolve_waypoint(tokens[i], db);
+                auto wp = resolve_waypoint(tokens[i], db,
+                                            hint_from_elements(elements));
                 if(!wp)
                     throw route_parse_error(
                         "unknown waypoint: " + tokens[i],
