@@ -96,9 +96,23 @@ cmake --build build -j
 cd build && cpack
 ```
 
-Produces `OpenSectional-0.1.0-Darwin.dmg`. `OpenSectional.app` bundles the Homebrew SDL3 dylibs into `Contents/Frameworks/` via `fixup_bundle` at install time, so the DMG is self-contained.
+Produces `OpenSectional-0.1.0-Darwin.dmg`. `OpenSectional.app` bundles the Homebrew SDL3 dylibs into `Contents/Frameworks/` via `fixup_bundle` at install time, so the DMG is self-contained. The bundle is ad-hoc signed (`codesign --sign -`) at install time so it launches on Apple Silicon (the kernel rejects unsigned Mach-Os whose `LC_LOAD_DYLIB` paths were rewritten by `fixup_bundle`).
 
-The installer is unsigned; to distribute outside your own machine, sign and notarize after `cpack`:
+The DMG is **not signed by a Developer ID and not notarized.** On a user's machine the first launch will be blocked by Gatekeeper. To open it the first time:
+
+1. Drag `OpenSectional.app` from the DMG to `/Applications`.
+2. Double-click and dismiss the warning ("Apple could not verify…").
+3. Open **System Settings → Privacy & Security**, scroll to the bottom, and click **Open Anyway** next to the OpenSectional entry. Confirm at the next prompt.
+
+Alternative for terminal users: strip the quarantine attribute after dragging out of the DMG:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OpenSectional.app
+```
+
+Subsequent launches open normally.
+
+To distribute without the Gatekeeper warning you need a paid Apple Developer Program membership for a Developer ID certificate and notarization:
 
 ```bash
 codesign --deep --force --options runtime --sign "Developer ID Application: Your Name (TEAMID)" \
