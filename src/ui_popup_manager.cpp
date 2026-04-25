@@ -376,6 +376,36 @@ namespace nasrbrowse
         }
     } // namespace
 
+    void draw_route_drag_rubber_band(const map_view& view,
+                                     const flight_route& route,
+                                     bool is_segment_drag,
+                                     std::size_t index)
+    {
+        const auto& wps = route.waypoints;
+        auto cursor = ImGui::GetMousePos();
+        auto* dl = ImGui::GetForegroundDrawList();
+        auto col = IM_COL32(255, 255, 255, 220);
+
+        auto draw_from = [&](std::size_t idx)
+        {
+            auto p = view.world_to_pixel(
+                waypoint_lon(wps[idx]), waypoint_lat(wps[idx]));
+            dl->AddLine(ImVec2(static_cast<float>(p.x), static_cast<float>(p.y)),
+                        cursor, col, 2.0F);
+        };
+
+        if(is_segment_drag)
+        {
+            draw_from(index);
+            draw_from(index + 1);
+        }
+        else  // waypoint: anchor to prev + next neighbors (if any)
+        {
+            if(index > 0) draw_from(index - 1);
+            if(index + 1 < wps.size()) draw_from(index + 1);
+        }
+    }
+
     popup_manager::actions popup_manager::draw(
         const map_view& view,
         const std::vector<std::unique_ptr<feature_type>>& feature_types,

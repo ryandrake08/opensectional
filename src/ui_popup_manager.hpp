@@ -73,4 +73,14 @@ namespace nasrbrowse
                      const flight_route* route);
     };
 
+    // Draw rubber-band lines from the dragged route waypoint(s) to the
+    // current ImGui mouse cursor — visual affordance for an in-progress
+    // route drag. `is_segment_drag` selects between segment-drag (lines
+    // from waypoints `index` and `index+1`) and waypoint-drag (lines from
+    // the neighbors of `index`, when they exist).
+    void draw_route_drag_rubber_band(const map_view& view,
+                                     const flight_route& route,
+                                     bool is_segment_drag,
+                                     std::size_t index);
+
 } // namespace nasrbrowse

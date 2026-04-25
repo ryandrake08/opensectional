@@ -18,8 +18,6 @@
 #include <glm/ext/matrix_projection.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <unordered_set>
-#include <imgui.h>
-#include <imgui/scoped.hpp>
 #include <iostream>
 #include <sdl/buffer.hpp>
 #include <sdl/command_buffer.hpp>
@@ -973,31 +971,9 @@ bool map_widget::draw_imgui()
 
     if(pimpl->route_drag.mode != impl::route_drag_mode::none && pimpl->route)
     {
-        const auto& wps = pimpl->route->waypoints;
-        auto i = pimpl->route_drag.index;
-        auto cursor = ImGui::GetMousePos();
-        auto* dl = ImGui::GetForegroundDrawList();
-        auto col = IM_COL32(255, 255, 255, 220);
-
-        auto draw_from = [&](std::size_t idx)
-        {
-            auto p = pimpl->view.world_to_pixel(
-                nasrbrowse::waypoint_lon(wps[idx]),
-                nasrbrowse::waypoint_lat(wps[idx]));
-            dl->AddLine(ImVec2(static_cast<float>(p.x), static_cast<float>(p.y)),
-                        cursor, col, 2.0F);
-        };
-
-        if(pimpl->route_drag.mode == impl::route_drag_mode::segment)
-        {
-            draw_from(i);
-            draw_from(i + 1);
-        }
-        else  // waypoint: anchor to prev + next neighbors (if any)
-        {
-            if(i > 0) draw_from(i - 1);
-            if(i + 1 < wps.size()) draw_from(i + 1);
-        }
+        auto is_segment = pimpl->route_drag.mode == impl::route_drag_mode::segment;
+        nasrbrowse::draw_route_drag_rubber_band(
+            pimpl->view, *pimpl->route, is_segment, pimpl->route_drag.index);
     }
 
     return need_more;
