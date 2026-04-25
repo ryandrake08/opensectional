@@ -33,10 +33,10 @@ namespace nasrbrowse
         }
 
         // Classify an airport SITE_TYPE_CODE into a wp_subtype.
-        route_planner::wp_subtype classify_airport_subtype(
+        wp_subtype classify_airport_subtype(
             const std::string& code)
         {
-            using st = route_planner::wp_subtype;
+            using st = wp_subtype;
             if(code == "A") return st::airport_landplane;
             if(code == "B") return st::airport_balloonport;
             if(code == "C") return st::airport_seaplane;
@@ -46,10 +46,10 @@ namespace nasrbrowse
             return st::airport_landplane;  // unknown — best guess
         }
 
-        route_planner::wp_subtype classify_navaid_subtype(
+        wp_subtype classify_navaid_subtype(
             const std::string& nav_type)
         {
-            using st = route_planner::wp_subtype;
+            using st = wp_subtype;
             if(nav_type == "VOR")     return st::navaid_vor;
             if(nav_type == "VORTAC")  return st::navaid_vortac;
             if(nav_type == "VOR/DME") return st::navaid_vor_dme;
@@ -59,10 +59,10 @@ namespace nasrbrowse
             return st::navaid_vor;  // unknown — least-distinctive default
         }
 
-        route_planner::wp_subtype classify_fix_subtype(
+        wp_subtype classify_fix_subtype(
             const std::string& use_code)
         {
-            using st = route_planner::wp_subtype;
+            using st = wp_subtype;
             if(use_code == "WP")  return st::fix_wp;
             if(use_code == "RP")  return st::fix_rp;
             if(use_code == "CN")  return st::fix_cn;
@@ -74,9 +74,9 @@ namespace nasrbrowse
         // Classify an airway ID into a coarse class. Two-letter
         // prefixes are checked first so e.g. "AT" doesn't collide
         // with "A".
-        route_planner::awy_class classify_airway_id(const std::string& id)
+        awy_class classify_airway_id(const std::string& id)
         {
-            using ac = route_planner::awy_class;
+            using ac = awy_class;
             if(id.size() >= 2)
             {
                 auto p2 = id.substr(0, 2);
@@ -102,9 +102,9 @@ namespace nasrbrowse
 
         // Subtypes whose cost is forced to INCLUDE when use_airways
         // is true (mirrors g3xfplan's --airway override).
-        bool is_airway_routable_subtype(route_planner::wp_subtype st)
+        bool is_airway_routable_subtype(wp_subtype st)
         {
-            using ws = route_planner::wp_subtype;
+            using ws = wp_subtype;
             switch(st)
             {
                 case ws::navaid_vor:
@@ -123,21 +123,13 @@ namespace nasrbrowse
             }
         }
 
-        double effective_wp_cost(route_planner::wp_subtype st,
+        double effective_wp_cost(wp_subtype st,
                                   const route_planner::options& opts)
         {
             if(opts.use_airways && is_airway_routable_subtype(st))
-                return route_planner::cost_include;
+                return cost_include;
             return opts.wp_cost.at(static_cast<std::size_t>(st));
         }
-    }
-
-    route_planner::options::options()
-        : wp_cost{}
-        , awy_cost{}
-    {
-        wp_cost.fill(cost_include);
-        awy_cost.fill(cost_include);
     }
 
     struct route_planner::impl
@@ -444,18 +436,6 @@ namespace nasrbrowse
         }
 
         return std::nullopt;
-    }
-
-    std::optional<std::vector<std::size_t>>
-    route_planner::plan_segment(std::size_t origin_index,
-                                 std::size_t destination_index,
-                                 const options& opts) const
-    {
-        const auto& o = get_node(origin_index);
-        const auto& d = get_node(destination_index);
-        return plan_segment(endpoint{origin_index, o.lat, o.lon},
-                            endpoint{destination_index, d.lat, d.lon},
-                            opts);
     }
 
     namespace

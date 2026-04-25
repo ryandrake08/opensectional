@@ -26,50 +26,55 @@ static const route_planner& test_planner()
     return planner;
 }
 
+// Brevity alias for the test-only proxy that grants access to the
+// planner's catalog and A* primitives.
+using rpta = route_planner_test_access;
+
+// Helper: build an `endpoint` for a known graph node, looking up
+// its lat/lon through the proxy.
+static rpta::endpoint endpoint_at(const route_planner& p, std::size_t idx)
+{
+    const auto& n = rpta::get_node(p, idx);
+    return {idx, n.lat, n.lon};
+}
+
 TEST_CASE("catalog has at least the expected routable waypoints")
 {
     // Airports ~5k (PU/O), navaids ~1.4k (excl. TACAN/VOT/...),
     // fixes ~68k (excl. MW/NRS/RADAR). Floor at 70k for headroom.
-    CHECK(test_planner().node_count() > 70000);
+    CHECK(rpta::node_count(test_planner()) > 70000);
 }
 
 TEST_CASE("ICAO-assigned airports resolve by ICAO, not by FAA ID")
 {
     const auto& p = test_planner();
-    auto ksac = p.node_index("KSAC");
+    auto ksac = rpta::node_index(p, "KSAC");
     REQUIRE(ksac.has_value());
-    CHECK(p.get_node(*ksac).kind == route_planner::node_kind::airport);
+    CHECK(rpta::get_node(p, *ksac).kind == rpta::node_kind::airport);
 
     // "SAC" is the FAA ID for KSAC and also a VORTAC. The VORTAC wins.
-    auto sac = p.node_index("SAC");
+    auto sac = rpta::node_index(p, "SAC");
     REQUIRE(sac.has_value());
-    CHECK(p.get_node(*sac).kind == route_planner::node_kind::navaid);
+    CHECK(rpta::get_node(p, *sac).kind == rpta::node_kind::navaid);
 }
 
 TEST_CASE("airports without an ICAO ID resolve by FAA ID")
 {
     const auto& p = test_planner();
-    auto o61 = p.node_index("O61");
+    auto o61 = rpta::node_index(p, "O61");
     REQUIRE(o61.has_value());
-    CHECK(p.get_node(*o61).kind == route_planner::node_kind::airport);
+    CHECK(rpta::get_node(p, *o61).kind == rpta::node_kind::airport);
 }
 
 TEST_CASE("non-routable navaid types are filtered out")
 {
-    // "SAC" resolves to the VORTAC above; the VOT with the same ID is
-    // dropped, so this only verifies the VORTAC won — not that the VOT
-    // exists. Use a VOT-only ID to check the filter directly.
-    // First: any plausible VOT should be absent if its ID doesn't
-    // appear on any other waypoint type. We check with a known TACAN
-    // that has no VOR twin: "NUQ" (NAS Moffett NDB? Let's query directly).
+    // Verify every catalog node has a non-empty ID and non-zero
+    // coordinates — i.e., no NULL-island stubs survived the load
+    // filters.
     const auto& p = test_planner();
-    // NBC is a MARINE NDB near Panama City — not routable.
-    // Rather than pick a specific ID and break when data changes, just
-    // assert that every returned node has a routable kind. Also verify
-    // no node has (0, 0) coordinates.
-    for(std::size_t i = 0; i < p.node_count(); ++i)
+    for(std::size_t i = 0; i < rpta::node_count(p); ++i)
     {
-        const auto& n = p.get_node(i);
+        const auto& n = rpta::get_node(p, i);
         CHECK_FALSE(n.id.empty());
         CHECK((n.lat != 0.0 || n.lon != 0.0));
     }
@@ -78,13 +83,13 @@ TEST_CASE("non-routable navaid types are filtered out")
 TEST_CASE("airway adjacency includes V459 SLI-DODGR")
 {
     const auto& p = test_planner();
-    auto sli = p.node_index("SLI");
-    auto dodgr = p.node_index("DODGR");
+    auto sli = rpta::node_index(p, "SLI");
+    auto dodgr = rpta::node_index(p, "DODGR");
     REQUIRE(sli.has_value());
     REQUIRE(dodgr.has_value());
 
     bool found = false;
-    for(const auto& e : p.airway_neighbors(*sli))
+    for(const auto& e : rpta::airway_neighbors(p, *sli))
     {
         if(e.neighbor_index == *dodgr && e.airway_id == "V459")
         {
@@ -98,13 +103,13 @@ TEST_CASE("airway adjacency includes V459 SLI-DODGR")
 TEST_CASE("airway adjacency is bidirectional")
 {
     const auto& p = test_planner();
-    auto sli = p.node_index("SLI");
-    auto dodgr = p.node_index("DODGR");
+    auto sli = rpta::node_index(p, "SLI");
+    auto dodgr = rpta::node_index(p, "DODGR");
     REQUIRE(sli.has_value());
     REQUIRE(dodgr.has_value());
 
     bool reverse = false;
-    for(const auto& e : p.airway_neighbors(*dodgr))
+    for(const auto& e : rpta::airway_neighbors(p, *dodgr))
     {
         if(e.neighbor_index == *sli && e.airway_id == "V459")
         {
@@ -117,7 +122,7 @@ TEST_CASE("airway adjacency is bidirectional")
 
 TEST_CASE("unknown waypoint ID returns nullopt")
 {
-    CHECK_FALSE(test_planner().node_index("ZZZZZ").has_value());
+    CHECK_FALSE(rpta::node_index(test_planner(), "ZZZZZ").has_value());
 }
 
 // ---- Stage 2: A* core ----
@@ -126,10 +131,11 @@ TEST_CASE("plan_segment short hop returns empty (direct leg suffices)")
 {
     // KSMF-KSAC is about 12 nm — well under the 80 nm default max.
     const auto& p = test_planner();
-    auto ksmf = *p.node_index("KSMF");
-    auto ksac = *p.node_index("KSAC");
+    auto ksmf = *rpta::node_index(p, "KSMF");
+    auto ksac = *rpta::node_index(p, "KSAC");
     route_planner::options opts;
-    auto path = p.plan_segment(ksmf, ksac, opts);
+    auto path = rpta::plan_segment(
+        p, endpoint_at(p, ksmf), endpoint_at(p, ksac), opts);
     REQUIRE(path.has_value());
     CHECK(path->empty());
 }
@@ -139,20 +145,21 @@ TEST_CASE("plan_segment longer route needs intermediates")
     // KSMF to KBFL is about 230 nm — needs intermediates at 80 nm
     // max leg.
     const auto& p = test_planner();
-    auto ksmf = *p.node_index("KSMF");
-    auto kbfl = *p.node_index("KBFL");
-    auto path = p.plan_segment(ksmf, kbfl, {});
+    auto ksmf = *rpta::node_index(p, "KSMF");
+    auto kbfl = *rpta::node_index(p, "KBFL");
+    auto path = rpta::plan_segment(
+        p, endpoint_at(p, ksmf), endpoint_at(p, kbfl), {});
     REQUIRE(path.has_value());
     CHECK_FALSE(path->empty());
     // Every leg, including origin→first and last→destination, must
     // fit within the 80 nm limit. We check via straight haversine
     // between consecutive waypoints.
-    const auto& origin = p.get_node(ksmf);
-    const auto& dest = p.get_node(kbfl);
+    const auto& origin = rpta::get_node(p, ksmf);
+    const auto& dest = rpta::get_node(p, kbfl);
     double prev_lat = origin.lat, prev_lon = origin.lon;
     for(auto idx : *path)
     {
-        const auto& n = p.get_node(idx);
+        const auto& n = rpta::get_node(p, idx);
         auto d = std::sqrt(std::pow((n.lat - prev_lat) * 60.0, 2) +
                            std::pow((n.lon - prev_lon) * 60.0 *
                                      std::cos(prev_lat * 3.14159 / 180.0), 2));
@@ -173,14 +180,13 @@ TEST_CASE("plan_segment accepts synthetic lat/lon endpoints")
     // Synthetic origin at KSMF's coords, destination = KSAC. ~12 nm,
     // fits the 80 nm default.
     const auto& p = test_planner();
-    auto ksac = *p.node_index("KSAC");
-    const auto& ksac_node = p.get_node(ksac);
-    route_planner::endpoint synthetic_origin{
-        route_planner::synthetic, 38.69544, -121.59078
+    auto ksac = *rpta::node_index(p, "KSAC");
+    rpta::endpoint synthetic_origin{
+        rpta::synthetic, 38.69544, -121.59078
     };
-    route_planner::endpoint ksac_ep{ksac, ksac_node.lat, ksac_node.lon};
     route_planner::options opts;
-    auto path = p.plan_segment(synthetic_origin, ksac_ep, opts);
+    auto path = rpta::plan_segment(
+        p, synthetic_origin, endpoint_at(p, ksac), opts);
     REQUIRE(path.has_value());
     CHECK(path->empty());
 }
@@ -191,11 +197,12 @@ TEST_CASE("plan_segment returns nullopt when max_leg is too tight")
     // with no airway connection between them cannot bridge the gap,
     // so expect nullopt rather than a hang.
     const auto& p = test_planner();
-    auto ksac = *p.node_index("KSAC");
-    auto kmer = *p.node_index("KMER");
+    auto ksac = *rpta::node_index(p, "KSAC");
+    auto kmer = *rpta::node_index(p, "KMER");
     route_planner::options opts;
     opts.max_leg_length_nm = 1.0;
-    auto path = p.plan_segment(ksac, kmer, opts);
+    auto path = rpta::plan_segment(
+        p, endpoint_at(p, ksac), endpoint_at(p, kmer), opts);
     CHECK_FALSE(path.has_value());
 }
 
@@ -317,17 +324,17 @@ TEST_CASE("load_route_plan_options reads PREFER/INCLUDE/AVOID/REJECT")
     auto opts = load_route_plan_options(ini);
     CHECK(opts.max_leg_length_nm == 120.0);
     CHECK(opts.wp_cost[static_cast<std::size_t>(
-        route_planner::wp_subtype::airport_landplane)]
-        == route_planner::cost_avoid);
+        wp_subtype::airport_landplane)]
+        == cost_avoid);
     CHECK(opts.wp_cost[static_cast<std::size_t>(
-        route_planner::wp_subtype::navaid_vor)]
-        == route_planner::cost_prefer);
+        wp_subtype::navaid_vor)]
+        == cost_prefer);
     CHECK(opts.awy_cost[static_cast<std::size_t>(
-        route_planner::awy_class::victor)]
-        == route_planner::cost_prefer);
+        awy_class::victor)]
+        == cost_prefer);
     CHECK(opts.awy_cost[static_cast<std::size_t>(
-        route_planner::awy_class::jet)]
-        == route_planner::cost_reject);
+        awy_class::jet)]
+        == cost_reject);
     CHECK_FALSE(opts.use_airways);
     std::remove(path.c_str());
 }
@@ -354,10 +361,10 @@ TEST_CASE("use_airways toggle changes path via fix-rejecting options")
     // direct) result.
     const auto& p = test_planner();
     route_planner::options opts;
-    opts.wp_cost.fill(route_planner::cost_reject);
+    opts.wp_cost.fill(cost_reject);
     opts.wp_cost[static_cast<std::size_t>(
-        route_planner::wp_subtype::airport_landplane)]
-        = route_planner::cost_include;
+        wp_subtype::airport_landplane)]
+        = cost_include;
 
     auto without = p.expand_sigils("KSMF ? KBFL", opts);
     opts.use_airways = true;

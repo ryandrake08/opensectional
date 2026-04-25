@@ -22,10 +22,10 @@ namespace nasrbrowse
         double parse_pref(const std::string& key, const std::string& value)
         {
             auto v = upper(value);
-            if(v == "PREFER")  return route_planner::cost_prefer;
-            if(v == "INCLUDE") return route_planner::cost_include;
-            if(v == "AVOID")   return route_planner::cost_avoid;
-            if(v == "REJECT")  return route_planner::cost_reject;
+            if(v == "PREFER")  return cost_prefer;
+            if(v == "INCLUDE") return cost_include;
+            if(v == "AVOID")   return cost_avoid;
+            if(v == "REJECT")  return cost_reject;
             throw std::runtime_error(
                 "route_plan: unknown preference '" + value +
                 "' for key '" + key +
@@ -45,8 +45,8 @@ namespace nasrbrowse
     route_planner::options load_route_plan_options(const ini_config& ini)
     {
         route_planner::options o;
-        using ws = route_planner::wp_subtype;
-        using ac = route_planner::awy_class;
+        using ws = wp_subtype;
+        using ac = awy_class;
 
         // Max leg length. Default matches g3xfplan.
         o.max_leg_length_nm = ini.exists("route_plan.max_leg_length_nm")
@@ -57,8 +57,8 @@ namespace nasrbrowse
         // defaults: airports INCLUDE, other airport flavors REJECT,
         // navaids REJECT (overridden to INCLUDE by the use-airways
         // toggle), VFR fix INCLUDE.
-        const auto INCL = route_planner::cost_include;
-        const auto REJ  = route_planner::cost_reject;
+        const auto INCL = cost_include;
+        const auto REJ  = cost_reject;
 
         o.wp_cost[static_cast<std::size_t>(ws::airport_landplane)] =
             pref_or(ini, "route_plan.route_waypoint_airport", INCL);
@@ -100,7 +100,7 @@ namespace nasrbrowse
         // INCLUDE, Jet/colored/other REJECT.
         o.awy_cost[static_cast<std::size_t>(ac::victor)] =
             pref_or(ini, "route_plan.route_airway_victor",
-                    route_planner::cost_prefer);
+                    cost_prefer);
         o.awy_cost[static_cast<std::size_t>(ac::jet)] =
             pref_or(ini, "route_plan.route_airway_jet", REJ);
         o.awy_cost[static_cast<std::size_t>(ac::rnav)] =
