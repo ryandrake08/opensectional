@@ -76,11 +76,25 @@ namespace nasrbrowse
         {}
     };
 
+    // One leg of an expanded route, from one waypoint to the next.
+    struct route_leg
+    {
+        std::string from_id;
+        std::string to_id;
+        double distance_nm;
+        double true_course_deg;  // initial great-circle bearing, [0, 360)
+    };
+
     // A parsed and resolved flight route. Always valid — construction
     // throws route_parse_error on failure.
-    struct flight_route
+    class flight_route
     {
-        std::vector<route_element> elements;
+    public:
+        // The flat sequence of resolved waypoints — one per fix
+        // along the expanded path. Read-only from outside; mutate
+        // through insert_waypoint / replace_waypoint /
+        // delete_waypoint so airway_ize can re-collapse the
+        // shorthand.
         std::vector<route_waypoint> waypoints;
 
         // Parse a route string and resolve against the database.
@@ -114,24 +128,33 @@ namespace nasrbrowse
         // route still has >= 2 waypoints.
         void delete_waypoint(int waypoint_index, const nasr_database& db);
 
+        // Per-leg distances and great-circle bearings between
+        // consecutive waypoints. Empty for routes of fewer than two
+        // waypoints (which are rejected by the constructor anyway).
+        std::vector<route_leg> compute_legs() const;
+
+        // Total great-circle distance from origin to destination,
+        // in nautical miles.
+        double total_distance_nm() const;
+
+    private:
+        // Internal definition-form sequence: a flat list of either
+        // single waypoints or airway traversals. Reflects the
+        // user-typed shorthand and the post-airway_ize compaction;
+        // not part of the public API.
+        std::vector<route_element> elements;
+
         // Collapse runs of 3+ consecutive waypoints that form a
         // sequential path along a common airway into airway_ref
-        // elements. Called automatically by the constructor and by the
-        // mutation methods; exposed for tests and callers that mutate
-        // `waypoints` directly.
+        // elements. Called automatically by the constructor and by
+        // the mutation methods.
         void airway_ize(const nasr_database& db);
-    };
 
-    // One leg of an expanded route, from one waypoint to the next.
-    struct route_leg
-    {
-        std::string from_id;
-        std::string to_id;
-        double distance_nm;
-        double true_course_deg;  // initial great-circle bearing, [0, 360)
+        // The mutation work of `insert_waypoint`, separated so
+        // that the public entry point only adds the assertions
+        // and the airway_ize re-collapse.
+        void insert_waypoint_raw(int segment_index,
+                                  const route_waypoint& wp);
     };
-
-    std::vector<route_leg> compute_legs(const flight_route& r);
-    double total_distance_nm(const std::vector<route_leg>& legs);
 
 } // namespace nasrbrowse

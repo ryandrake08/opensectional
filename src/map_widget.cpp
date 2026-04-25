@@ -976,7 +976,7 @@ struct map_widget::impl
         }
         ImGui::Separator();
 
-        auto legs = nasrbrowse::compute_legs(*route);
+        auto legs = route->compute_legs();
         const auto flags =
             ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit;
         if(ImGui::BeginTable("route_info_legs", 4, flags))
@@ -1000,7 +1000,9 @@ struct map_widget::impl
             }
             ImGui::EndTable();
         }
-        ImGui::Text("Total: %.1f nm", nasrbrowse::total_distance_nm(legs));
+        double total_nm = 0.0;
+        for(const auto& l : legs) total_nm += l.distance_nm;
+        ImGui::Text("Total: %.1f nm", total_nm);
 
         if(ImGui::Button("Delete route"))
         {

@@ -56,8 +56,9 @@ TEST_CASE("route with airway expansion")
 {
     flight_route route("O61 LIN V459 LOPES KTSP", test_db());
 
-    // Airway expands into intermediate fixes, so waypoint count > element count
-    CHECK(route.waypoints.size() > route.elements.size());
+    // Airway expands into intermediate fixes, so waypoint count
+    // exceeds the four typed tokens (O61, LIN, LOPES, KTSP).
+    CHECK(route.waypoints.size() > 4);
 
     // to_text round-trips the airway shorthand
     const std::string text = route.to_text();
@@ -116,21 +117,12 @@ TEST_CASE("insert_waypoint adds a waypoint at the given segment")
 
 TEST_CASE("airway_ize collapses consecutive waypoints on a common airway")
 {
-    // V459 begins SLI -> DODGR -> DARTS -> BERRI -> KIMMO -> SAUGS
+    // V459 begins SLI -> DODGR -> DARTS -> BERRI -> KIMMO -> SAUGS.
+    // The five typed fixes collapse to "SLI V459 KIMMO" shorthand,
+    // but the expanded waypoint list is unchanged.
     flight_route route("SLI DODGR DARTS BERRI KIMMO", test_db());
-
-    // Waypoints stay the same, but elements collapse into SLI + V459 ref
     REQUIRE(route.waypoints.size() == 5);
-    CHECK(route.elements.size() == 2);
-    CHECK(std::holds_alternative<route_waypoint>(route.elements[0]));
-    REQUIRE(std::holds_alternative<airway_ref>(route.elements[1]));
-    const auto& aref = std::get<airway_ref>(route.elements[1]);
-    CHECK(aref.airway_id == "V459");
-    CHECK(aref.entry_id == "SLI");
-    CHECK(aref.exit_id == "KIMMO");
-
-    const std::string text = route.to_text();
-    CHECK(text == "SLI V459 KIMMO");
+    CHECK(route.to_text() == "SLI V459 KIMMO");
 }
 
 TEST_CASE("airway_ize leaves 2-waypoint routes alone")
@@ -139,9 +131,7 @@ TEST_CASE("airway_ize leaves 2-waypoint routes alone")
     // save anything when collapsed to "SLI V459 DODGR".
     flight_route route("SLI DODGR", test_db());
     REQUIRE(route.waypoints.size() == 2);
-    CHECK(route.elements.size() == 2);
-    CHECK(std::holds_alternative<route_waypoint>(route.elements[0]));
-    CHECK(std::holds_alternative<route_waypoint>(route.elements[1]));
+    CHECK(route.to_text() == "SLI DODGR");
 }
 
 TEST_CASE("airway_ize does not collapse fixes skipping a bent airway's intermediates")
@@ -152,9 +142,6 @@ TEST_CASE("airway_ize does not collapse fixes skipping a bent airway's intermedi
     // The user's "direct JUNIE TEGOD" must be preserved.
     flight_route route("JUNIE TEGOD", test_db());
     REQUIRE(route.waypoints.size() == 2);
-    CHECK(route.elements.size() == 2);
-    CHECK(std::holds_alternative<route_waypoint>(route.elements[0]));
-    CHECK(std::holds_alternative<route_waypoint>(route.elements[1]));
     CHECK(route.to_text() == "JUNIE TEGOD");
 }
 
@@ -166,12 +153,8 @@ TEST_CASE("coerce fills colinear intermediates on a visually straight airway")
     // inserts them and the collapse pass folds the run into shorthand.
     flight_route route("SLI KIMMO", test_db());
     CHECK(route.to_text() == "SLI V459 KIMMO");
-    REQUIRE(route.elements.size() == 2);
-    REQUIRE(std::holds_alternative<airway_ref>(route.elements[1]));
-    const auto& aref = std::get<airway_ref>(route.elements[1]);
-    CHECK(aref.airway_id == "V459");
-    CHECK(aref.entry_id == "SLI");
-    CHECK(aref.exit_id == "KIMMO");
+    // Coerce inserted DODGR, DARTS, BERRI between SLI and KIMMO.
+    CHECK(route.waypoints.size() == 5);
 }
 
 TEST_CASE("coerce does not fire when endpoints share no airway")
@@ -180,9 +163,7 @@ TEST_CASE("coerce does not fire when endpoints share no airway")
     // airport. Direct leg must stay direct.
     flight_route route("O61 KMER", test_db());
     CHECK(route.to_text() == "O61 KMER");
-    CHECK(route.elements.size() == 2);
-    for(const auto& e : route.elements)
-        CHECK(std::holds_alternative<route_waypoint>(e));
+    CHECK(route.waypoints.size() == 2);
 }
 
 TEST_CASE("coerce is all-or-nothing: one bent intermediate vetoes the whole run")
@@ -204,7 +185,6 @@ TEST_CASE("coerce does not affect pairs that are already adjacent on an airway")
     // length-2 runs aren't worth collapsing.
     flight_route route("SLI DODGR", test_db());
     CHECK(route.to_text() == "SLI DODGR");
-    CHECK(route.elements.size() == 2);
 }
 
 TEST_CASE("expand_airway splits at published discontinuities")
@@ -213,26 +193,10 @@ TEST_CASE("expand_airway splits at published discontinuities")
     // traversal that crosses it must bridge with explicit waypoints.
     // KSMF auto-corrects the entry to CAPTO (high seq) and KBFL
     // auto-corrects the exit to EHF (low seq), so the walk passes
-    // right through the gap. The collapse pass then re-emits CAPTO
-    // as a leading waypoint of its airway_ref, matching the form a
-    // user would naturally type.
+    // right through the gap. The shorthand has two V23 spans
+    // joined by FRAME — one before the gap, one after.
     flight_route route("KSMF V23 KBFL", test_db());
     CHECK(route.to_text() == "KSMF CAPTO V23 EBTUW FRAME V23 EHF KBFL");
-
-    // elements: KSMF_wp, CAPTO_wp, airway_ref(CAPTO->EBTUW),
-    //           FRAME_wp, airway_ref(FRAME->EHF), KBFL_wp
-    REQUIRE(route.elements.size() == 6);
-    CHECK(waypoint_id(std::get<route_waypoint>(route.elements[0])) == "KSMF");
-    CHECK(waypoint_id(std::get<route_waypoint>(route.elements[1])) == "CAPTO");
-    REQUIRE(std::holds_alternative<airway_ref>(route.elements[2]));
-    CHECK(std::get<airway_ref>(route.elements[2]).airway_id == "V23");
-    CHECK(std::get<airway_ref>(route.elements[2]).entry_id == "CAPTO");
-    CHECK(std::get<airway_ref>(route.elements[2]).exit_id == "EBTUW");
-    CHECK(waypoint_id(std::get<route_waypoint>(route.elements[3])) == "FRAME");
-    REQUIRE(std::holds_alternative<airway_ref>(route.elements[4]));
-    CHECK(std::get<airway_ref>(route.elements[4]).entry_id == "FRAME");
-    CHECK(std::get<airway_ref>(route.elements[4]).exit_id == "EHF");
-    CHECK(waypoint_id(std::get<route_waypoint>(route.elements[5])) == "KBFL");
 }
 
 TEST_CASE("coerce does not connect fixes across a published airway gap")
@@ -242,7 +206,6 @@ TEST_CASE("coerce does not connect fixes across a published airway gap")
     flight_route route("EBTUW FRAME", test_db());
     CHECK(route.to_text() == "EBTUW FRAME");
     REQUIRE(route.waypoints.size() == 2);
-    CHECK(route.elements.size() == 2);
 }
 
 TEST_CASE("coerce's iterative anchor handles long airways a single-pass check would reject")
@@ -254,9 +217,6 @@ TEST_CASE("coerce's iterative anchor handles long airways a single-pass check wo
     // coerce succeeds and collapses into AR16 shorthand.
     flight_route route("PERMT SEELO", test_db());
     CHECK(route.to_text() == "PERMT AR16 SEELO");
-    REQUIRE(route.elements.size() == 2);
-    REQUIRE(std::holds_alternative<airway_ref>(route.elements[1]));
-    CHECK(std::get<airway_ref>(route.elements[1]).airway_id == "AR16");
 }
 
 TEST_CASE("airway_ize re-collapses after delete_waypoint flattens an airway")
@@ -266,16 +226,13 @@ TEST_CASE("airway_ize re-collapses after delete_waypoint flattens an airway")
     REQUIRE(route.waypoints.size() == 6);
 
     // Delete SAUGS (the last waypoint). The remaining 5 waypoints are
-    // still sequential on V459, so airway_ize should re-collapse.
+    // still sequential on V459, so airway_ize re-collapses to "SLI
+    // V459 KIMMO".
     auto last = static_cast<int>(route.waypoints.size()) - 1;
     route.delete_waypoint(last, test_db());
 
     REQUIRE(route.waypoints.size() == 5);
-    CHECK(route.elements.size() == 2);
-    REQUIRE(std::holds_alternative<airway_ref>(route.elements[1]));
-    const auto& aref = std::get<airway_ref>(route.elements[1]);
-    CHECK(aref.airway_id == "V459");
-    CHECK(aref.exit_id == "KIMMO");
+    CHECK(route.to_text() == "SLI V459 KIMMO");
 }
 
 TEST_CASE("single waypoint route is rejected")

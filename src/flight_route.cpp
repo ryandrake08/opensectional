@@ -699,14 +699,14 @@ namespace nasrbrowse
         return brg;
     }
 
-    std::vector<route_leg> compute_legs(const flight_route& r)
+    std::vector<route_leg> flight_route::compute_legs() const
     {
         std::vector<route_leg> legs;
-        legs.reserve(!r.waypoints.empty() ? r.waypoints.size() - 1 : 0);
-        for(size_t i = 1; i < r.waypoints.size(); ++i)
+        legs.reserve(!waypoints.empty() ? waypoints.size() - 1 : 0);
+        for(size_t i = 1; i < waypoints.size(); ++i)
         {
-            const auto& a = r.waypoints[i - 1];
-            const auto& b = r.waypoints[i];
+            const auto& a = waypoints[i - 1];
+            const auto& b = waypoints[i];
             auto la = waypoint_lat(a);
             auto lo_a = waypoint_lon(a);
             auto lb = waypoint_lat(b);
@@ -720,10 +720,10 @@ namespace nasrbrowse
         return legs;
     }
 
-    double total_distance_nm(const std::vector<route_leg>& legs)
+    double flight_route::total_distance_nm() const
     {
         auto t = 0.0;
-        for(const auto& l : legs) t += l.distance_nm;
+        for(const auto& l : compute_legs()) t += l.distance_nm;
         return t;
     }
 
@@ -731,9 +731,10 @@ namespace nasrbrowse
     // insert_waypoint
     // ---------------------------------------------------------------
 
-    static void insert_waypoint_raw(flight_route& r, int segment_index,
-                                     const route_waypoint& wp)
+    void flight_route::insert_waypoint_raw(int segment_index,
+                                            const route_waypoint& wp)
     {
+        auto& r = *this;
         // Find which element owns the segment endpoints
         // Walk through elements, tracking the expanded waypoint index
         auto wp_idx = 0;
@@ -809,7 +810,7 @@ namespace nasrbrowse
     {
         assert(segment_index >= 0 &&
                segment_index < static_cast<int>(waypoints.size()) - 1);
-        insert_waypoint_raw(*this, segment_index, wp);
+        insert_waypoint_raw(segment_index, wp);
         airway_ize(db);
     }
 
