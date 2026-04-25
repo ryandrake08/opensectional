@@ -278,7 +278,7 @@ struct map_widget::impl
     enum class route_drag_mode { none, segment, waypoint };
     struct {
         route_drag_mode mode = route_drag_mode::none;
-        int index = 0;  // segment index (segment mode) or wp index (waypoint mode)
+        std::size_t index = 0;  // segment index (segment mode) or wp index (waypoint mode)
     } route_drag;
 
     // Event dispatch state
@@ -490,7 +490,8 @@ struct map_widget::impl
 
     // Return the 0-based waypoint index whose pixel position is within
     // pick distance of the click, or nullopt.
-    std::optional<int> hit_route_waypoint(double click_lon, double click_lat) const
+    std::optional<std::size_t>
+    hit_route_waypoint(double click_lon, double click_lat) const
     {
         if(!route) return std::nullopt;
         auto cursor = view.world_to_pixel(click_lon, click_lat);
@@ -504,14 +505,15 @@ struct map_widget::impl
             auto dx = wp.x - cursor.x;
             auto dy = wp.y - cursor.y;
             if(dx * dx + dy * dy < threshold * threshold)
-                return static_cast<int>(i);
+                return i;
         }
         return std::nullopt;
     }
 
     // Return the 0-based leg index whose great-circle polyline the click
     // lands on, or nullopt if no route leg is within pick distance.
-    std::optional<int> hit_route_segment(double click_lon, double click_lat) const
+    std::optional<std::size_t>
+    hit_route_segment(double click_lon, double click_lat) const
     {
         if(!route || route->waypoints.size() < 2) return std::nullopt;
 
@@ -531,7 +533,7 @@ struct map_widget::impl
                 auto a = view.world_to_pixel(arc[j - 1].lon, arc[j - 1].lat);
                 auto b = view.world_to_pixel(arc[j].lon, arc[j].lat);
                 if(point_segment_distance_px(cursor, a, b) < threshold)
-                    return static_cast<int>(i - 1);
+                    return i - 1;
             }
         }
         return std::nullopt;
@@ -590,7 +592,8 @@ struct map_widget::impl
         auto i = route_drag.index;
         auto [lon, lat] = ndc_to_lonlat(cursor_ndc_x, cursor_ndc_y);
         auto hit = hit_route_waypoint(lon, lat);
-        auto adjacent = hit && (*hit == i - 1 || *hit == i + 1);
+        auto adjacent = hit
+                        && ((i > 0 && *hit == i - 1) || *hit == i + 1);
 
         if(adjacent && route->waypoints.size() > 2)
         {
@@ -1177,7 +1180,7 @@ bool map_widget::draw_imgui()
         auto* dl = ImGui::GetForegroundDrawList();
         auto col = IM_COL32(255, 255, 255, 220);
 
-        auto draw_from = [&](int idx)
+        auto draw_from = [&](std::size_t idx)
         {
             auto p = pimpl->view.world_to_pixel(
                 nasrbrowse::waypoint_lon(wps[idx]),
@@ -1194,7 +1197,7 @@ bool map_widget::draw_imgui()
         else  // waypoint: anchor to prev + next neighbors (if any)
         {
             if(i > 0) draw_from(i - 1);
-            if(i + 1 < static_cast<int>(wps.size())) draw_from(i + 1);
+            if(i + 1 < wps.size()) draw_from(i + 1);
         }
     }
 

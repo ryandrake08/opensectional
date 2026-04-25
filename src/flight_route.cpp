@@ -731,13 +731,13 @@ namespace nasrbrowse
     // insert_waypoint
     // ---------------------------------------------------------------
 
-    void flight_route::insert_waypoint_raw(int segment_index,
+    void flight_route::insert_waypoint_raw(std::size_t segment_index,
                                             const route_waypoint& wp)
     {
         auto& r = *this;
         // Find which element owns the segment endpoints
         // Walk through elements, tracking the expanded waypoint index
-        auto wp_idx = 0;
+        std::size_t wp_idx = 0;
         for(size_t ei = 0; ei < r.elements.size(); ++ei)
         {
             if(std::holds_alternative<route_waypoint>(r.elements[ei]))
@@ -757,7 +757,7 @@ namespace nasrbrowse
                 auto awy_start = wp_idx;
                 // Count how many waypoints this airway contributes
                 // (accounting for dedup with previous)
-                auto awy_count = 0;
+                std::size_t awy_count = 0;
                 for(size_t j = 0; j < awy.expanded.size(); ++j)
                 {
                     if(j == 0 && wp_idx > 0)
@@ -780,10 +780,10 @@ namespace nasrbrowse
                     for(size_t j = 0; j < awy.expanded.size(); ++j)
                     {
                         replacement.push_back(awy.expanded[j]);
-                        auto global_idx = awy_start +
-                            static_cast<int>(j) -
+                        auto global_idx = awy_start + j -
                             (wp_idx > 0 && waypoint_id(awy.expanded[0]) ==
-                             waypoint_id(r.waypoints[wp_idx - 1]) ? 1 : 0);
+                             waypoint_id(r.waypoints[wp_idx - 1])
+                                ? std::size_t{1} : std::size_t{0});
                         if(global_idx == segment_index)
                             replacement.push_back(wp);
                     }
@@ -804,21 +804,20 @@ namespace nasrbrowse
             r.elements.push_back(w);
     }
 
-    void flight_route::insert_waypoint(int segment_index,
+    void flight_route::insert_waypoint(std::size_t segment_index,
                                         const route_waypoint& wp,
                                         const nasr_database& db)
     {
-        assert(segment_index >= 0 &&
-               segment_index < static_cast<int>(waypoints.size()) - 1);
+        assert(segment_index + 1 < waypoints.size());
         insert_waypoint_raw(segment_index, wp);
         airway_ize(db);
     }
 
-    void flight_route::replace_waypoint(int waypoint_index, route_waypoint wp,
+    void flight_route::replace_waypoint(std::size_t waypoint_index,
+                                         route_waypoint wp,
                                          const nasr_database& db)
     {
-        assert(waypoint_index >= 0 &&
-               waypoint_index < static_cast<int>(waypoints.size()));
+        assert(waypoint_index < waypoints.size());
         waypoints[waypoint_index] = std::move(wp);
         elements.clear();
         for(const auto& w : waypoints)
@@ -826,11 +825,10 @@ namespace nasrbrowse
         airway_ize(db);
     }
 
-    void flight_route::delete_waypoint(int waypoint_index,
+    void flight_route::delete_waypoint(std::size_t waypoint_index,
                                         const nasr_database& db)
     {
-        assert(waypoint_index >= 0 &&
-               waypoint_index < static_cast<int>(waypoints.size()));
+        assert(waypoint_index < waypoints.size());
         assert(waypoints.size() > 2);
         waypoints.erase(waypoints.begin() + waypoint_index);
         elements.clear();

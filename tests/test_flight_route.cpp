@@ -228,7 +228,7 @@ TEST_CASE("airway_ize re-collapses after delete_waypoint flattens an airway")
     // Delete SAUGS (the last waypoint). The remaining 5 waypoints are
     // still sequential on V459, so airway_ize re-collapses to "SLI
     // V459 KIMMO".
-    auto last = static_cast<int>(route.waypoints.size()) - 1;
+    auto last = route.waypoints.size() - 1;
     route.delete_waypoint(last, test_db());
 
     REQUIRE(route.waypoints.size() == 5);

@@ -115,18 +115,20 @@ namespace nasrbrowse
         // and `segment_index + 1`. Updates both elements and waypoints.
         // Re-runs airway_ize so any sequential runs of fixes collapse
         // back into shorthand form.
-        void insert_waypoint(int segment_index, const route_waypoint& wp,
+        void insert_waypoint(std::size_t segment_index,
+                             const route_waypoint& wp,
                              const nasr_database& db);
 
         // Replace the waypoint at `waypoint_index` with `wp`. Flattens the
         // route into explicit waypoints, then re-runs airway_ize.
-        void replace_waypoint(int waypoint_index, route_waypoint wp,
+        void replace_waypoint(std::size_t waypoint_index, route_waypoint wp,
                               const nasr_database& db);
 
         // Remove the waypoint at `waypoint_index`. Flattens the route,
         // then re-runs airway_ize. Callers must ensure the resulting
         // route still has >= 2 waypoints.
-        void delete_waypoint(int waypoint_index, const nasr_database& db);
+        void delete_waypoint(std::size_t waypoint_index,
+                             const nasr_database& db);
 
         // Per-leg distances and great-circle bearings between
         // consecutive waypoints. Empty for routes of fewer than two
@@ -153,7 +155,7 @@ namespace nasrbrowse
         // The mutation work of `insert_waypoint`, separated so
         // that the public entry point only adds the assertions
         // and the airway_ize re-collapse.
-        void insert_waypoint_raw(int segment_index,
+        void insert_waypoint_raw(std::size_t segment_index,
                                   const route_waypoint& wp);
     };
 
