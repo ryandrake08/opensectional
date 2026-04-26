@@ -2,6 +2,9 @@
 #include "error.hpp"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <functional>
+#include <memory>
+#include <vector>
 
 namespace sdl
 {

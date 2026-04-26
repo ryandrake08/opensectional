@@ -42,6 +42,11 @@ endif()
 # Auto-disabled if dxc is not available, even when ON. Vulkan is always built.
 option(OSECT_ENABLE_D3D12 "Build with experimental D3D12 backend (Windows only, requires dxc)" ON)
 
+# Precompiled .metallib pipeline (macOS only). Default ON; auto-disabled if the
+# metal compiler isn't available. Set OFF explicitly to test the MSL-source
+# fallback path even when full Xcode is installed.
+option(OSECT_ENABLE_METALLIB "Embed precompiled .metallib bytecode on macOS (requires full Xcode)" ON)
+
 # Main executable
 add_executable(osect
     # Application sources
@@ -203,6 +208,14 @@ add_dependencies(osect shaders embedded_font)
 if(OSECT_BUILD_D3D12)
     target_compile_definitions(osect PRIVATE OSECT_HAVE_DXIL=1)
     target_compile_definitions(sdl_wrapper PRIVATE OSECT_HAVE_DXIL=1)
+endif()
+
+# Propagate Metal-library build state. When set, the build embeds precompiled
+# .metallib bytecode (fastest startup); when not, the macOS runtime falls back
+# to compiling the embedded MSL source via the Metal driver on first use.
+if(OSECT_BUILD_METALLIB)
+    target_compile_definitions(osect PRIVATE OSECT_HAVE_METALLIB=1)
+    target_compile_definitions(sdl_wrapper PRIVATE OSECT_HAVE_METALLIB=1)
 endif()
 
 # =============================================================================
