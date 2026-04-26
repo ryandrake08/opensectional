@@ -113,7 +113,9 @@ function(add_hlsl_spirv_command output_spv hlsl_source stage entry_point)
         else()
             set(gstage frag)
         endif()
-        set(cmd ${GLSLANG} -V -D -S ${gstage} -e ${entry_point} --hlsl-iomap ${defines} ${hlsl_source} -o ${output_spv})
+        # -s = silent (suppress glslang's default echo of input filename;
+        # errors still go to stderr, and our COMMENT line gives a better one).
+        set(cmd ${GLSLANG} -s -V -D -S ${gstage} -e ${entry_point} --hlsl-iomap ${defines} ${hlsl_source} -o ${output_spv})
     else()
         if(stage STREQUAL "vertex")
             set(profile vs_6_0)
