@@ -5,6 +5,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -20,8 +21,11 @@ namespace
 
         explicit tmp_ini(const std::string& contents)
         {
-            char tmpl[] = "/tmp/osect_test_XXXXXX";
-            int fd = mkstemp(tmpl);
+            // Resolve the temp dir at runtime (e.g. /tmp on Unix,
+            // %TEMP% on Windows) instead of hardcoding /tmp.
+            auto tmpl = (std::filesystem::temp_directory_path() /
+                         "osect_test_XXXXXX").string();
+            int fd = mkstemp(tmpl.data());
             REQUIRE(fd >= 0);
             close(fd);
             path = tmpl;
@@ -66,12 +70,15 @@ TEST_CASE("parse: ';' starts a line comment")
 
 TEST_CASE("parse: typed getters convert value")
 {
-    tmp_ini f("[nums]\ni = 42\nd = 3.14\nl = 10000000000\nu = 7\n");
+    // Note: long is 32-bit on Windows (LLP64), 64-bit on Unix (LP64);
+    // anything bigger than 2^31 must use long long for portability.
+    tmp_ini f("[nums]\ni = 42\nd = 3.14\nl = 1000000\nll = 10000000000\nu = 7\n");
     ini_config cfg(f.path);
 
     CHECK(cfg.get<int>("nums.i") == 42);
     CHECK(cfg.get<double>("nums.d") == 3.14);
-    CHECK(cfg.get<long>("nums.l") == 10000000000L);
+    CHECK(cfg.get<long>("nums.l") == 1000000L);
+    CHECK(cfg.get<long long>("nums.ll") == 10000000000LL);
     CHECK(cfg.get<unsigned long>("nums.u") == 7UL);
 }
 

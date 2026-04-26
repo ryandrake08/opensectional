@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.12)
 project(osect CXX)
 
 # Package metadata (used by CPack on both platforms and by the macOS bundle)
@@ -273,11 +273,10 @@ set(INSTALLER_ICON_ICO  "${CMAKE_BINARY_DIR}/osect.ico")
 if(APPLE AND EXISTS "${ICON_PNG}")
     # tools/build_macos_icon.sh takes the raw PNG all the way to a .icns
     # (shape → iconset slicing → icns packaging). CMake just locates the
-    # tools the script depends on and invokes it. IM v7 ships `magick`;
-    # v6 (or the legacy compat wrapper) ships `convert`. Either works.
+    # tools the script depends on and invokes it.
     find_program(SIPS sips)
     find_program(ICONUTIL iconutil)
-    find_program(MAGICK NAMES magick convert)
+    find_program(MAGICK magick)
     if(SIPS AND ICONUTIL AND MAGICK)
         set(_build_macos_icon "${CMAKE_SOURCE_DIR}/tools/build_macos_icon.sh")
         add_custom_command(
@@ -297,13 +296,17 @@ if(WIN32 AND EXISTS "${ICON_PNG}")
     # tools/build_windows_icon.sh takes the raw PNG all the way to a .ico
     # (circle mask → multi-size .ico packaging). CMake just locates the
     # tools the script depends on and invokes it.
-    find_program(MAGICK NAMES magick convert)
-    if(MAGICK)
+    find_program(MAGICK magick)
+    # Invoke the icon script via bash explicitly: on Windows the build
+    # runner is cmd.exe (via Ninja/make), which has no #! shebang concept
+    # and can't execute .sh files directly. MSYS2 always supplies bash.
+    find_program(BASH bash)
+    if(MAGICK AND BASH)
         set(_build_windows_icon "${CMAKE_SOURCE_DIR}/tools/build_windows_icon.sh")
         add_custom_command(
             OUTPUT "${INSTALLER_ICON_ICO}"
             COMMAND ${CMAKE_COMMAND} -E env "MAGICK=${MAGICK}"
-                    "${_build_windows_icon}" "${ICON_PNG}" "${INSTALLER_ICON_ICO}"
+                    "${BASH}" "${_build_windows_icon}" "${ICON_PNG}" "${INSTALLER_ICON_ICO}"
             DEPENDS "${ICON_PNG}" "${_build_windows_icon}"
             COMMENT "Generating ${INSTALLER_ICON_ICO}"
             VERBATIM

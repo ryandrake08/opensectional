@@ -39,12 +39,11 @@ fi
 
 # ── Tool locations ──────────────────────────────────────────────────────────
 # Prefer the caller-supplied $MAGICK (CMake passes the path it detected).
-# Fallback: try `magick` (IM v7) then `convert` (IM v6 / legacy shim).
 if [[ -z "${MAGICK:-}" ]]; then
-    if   command -v magick  >/dev/null 2>&1; then MAGICK="magick"
-    elif command -v convert >/dev/null 2>&1; then MAGICK="convert"
+    if command -v magick >/dev/null 2>&1; then
+        MAGICK="magick"
     else
-        echo "Error: ImageMagick not found (need 'magick' or 'convert' in PATH)" >&2
+        echo "Error: ImageMagick not found (need 'magick' in PATH)" >&2
         exit 1
     fi
 fi

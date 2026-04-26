@@ -8,6 +8,7 @@
 #include "route_planner.hpp"
 
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 
 using namespace osect;
@@ -310,7 +311,8 @@ TEST_CASE("expand_sigils accepts lat/lon coordinates at sigil boundaries")
 TEST_CASE("load_route_plan_options reads PREFER/INCLUDE/AVOID/REJECT")
 {
     // Write a minimal ini, load it, verify the modifier table.
-    auto path = std::string("/tmp/osect_route_plan_test.ini");
+    auto path = (std::filesystem::temp_directory_path() /
+                 "osect_route_plan_test.ini").string();
     {
         std::ofstream out(path);
         out << "[route_plan]\n"
@@ -341,7 +343,8 @@ TEST_CASE("load_route_plan_options reads PREFER/INCLUDE/AVOID/REJECT")
 
 TEST_CASE("load_route_plan_options rejects unknown preference values")
 {
-    auto path = std::string("/tmp/osect_route_plan_test_bad.ini");
+    auto path = (std::filesystem::temp_directory_path() /
+                 "osect_route_plan_test_bad.ini").string();
     {
         std::ofstream out(path);
         out << "[route_plan]\nroute_waypoint_airport = WHATEVER\n";

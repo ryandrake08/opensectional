@@ -125,6 +125,12 @@ cmake --build build-mingw -j
 
 The resulting `build-mingw/osect.exe` is self-contained (all dependencies statically linked, font embedded). The target machine needs a Vulkan-capable GPU with up-to-date drivers.
 
+### Windows (native, on a Windows host)
+
+For contributors who only have access to Windows, OpenSectional can be built natively using MSYS2 + MinGW-w64. This uses the same compiler and ABI as the cross-compile path above, so the build behaves identically. The official Windows installer is still produced from the Linux cross-compile path. See [BUILD-WINDOWS.md](BUILD-WINDOWS.md) for step-by-step instructions.
+
+MSVC is not supported.
+
 ## Installers
 
 Once `osect.db`, `basemap/`, and `osect.ini` exist in the source tree (see [Data Preparation](#data-preparation)), CPack produces end-user installers that bundle the application together with all three assets.
