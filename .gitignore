@@ -3,9 +3,11 @@
 .examples
 .vscode
 __pycache__
-build*
-mingw-deps
-mingw-deps-build
+/build*
+/mingw-deps
+/mingw-deps-build
+/macos-universal-deps
+/macos-universal-deps-build
 tools/env*
 nasr_data
 osect.db

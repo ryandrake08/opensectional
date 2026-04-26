@@ -78,6 +78,35 @@ sudo apk add cmake sdl3-dev sdl3_image-dev sdl3_ttf-dev sqlite-dev xxd glslang
 pkg install cmake sdl3 sdl3_image sdl3_ttf sqlite3 xxd glslang
 ```
 
+### macOS (universal binary for distribution)
+
+This is a maintainer path for producing a universal (arm64+x86_64) statically-linked osect binary suitable for the DMG installer. Most users should use the native macOS dependency lists above instead.
+
+Universal binaries can't be built against Homebrew/MacPorts — those only install the host's architecture. `tools/build-macos-deps.sh` produces universal static builds of SDL3, SDL3_image, SDL3_ttf, and SQLite3 from source using only Xcode-provided clang (no Homebrew/MacPorts assumed):
+
+```bash
+./tools/build-macos-deps.sh
+cmake -B build-universal -DCMAKE_TOOLCHAIN_FILE=macos-toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build-universal -j
+```
+
+The deps land in `macos-universal-deps/`, and the toolchain wires them in. The resulting binary contains both arm64 and x86_64 slices and runs on any supported Mac, at roughly double the binary size of a single-arch build.
+
+#### Two linking models
+
+The native and universal builds produce structurally different binaries. They are functionally equivalent, but worth understanding when packaging or debugging:
+
+| | Native (`cmake -B build`) | Universal (`-DCMAKE_TOOLCHAIN_FILE=macos-toolchain.cmake`) |
+|---|---|---|
+| **SDL3 / SDL3_image / SDL3_ttf / sqlite3** | Dynamic, from Homebrew/MacPorts | Static, from `macos-universal-deps/` |
+| **System frameworks** (Cocoa, Metal, …) | Dynamic (always — they live in the SDK / `/System/Library/Frameworks/`) | Same |
+| **MoltenVK** (only used if `--gpu vulkan`) | `dlopen`ed at runtime; not bundled | Same — even with static SDL3, MoltenVK is loaded dynamically. The runtime machine needs MoltenVK installed (Vulkan SDK, Homebrew, or app-bundled) for the Vulkan backend; the default Metal backend needs nothing extra. |
+| **`OpenSectional.app/Contents/Frameworks/`** | Populated by `fixup_bundle` at install time with the Homebrew dylibs, then re-codesigned | Empty — the executable is self-contained |
+| **Binary size** | Smaller executable, dylibs alongside | Larger single-file executable (~+5–10 MB per arch) |
+| **Use for** | Local development, fast incremental rebuilds | Distribution DMG, no Homebrew/MacPorts required at the user's machine |
+
+CPack's DragNDrop packaging step works for both — `fixup_bundle` simply finds nothing to copy in the static case.
+
 ### Windows (cross-compiled from Linux)
 
 Cross-compile using MinGW-w64. The toolchain and dependency build script are included. The cross-compiled Windows binary runs on Vulkan by default and only needs the host's HLSL→SPIR-V compiler (covered by the Linux dependencies above). To additionally include the experimental D3D12 backend, install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) on the host so `dxc` is available; otherwise the configure step skips DXIL automatically and the binary builds Vulkan-only.
