@@ -4,7 +4,7 @@ A desktop application for visualizing FAA NASR (National Airspace System Resourc
 
 ## Quick Start
 
-**Requires the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home)** (for `dxc` and `spirv-cross` shader tools) with `VULKAN_SDK` set. See [Shader Compiler Toolchain](#shader-compiler-toolchain) for details.
+**Shader cross-compilation requires `glslangValidator`** (preferred) or `dxc`. macOS additionally needs `spirv-cross` (and full Xcode for the Metal pipeline); Windows targets additionally need `dxc`. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) supplies all three on macOS/Windows; on Linux the distro `glslang` package is sufficient. See [Shader Compiler Toolchain](#shader-compiler-toolchain) for details.
 
 ```bash
 # 1. Install dependencies (macOS with MacPorts)
@@ -63,12 +63,12 @@ brew install cmake sdl3 sdl3_image sdl3_ttf sqlite3
 ### Linux (Debian/Ubuntu)
 
 ```bash
-sudo apt install cmake libsdl3-dev libsdl3-image-dev libsdl3-ttf-dev libsqlite3-dev xxd
+sudo apt install cmake libsdl3-dev libsdl3-image-dev libsdl3-ttf-dev libsqlite3-dev xxd glslang-tools
 ```
 
 ### Windows (cross-compiled from Linux)
 
-Cross-compile using MinGW-w64. The toolchain and dependency build script are included:
+Cross-compile using MinGW-w64. The toolchain and dependency build script are included. Cross-compiling Windows builds requires `dxc` on the host (the D3D12 backend ships DXIL bytecode, which only `dxc` can produce); install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) and source its setup script before configuring.
 
 ```bash
 # Install MinGW toolchain (Debian/Ubuntu)
@@ -150,11 +150,17 @@ OpenSectional defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `
 
 ### Shader Compiler Toolchain
 
-Shaders are written in HLSL and cross-compiled during the build. This requires:
+Shaders are written in HLSL and cross-compiled during the build. The build looks for tools first in `$VULKAN_SDK/bin` (when set) and then on `PATH`. Required tools:
 
-- **Vulkan SDK** - provides `dxc` (HLSL to SPIR-V) and `spirv-cross` (SPIR-V to MSL). Download from [LunarG](https://vulkan.lunarg.com/sdk/home) and set the `VULKAN_SDK` environment variable.
-- **xxd** - embeds shader bytecode as C headers. Available via `vim` or `xxd` packages on most systems.
-- **Xcode** (macOS only) - provides `metal` and `metallib` for compiling Metal shaders. Requires full Xcode from the App Store, not just Command Line Tools.
+- **HLSL → SPIR-V**: `glslangValidator` (preferred) or `dxc`. The build picks whichever it finds; output is functionally equivalent. For native Linux builds the distro `glslang` package is sufficient — no Vulkan SDK needed.
+  - Alpine: `apk add glslang`
+  - Debian/Ubuntu: `apt install glslang-tools`
+- **HLSL → DXIL**: `dxc`. Required only when targeting Windows (D3D12 backend); DXIL is Microsoft-defined and there is no alternative producer. The Vulkan SDK ships `dxc` on all platforms.
+- **SPIR-V → MSL**: `spirv-cross`. Required only on macOS for the Metal backend. Available from the Vulkan SDK or `brew install spirv-cross`.
+- **xxd**: embeds shader bytecode as C headers. Ships with `vim` on most systems.
+- **Xcode** (macOS only): provides `metal` and `metallib` for compiling Metal shaders. Requires full Xcode from the App Store, not just Command Line Tools.
+
+The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) is the simplest one-stop source for `glslangValidator`, `dxc`, and `spirv-cross` on macOS and Windows; install it and source its setup script (which sets `VULKAN_SDK`).
 
 ## Building
 

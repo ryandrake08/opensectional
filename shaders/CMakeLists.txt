@@ -34,31 +34,81 @@ if(APPLE)
     endif()
 endif()
 
-# Require VULKAN_SDK environment variable
-if(NOT DEFINED ENV{VULKAN_SDK})
-    message(FATAL_ERROR
-        "VULKAN_SDK environment variable not set.\n"
-        "Install the Vulkan SDK and source its setup script, or set VULKAN_SDK manually.")
+# VULKAN_SDK is an optional hint for finding shader tools.
+# When set (typical on macOS/Windows), its bin/ directory is searched first.
+# When unset (e.g. Alpine), tools are found via the system PATH.
+if(DEFINED ENV{VULKAN_SDK})
+    set(VULKAN_SDK_PATH "$ENV{VULKAN_SDK}" CACHE PATH "Path to Vulkan SDK")
+    set(VULKAN_SDK_BIN "${VULKAN_SDK_PATH}/bin")
+else()
+    set(VULKAN_SDK_BIN "")
 endif()
-set(VULKAN_SDK_PATH "$ENV{VULKAN_SDK}" CACHE PATH "Path to Vulkan SDK")
 
 find_program(XXD xxd)
 if(NOT XXD)
     message(FATAL_ERROR "xxd not found - required for embedding shader bytecode")
 endif()
 
-# Find DXC (all platforms) and SPIRV-Cross (macOS only, for SPIR-V → MSL)
-find_program(DXC dxc PATHS "${VULKAN_SDK_PATH}/bin" NO_DEFAULT_PATH)
-if(NOT DXC)
-    message(FATAL_ERROR "dxc not found in VULKAN_SDK - required for HLSL shader compilation")
+# Find HLSL → SPIR-V compilers. Either works; glslang preferred if both present.
+find_program(GLSLANG glslangValidator HINTS "${VULKAN_SDK_BIN}")
+find_program(DXC dxc HINTS "${VULKAN_SDK_BIN}")
+
+if(GLSLANG)
+    set(SPIRV_COMPILER "glslang")
+    message(STATUS "HLSL → SPIR-V: ${GLSLANG}")
+elseif(DXC)
+    set(SPIRV_COMPILER "dxc")
+    message(STATUS "HLSL → SPIR-V: ${DXC} (glslangValidator not found)")
+else()
+    message(FATAL_ERROR
+        "Neither glslangValidator nor dxc found - one is required for HLSL → SPIR-V compilation.\n"
+        "  Alpine:        apk add glslang\n"
+        "  Debian/Ubuntu: apt install glslang-tools\n"
+        "  macOS/Windows: install the Vulkan SDK and source its setup script")
+endif()
+
+# Windows: DXIL pipeline for D3D12 backend requires dxc.
+if(WIN32 AND NOT DXC)
+    message(FATAL_ERROR "dxc not found - required for HLSL → DXIL compilation on Windows")
 endif()
 
 if(APPLE)
-    find_program(SPIRV_CROSS spirv-cross PATHS "${VULKAN_SDK_PATH}/bin" NO_DEFAULT_PATH)
+    find_program(SPIRV_CROSS spirv-cross HINTS "${VULKAN_SDK_BIN}")
     if(NOT SPIRV_CROSS)
-        message(FATAL_ERROR "spirv-cross not found in VULKAN_SDK - required for Metal shader compilation")
+        message(FATAL_ERROR "spirv-cross not found - required for Metal shader compilation (install Vulkan SDK or 'brew install spirv-cross')")
     endif()
 endif()
+
+# Helper: emit a HLSL → SPIR-V custom command using whichever compiler was selected.
+# --hlsl-iomap (glslang) and the default DXC -spirv mapping both honor
+# register(xN, spaceM) → (set=M, binding=N), which SDL3 GPU expects.
+function(add_hlsl_spirv_command output_spv hlsl_source stage entry_point)
+    set(defines ${ARGN})
+    get_filename_component(src_name ${hlsl_source} NAME)
+    get_filename_component(out_name ${output_spv} NAME)
+    if(SPIRV_COMPILER STREQUAL "glslang")
+        if(stage STREQUAL "vertex")
+            set(gstage vert)
+        else()
+            set(gstage frag)
+        endif()
+        set(cmd ${GLSLANG} -V -D -S ${gstage} -e ${entry_point} --hlsl-iomap ${defines} ${hlsl_source} -o ${output_spv})
+    else()
+        if(stage STREQUAL "vertex")
+            set(profile vs_6_0)
+        else()
+            set(profile ps_6_0)
+        endif()
+        set(cmd ${DXC} -spirv -T ${profile} -E ${entry_point} ${defines} ${hlsl_source} -Fo ${output_spv})
+    endif()
+    add_custom_command(
+        OUTPUT ${output_spv}
+        COMMAND ${cmd}
+        DEPENDS ${hlsl_source}
+        COMMENT "Compiling HLSL ${stage} shader (${SPIRV_COMPILER}): ${src_name} → ${out_name}"
+        VERBATIM
+    )
+endfunction()
 
 # Custom target for all shaders
 add_custom_target(shaders ALL)
@@ -85,11 +135,9 @@ foreach(SHADER ${SHADERS})
         foreach(STAGE vertex fragment)
             # Stage-specific parameters
             if(STAGE STREQUAL "vertex")
-                set(SHADER_PROFILE "vs_6_0")
                 set(ENTRY_POINT "vertex_main")
                 set(STAGE_SUFFIX "vert")
             else()
-                set(SHADER_PROFILE "ps_6_0")
                 set(ENTRY_POINT "fragment_main")
                 set(STAGE_SUFFIX "frag")
             endif()
@@ -102,17 +150,10 @@ foreach(SHADER ${SHADERS})
             # HLSL → SPIR-V
             # SDL3 GPU descriptor sets: vertex uniforms=set1, fragment uniforms=set3, fragment samplers=set2
             if(STAGE STREQUAL "vertex")
-                set(STAGE_DEFINES -DVERTEX_SHADER)
+                add_hlsl_spirv_command(${STAGE_SPV} ${HLSL_SOURCE} vertex ${ENTRY_POINT} -DVERTEX_SHADER)
             else()
-                set(STAGE_DEFINES "")
+                add_hlsl_spirv_command(${STAGE_SPV} ${HLSL_SOURCE} fragment ${ENTRY_POINT})
             endif()
-            add_custom_command(
-                OUTPUT ${STAGE_SPV}
-                COMMAND ${DXC} -spirv -T ${SHADER_PROFILE} -E ${ENTRY_POINT} ${STAGE_DEFINES} ${HLSL_SOURCE} -Fo ${STAGE_SPV}
-                DEPENDS ${HLSL_SOURCE}
-                COMMENT "Compiling HLSL ${STAGE} shader: ${SHADER}.hlsl → ${SHADER}_${STAGE_SUFFIX}.spv"
-                VERBATIM
-            )
 
             # SPIR-V → MSL
             add_custom_command(
@@ -184,24 +225,10 @@ foreach(SHADER ${SHADERS})
         set(HEADER_VERT "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_vert_spv.h")
         set(HEADER_FRAG "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_frag_spv.h")
 
-        # HLSL → SPIR-V (vertex)
+        # HLSL → SPIR-V
         # SDL3 GPU descriptor sets: vertex uniforms=set1, fragment uniforms=set3, fragment samplers=set2
-        add_custom_command(
-            OUTPUT ${SPV_VERT}
-            COMMAND ${DXC} -spirv -T vs_6_0 -E vertex_main -DVERTEX_SHADER ${HLSL_SOURCE} -Fo ${SPV_VERT}
-            DEPENDS ${HLSL_SOURCE}
-            COMMENT "Compiling HLSL vertex shader: ${SHADER}.hlsl → ${SHADER}_vert.spv"
-            VERBATIM
-        )
-
-        # HLSL → SPIR-V (fragment)
-        add_custom_command(
-            OUTPUT ${SPV_FRAG}
-            COMMAND ${DXC} -spirv -T ps_6_0 -E fragment_main ${HLSL_SOURCE} -Fo ${SPV_FRAG}
-            DEPENDS ${HLSL_SOURCE}
-            COMMENT "Compiling HLSL fragment shader: ${SHADER}.hlsl → ${SHADER}_frag.spv"
-            VERBATIM
-        )
+        add_hlsl_spirv_command(${SPV_VERT} ${HLSL_SOURCE} vertex vertex_main -DVERTEX_SHADER)
+        add_hlsl_spirv_command(${SPV_FRAG} ${HLSL_SOURCE} fragment fragment_main)
 
         # Embed vertex SPIR-V → .h
         add_custom_command(
