@@ -11,27 +11,38 @@ set(SHADERS
 
 # Find platform-specific tools
 if(APPLE)
-    # macOS: Metal shader pipeline
+    # macOS: Metal shader pipeline.
+    # The metal/metallib compilers ship only with full Xcode (the standalone
+    # "Metal Developer Tools for macOS" download is no longer published as of
+    # 2026; Apple's developer page redirects to "install Xcode"). When they're
+    # available we precompile .metallib bytecode for fastest startup. When
+    # they're not, we ship MSL source and let the Metal driver compile it on
+    # first use — Command Line Tools alone is enough for that path.
     find_program(XCRUN xcrun)
     if(NOT XCRUN)
-        message(FATAL_ERROR "xcrun not found - Metal shaders require Xcode Command Line Tools")
+        message(FATAL_ERROR "xcrun not found - macOS shaders require at least Xcode Command Line Tools (xcode-select --install)")
     endif()
 
-    # Verify Metal compiler is available (requires full Xcode, not just Command Line Tools)
-    execute_process(
-        COMMAND ${XCRUN} -f metal
-        OUTPUT_VARIABLE METAL_PATH
-        ERROR_QUIET
-        RESULT_VARIABLE METAL_RESULT
-    )
-    if(NOT METAL_RESULT EQUAL 0)
-        message(FATAL_ERROR
-            "Metal compiler not found.\n"
-            "The Metal compiler requires full Xcode (not just Command Line Tools).\n"
-            "Install Xcode from the App Store, then run:\n"
-            "  sudo xcode-select -s /Applications/Xcode.app\n"
-            "  sudo xcodebuild -license accept")
+    if(OSECT_ENABLE_METALLIB)
+        execute_process(
+            COMMAND ${XCRUN} -f metal
+            OUTPUT_VARIABLE METAL_PATH
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+            RESULT_VARIABLE METAL_RESULT
+        )
+        if(METAL_RESULT EQUAL 0)
+            set(OSECT_BUILD_METALLIB TRUE)
+            message(STATUS "Metal: precompiled .metallib pipeline (metal compiler at ${METAL_PATH})")
+        else()
+            set(OSECT_BUILD_METALLIB FALSE)
+            message(STATUS "Metal: MSL-source pipeline (metal compiler not found; install full Xcode for precompiled .metallib startup)")
+        endif()
+    else()
+        set(OSECT_BUILD_METALLIB FALSE)
+        message(STATUS "Metal: MSL-source pipeline (OSECT_ENABLE_METALLIB=OFF)")
     endif()
+    set(OSECT_BUILD_METALLIB ${OSECT_BUILD_METALLIB} PARENT_SCOPE)
 endif()
 
 # VULKAN_SDK is an optional hint for finding shader tools.
@@ -133,17 +144,15 @@ foreach(SHADER ${SHADERS})
     endif()
 
     if(APPLE)
-        # macOS: HLSL → SPIR-V → MSL → .metallib → .h (Metal path)
-        #        HLSL → SPIR-V → .h (Vulkan/MoltenVK path)
-        set(METALLIB_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}.metallib")
-        set(HEADER_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_metallib.h")
-        set(HEADER_VERT_SPV "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_vert_spv.h")
-        set(HEADER_FRAG_SPV "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_frag_spv.h")
+        # macOS pipeline outputs (always):
+        #   HLSL → SPIR-V → .h           (MoltenVK fallback)
+        #   HLSL → SPIR-V → MSL → .h     (driver compiles MSL at runtime)
+        # Additionally if the metal compiler is available:
+        #   MSL → .air → .metallib → .h  (precompiled, fastest startup)
+        set(SHADER_HEADERS "")
         set(AIR_FILES "")
 
-        # Process both vertex and fragment stages
         foreach(STAGE vertex fragment)
-            # Stage-specific parameters
             if(STAGE STREQUAL "vertex")
                 set(ENTRY_POINT "vertex_main")
                 set(STAGE_SUFFIX "vert")
@@ -152,10 +161,10 @@ foreach(SHADER ${SHADERS})
                 set(STAGE_SUFFIX "frag")
             endif()
 
-            # File paths for this stage
-            set(STAGE_SPV "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_${STAGE_SUFFIX}.spv")
+            set(STAGE_SPV   "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_${STAGE_SUFFIX}.spv")
             set(STAGE_METAL "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_${STAGE_SUFFIX}.metal")
-            set(STAGE_AIR "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_${STAGE_SUFFIX}.air")
+            set(HEADER_STAGE_SPV "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_${STAGE_SUFFIX}_spv.h")
+            set(HEADER_STAGE_MSL "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_${STAGE_SUFFIX}_metal.h")
 
             # HLSL → SPIR-V
             # SDL3 GPU descriptor sets: vertex uniforms=set1, fragment uniforms=set3, fragment samplers=set2
@@ -165,67 +174,72 @@ foreach(SHADER ${SHADERS})
                 add_hlsl_spirv_command(${STAGE_SPV} ${HLSL_SOURCE} fragment ${ENTRY_POINT})
             endif()
 
-            # SPIR-V → MSL
+            # SPIR-V → MSL source
             add_custom_command(
                 OUTPUT ${STAGE_METAL}
                 COMMAND ${SPIRV_CROSS} --msl ${STAGE_SPV} --output ${STAGE_METAL}
                 DEPENDS ${STAGE_SPV}
-                COMMENT "Converting SPIR-V to MSL: ${SHADER}_${STAGE_SUFFIX}.spv → ${SHADER}_${STAGE_SUFFIX}.metal"
+                COMMENT "SPIR-V → MSL: ${SHADER}_${STAGE_SUFFIX}.spv → ${SHADER}_${STAGE_SUFFIX}.metal"
                 VERBATIM
             )
 
-            # MSL → .air
+            # Embed SPIR-V
             add_custom_command(
-                OUTPUT ${STAGE_AIR}
-                COMMAND ${XCRUN} metal -c ${STAGE_METAL} -o ${STAGE_AIR}
-                DEPENDS ${STAGE_METAL}
-                COMMENT "Compiling Metal ${STAGE} shader: ${SHADER}_${STAGE_SUFFIX}.metal → ${SHADER}_${STAGE_SUFFIX}.air"
+                OUTPUT ${HEADER_STAGE_SPV}
+                COMMAND ${XXD} -i ${SHADER}_${STAGE_SUFFIX}.spv > ${HEADER_STAGE_SPV}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                DEPENDS ${STAGE_SPV}
+                COMMENT "Embedding SPIR-V: ${SHADER}_${STAGE_SUFFIX}.spv → ${SHADER}_${STAGE_SUFFIX}_spv.h"
                 VERBATIM
             )
 
-            list(APPEND AIR_FILES ${STAGE_AIR})
+            # Embed MSL source
+            add_custom_command(
+                OUTPUT ${HEADER_STAGE_MSL}
+                COMMAND ${XXD} -i ${SHADER}_${STAGE_SUFFIX}.metal > ${HEADER_STAGE_MSL}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                DEPENDS ${STAGE_METAL}
+                COMMENT "Embedding MSL source: ${SHADER}_${STAGE_SUFFIX}.metal → ${SHADER}_${STAGE_SUFFIX}_msl.h"
+                VERBATIM
+            )
+
+            list(APPEND SHADER_HEADERS ${HEADER_STAGE_SPV} ${HEADER_STAGE_MSL})
+
+            if(OSECT_BUILD_METALLIB)
+                set(STAGE_AIR "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_${STAGE_SUFFIX}.air")
+                add_custom_command(
+                    OUTPUT ${STAGE_AIR}
+                    COMMAND ${XCRUN} metal -c ${STAGE_METAL} -o ${STAGE_AIR}
+                    DEPENDS ${STAGE_METAL}
+                    COMMENT "MSL → AIR: ${SHADER}_${STAGE_SUFFIX}.metal → ${SHADER}_${STAGE_SUFFIX}.air"
+                    VERBATIM
+                )
+                list(APPEND AIR_FILES ${STAGE_AIR})
+            endif()
         endforeach()
 
-        # Link .air files → .metallib
-        add_custom_command(
-            OUTPUT ${METALLIB_FILE}
-            COMMAND ${XCRUN} metallib ${AIR_FILES} -o ${METALLIB_FILE}
-            DEPENDS ${AIR_FILES}
-            COMMENT "Linking Metal library: ${SHADER}_vert.air + ${SHADER}_frag.air → ${SHADER}.metallib"
-            VERBATIM
-        )
+        if(OSECT_BUILD_METALLIB)
+            set(METALLIB_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}.metallib")
+            set(HEADER_METALLIB "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_metallib.h")
+            add_custom_command(
+                OUTPUT ${METALLIB_FILE}
+                COMMAND ${XCRUN} metallib ${AIR_FILES} -o ${METALLIB_FILE}
+                DEPENDS ${AIR_FILES}
+                COMMENT "Linking Metal library: ${SHADER}.metallib"
+                VERBATIM
+            )
+            add_custom_command(
+                OUTPUT ${HEADER_METALLIB}
+                COMMAND ${XXD} -i ${SHADER}.metallib > ${HEADER_METALLIB}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                DEPENDS ${METALLIB_FILE}
+                COMMENT "Embedding metallib: ${SHADER}.metallib → ${SHADER}_metallib.h"
+                VERBATIM
+            )
+            list(APPEND SHADER_HEADERS ${HEADER_METALLIB})
+        endif()
 
-        # Embed .metallib → .h
-        add_custom_command(
-            OUTPUT ${HEADER_FILE}
-            COMMAND ${XXD} -i ${SHADER}.metallib > ${HEADER_FILE}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-            DEPENDS ${METALLIB_FILE}
-            COMMENT "Embedding shader bytecode: ${SHADER}.metallib → ${SHADER}_metallib.h"
-            VERBATIM
-        )
-
-        # Embed SPIR-V → .h (for Vulkan/MoltenVK path)
-        add_custom_command(
-            OUTPUT ${HEADER_VERT_SPV}
-            COMMAND ${XXD} -i ${SHADER}_vert.spv > ${HEADER_VERT_SPV}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_vert.spv
-            COMMENT "Embedding vertex shader bytecode: ${SHADER}_vert.spv → ${SHADER}_vert_spv.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT ${HEADER_FRAG_SPV}
-            COMMAND ${XXD} -i ${SHADER}_frag.spv > ${HEADER_FRAG_SPV}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_frag.spv
-            COMMENT "Embedding fragment shader bytecode: ${SHADER}_frag.spv → ${SHADER}_frag_spv.h"
-            VERBATIM
-        )
-
-        # Add to shader target dependencies
-        add_custom_target(${SHADER}_shader DEPENDS ${HEADER_FILE} ${HEADER_VERT_SPV} ${HEADER_FRAG_SPV})
+        add_custom_target(${SHADER}_shader DEPENDS ${SHADER_HEADERS})
         add_dependencies(shaders ${SHADER}_shader)
 
     else()

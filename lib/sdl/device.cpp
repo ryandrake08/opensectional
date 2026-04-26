@@ -17,7 +17,13 @@ namespace sdl
             {
                 SDL_SetHint(SDL_HINT_GPU_DRIVER, preferred_driver);
             }
-            SDL_GPUShaderFormat formats_mask = SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL;
+            SDL_GPUShaderFormat formats_mask = SDL_GPU_SHADERFORMAT_SPIRV;
+#ifdef __APPLE__
+            formats_mask |= SDL_GPU_SHADERFORMAT_MSL;
+#endif
+#ifdef OSECT_HAVE_METALLIB
+            formats_mask |= SDL_GPU_SHADERFORMAT_METALLIB;
+#endif
 #ifdef OSECT_HAVE_DXIL
             formats_mask |= SDL_GPU_SHADERFORMAT_DXIL;
 #endif
@@ -140,20 +146,32 @@ namespace sdl
         // Query supported shader formats
         SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(pimpl->handle);
 
-        // Return the first supported format in order of preference
-        // METALLIB > SPIRV > DXIL
+        // Return the first supported format in order of preference.
+        // METALLIB > MSL > SPIRV > DXIL. METALLIB is gated by whether the
+        // build embedded precompiled bytecode (full Xcode), MSL by whether
+        // the platform is macOS (always built when so).
+#ifdef OSECT_HAVE_METALLIB
         if(formats & SDL_GPU_SHADERFORMAT_METALLIB)
         {
             return shader_format::metallib;
         }
+#endif
+#ifdef __APPLE__
+        if(formats & SDL_GPU_SHADERFORMAT_MSL)
+        {
+            return shader_format::msl;
+        }
+#endif
         if(formats & SDL_GPU_SHADERFORMAT_SPIRV)
         {
             return shader_format::spirv;
         }
+#ifdef OSECT_HAVE_DXIL
         if(formats & SDL_GPU_SHADERFORMAT_DXIL)
         {
             return shader_format::dxil;
         }
+#endif
         throw error("No supported shader formats found");
     }
 

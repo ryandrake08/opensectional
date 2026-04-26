@@ -4,7 +4,7 @@ A desktop application for visualizing FAA NASR (National Airspace System Resourc
 
 ## Quick Start
 
-**Shader cross-compilation requires `glslangValidator`** (preferred) or `dxc`. macOS additionally needs `spirv-cross` (and full Xcode for the Metal pipeline). Windows targets optionally use `dxc` for the experimental D3D12 backend; without it, the build silently skips DXIL and the Windows binary runs Vulkan-only. See [Dependencies](#dependencies) for install commands and [Shader Compiler Toolchain](#shader-compiler-toolchain) for what each tool does.
+**Shader cross-compilation requires `glslangValidator`** (preferred) or `dxc`. macOS additionally needs `spirv-cross` and at minimum Xcode Command Line Tools (full Xcode unlocks precompiled `.metallib` for slightly faster startup, but isn't required). Windows targets optionally use `dxc` for the experimental D3D12 backend; without it, the build silently skips DXIL and the Windows binary runs Vulkan-only. See [Dependencies](#dependencies) for install commands and [Shader Compiler Toolchain](#shader-compiler-toolchain) for what each tool does.
 
 ```bash
 # 1. Install dependencies (macOS with MacPorts)
@@ -199,7 +199,7 @@ Shaders are written in HLSL and cross-compiled during the build. The build searc
 - **HLSL → DXIL**: `dxc`. Optional — only used when building with the experimental D3D12 backend (Windows targets, controlled by `-DOSECT_ENABLE_D3D12=ON`, default ON). DXIL is Microsoft-defined and has no alternative producer. The configure step auto-disables D3D12 if `dxc` is not found; the resulting Windows binary still runs via Vulkan. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) ships `dxc` on all platforms.
 - **SPIR-V → MSL**: `spirv-cross`. Required only on macOS for the Metal backend.
 - **xxd**: embeds shader bytecode as C headers. Ships with `vim` on most systems.
-- **Xcode** (macOS only): provides `metal` and `metallib`. Requires *full* Xcode from the App Store, not just Command Line Tools.
+- **Xcode** (macOS only): full Xcode provides `metal` and `metallib` for precompiling shaders to `.metallib` bytecode (fastest startup). If only Command Line Tools (`xcode-select --install`) is installed, the build automatically falls back to embedding MSL source for the Metal driver to compile at first use — runtime behavior is identical, just a small per-shader compile on first frame. (Apple no longer ships a standalone Metal compiler download.)
 
 ## Building
 
@@ -214,7 +214,7 @@ cmake --build build-debug -j
 ```
 
 Shaders are cross-compiled automatically during the build:
-- macOS: HLSL → SPIR-V + HLSL → SPIR-V → MSL → .metallib (both formats)
+- macOS: HLSL → SPIR-V (always) + HLSL → SPIR-V → MSL source (always) + MSL → .metallib (when full Xcode is available)
 - Linux: HLSL → SPIR-V
 - Windows: HLSL → SPIR-V (always) + HLSL → DXIL (when `dxc` is available and `OSECT_ENABLE_D3D12=ON`, which is the default)
 
