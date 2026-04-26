@@ -4,11 +4,11 @@ A desktop application for visualizing FAA NASR (National Airspace System Resourc
 
 ## Quick Start
 
-**Shader cross-compilation requires `glslangValidator`** (preferred) or `dxc`. macOS additionally needs `spirv-cross` (and full Xcode for the Metal pipeline); Windows targets additionally need `dxc`. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) supplies all three on macOS/Windows; on Linux the distro `glslang` package is sufficient. See [Shader Compiler Toolchain](#shader-compiler-toolchain) for details.
+**Shader cross-compilation requires `glslangValidator`** (preferred) or `dxc`. macOS additionally needs `spirv-cross` (and full Xcode for the Metal pipeline). Windows targets optionally use `dxc` for the experimental D3D12 backend; without it, the build silently skips DXIL and the Windows binary runs Vulkan-only. See [Dependencies](#dependencies) for install commands and [Shader Compiler Toolchain](#shader-compiler-toolchain) for what each tool does.
 
 ```bash
 # 1. Install dependencies (macOS with MacPorts)
-sudo port install cmake SDL3 SDL3_image SDL3_ttf sqlite3
+sudo port install cmake SDL3 SDL3_image SDL3_ttf sqlite3 glslang spirv-cross
 
 # 2. Build
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -51,13 +51,13 @@ tools/env/bin/python3 tools/download_all.py nasr_data
 ### macOS (MacPorts)
 
 ```bash
-sudo port install cmake SDL3 SDL3_image SDL3_ttf sqlite3
+sudo port install cmake SDL3 SDL3_image SDL3_ttf sqlite3 glslang spirv-cross
 ```
 
 ### macOS (Homebrew)
 
 ```bash
-brew install cmake sdl3 sdl3_image sdl3_ttf sqlite3
+brew install cmake sdl3 sdl3_image sdl3_ttf sqlite3 glslang spirv-cross
 ```
 
 ### Linux (Debian/Ubuntu)
@@ -66,9 +66,21 @@ brew install cmake sdl3 sdl3_image sdl3_ttf sqlite3
 sudo apt install cmake libsdl3-dev libsdl3-image-dev libsdl3-ttf-dev libsqlite3-dev xxd glslang-tools
 ```
 
+### Linux (Alpine)
+
+```bash
+sudo apk add cmake sdl3-dev sdl3_image-dev sdl3_ttf-dev sqlite-dev xxd glslang
+```
+
+### FreeBSD
+
+```bash
+pkg install cmake sdl3 sdl3_image sdl3_ttf sqlite3 xxd glslang
+```
+
 ### Windows (cross-compiled from Linux)
 
-Cross-compile using MinGW-w64. The toolchain and dependency build script are included. Cross-compiling Windows builds requires `dxc` on the host (the D3D12 backend ships DXIL bytecode, which only `dxc` can produce); install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) and source its setup script before configuring.
+Cross-compile using MinGW-w64. The toolchain and dependency build script are included. The cross-compiled Windows binary runs on Vulkan by default and only needs the host's HLSL→SPIR-V compiler (covered by the Linux dependencies above). To additionally include the experimental D3D12 backend, install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) on the host so `dxc` is available; otherwise the configure step skips DXIL automatically and the binary builds Vulkan-only.
 
 ```bash
 # Install MinGW toolchain (Debian/Ubuntu)
@@ -146,21 +158,19 @@ NSIS (`makensis`) must be installed on the build host. Debian/Ubuntu: `sudo apt 
 
 ### GPU Backend
 
-OpenSectional defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` or `--gpu direct3d12` to override. The shader format is selected at runtime based on the active backend.
+OpenSectional defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` to override on macOS. The shader format is selected at runtime based on the active backend.
+
+A D3D12 backend is available on Windows but is **experimental** — Vulkan has shown better performance in testing and is the recommended Windows backend. The D3D12 path is built whenever `dxc` is available at configure time; pass `-DOSECT_ENABLE_D3D12=OFF` (or omit `dxc` from the toolchain) to skip it. Builds without DXIL reject `--gpu direct3d12` at startup with a descriptive error.
 
 ### Shader Compiler Toolchain
 
-Shaders are written in HLSL and cross-compiled during the build. The build looks for tools first in `$VULKAN_SDK/bin` (when set) and then on `PATH`. Required tools:
+Shaders are written in HLSL and cross-compiled during the build. The build searches `$VULKAN_SDK/bin` (when set) before falling through to `PATH`, so distro / Homebrew / MacPorts packages work without any Vulkan SDK install. The pipeline:
 
-- **HLSL → SPIR-V**: `glslangValidator` (preferred) or `dxc`. The build picks whichever it finds; output is functionally equivalent. For native Linux builds the distro `glslang` package is sufficient — no Vulkan SDK needed.
-  - Alpine: `apk add glslang`
-  - Debian/Ubuntu: `apt install glslang-tools`
-- **HLSL → DXIL**: `dxc`. Required only when targeting Windows (D3D12 backend); DXIL is Microsoft-defined and there is no alternative producer. The Vulkan SDK ships `dxc` on all platforms.
-- **SPIR-V → MSL**: `spirv-cross`. Required only on macOS for the Metal backend. Available from the Vulkan SDK or `brew install spirv-cross`.
+- **HLSL → SPIR-V**: `glslangValidator` (preferred) or `dxc`. The build picks whichever it finds; output is functionally equivalent.
+- **HLSL → DXIL**: `dxc`. Optional — only used when building with the experimental D3D12 backend (Windows targets, controlled by `-DOSECT_ENABLE_D3D12=ON`, default ON). DXIL is Microsoft-defined and has no alternative producer. The configure step auto-disables D3D12 if `dxc` is not found; the resulting Windows binary still runs via Vulkan. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) ships `dxc` on all platforms.
+- **SPIR-V → MSL**: `spirv-cross`. Required only on macOS for the Metal backend.
 - **xxd**: embeds shader bytecode as C headers. Ships with `vim` on most systems.
-- **Xcode** (macOS only): provides `metal` and `metallib` for compiling Metal shaders. Requires full Xcode from the App Store, not just Command Line Tools.
-
-The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) is the simplest one-stop source for `glslangValidator`, `dxc`, and `spirv-cross` on macOS and Windows; install it and source its setup script (which sets `VULKAN_SDK`).
+- **Xcode** (macOS only): provides `metal` and `metallib`. Requires *full* Xcode from the App Store, not just Command Line Tools.
 
 ## Building
 
@@ -177,7 +187,7 @@ cmake --build build-debug -j
 Shaders are cross-compiled automatically during the build:
 - macOS: HLSL → SPIR-V + HLSL → SPIR-V → MSL → .metallib (both formats)
 - Linux: HLSL → SPIR-V
-- Windows: HLSL → SPIR-V + HLSL → DXIL (both formats)
+- Windows: HLSL → SPIR-V (always) + HLSL → DXIL (when `dxc` is available and `OSECT_ENABLE_D3D12=ON`, which is the default)
 
 ## Data Preparation
 

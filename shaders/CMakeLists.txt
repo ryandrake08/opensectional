@@ -62,20 +62,30 @@ elseif(DXC)
 else()
     message(FATAL_ERROR
         "Neither glslangValidator nor dxc found - one is required for HLSL → SPIR-V compilation.\n"
-        "  Alpine:        apk add glslang\n"
         "  Debian/Ubuntu: apt install glslang-tools\n"
-        "  macOS/Windows: install the Vulkan SDK and source its setup script")
+        "  Alpine:        apk add glslang\n"
+        "  macOS:         brew install glslang   (or 'sudo port install glslang')\n"
+        "  Windows:       install the Vulkan SDK and source its setup script")
 endif()
 
-# Windows: DXIL pipeline for D3D12 backend requires dxc.
-if(WIN32 AND NOT DXC)
-    message(FATAL_ERROR "dxc not found - required for HLSL → DXIL compilation on Windows")
+# D3D12 backend is experimental and opt-in. Built only on Windows when both the
+# OSECT_ENABLE_D3D12 option is ON and dxc is available (DXIL has no other producer).
+# Without DXIL the binary still runs on Windows via the Vulkan backend.
+if(WIN32 AND OSECT_ENABLE_D3D12 AND DXC)
+    set(OSECT_BUILD_D3D12 TRUE)
+    message(STATUS "D3D12 backend: enabled (dxc=${DXC})")
+elseif(WIN32 AND OSECT_ENABLE_D3D12)
+    set(OSECT_BUILD_D3D12 FALSE)
+    message(STATUS "D3D12 backend: disabled (OSECT_ENABLE_D3D12=ON but dxc not found)")
+else()
+    set(OSECT_BUILD_D3D12 FALSE)
 endif()
+set(OSECT_BUILD_D3D12 ${OSECT_BUILD_D3D12} PARENT_SCOPE)
 
 if(APPLE)
     find_program(SPIRV_CROSS spirv-cross HINTS "${VULKAN_SDK_BIN}")
     if(NOT SPIRV_CROSS)
-        message(FATAL_ERROR "spirv-cross not found - required for Metal shader compilation (install Vulkan SDK or 'brew install spirv-cross')")
+        message(FATAL_ERROR "spirv-cross not found - required for Metal shader compilation. Install via 'brew install spirv-cross', 'sudo port install spirv-cross', or the Vulkan SDK.")
     endif()
 endif()
 
@@ -252,8 +262,8 @@ foreach(SHADER ${SHADERS})
 
         set(SHADER_HEADERS ${HEADER_VERT} ${HEADER_FRAG})
 
-        # Windows: also compile HLSL → DXIL for D3D12 backend
-        if(WIN32)
+        # Optionally compile HLSL → DXIL for the D3D12 backend (Windows only, opt-in).
+        if(OSECT_BUILD_D3D12)
             set(DXIL_VERT "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_vert.dxil")
             set(DXIL_FRAG "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_frag.dxil")
             set(HEADER_DXIL_VERT "${CMAKE_CURRENT_BINARY_DIR}/${SHADER}_vert_dxil.h")

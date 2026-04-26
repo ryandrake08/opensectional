@@ -24,6 +24,7 @@ endif()
 find_package(SDL3 REQUIRED CONFIG)
 find_package(SDL3_image REQUIRED CONFIG)
 find_package(SDL3_ttf REQUIRED CONFIG)
+find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 
@@ -36,6 +37,10 @@ if(BUILD_TESTING)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# D3D12 backend: experimental Windows-only path. Requires dxc to compile DXIL.
+# Auto-disabled if dxc is not available, even when ON. Vulkan is always built.
+option(OSECT_ENABLE_D3D12 "Build with experimental D3D12 backend (Windows only, requires dxc)" ON)
 
 # Main executable
 add_executable(osect
@@ -167,6 +172,7 @@ target_link_options(osect PRIVATE
 target_link_libraries(osect PRIVATE
     imgui_wrapper
     sqlite_wrapper
+    Threads::Threads
 )
 
 # Embed font as C header
@@ -183,7 +189,7 @@ add_custom_command(
 )
 add_custom_target(embedded_font DEPENDS ${FONT_HEADER})
 
-# Shader compilation (Metal, SPIRV)
+# Shader compilation (Metal, SPIRV, optional DXIL)
 add_subdirectory(shaders)
 
 # Add shader and font headers to include path
@@ -191,6 +197,13 @@ target_include_directories(osect PRIVATE ${SHADER_INCLUDE_DIR} ${CMAKE_BINARY_DI
 
 # Ensure shaders and font are built before the executable
 add_dependencies(osect shaders embedded_font)
+
+# Propagate D3D12 build state to source code (gates DXIL bytecode includes,
+# the SDL_GPU shader-formats mask, and the --gpu direct3d12 runtime check).
+if(OSECT_BUILD_D3D12)
+    target_compile_definitions(osect PRIVATE OSECT_HAVE_DXIL=1)
+    target_compile_definitions(sdl_wrapper PRIVATE OSECT_HAVE_DXIL=1)
+endif()
 
 # =============================================================================
 # clang-tidy target

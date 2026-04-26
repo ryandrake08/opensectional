@@ -17,7 +17,11 @@ namespace sdl
             {
                 SDL_SetHint(SDL_HINT_GPU_DRIVER, preferred_driver);
             }
-            SDL_GPUDevice* dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_DXIL, false, nullptr);
+            SDL_GPUShaderFormat formats_mask = SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL;
+#ifdef OSECT_HAVE_DXIL
+            formats_mask |= SDL_GPU_SHADERFORMAT_DXIL;
+#endif
+            SDL_GPUDevice* dev = SDL_CreateGPUDevice(formats_mask, false, nullptr);
             if(!dev)
             {
                 throw error("Failed to create GPU device");

@@ -34,7 +34,11 @@ namespace
         out << "Usage: " << prog << " [options]\n"
             << "  -h, --help                 Show this help and exit\n"
             << "  -v, -vv, -vvv              Increase verbosity\n"
+#ifdef OSECT_HAVE_DXIL
             << "  -g, --gpu <driver>         GPU driver: vulkan, metal, direct3d12\n"
+#else
+            << "  -g, --gpu <driver>         GPU driver: vulkan, metal\n"
+#endif
             << "  -b, --basemap <path>       Basemap tile directory\n"
             << "  -d, --database <osect.db>   NASR SQLite database\n"
             << "  -c, --conf <osect.ini> Chart style config\n"
@@ -89,6 +93,15 @@ int main(int argc, char** argv)
         std::cerr << "Unexpected positional argument: " << argv[argi] << std::endl;
         return EXIT_FAILURE;
     }
+
+#ifndef OSECT_HAVE_DXIL
+    if(gpu_driver && std::strcmp(gpu_driver, "direct3d12") == 0)
+    {
+        std::cerr << "--gpu direct3d12 not available: this build was configured without D3D12 support."
+                  << " Rebuild with -DOSECT_ENABLE_D3D12=ON and dxc on PATH (or in $VULKAN_SDK/bin)." << std::endl;
+        return EXIT_FAILURE;
+    }
+#endif
 
     // Resolve bundled assets for any paths not provided on the command line.
     std::string db_path_owned;

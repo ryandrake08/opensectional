@@ -43,7 +43,7 @@
 #include <line_vert_spv.h>
 #include <textured_frag_spv.h>
 #include <textured_vert_spv.h>
-#ifdef _WIN32
+#ifdef OSECT_HAVE_DXIL
 #include <default_frag_dxil.h>
 #include <default_vert_dxil.h>
 #include <line_frag_dxil.h>
@@ -85,7 +85,7 @@ namespace
         return { nullptr, 0 };
     }
 
-#ifdef _WIN32
+#ifdef OSECT_HAVE_DXIL
     shader_bytecode get_dxil_bytecode(shader_id id, sdl::shader_stage_t stage)
     {
         if(stage == sdl::shader_stage::vertex)
@@ -136,7 +136,7 @@ namespace
             return {dev, bc.data, bc.len, entrypoint, stage, format, num_samplers, num_storage_buffers};
         }
 #endif
-#ifdef _WIN32
+#ifdef OSECT_HAVE_DXIL
         if(format == sdl::shader_format::dxil)
             bc = get_dxil_bytecode(id, stage);
         else

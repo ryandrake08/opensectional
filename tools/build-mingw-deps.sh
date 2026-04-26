@@ -104,6 +104,14 @@ make -j "${JOBS}"
 make install
 cd -
 
+# Make installed .pc files relocatable so the deps tree survives a rename of
+# its parent path. Without this, prefix= is the absolute install path at build
+# time and pkg-config emits stale -I/-L flags after any move.
+for pc in "${PREFIX}/lib/pkgconfig/"*.pc; do
+    [ -f "$pc" ] || continue
+    sed -i 's|^prefix=.*|prefix=${pcfiledir}/../..|' "$pc"
+done
+
 echo ""
 echo "=== Done ==="
 echo "Dependencies installed to: ${PREFIX}"
