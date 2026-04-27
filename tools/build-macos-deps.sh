@@ -25,6 +25,12 @@ SDL3_IMAGE_TAG=release-3.4.2
 SDL3_TTF_TAG=release-3.2.2
 SQLITE_YEAR=2025
 SQLITE_URL="https://www.sqlite.org/${SQLITE_YEAR}/sqlite-autoconf-3490100.tar.gz"
+# MoltenVK ships precompiled universal (arm64+x86_64) binaries on its
+# GitHub releases page, which avoids dragging in their large fetched
+# dependency tree (SPIRV-Cross, glslang, SPIRV-Tools, ...) just to build
+# a dylib. Update the tag to bump the bundled version.
+MOLTENVK_TAG=v1.3.0
+MOLTENVK_TAR_URL="https://github.com/KhronosGroup/MoltenVK/releases/download/${MOLTENVK_TAG}/MoltenVK-macos.tar"
 
 DEPS_TOOLCHAIN="${BUILDDIR}/toolchain.cmake"
 
@@ -37,8 +43,14 @@ echo ""
 mkdir -p "${BUILDDIR}" "${PREFIX}"
 
 cat > "${DEPS_TOOLCHAIN}" <<TCEOF
-set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
-set(CMAKE_OSX_DEPLOYMENT_TARGET ${DEPLOYMENT_TARGET})
+# CACHE STRING ... FORCE is required (not just plain \`set()\`): some
+# upstream CMakeLists (notably SDL3 3.4.x) read CMAKE_OSX_ARCHITECTURES
+# from the cache or fall back to host arch when the cache entry is empty.
+# A plain \`set()\` in the toolchain file is local to the toolchain scope
+# and doesn't populate the cache, so universal builds silently degrade
+# to single-arch (host).
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures for macOS" FORCE)
+set(CMAKE_OSX_DEPLOYMENT_TARGET ${DEPLOYMENT_TARGET} CACHE STRING "Minimum macOS deployment target" FORCE)
 # Prefer our cross-built deps over any host-installed Homebrew/MacPorts copies.
 set(CMAKE_PREFIX_PATH ${PREFIX})
 TCEOF
@@ -102,12 +114,26 @@ if [ ! -d "${BUILDDIR}/sqlite" ]; then
     curl -L "${SQLITE_URL}" | tar xz -C "${BUILDDIR}/sqlite" --strip-components=1
 fi
 cd "${BUILDDIR}/sqlite"
+# RTREE = spatial bbox queries; FTS5 = the search index built by
+# tools/build_search.py. Both must be compiled in — the amalgamation
+# leaves them off by default.
+#
+# Re-run safety: remove prior outputs first. clang -c will overwrite the
+# .o, but `ar rcs` chokes on an existing fat archive (Apple ar can't
+# modify universal archives). Using libtool sidesteps that limitation
+# regardless, but the explicit rm also keeps a half-built tree from
+# polluting subsequent runs.
+rm -f sqlite3.o libsqlite3.a
 clang ${ARCH_FLAGS} \
     -mmacosx-version-min=${DEPLOYMENT_TARGET} \
     -DSQLITE_ENABLE_RTREE=1 \
+    -DSQLITE_ENABLE_FTS5=1 \
     -O2 \
     -c sqlite3.c -o sqlite3.o
-ar rcs libsqlite3.a sqlite3.o
+# Apple's libtool (not GNU libtool) is the canonical way to assemble a
+# static archive on macOS — it understands universal slices and rewrites
+# the output atomically rather than failing on existing fat archives.
+libtool -static -o libsqlite3.a sqlite3.o
 mkdir -p "${PREFIX}/include" "${PREFIX}/lib/pkgconfig"
 cp sqlite3.h "${PREFIX}/include/"
 cp libsqlite3.a "${PREFIX}/lib/"
@@ -125,6 +151,38 @@ Libs: -L\${libdir} -lsqlite3
 Cflags: -I\${includedir}
 PCEOF
 cd -
+
+# ---------- MoltenVK ----------
+# Bundle MoltenVK into the .app's Contents/Frameworks/ at install time so
+# the Vulkan backend works on a fresh Mac without the user installing the
+# Vulkan SDK or Homebrew. SDL3 searches @executable_path/../Frameworks/
+# libMoltenVK.dylib first when loading Vulkan on macOS, so once the dylib
+# is in that location no app code or env-var hackery is needed.
+echo "--- MoltenVK (${MOLTENVK_TAG}) ---"
+if [ ! -d "${BUILDDIR}/MoltenVK" ]; then
+    mkdir -p "${BUILDDIR}/MoltenVK"
+    curl -L "${MOLTENVK_TAR_URL}" | tar x -C "${BUILDDIR}/MoltenVK"
+fi
+# Layout has shifted across MoltenVK releases (v1.2.x used .xcframework/
+# macos-arm64_x86_64/; v1.3.x uses dynamic/dylib/macOS/). Just look for the
+# .dylib anywhere in the tree — the file extension distinguishes the
+# dynamic library we want from the static .a we don't.
+MVK_DYLIB=$(find "${BUILDDIR}/MoltenVK" -name 'libMoltenVK.dylib' -type f | head -1)
+MVK_LICENSE=$(find "${BUILDDIR}/MoltenVK" -name 'LICENSE' -type f | head -1)
+if [ -z "${MVK_DYLIB}" ] || [ ! -f "${MVK_DYLIB}" ]; then
+    echo "ERROR: MoltenVK universal dylib not found in extracted tarball" >&2
+    exit 1
+fi
+# Sanity-check the slice list before installing.
+if ! lipo -info "${MVK_DYLIB}" | grep -q 'arm64' || ! lipo -info "${MVK_DYLIB}" | grep -q 'x86_64'; then
+    echo "ERROR: MoltenVK dylib is not universal: $(lipo -info "${MVK_DYLIB}")" >&2
+    exit 1
+fi
+mkdir -p "${PREFIX}/lib" "${PREFIX}/share/doc/MoltenVK"
+cp "${MVK_DYLIB}" "${PREFIX}/lib/libMoltenVK.dylib"
+if [ -n "${MVK_LICENSE}" ] && [ -f "${MVK_LICENSE}" ]; then
+    cp "${MVK_LICENSE}" "${PREFIX}/share/doc/MoltenVK/LICENSE"
+fi
 
 # Make installed .pc files relocatable so the deps tree survives a rename of
 # its parent path. Without this, prefix= is the absolute install path at build

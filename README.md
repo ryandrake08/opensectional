@@ -100,7 +100,7 @@ The native and universal builds produce structurally different binaries. They ar
 |---|---|---|
 | **SDL3 / SDL3_image / SDL3_ttf / sqlite3** | Dynamic, from Homebrew/MacPorts | Static, from `macos-universal-deps/` |
 | **System frameworks** (Cocoa, Metal, …) | Dynamic (always — they live in the SDK / `/System/Library/Frameworks/`) | Same |
-| **MoltenVK** (only used if `--gpu vulkan`) | `dlopen`ed at runtime; not bundled | Same — even with static SDL3, MoltenVK is loaded dynamically. The runtime machine needs MoltenVK installed (Vulkan SDK, Homebrew, or app-bundled) for the Vulkan backend; the default Metal backend needs nothing extra. |
+| **MoltenVK** (used by Vulkan backend, the default) | Bundled into `OpenSectional.app/Contents/Frameworks/libMoltenVK.dylib` via the install step. | Same — MoltenVK is `dlopen`ed at runtime regardless of how SDL3 itself was linked. |
 | **`OpenSectional.app/Contents/Frameworks/`** | Populated by `fixup_bundle` at install time with the Homebrew dylibs, then re-codesigned | Empty — the executable is self-contained |
 | **Binary size** | Smaller executable, dylibs alongside | Larger single-file executable (~+5–10 MB per arch) |
 | **Use for** | Local development, fast incremental rebuilds | Distribution DMG, no Homebrew/MacPorts required at the user's machine |
@@ -193,7 +193,7 @@ NSIS (`makensis`) must be installed on the build host. Debian/Ubuntu: `sudo apt 
 
 ### GPU Backend
 
-OpenSectional defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` to override on macOS. The shader format is selected at runtime based on the active backend.
+OpenSectional defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` to override on macOS. The shader format is selected at runtime based on the active backend. On macOS, MoltenVK is bundled into `OpenSectional.app/Contents/Frameworks/`, so the .app runs out of the box without requiring the user to install Vulkan SDK or Homebrew.
 
 A D3D12 backend is available on Windows but is **experimental** — Vulkan has shown better performance in testing and is the recommended Windows backend. The D3D12 path is built whenever `dxc` is available at configure time; pass `-DOSECT_ENABLE_D3D12=OFF` (or omit `dxc` from the toolchain) to skip it. Builds without DXIL reject `--gpu direct3d12` at startup with a descriptive error.
 
@@ -453,3 +453,13 @@ License texts live next to each component:
 
 External runtime dependencies (not vendored): SDL3, SDL3_image, SDL3_ttf,
 SQLite3.
+
+Bundled into the macOS distribution `.app` only (downloaded at deps-build
+time, not in the source tree):
+
+| Component | Version | License | Source |
+|---|---|---|---|
+| MoltenVK | pinned in `tools/build-macos-deps.sh` (currently v1.3.0) | Apache-2.0 | https://github.com/KhronosGroup/MoltenVK |
+
+The Apache-2.0 LICENSE text from MoltenVK's release tarball ships in the
+installed bundle as `Contents/Resources/LICENSE-MoltenVK.txt`.

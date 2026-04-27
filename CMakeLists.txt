@@ -173,6 +173,13 @@ target_link_options(osect PRIVATE
     $<$<CONFIG:RelWithDebInfo>:${RELWITHDEBINFO_COMPILE_OPTIONS}>
 )
 
+# On Windows (MinGW), Release builds use the GUI subsystem so launching the
+# app doesn't spawn a console window. Debug/RelWithDebInfo keep the default
+# console subsystem so stdout/stderr remain visible for diagnostics.
+if(MINGW)
+    target_link_options(osect PRIVATE $<$<CONFIG:Release>:-mwindows>)
+endif()
+
 # Link libraries
 target_link_libraries(osect PRIVATE
     imgui_wrapper
@@ -313,6 +320,18 @@ if(WIN32 AND EXISTS "${ICON_PNG}")
         )
         add_custom_target(app_icon DEPENDS "${INSTALLER_ICON_ICO}")
         add_dependencies(osect app_icon)
+
+        # Embed the .ico as a Windows resource so osect.exe carries its own
+        # icon. Without this, Explorer, the taskbar, and the "Installed Apps"
+        # uninstall list (which reads DisplayIcon → osect.exe from the
+        # registry, set via CPACK_NSIS_INSTALLED_ICON_NAME below) all fall
+        # back to a generic icon.
+        enable_language(RC)
+        set(_osect_rc "${CMAKE_BINARY_DIR}/osect.rc")
+        file(WRITE "${_osect_rc}" "IDI_ICON1 ICON \"${INSTALLER_ICON_ICO}\"\n")
+        target_sources(osect PRIVATE "${_osect_rc}")
+        set_source_files_properties("${_osect_rc}" PROPERTIES
+            OBJECT_DEPENDS "${INSTALLER_ICON_ICO}")
     endif()
 endif()
 
@@ -354,6 +373,51 @@ if(APPLE)
     install(FILES "${BUNDLED_INI}" DESTINATION "${_rsrc}")
     install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION "${_rsrc}")
 
+    # Bundle MoltenVK so the .app's Vulkan backend works on a fresh Mac
+    # with no Vulkan SDK / Homebrew installed. SDL3 searches
+    # @executable_path/../Frameworks/libMoltenVK.dylib first when loading
+    # Vulkan on macOS, so this just works once the file is in place.
+    # Source order: universal-deps build first (DMG distribution path);
+    # then Vulkan SDK and the package managers (native dev builds).
+    find_file(MOLTENVK_DYLIB libMoltenVK.dylib
+        PATHS
+            "${CMAKE_SOURCE_DIR}/macos-universal-deps/lib"
+            "$ENV{VULKAN_SDK}/lib"
+            "/opt/homebrew/lib"
+            "/usr/local/lib"
+            "/opt/local/lib"
+        NO_DEFAULT_PATH)
+    if(MOLTENVK_DYLIB)
+        message(STATUS "MoltenVK: bundling ${MOLTENVK_DYLIB}")
+        install(FILES "${MOLTENVK_DYLIB}"
+                DESTINATION "OpenSectional.app/Contents/Frameworks")
+        # Apache-2.0 requires shipping the LICENSE alongside the binary.
+        # Try the universal-deps copy first (placed there by build-macos-deps.sh);
+        # fall back to a couple of known package-manager locations.
+        find_file(MOLTENVK_LICENSE LICENSE
+            PATHS
+                "${CMAKE_SOURCE_DIR}/macos-universal-deps/share/doc/MoltenVK"
+                "/opt/homebrew/share/doc/molten-vk"
+                "/usr/local/share/doc/molten-vk"
+                "/opt/local/share/doc/MoltenVK"
+            NO_DEFAULT_PATH)
+        if(MOLTENVK_LICENSE)
+            install(FILES "${MOLTENVK_LICENSE}"
+                    DESTINATION "${_rsrc}"
+                    RENAME "LICENSE-MoltenVK.txt")
+        else()
+            message(WARNING "MoltenVK LICENSE not found alongside the dylib; "
+                "Apache-2.0 requires shipping it. Either install MoltenVK via a "
+                "channel that includes LICENSE next to the dylib, or add the file "
+                "manually to Contents/Resources/LICENSE-MoltenVK.txt.")
+        endif()
+    else()
+        message(WARNING "MoltenVK not found; the .app's default Vulkan backend "
+            "will fail unless the user has MoltenVK installed elsewhere on the host. "
+            "Install via Homebrew (brew install molten-vk) or build the universal "
+            "deps (./tools/build-macos-deps.sh).")
+    endif()
+
     # Bundle brew-installed SDL dylibs into the .app via fixup_bundle at
     # install time. Runs inside the install prefix so paths resolve correctly.
     # fixup_bundle rewrites LC_LOAD_DYLIB paths, which invalidates any existing
@@ -392,10 +456,15 @@ elseif(WIN32)
     # =========================================================================
     # Windows: flat install tree + NSIS installer
     # =========================================================================
-    install(TARGETS osect RUNTIME DESTINATION bin)
-    install(FILES "${BUNDLED_DB}"  DESTINATION bin)
-    install(FILES "${BUNDLED_INI}" DESTINATION bin)
-    install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION bin)
+    # Everything lands directly in $INSTDIR (e.g. C:\Program Files\OpenSectional).
+    # This is the conventional Windows layout for a single-binary app: the
+    # exe sits next to its DLLs (Windows resolves them from the exe's dir)
+    # and next to its data assets (osect's runtime asset resolution looks
+    # alongside the executable). No bin/ subdir, which is a Unix-ism.
+    install(TARGETS osect RUNTIME DESTINATION .)
+    install(FILES "${BUNDLED_DB}"  DESTINATION .)
+    install(FILES "${BUNDLED_INI}" DESTINATION .)
+    install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION .)
 
     # MinGW runtime DLLs (SDL3/SDL3_image/SDL3_ttf/sqlite3 are statically
     # linked by build-mingw-deps.sh, so only libstdc++/libgcc/winpthread
@@ -412,7 +481,7 @@ elseif(WIN32)
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
         if(_dll_path AND NOT _dll_path STREQUAL "${_dll}" AND EXISTS "${_dll_path}")
-            install(FILES "${_dll_path}" DESTINATION bin)
+            install(FILES "${_dll_path}" DESTINATION .)
         endif()
     endforeach()
 
@@ -432,7 +501,7 @@ elseif(WIN32)
     set(CPACK_NSIS_PACKAGE_NAME "OpenSectional")
     set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
     set(CPACK_NSIS_MODIFY_PATH OFF)
-    set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\\\osect.exe")
+    set(CPACK_NSIS_INSTALLED_ICON_NAME "osect.exe")
     if(TARGET app_icon)
         set(CPACK_NSIS_MUI_ICON    "${INSTALLER_ICON_ICO}")
         set(CPACK_NSIS_MUI_UNIICON "${INSTALLER_ICON_ICO}")
@@ -440,7 +509,7 @@ elseif(WIN32)
 
     # Start menu shortcut
     set(CPACK_NSIS_CREATE_ICONS_EXTRA
-        "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\OpenSectional.lnk' '$INSTDIR\\\\bin\\\\osect.exe'")
+        "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\OpenSectional.lnk' '$INSTDIR\\\\osect.exe'")
     set(CPACK_NSIS_DELETE_ICONS_EXTRA
         "Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\OpenSectional.lnk'")
 
