@@ -92,7 +92,10 @@ if [ ! -d "${BUILDDIR}/sqlite" ]; then
 fi
 cd "${BUILDDIR}/sqlite"
 if [ ! -f Makefile ] || [ ! -f .configured ]; then
-    CFLAGS="-DSQLITE_ENABLE_RTREE=1" \
+    # RTREE = spatial bbox queries; FTS5 = the search index built by
+    # tools/build_search.py. Both must be compiled in — the amalgamation
+    # leaves them off by default.
+    CFLAGS="-DSQLITE_ENABLE_RTREE=1 -DSQLITE_ENABLE_FTS5=1" \
     ./configure \
         --host=${TOOLCHAIN_PREFIX} \
         --prefix="${PREFIX}" \
