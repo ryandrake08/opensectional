@@ -4,7 +4,7 @@ A desktop application for visualizing FAA NASR (National Airspace System Resourc
 
 ## Quick Start
 
-**Shader cross-compilation requires `glslangValidator`** (preferred) or `dxc`. macOS additionally needs `spirv-cross` and at minimum Xcode Command Line Tools (full Xcode unlocks precompiled `.metallib` for slightly faster startup, but isn't required). Windows targets optionally use `dxc` for the experimental D3D12 backend; without it, the build silently skips DXIL and the Windows binary runs Vulkan-only. See [Dependencies](#dependencies) for install commands and [Shader Compiler Toolchain](#shader-compiler-toolchain) for what each tool does.
+See [Dependencies](#dependencies) for the per-platform install commands and [Shader Compiler Toolchain](#shader-compiler-toolchain) for details on the build-time HLSL → SPIR-V / MSL / DXIL pipeline.
 
 ```bash
 # 1. Install dependencies (macOS with MacPorts)
@@ -22,7 +22,15 @@ tools/env/bin/python3 tools/download_all.py nasr_data
 
 # 5. Build the NASR database (use the command printed by the download script)
 
-# 6. Run. With no options, osect looks for osect.db, basemap/, and
+# 6. Download the Natural Earth basemap source (~100 MB zip; one time)
+mkdir -p mapdata
+curl -L -o mapdata/natural_earth_vector.gpkg.zip \
+    https://naciscdn.org/naturalearth/packages/natural_earth_vector.gpkg.zip
+
+# 7. Render the basemap tile pyramid into basemap/
+tools/env/bin/python3 tools/render_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/
+
+# 8. Run. With no options, osect looks for osect.db, basemap/, and
 #    osect.ini next to the executable (installer layout) or in the
 #    current working directory (dev).
 ./build/osect
@@ -308,10 +316,12 @@ A minimal worldwide basemap with coastlines, borders, roads, railroads, rivers, 
 
 ```bash
 # Download Natural Earth GeoPackage (~100 MB zip)
-wget -P mapdata https://naciscdn.org/naturalearth/packages/natural_earth_vector.gpkg.zip
+mkdir -p mapdata
+curl -L -o mapdata/natural_earth_vector.gpkg.zip \
+    https://naciscdn.org/naturalearth/packages/natural_earth_vector.gpkg.zip
 
 # Render basemap tiles
-tools/env/bin/python3 tools/render_basemap.py natural_earth_vector.gpkg.zip basemap/
+tools/env/bin/python3 tools/render_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/
 ```
 
 On first run, the script reprojects the source data to EPSG:3857 and saves a `*_3857.gpkg` file alongside the zip. Subsequent runs reuse the preprocessed file automatically.
