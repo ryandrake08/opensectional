@@ -10,6 +10,7 @@ Usage:
 """
 
 import csv
+import datetime
 import io
 import math
 import re
@@ -18,7 +19,8 @@ import zipfile
 from collections import defaultdict
 
 from build_common import (
-    handle_antimeridian, open_output_db, subdivide_ring,
+    _parse_date_loose, handle_antimeridian, open_output_db,
+    subdivide_ring, write_meta,
 )
 
 
@@ -1403,6 +1405,34 @@ def build_all_nasr(conn, csv_zf):
 
     print("Importing weather stations...")
     build_awos(conn, csv_zf)
+
+    write_nasr_meta(conn, csv_zf)
+
+
+def write_nasr_meta(conn, csv_zf):
+    """Extract the cycle effective date from any CSV (first data row's
+    EFF_DATE column) and record a META entry. NASR runs on a 28-day
+    cycle, so the next cycle's effective date is also the current
+    cycle's expiration."""
+    eff_iso = None
+    try:
+        with csv_zf.open("APT_BASE.csv") as f:
+            reader = csv.DictReader(io.TextIOWrapper(f, encoding="utf-8"))
+            row = next(reader, None)
+            if row is not None:
+                eff_iso = _parse_date_loose(row.get("EFF_DATE"))
+    except KeyError:
+        pass
+
+    expires_iso = None
+    info = "NASR CSV"
+    if eff_iso is not None:
+        eff = datetime.date.fromisoformat(eff_iso)
+        expires_iso = (eff + datetime.timedelta(days=28)).isoformat()
+        info = f"NASR cycle {eff.strftime('%d %b %Y')}"
+
+    write_meta(conn, "nasr",
+               effective=eff_iso, expires=expires_iso, info=info)
 
 
 def main():

@@ -32,14 +32,16 @@ add_osect_test(lru_set)
 add_osect_test(altitude_filter)
 
 # Tests that compile one .cpp alongside the test
-add_osect_test(geo_math    ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
-add_osect_test(map_view    ${CMAKE_SOURCE_DIR}/src/map_view.cpp)
-add_osect_test(ini_config  ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
+add_osect_test(geo_math     ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
+add_osect_test(map_view     ${CMAKE_SOURCE_DIR}/src/map_view.cpp)
+add_osect_test(ini_config   ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
+add_osect_test(data_source  ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
 
 # flight_route pulls in the DB layer and needs the sqlite wrapper
 add_osect_test(flight_route
     ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
     ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
+    ${CMAKE_SOURCE_DIR}/src/data_source.cpp
     ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
     ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
 target_link_libraries(test_flight_route PRIVATE sqlite_wrapper)
@@ -49,6 +51,7 @@ add_osect_test(route_planner
     ${CMAKE_SOURCE_DIR}/src/route_plan_config.cpp
     ${CMAKE_SOURCE_DIR}/src/ini_config.cpp
     ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
+    ${CMAKE_SOURCE_DIR}/src/data_source.cpp
     ${CMAKE_SOURCE_DIR}/src/geo_math.cpp
     ${CMAKE_SOURCE_DIR}/src/flight_route.cpp)
 target_link_libraries(test_route_planner PRIVATE sqlite_wrapper)

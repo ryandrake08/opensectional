@@ -5,6 +5,7 @@ Usage:
     python tools/build_shp.py <shapefile.zip> <output.db>
 """
 
+import datetime
 import io
 import struct
 import sys
@@ -12,6 +13,7 @@ import zipfile
 
 from build_common import (
     handle_antimeridian, open_output_db, simplify_ring, subdivide_ring,
+    write_meta,
 )
 
 
@@ -332,6 +334,8 @@ def build_cls_arsp(conn, shp_zf):
 
     conn.execute("CREATE INDEX idx_cls_arsp_seg ON CLS_ARSP_SEG(SEG_ID)")
 
+    write_shp_meta(conn, shp_zf)
+
 
 def main():
     if len(sys.argv) != 3:
@@ -345,6 +349,32 @@ def main():
         build_cls_arsp(conn, shp_zf)
     conn.commit()
     conn.close()
+
+
+def write_shp_meta(conn, shp_zf):
+    """The class airspace shapefile carries no EFF_DATE column, but the
+    FAA stamps the inner .dbf with its build date. Use that as the
+    effective date and the NASR 28-day cycle for expiration."""
+    eff_iso = None
+    dbf_name = next((n for n in shp_zf.namelist() if n.endswith('.dbf')), None)
+    if dbf_name is not None:
+        # ZipInfo.date_time is a 6-tuple (Y,M,D,h,m,s) in local time;
+        # treat as UTC date — close enough for cycle math.
+        info = shp_zf.getinfo(dbf_name)
+        try:
+            eff_iso = datetime.date(*info.date_time[:3]).isoformat()
+        except ValueError:
+            eff_iso = None
+
+    expires_iso = None
+    info_text = "Class airspace shapefile"
+    if eff_iso is not None:
+        eff = datetime.date.fromisoformat(eff_iso)
+        expires_iso = (eff + datetime.timedelta(days=28)).isoformat()
+        info_text = f"Class airspace SHP {eff.strftime('%d %b %Y')}"
+
+    write_meta(conn, "shp",
+               effective=eff_iso, expires=expires_iso, info=info_text)
 
 
 if __name__ == "__main__":

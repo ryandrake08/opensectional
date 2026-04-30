@@ -170,6 +170,10 @@ int main(int argc, char** argv)
         osect::ui_overlay ui;
         ui.set_route_planner_defaults(plan_options.max_leg_length_nm,
                                        plan_options.use_airways);
+
+        // Seed the data-status panel from the database's META table.
+        ui.set_data_sources(planner_db.list_data_sources());
+
         std::string last_search_query;
         constexpr auto SEARCH_RESULT_LIMIT = 12;
 
@@ -186,8 +190,7 @@ int main(int argc, char** argv)
 
             imgui_ctx.new_frame();
 
-            auto ui_result = ui.draw(last_render_ms, map.zoom_level(),
-                                      map.feature_types());
+            auto ui_result = ui.draw(last_render_ms, map.feature_types());
             if(ui_result.visibility_changed)
             {
                 map.set_visibility(ui.visibility());

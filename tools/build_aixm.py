@@ -8,6 +8,7 @@ Usage:
     python tools/build_aixm.py <aixm.zip> <output.db>
 """
 
+import datetime
 import io
 import math
 import sys
@@ -17,7 +18,7 @@ from collections import defaultdict
 
 from build_common import (
     ALT_UNLIMITED_FT, handle_antimeridian, open_output_db, parse_altitude,
-    simplify_ring, subdivide_ring,
+    simplify_ring, subdivide_ring, write_meta,
 )
 
 
@@ -1819,6 +1820,8 @@ def build_sua(conn, aixm_zf):
 
     conn.execute("CREATE INDEX idx_sua_seg ON SUA_SEG(SEG_ID)")
 
+    write_aixm_meta(conn, aixm_zf)
+
 
 def main():
     if len(sys.argv) != 3:
@@ -1832,6 +1835,31 @@ def main():
         build_sua(conn, aixm_zf)
     conn.commit()
     conn.close()
+
+
+def write_aixm_meta(conn, aixm_zf):
+    """The SUA AIXM bundle ships in the same FAA NASR subscription as
+    the CSV; treat it as 28-day-cycle data and use the inner ZIP's
+    build date as the effective date."""
+    eff_iso = None
+    inner = next((n for n in aixm_zf.namelist()
+                  if n.endswith('SaaSubscriberFile.zip')), None)
+    if inner is not None:
+        info = aixm_zf.getinfo(inner)
+        try:
+            eff_iso = datetime.date(*info.date_time[:3]).isoformat()
+        except ValueError:
+            eff_iso = None
+
+    expires_iso = None
+    info_text = "SUA AIXM 5.0"
+    if eff_iso is not None:
+        eff = datetime.date.fromisoformat(eff_iso)
+        expires_iso = (eff + datetime.timedelta(days=28)).isoformat()
+        info_text = f"SUA AIXM 5.0 {eff.strftime('%d %b %Y')}"
+
+    write_meta(conn, "aixm",
+               effective=eff_iso, expires=expires_iso, info=info_text)
 
 
 if __name__ == "__main__":

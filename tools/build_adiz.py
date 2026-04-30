@@ -5,10 +5,12 @@ Usage:
     python tools/build_adiz.py <adiz.geojson> <output.db>
 """
 
+import datetime
 import json
+import os
 import sys
 
-from build_common import open_output_db, subdivide_ring
+from build_common import open_output_db, subdivide_ring, write_meta
 
 
 def build_adiz(conn, geojson_path):
@@ -137,6 +139,20 @@ def build_adiz(conn, geojson_path):
     """)
 
     conn.execute("CREATE INDEX idx_adiz_seg ON ADIZ_SEG(SEG_ID)")
+
+    # ADIZ has no published cycle. Record the GeoJSON file's mtime as
+    # the effective date and leave expiration unset — the C++ side
+    # treats this as a never-expiring source (always shown as fresh
+    # provided the row exists).
+    try:
+        mtime = datetime.datetime.fromtimestamp(
+            os.path.getmtime(geojson_path), tz=datetime.timezone.utc)
+        eff_iso = mtime.date().isoformat()
+        info_text = f"ADIZ {mtime.strftime('%d %b %Y')}"
+    except OSError:
+        eff_iso = None
+        info_text = "ADIZ"
+    write_meta(conn, "adiz", effective=eff_iso, info=info_text)
 
 
 def main():

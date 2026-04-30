@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "altitude_filter.hpp"
+#include "data_source.hpp"
 #include "flight_route.hpp"
 #include "nasr_database.hpp"  // for search_hit (POD struct, not the class)
 
@@ -117,11 +118,17 @@ namespace osect
         // every frame so the caller doesn't need to mirror state.
         void set_route_planner_defaults(double max_leg_nm, bool use_airways);
 
-        // Draw FPS display, zoom level, layer checkboxes, and the search box.
-        // `feature_types` supplies the labels+ids for the feature-layer
-        // checkboxes (the basemap row is always prepended).
+        // Seed the data-status panel with the per-source freshness
+        // records. Typically called once at startup; ephemeral sources
+        // (Stage 2+) will refresh this after each fetch.
+        void set_data_sources(std::vector<data_source> sources);
+
+        // Draw FPS display, layer checkboxes, search box, route panel,
+        // and (when populated) the data-status panel. `feature_types`
+        // supplies the labels+ids for the feature-layer checkboxes
+        // (the basemap row is always prepended).
         ui_overlay_result draw(
-            float last_render_ms, double zoom_level,
+            float last_render_ms,
             const std::vector<std::unique_ptr<feature_type>>& feature_types);
 
         // Access the list of visible/invisible layers

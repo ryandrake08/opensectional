@@ -1,4 +1,6 @@
 #include "nasr_database.hpp"
+#include <chrono>
+#include <cstdio>
 #include <memory>
 #include <mutex>
 #include <sqlite/database.hpp>
@@ -78,6 +80,7 @@ namespace osect
         sqlite::statement stmt_rtree_bbox_airports;
         sqlite::statement stmt_rtree_bbox_navaids;
         sqlite::statement stmt_rtree_bbox_fixes;
+        sqlite::statement stmt_meta;
 
         // Serializes access to `db` and the prepared statements above.
         // Each public query method acquires this lock for its duration.
@@ -647,6 +650,18 @@ namespace osect
                 WHERE max_lon >= ?1 AND min_lon <= ?3
                   AND max_lat >= ?2 AND min_lat <= ?4
             )", 1))
+
+            // META is part of the contract: every osect.db must carry
+            // a freshness row per source. A missing table fails the
+            // prepare and aborts construction; main.cpp surfaces that
+            // as "rebuild your osect.db".
+            , stmt_meta(prepare_checked(db, R"(
+                SELECT name,
+                       COALESCE(info, ''),
+                       COALESCE(expires, '')
+                FROM META
+                ORDER BY name
+            )", 3))
         {
             // Precompute the set of shadowed ARSP_IDs. Any class airspace
             // that has a lower-class neighbor at the same non-empty IDENT
@@ -1654,6 +1669,118 @@ namespace osect
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);
         return drain_rtree_rowids(pimpl->stmt_rtree_bbox_fixes, bbox);
+    }
+
+    namespace
+    {
+        // Howard Hinnant's civil-to-serial-day algorithm. Days counted
+        // from 1970-01-01. Used only by the META reader below; the rest
+        // of the database deals in degrees and rowids.
+        constexpr int days_from_civil(int y, unsigned m, unsigned d) noexcept
+        {
+            y -= m <= 2;
+            const int era = (y >= 0 ? y : y - 399) / 400;
+            const unsigned yoe = static_cast<unsigned>(y - era * 400);
+            const unsigned doy =
+                (153U * (m + (m > 2 ? -3U : 9U)) + 2U) / 5U + d - 1U;
+            const unsigned doe = yoe * 365U + yoe / 4U - yoe / 100U + doy;
+            return era * 146097 + static_cast<int>(doe) - 719468;
+        }
+
+        // Parse the ISO 8601 forms our Python ingesters write into META:
+        //   "YYYY-MM-DD"
+        //   "YYYY-MM-DDTHH:MM:SS"           (assumed UTC)
+        //   "YYYY-MM-DDTHH:MM:SSZ"
+        //   "YYYY-MM-DDTHH:MM:SS+HH:MM" / "-HH:MM"
+        // Throws std::runtime_error on any malformed input. We control
+        // the writer; a parse failure is a writer bug, not a runtime
+        // condition the caller should be expected to handle.
+        std::chrono::system_clock::time_point
+        parse_iso8601(const std::string& s)
+        {
+            const std::runtime_error bad(
+                "META: invalid ISO 8601 timestamp '" + s + "'");
+            if(s.size() < 10) throw bad;
+
+            int y = 0;
+            int mo = 0;
+            int d = 0;
+            if(std::sscanf(s.c_str(), "%4d-%2d-%2d", &y, &mo, &d) != 3)
+                throw bad;
+            if(mo < 1 || mo > 12 || d < 1 || d > 31) throw bad;
+
+            int h = 0;
+            int mi = 0;
+            int sec = 0;
+            long long offset_seconds = 0;
+
+            if(s.size() >= 19 && s[10] == 'T')
+            {
+                if(std::sscanf(s.c_str() + 11, "%2d:%2d:%2d",
+                               &h, &mi, &sec) != 3)
+                    throw bad;
+                if(h < 0 || h > 23 || mi < 0 || mi > 59 ||
+                   sec < 0 || sec > 60)
+                    throw bad;
+
+                if(s.size() > 19)
+                {
+                    const auto tz = s.substr(19);
+                    if(tz == "Z")
+                    {
+                        offset_seconds = 0;
+                    }
+                    else if(tz.size() == 6 && (tz[0] == '+' || tz[0] == '-'))
+                    {
+                        int oh = 0;
+                        int om = 0;
+                        if(std::sscanf(tz.c_str() + 1, "%2d:%2d",
+                                       &oh, &om) != 2)
+                            throw bad;
+                        const int sign = tz[0] == '-' ? -1 : 1;
+                        offset_seconds = sign * (oh * 3600LL + om * 60LL);
+                    }
+                    else
+                    {
+                        throw bad;
+                    }
+                }
+            }
+            else if(s.size() != 10)
+            {
+                throw bad;
+            }
+
+            const auto days = days_from_civil(y,
+                static_cast<unsigned>(mo), static_cast<unsigned>(d));
+            const long long utc_seconds =
+                static_cast<long long>(days) * 86400LL +
+                static_cast<long long>(h) * 3600LL +
+                static_cast<long long>(mi) * 60LL +
+                static_cast<long long>(sec) -
+                offset_seconds;
+            return std::chrono::system_clock::time_point(
+                std::chrono::seconds(utc_seconds));
+        }
+    }
+
+    std::vector<data_source> nasr_database::list_data_sources() const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::vector<data_source> out;
+        auto& stmt = pimpl->stmt_meta;
+        stmt.reset();
+        while(stmt.step())
+        {
+            data_source s;
+            s.name = stmt.column_text(0);
+            s.info = stmt.column_text(1);
+            const auto expires_str = stmt.column_text(2);
+            if(!expires_str.empty())
+                s.expires = parse_iso8601(expires_str);
+            out.push_back(std::move(s));
+        }
+        return out;
     }
 
 } // namespace osect

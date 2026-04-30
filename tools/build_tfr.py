@@ -11,7 +11,9 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 
-from build_common import ALT_UNLIMITED_FT, open_output_db, subdivide_ring
+from build_common import (
+    ALT_UNLIMITED_FT, open_output_db, subdivide_ring, write_meta,
+)
 
 
 def _get_text(parent, tag):
@@ -326,6 +328,13 @@ def build_tfr(conn, tfr_dir):
     """)
 
     conn.execute("CREATE INDEX idx_tfr_seg ON TFR_SEG(SEG_ID)")
+
+    # TFRs are inherently ephemeral. Until the in-app fetcher lands
+    # (Stage 3), they're snapshots of whatever was on tfr.faa.gov when
+    # download_all.py ran; the registry shows this as `unknown` until
+    # the in-app source replaces it with a runtime-tracked freshness.
+    write_meta(conn, "tfr", kind="ephemeral",
+               info="TFR snapshot (ephemeral)")
 
 
 def main():

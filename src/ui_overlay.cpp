@@ -36,6 +36,10 @@ namespace osect
         // Planner knobs surfaced in the route panel.
         float max_leg_nm = 80.0F;  // ImGui::InputFloat takes float
         bool use_airways = false;
+
+        // Data-status panel state. Empty until set_data_sources is
+        // called; the panel renders nothing in that case.
+        std::vector<data_source> sources;
     };
 
     ui_overlay::ui_overlay() : pimpl(std::make_unique<impl>()) {}
@@ -68,6 +72,11 @@ namespace osect
         pimpl->use_airways = use_airways;
     }
 
+    void ui_overlay::set_data_sources(std::vector<data_source> sources)
+    {
+        pimpl->sources = std::move(sources);
+    }
+
     void ui_overlay::set_search_results(std::vector<search_hit> hits)
     {
         pimpl->hits = std::move(hits);
@@ -84,30 +93,12 @@ namespace osect
     }
 
     ui_overlay_result ui_overlay::draw(
-        float last_render_ms, double zoom_level,
+        float last_render_ms,
         const std::vector<std::unique_ptr<feature_type>>& feature_types)
     {
         auto& io = ImGui::GetIO();
         auto result = ui_overlay_result{};
         auto& d = *pimpl;
-
-        // Zoom level overlay in the bottom-left corner
-        ImGui::SetNextWindowPos(
-            ImVec2(0, io.DisplaySize.y),
-            ImGuiCond_Always,
-            ImVec2(0.0F, 1.0F));
-        ImGui::SetNextWindowBgAlpha(0.4F);
-        {
-            imgui::scoped_window window("##zoom",
-                ImGuiWindowFlags_NoDecoration |
-                ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoFocusOnAppearing |
-                ImGuiWindowFlags_NoNav |
-                ImGuiWindowFlags_NoMove |
-                ImGuiWindowFlags_NoSavedSettings |
-                ImGuiWindowFlags_NoInputs);
-            ImGui::Text("z%.1f", zoom_level);
-        }
 
         // FPS overlay in the bottom-right corner
         ImGui::SetNextWindowPos(
@@ -354,6 +345,44 @@ namespace osect
                 }
             }
         }
+
+        // Data status panel, pinned to the bottom-left corner.
+        if(!d.sources.empty())
+        {
+            ImGui::SetNextWindowPos(
+                ImVec2(0, io.DisplaySize.y),
+                ImGuiCond_Always,
+                ImVec2(0.0F, 1.0F));
+            ImGui::SetNextWindowBgAlpha(0.6F);
+            imgui::scoped_window window("Data status",
+                ImGuiWindowFlags_AlwaysAutoResize |
+                ImGuiWindowFlags_NoFocusOnAppearing |
+                ImGuiWindowFlags_NoNav |
+                ImGuiWindowFlags_NoMove |
+                ImGuiWindowFlags_NoSavedSettings);
+
+            for(const auto& s : d.sources)
+            {
+                // Status colors: green=fresh, red=expired, gray=unknown.
+                ImU32 color = IM_COL32(180, 180, 180, 255);
+                const char* tag = "?";
+                switch(s.status())
+                {
+                case data_source_status::fresh:
+                    color = IM_COL32(80, 200, 80, 255);  tag = "OK";  break;
+                case data_source_status::expired:
+                    color = IM_COL32(230, 90, 90, 255);  tag = "EXP"; break;
+                case data_source_status::unknown:
+                    color = IM_COL32(180, 180, 180, 255); tag = "?";  break;
+                }
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+                ImGui::Text("[%-5s]", tag);
+                ImGui::PopStyleColor();
+                ImGui::SameLine();
+                ImGui::Text("%-6s %s", s.name.c_str(), s.info.c_str());
+            }
+        }
+
         return result;
     }
 

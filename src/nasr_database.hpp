@@ -1,4 +1,5 @@
 #pragma once
+#include "data_source.hpp"
 #include "geo_types.hpp"
 #include <memory>
 #include <optional>
@@ -628,6 +629,11 @@ namespace osect
         std::vector<int> query_airport_rowids_bbox(const geo_bbox&) const;
         std::vector<int> query_navaid_rowids_bbox(const geo_bbox&) const;
         std::vector<int> query_fix_rowids_bbox(const geo_bbox&) const;
+
+        // Per-source freshness records read from the META table.
+        // Returns an empty vector for older databases that predate the
+        // registry. See `src/data_source.hpp` for the per-row schema.
+        std::vector<data_source> list_data_sources() const;
     };
 
 } // namespace osect
