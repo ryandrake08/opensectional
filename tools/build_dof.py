@@ -5,11 +5,13 @@ Usage:
     python tools/build_dof.py <dof.zip> <output.db>
 """
 
+import datetime
 import io
+import re
 import sys
 import zipfile
 
-from build_common import open_output_db
+from build_common import _parse_date_loose, open_output_db, write_meta
 
 
 def parse_dof_dms(dms_str):
@@ -135,6 +137,8 @@ def build_obstacles(conn, dof_zf):
     """)
     conn.execute("CREATE INDEX idx_obs_state ON OBS_BASE(STATE)")
 
+    write_dof_meta(conn, dof_zf)
+
 
 def main():
     if len(sys.argv) != 3:
@@ -148,6 +152,29 @@ def main():
         build_obstacles(conn, dof_zf)
     conn.commit()
     conn.close()
+
+
+def write_dof_meta(conn, dof_zf):
+    """Extract `CURRENCY DATE` from the first .Dat file's header line.
+    DOF runs on a 56-day cycle."""
+    eff_iso = None
+    dat_files = sorted(n for n in dof_zf.namelist() if n.endswith('.Dat'))
+    if dat_files:
+        with dof_zf.open(dat_files[0]) as raw:
+            line = io.TextIOWrapper(raw, encoding="latin-1").readline()
+        m = re.search(r"CURRENCY\s+DATE\s*=\s*(\S+)", line)
+        if m:
+            eff_iso = _parse_date_loose(m.group(1))
+
+    expires_iso = None
+    info = "DOF"
+    if eff_iso is not None:
+        eff = datetime.date.fromisoformat(eff_iso)
+        expires_iso = (eff + datetime.timedelta(days=56)).isoformat()
+        info = f"DOF currency {eff.strftime('%d %b %Y')}"
+
+    write_meta(conn, "dof",
+               effective=eff_iso, expires=expires_iso, info=info)
 
 
 if __name__ == "__main__":

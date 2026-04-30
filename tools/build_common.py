@@ -5,6 +5,7 @@ build_nasr / build_shp / build_aixm / build_adiz / build_tfr. Source-local
 helpers live next to the build_* function that uses them.
 """
 
+import datetime
 import os
 import re
 import sqlite3
@@ -159,6 +160,68 @@ def simplify_ring(points, epsilon):
     from shapely.geometry import LineString
     simplified = LineString(points).simplify(epsilon, preserve_topology=False)
     return list(simplified.coords)
+
+
+def _parse_date_loose(s):
+    """Parse a date string into ISO YYYY-MM-DD form.
+
+    Accepts the common formats actually seen in FAA data:
+      "2026/04/16"      → "2026-04-16"   (NASR EFF_DATE)
+      "2026-04-16"      → "2026-04-16"
+      "02/15/26"        → "2026-02-15"   (DOF CURRENCY DATE)
+      "02/15/2026"      → "2026-02-15"
+    Returns None on failure rather than raising.
+    """
+    if s is None:
+        return None
+    s = s.strip()
+    if not s:
+        return None
+    for fmt in ("%Y/%m/%d", "%Y-%m-%d", "%m/%d/%y", "%m/%d/%Y"):
+        try:
+            return datetime.datetime.strptime(s, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return None
+
+
+def write_meta(conn, name, *, kind="static",
+               effective=None, expires=None, info=""):
+    """Upsert a META row for one data source.
+
+    Each ingester writes one row. Kept narrow on purpose: the registry
+    table is the single point of truth that the C++ side reads to decide
+    whether a source is fresh or expired, so its schema needs to be
+    stable across the ingesters.
+
+      name: short identifier ("nasr", "shp", "aixm", "dof", "adiz",
+            "tfr"). Primary key — re-running an ingester replaces.
+      kind: "static" (cycle-driven, refreshed by re-running this script)
+            or "ephemeral" (in-app refresh, not yet implemented; reserved).
+      effective / expires: ISO 8601 dates the *source* declares — e.g.
+            NASR's EFF_DATE column or DOF's CURRENCY DATE header. Pass
+            None when the source carries no explicit date; the C++ side
+            then reports the row as `unknown` rather than synthesizing
+            a fake expiration.
+      info: short human description for the UI ("Cycle 16 Apr 2026").
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS META (
+            name TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            last_updated TEXT NOT NULL,
+            effective TEXT,
+            expires TEXT,
+            info TEXT
+        )
+    """)
+    last_updated = (datetime.datetime.now(datetime.timezone.utc)
+                    .replace(microsecond=0).isoformat())
+    conn.execute(
+        "INSERT OR REPLACE INTO META "
+        "(name, kind, last_updated, effective, expires, info) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (name, kind, last_updated, effective, expires, info or ""))
 
 
 def open_output_db(path, fresh=False):

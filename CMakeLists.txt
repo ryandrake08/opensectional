@@ -68,6 +68,7 @@ add_executable(osect
     src/route_submitter.cpp
     src/tile_loader.cpp
     src/chart_style.cpp
+    src/data_source.cpp
     src/tile_renderer.cpp
     src/ui_overlay.cpp
     src/ui_sectioned_list.cpp
