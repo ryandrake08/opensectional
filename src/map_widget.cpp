@@ -1,4 +1,5 @@
 #include "map_widget.hpp"
+#include "ephemeral_data.hpp"
 #include "feature_type.hpp"
 #include "feature_renderer.hpp"
 #include "geo_math.hpp"
@@ -224,6 +225,7 @@ struct map_widget::impl : public sdl::event_listener
 
     // NASR database for picks and search
     osect::nasr_database pick_db;
+    osect::ephemeral_data& eph;
     osect::chart_style styles;
     osect::layer_visibility vis;
     double cursor_ndc_x = 0.0;
@@ -263,6 +265,7 @@ struct map_widget::impl : public sdl::event_listener
 
     impl(sdl::device& dev, const char* tile_path,
          const char* db_path, const char* conf_path,
+         osect::ephemeral_data& eph,
          int viewport_width, int viewport_height)
         : dev(dev)
         , linelist_pipeline(dev,
@@ -285,9 +288,11 @@ struct map_widget::impl : public sdl::event_listener
         , tiles(tile_path
               ? std::make_unique<osect::tile_renderer>(dev, tile_path)
               : nullptr)
-        , features(dev, db_path, osect::chart_style(conf_path, osect::chart_mode::vfr))
+        , features(dev, db_path,
+              osect::chart_style(conf_path, osect::chart_mode::vfr), eph)
         , labels(dev)
         , pick_db(db_path)
+        , eph(eph)
         , styles(conf_path, osect::chart_mode::vfr)
         , feature_types(osect::make_feature_types())
     {
@@ -410,7 +415,7 @@ struct map_widget::impl : public sdl::event_listener
         geo_bbox click_box{click_lon, click_lat, click_lon, click_lat};
 
         osect::pick_context ctx{
-            pick_db, styles, vis,
+            pick_db, eph, styles, vis,
             view.zoom_level(),
             click_lon, click_lat,
             pick_box, click_box,
@@ -918,9 +923,10 @@ struct map_widget::impl : public sdl::event_listener
 
 map_widget::map_widget(sdl::device& dev, const char* tile_path,
                        const char* db_path, const char* conf_path,
+                       osect::ephemeral_data& eph,
                        int viewport_width, int viewport_height)
     : pimpl(std::make_shared<impl>(dev, tile_path, db_path, conf_path,
-                                    viewport_width, viewport_height))
+                                    eph, viewport_width, viewport_height))
 {
 }
 
@@ -1023,6 +1029,17 @@ std::shared_ptr<sdl::event_listener> map_widget::event_listener()
 bool map_widget::update()
 {
     if(pimpl->tiles) pimpl->tiles->drain();
+
+    // Pick up fresh data from any ephemeral source whose last_updated
+    // advanced since the previous frame. Invalidating the feature
+    // build forces the next features.update() to re-submit a build
+    // request even if the visible bbox hasn't changed; if the map
+    // hasn't moved, the next render uses the new data.
+    if(pimpl->eph.poll_advance())
+    {
+        pimpl->features.invalidate();
+        pimpl->needs_update = true;
+    }
 
     auto new_candidates = pimpl->features.drain();
     if(new_candidates)

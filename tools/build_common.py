@@ -1,8 +1,8 @@
 """Helpers shared across the per-source ingestion scripts.
 
 Kept deliberately small: utilities here are imported by two or more of
-build_nasr / build_shp / build_aixm / build_adiz / build_tfr. Source-local
-helpers live next to the build_* function that uses them.
+build_nasr / build_shp / build_aixm / build_adiz. Source-local helpers
+live next to the build_* function that uses them.
 """
 
 import datetime

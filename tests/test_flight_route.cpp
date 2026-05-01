@@ -249,7 +249,7 @@ TEST_CASE("single waypoint route is rejected")
     }
 }
 
-// ---- Stage 3: sigil pipeline ----
+// ---- sigil pipeline ----
 
 TEST_CASE("flight_route rejects raw '?' tokens")
 {

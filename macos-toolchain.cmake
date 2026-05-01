@@ -29,3 +29,8 @@ list(PREPEND CMAKE_PREFIX_PATH "${MACOS_DEPS_PREFIX}")
 
 # pkg-config (used for sqlite3) must look only at the universal-deps prefix.
 set(ENV{PKG_CONFIG_LIBDIR} "${MACOS_DEPS_PREFIX}/lib/pkgconfig")
+
+# libcurl in the universal-deps prefix is libcurl.a; pull its
+# Libs.private (SecureTransport frameworks, openssl/zlib/idn2/…)
+# at link time.
+set(OSECT_CURL_STATIC ON CACHE BOOL "Link libcurl statically" FORCE)

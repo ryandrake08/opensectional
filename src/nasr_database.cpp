@@ -57,15 +57,11 @@ namespace osect
         sqlite::statement stmt_pjas;
         sqlite::statement stmt_adiz;
         sqlite::statement stmt_adiz_shape;
-        sqlite::statement stmt_tfr;
-        sqlite::statement stmt_tfr_areas;
-        sqlite::statement stmt_tfr_shape;
         sqlite::statement stmt_fss;
         sqlite::statement stmt_awos;
         sqlite::statement stmt_comm_outlets;
         sqlite::statement stmt_artcc_seg;
         sqlite::statement stmt_adiz_seg;
-        sqlite::statement stmt_tfr_seg;
         sqlite::statement stmt_cls_arsp_seg;
         sqlite::statement stmt_sua_seg;
         sqlite::statement stmt_search;
@@ -393,36 +389,6 @@ namespace osect
                 ORDER BY PART_NUM, POINT_SEQ
             )", 3))
 
-            , stmt_tfr(prepare_checked(db, R"(
-                SELECT TFR_ID, NOTAM_ID, TFR_TYPE, FACILITY,
-                       DATE_EFFECTIVE, DATE_EXPIRE, DESCRIPTION
-                FROM TFR_BASE
-                WHERE TFR_ID IN (
-                    SELECT DISTINCT TFR_ID FROM TFR_AREA
-                    WHERE AREA_ID IN (
-                        SELECT id FROM TFR_AREA_RTREE
-                        WHERE max_lon >= ?1 AND min_lon <= ?3
-                          AND max_lat >= ?2 AND min_lat <= ?4
-                    )
-                )
-            )", 7))
-
-            , stmt_tfr_areas(prepare_checked(db, R"(
-                SELECT AREA_ID, AREA_NAME,
-                       UPPER_FT_VAL, UPPER_FT_REF,
-                       LOWER_FT_VAL, LOWER_FT_REF,
-                       DATE_EFFECTIVE, DATE_EXPIRE
-                FROM TFR_AREA
-                WHERE TFR_ID = ?1
-            )", 8))
-
-            , stmt_tfr_shape(prepare_checked(db, R"(
-                SELECT LON_DECIMAL, LAT_DECIMAL
-                FROM TFR_SHP
-                WHERE AREA_ID = ?1
-                ORDER BY POINT_SEQ
-            )", 2))
-
             , stmt_fss(prepare_checked(db, R"(
                 SELECT FSS_ID, NAME, FSS_FAC_TYPE, VOICE_CALL,
                        CITY, STATE_CODE, COUNTRY_CODE,
@@ -488,19 +454,6 @@ namespace osect
                 )
                 ORDER BY SEG_ID, POINT_SEQ
             )", 3))
-
-            , stmt_tfr_seg(prepare_checked(db, R"(
-                SELECT SEG_ID, UPPER_FT_VAL, UPPER_FT_REF,
-                       LOWER_FT_VAL, LOWER_FT_REF,
-                       LON_DECIMAL, LAT_DECIMAL
-                FROM TFR_SEG
-                WHERE SEG_ID IN (
-                    SELECT id FROM TFR_SEG_RTREE
-                    WHERE max_lon >= ?1 AND min_lon <= ?3
-                      AND max_lat >= ?2 AND min_lat <= ?4
-                )
-                ORDER BY SEG_ID, POINT_SEQ
-            )", 7))
 
             // Shadowed airspaces (ARSP_IDs with a higher-priority class at
             // the same IDENT) are filtered in query_class_airspace_segments
@@ -1199,46 +1152,6 @@ namespace osect
         });
     }
 
-    std::vector<tfr> nasr_database::query_tfr(const geo_bbox& bbox) const
-    {
-        auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_tfr,
-            bbox, [&](sqlite::statement& s)
-        {
-            tfr t{s.column_int(0), s.column_text(1), s.column_text(2),
-                  s.column_text(3), s.column_text(4), s.column_text(5),
-                  s.column_text(6), {}};
-
-            d.stmt_tfr_areas.reset();
-            d.stmt_tfr_areas.bind(1, t.tfr_id);
-            while (d.stmt_tfr_areas.step())
-            {
-                tfr_area area{
-                    d.stmt_tfr_areas.column_int(0),
-                    d.stmt_tfr_areas.column_text(1),
-                    d.stmt_tfr_areas.column_int(2),
-                    d.stmt_tfr_areas.column_text(3),
-                    d.stmt_tfr_areas.column_int(4),
-                    d.stmt_tfr_areas.column_text(5),
-                    d.stmt_tfr_areas.column_text(6),
-                    d.stmt_tfr_areas.column_text(7),
-                    {}};
-
-                d.stmt_tfr_shape.reset();
-                d.stmt_tfr_shape.bind(1, area.area_id);
-                while (d.stmt_tfr_shape.step())
-                {
-                    area.points.push_back(
-                        {d.stmt_tfr_shape.column_double(1),
-                         d.stmt_tfr_shape.column_double(0)});
-                }
-                t.areas.push_back(std::move(area));
-            }
-            return t;
-        });
-    }
-
     std::vector<fss> nasr_database::query_fss(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
@@ -1328,32 +1241,6 @@ namespace osect
             results.back().points.push_back(
                 {d.stmt_adiz_seg.column_double(2),
                  d.stmt_adiz_seg.column_double(1)});
-        }
-        return results;
-    }
-
-    std::vector<tfr_segment> nasr_database::query_tfr_segments(const geo_bbox& bbox) const
-    {
-        auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
-        std::vector<tfr_segment> results;
-        d.bind_bbox(d.stmt_tfr_seg, bbox);
-        auto current_seg = -1;
-        while (d.stmt_tfr_seg.step())
-        {
-            auto seg_id = d.stmt_tfr_seg.column_int(0);
-            if (seg_id != current_seg)
-            {
-                results.push_back({d.stmt_tfr_seg.column_int(1),
-                                   d.stmt_tfr_seg.column_text(2),
-                                   d.stmt_tfr_seg.column_int(3),
-                                   d.stmt_tfr_seg.column_text(4),
-                                   {}});
-                current_seg = seg_id;
-            }
-            results.back().points.push_back(
-                {d.stmt_tfr_seg.column_double(6),
-                 d.stmt_tfr_seg.column_double(5)});
         }
         return results;
     }

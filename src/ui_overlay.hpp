@@ -120,7 +120,6 @@ namespace osect
 
         // Seed the data-status panel with the per-source freshness
         // records. Typically called once at startup; ephemeral sources
-        // (Stage 2+) will refresh this after each fetch.
         void set_data_sources(std::vector<data_source> sources);
 
         // Draw FPS display, layer checkboxes, search box, route panel,

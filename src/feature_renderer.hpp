@@ -17,6 +17,7 @@ namespace osect
     struct render_context;
     struct layer_visibility;
     class chart_style;
+    class ephemeral_data;
 
     class feature_renderer
     {
@@ -25,7 +26,7 @@ namespace osect
 
     public:
         feature_renderer(sdl::device& dev, const char* db_path,
-                         const chart_style& cs);
+                         const chart_style& cs, const ephemeral_data& eph);
         ~feature_renderer();
 
         // Recompute visible features from database
@@ -52,6 +53,13 @@ namespace osect
 
         // Set which feature layers are visible
         void set_visibility(const layer_visibility& vis);
+
+        // Force the next update() to re-submit a build request even if
+        // the visible bbox / zoom haven't changed. Used when an
+        // ephemeral data source swaps in fresh data and the screen
+        // would otherwise keep showing the prior snapshot until the
+        // next pan/zoom.
+        void invalidate();
 
         // Set (or clear) the currently-selected feature. The builder re-runs
         // and emits a highlight overlay rendered on top of everything.
