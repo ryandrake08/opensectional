@@ -4,7 +4,9 @@
 #include "chart_style.hpp"
 #include "geo_math.hpp"
 #include "map_view.hpp"
+#include "ephemeral_data.hpp"
 #include "nasr_database.hpp"
+#include "tfr_source.hpp"
 #include "ui_overlay.hpp"  // for the layer enum
 
 #include <algorithm>
@@ -42,6 +44,31 @@ namespace osect
         constexpr auto SYMBOL_FILL_PX  = 50.0F;
 
         // -- Polyline geometry helpers -----------------------------------------
+
+        // AABB overlap between a polyline's bounding box and a query
+        // bbox. Cheap; used by the TFR build pass to skip polygons
+        // that don't touch the visible viewport. False-negatives are
+        // possible only for polylines that fully enclose the bbox
+        // without touching it — TFRs are small enough that this case
+        // doesn't occur in practice.
+        bool polyline_intersects_bbox(
+            const std::vector<airspace_point>& points, const geo_bbox& bbox)
+        {
+            if(points.empty()) return false;
+            double lon_min = points.front().lon;
+            double lon_max = points.front().lon;
+            double lat_min = points.front().lat;
+            double lat_max = points.front().lat;
+            for(const auto& p : points)
+            {
+                lon_min = std::min(lon_min, p.lon);
+                lon_max = std::max(lon_max, p.lon);
+                lat_min = std::min(lat_min, p.lat);
+                lat_max = std::max(lat_max, p.lat);
+            }
+            return !(lon_max < bbox.lon_min || lon_min > bbox.lon_max ||
+                     lat_max < bbox.lat_min || lat_min > bbox.lat_max);
+        }
 
         void triangulate_polygon(
             const std::vector<glm::vec2>& outer,
@@ -558,7 +585,11 @@ namespace osect
         {
             if(!ctx.styles.tfr_visible(ctx.zoom)) return;
             if(!ctx.vis.altitude.any()) return;
-            for(const auto& t : ctx.db.query_tfr(ctx.click_box))
+            // ctx.click_box is degenerate (a single click point), so
+            // the SQL r-tree filter the old path used was effectively
+            // a hit-test. Iterate the in-memory list and apply the
+            // same point-in-ring test directly.
+            for(const auto& t : ctx.eph.tfrs().snapshot())
             {
                 for(const auto& area : t.areas)
                 {
@@ -2025,8 +2056,13 @@ namespace osect
         {
             if(!ctx.styles.tfr_visible(ctx.req.zoom)) return;
             if(!ctx.req.altitude.any()) return;
+            // The old SQL path filtered TFR segments by bbox via an
+            // r-tree to keep render-thread cost bounded. The active
+            // US-wide TFR set is ~100 polygons / few thousand
+            // segments, so a flat scan with an inline bbox test is
+            // both simpler and fast enough at v1 volumes.
             auto bbox = request_bbox(ctx.req);
-            const auto& segs = ctx.db.query_tfr_segments(bbox);
+            const auto& segs = ctx.tfr_segments;
             auto ls = to_line_style(ctx.styles.tfr_style());
             for(const auto& seg : segs)
             {
@@ -2034,11 +2070,12 @@ namespace osect
                                           seg.upper_ft_val, seg.upper_ft_ref,
                                           seg.lower_ft_val, seg.lower_ft_ref))
                     continue;
+                if(!polyline_intersects_bbox(seg.points, bbox)) continue;
                 add_polyline(ctx.poly[layer_tfr], seg.points, ls, ctx.mx_offset);
             }
 
             if(ctx.req.zoom < AIRSPACE_LABEL_MIN_ZOOM) return;
-            const auto& tfrs = ctx.db.query_tfr(bbox);
+            const auto& tfrs = ctx.tfrs;
             const auto& fs = ctx.styles.tfr_style();
             for(const auto& t : tfrs)
             {
@@ -2049,6 +2086,7 @@ namespace osect
                                               area.lower_ft_val, area.lower_ft_ref))
                         continue;
                     if(area.points.empty()) continue;
+                    if(!polyline_intersects_bbox(area.points, bbox)) continue;
                     auto [cmx, cmy] = polygon_label_pos(area.points, ctx.mx_offset);
                     emit_airspace_label(ctx, "TFR", cmx, cmy, layer_tfr,
                         format_altitude(area.upper_ft_val, area.upper_ft_ref),

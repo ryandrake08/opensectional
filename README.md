@@ -235,7 +235,13 @@ Shaders are cross-compiled automatically during the build:
 
 ## Data Preparation
 
-OpenSectional draws on the following upstream data sources.
+OpenSectional draws on the following upstream data sources. The
+"static" sources (everything in this section) are baked into
+`osect.db` by the Python ingesters on a cycle cadence; the user
+re-runs `download_all.py` + `build_all.py` to refresh. Ephemeral
+sources (currently TFRs, with NOTAMs / weather to follow) are
+fetched and parsed in-app at runtime — see
+[Network and offline mode](#network-and-offline-mode).
 
 | Data | Source | Website | Cadence | Ingester |
 |---|---|---|---|---|
@@ -244,7 +250,7 @@ OpenSectional draws on the following upstream data sources.
 | Special use airspace (AIXM 5.0) | FAA | https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/ | 28-day cycle | build_aixm.py |
 | Digital Obstacle File | FAA | https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dof/ | 56-day cycle | build_dof.py |
 | ADIZ boundaries | FAA | https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/ArcGIS/rest/services/Airspace/FeatureServer | Irregular | build_adiz.py |
-| Temporary flight restrictions | FAA | https://tfr.faa.gov/ | Continuous (as NOTAMs are issued) | build_tfr.py |
+| Temporary flight restrictions | FAA | https://tfr.faa.gov/ | Continuous (as NOTAMs are issued) | (in-app, see [Network and offline mode](#network-and-offline-mode)) |
 | Natural Earth basemap | Natural Earth | https://www.naturalearthdata.com/ | Irregular | render_basemap.py |
 
 Two offline artifacts are produced from these sources: the aviation database and the
@@ -263,7 +269,7 @@ tools/env/bin/python3 tools/download_all.py nasr_data
 
 The download script fetches data from the FAA NASR subscription page, the Digital Obstacle File page, and ADIZ boundaries from the FAA ArcGIS service. Use `--preview` for the next cycle's data instead of the current one.
 
-`build_all.py` orchestrates the per-source ingesters (`build_nasr.py` for the NASR CSV subscription, `build_shp.py` for class airspace, `build_aixm.py` for SUA, `build_dof.py` for obstacles, `build_adiz.py` for the ADIZ GeoJSON, `build_tfr.py` for TFR XNOTAMs, and `build_search.py` for the FTS5 index). Each ingester reads its ZIP or directory directly (no manual extraction) and can be re-run on its own when that source updates. All spatial tables have R-tree indexes for bounding-box queries. Column names match FAA NASR naming conventions.
+`build_all.py` orchestrates the per-source ingesters (`build_nasr.py` for the NASR CSV subscription, `build_shp.py` for class airspace, `build_aixm.py` for SUA, `build_dof.py` for obstacles, `build_adiz.py` for the ADIZ GeoJSON, and `build_search.py` for the FTS5 index). Each ingester reads its ZIP or directory directly (no manual extraction) and can be re-run on its own when that source updates. All spatial tables have R-tree indexes for bounding-box queries. Column names match FAA NASR naming conventions.
 
 **Airports & Runways**
 - `APT_BASE` — 19,606 airports with coordinates, elevation, ownership, facility use
@@ -402,11 +408,11 @@ At present no source is wired up, so a default-launched binary makes
 zero outbound requests; this section is here to document what to
 expect as those sources land.
 
-**Endpoints contacted (as sources land in later stages):**
+**Endpoints contacted:**
 
 | Source | Endpoint | Cadence |
 |--------|----------|---------|
-| _(none yet)_ | _(TBD per source)_ | _(TBD per source)_ |
+| TFRs | `https://tfr.faa.gov/tfrapi/getTfrList` + `https://tfr.faa.gov/download/detail_*.xml` | 15 min auto-refresh, manual via the data-status panel |
 
 **Cache directory.** Cached responses live under a per-platform
 directory:
@@ -464,7 +470,6 @@ tools/
   build_aixm.py           AIXM 5.0 SUA ingester
   build_dof.py            Digital Obstacle File ingester
   build_adiz.py           ADIZ GeoJSON ingester
-  build_tfr.py            TFR XNOTAM directory ingester
   build_search.py         FTS5 search index builder (run last)
   render_basemap.py       Natural Earth basemap tile renderer
   build-mingw-deps.sh     Cross-compile Windows dependencies

@@ -1,5 +1,4 @@
-#include "ephemeral_cache.hpp"
-#include "http_client.hpp"
+#include "ephemeral_data.hpp"
 #include "ini_config.hpp"
 #include "map_widget.hpp"
 #include "nasr_database.hpp"
@@ -157,7 +156,14 @@ int main(int argc, char** argv)
             imgui_ctx.process_event(event);
         });
 
-        map_widget map(dev, tile_path, db_path, conf_path, 1280, 1024);
+        // Ephemeral data facade: owns the shared HTTP client, the
+        // on-disk cache, and every per-source module that consumes
+        // them. Constructed before map_widget because map_widget's
+        // render/pick paths read ephemeral data through it rather
+        // than from osect.db.
+        osect::ephemeral_data eph(offline);
+
+        map_widget map(dev, tile_path, db_path, conf_path, eph, 1280, 1024);
         event_mgr.add_listener(map.event_listener());
 
         // Sigil expansion runs on its own database/planner instance
@@ -173,22 +179,31 @@ int main(int argc, char** argv)
         ini_config plan_ini(conf_path);
         auto plan_options = osect::load_route_plan_options(plan_ini);
 
-        // Ephemeral data plumbing: one shared HTTP client and one
-        // shared on-disk cache. Constructed here so the cache directory
-        // is created at startup (failure surfaces immediately) and so
-        // any --offline misconfiguration is a single decision the
-        // whole app inherits.
-        osect::http_client http(offline);
-        osect::ephemeral_cache cache;
-        (void)http;    // consumed by ephemeral sources, not yet wired
-        (void)cache;   // ditto
-
         osect::ui_overlay ui;
         ui.set_route_planner_defaults(plan_options.max_leg_length_nm,
                                        plan_options.use_airways);
 
-        // Seed the data-status panel from the database's META table.
-        ui.set_data_sources(planner_db.list_data_sources());
+        // Static-source META rows are read once at startup; the
+        // ephemeral source rows get pushed every frame so freshness
+        // and "refreshing…" indicators stay live.
+        const auto static_sources = planner_db.list_data_sources();
+
+        const auto build_data_sources = [&]()
+        {
+            auto eph_sources = eph.as_data_sources();
+            std::vector<osect::data_source> merged;
+            merged.reserve(static_sources.size() + eph_sources.size());
+            for(const auto& s : static_sources)
+            {
+                // Filter out the legacy static "tfr" META row — the
+                // ephemeral source replaces it.
+                if(s.name == "tfr") continue;
+                merged.push_back(s);
+            }
+            for(auto& s : eph_sources)
+                merged.push_back(std::move(s));
+            return merged;
+        };
 
         std::string last_search_query;
         constexpr auto SEARCH_RESULT_LIMIT = 12;
@@ -205,6 +220,11 @@ int main(int argc, char** argv)
             needs_render = map.update();
 
             imgui_ctx.new_frame();
+
+            // Refresh data-status state for the panel each frame so
+            // ephemeral sources' freshness flips appear without an
+            // extra signal path.
+            ui.set_data_sources(build_data_sources());
 
             auto ui_result = ui.draw(last_render_ms, map.feature_types());
             if(ui_result.visibility_changed)

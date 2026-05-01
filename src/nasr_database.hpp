@@ -270,40 +270,6 @@ namespace osect
         std::vector<std::vector<airspace_point>> parts;
     };
 
-    struct tfr_area
-    {
-        int area_id;
-        std::string area_name;
-        int upper_ft_val;
-        std::string upper_ft_ref;
-        int lower_ft_val;
-        std::string lower_ft_ref;
-        std::string date_effective;
-        std::string date_expire;
-        std::vector<airspace_point> points;
-    };
-
-    struct tfr
-    {
-        int tfr_id;
-        std::string notam_id;
-        std::string tfr_type;
-        std::string facility;
-        std::string date_effective;
-        std::string date_expire;
-        std::string description;
-        std::vector<tfr_area> areas;
-    };
-
-    struct tfr_segment
-    {
-        int upper_ft_val;
-        std::string upper_ft_ref;
-        int lower_ft_val;
-        std::string lower_ft_ref;
-        std::vector<airspace_point> points;
-    };
-
     // Subdivided polyline segments for rendering (tight R-tree bbox)
     struct boundary_segment
     {
@@ -564,7 +530,6 @@ namespace osect
         std::vector<artcc> query_artcc(const geo_bbox& bbox) const;
         std::vector<pja> query_pjas(const geo_bbox& bbox) const;
         std::vector<adiz> query_adiz(const geo_bbox& bbox) const;
-        std::vector<tfr> query_tfr(const geo_bbox& bbox) const;
         std::vector<fss> query_fss(const geo_bbox& bbox) const;
         std::vector<awos> query_awos(const geo_bbox& bbox) const;
         std::vector<comm_outlet> query_comm_outlets(const geo_bbox& bbox) const;
@@ -572,7 +537,6 @@ namespace osect
         // Subdivided segment queries for rendering (tight R-tree bboxes)
         std::vector<boundary_segment> query_artcc_segments(const geo_bbox& bbox) const;
         std::vector<boundary_segment> query_adiz_segments(const geo_bbox& bbox) const;
-        std::vector<tfr_segment> query_tfr_segments(const geo_bbox& bbox) const;
         std::vector<airspace_segment> query_class_airspace_segments(
         const geo_bbox& bbox, const filter_list& class_filter = std::nullopt) const;
         std::vector<sua_segment> query_sua_segments(

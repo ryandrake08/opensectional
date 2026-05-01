@@ -126,7 +126,7 @@ TEST_CASE("unknown waypoint ID returns nullopt")
     CHECK_FALSE(rpta::node_index(test_planner(), "ZZZZZ").has_value());
 }
 
-// ---- Stage 2: A* core ----
+// ---- A* core ----
 
 TEST_CASE("plan_segment short hop returns empty (direct leg suffices)")
 {
@@ -207,7 +207,7 @@ TEST_CASE("plan_segment returns nullopt when max_leg is too tight")
     CHECK_FALSE(path.has_value());
 }
 
-// ---- Stage 3: expand_sigils grammar ----
+// ---- expand_sigils grammar ----
 
 TEST_CASE("expand_sigils is a no-op when input has no '?'")
 {
@@ -248,7 +248,7 @@ TEST_CASE("expand_sigils rejects consecutive '?'")
                     route_parse_error);
 }
 
-// ---- Stage 4: airway-adjacent sigil (project-and-walk) ----
+// ---- airway-adjacent sigil (project-and-walk) ----
 
 TEST_CASE("expand_sigils: '?' on both sides of an airway")
 {
@@ -306,7 +306,7 @@ TEST_CASE("expand_sigils accepts lat/lon coordinates at sigil boundaries")
     CHECK(out.substr(0, 15) == "384143N1213527W");
 }
 
-// ---- Stage 6: preferences ----
+// ---- preferences ----
 
 TEST_CASE("load_route_plan_options reads PREFER/INCLUDE/AVOID/REJECT")
 {

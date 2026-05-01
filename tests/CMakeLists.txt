@@ -38,13 +38,33 @@ add_osect_test(ini_config      ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
 add_osect_test(data_source     ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
 add_osect_test(ephemeral_cache ${CMAKE_SOURCE_DIR}/src/ephemeral_cache.cpp)
 
+# xnotam_parser links the vendored pugixml lib; the test reads
+# fixture XMLs from nasr_data/tfr_data/ at the repo root via the
+# ctest WORKING_DIRECTORY.
+add_osect_test(xnotam_parser   ${CMAKE_SOURCE_DIR}/src/xnotam_parser.cpp)
+target_link_libraries(test_xnotam_parser PRIVATE pugixml)
+
+# tfr_source pulls in http_client, ephemeral_cache, and the xnotam
+# parser (which links pugixml). Tests run against an offline
+# http_client so no real network is touched.
+add_osect_test(tfr_source
+    ${CMAKE_SOURCE_DIR}/src/tfr_source.cpp
+    ${CMAKE_SOURCE_DIR}/src/http_client.cpp
+    ${CMAKE_SOURCE_DIR}/src/ephemeral_cache.cpp
+    ${CMAKE_SOURCE_DIR}/src/xnotam_parser.cpp)
+target_link_libraries(test_tfr_source PRIVATE pugixml ${_CURL_LIBRARIES})
+target_link_directories(test_tfr_source PRIVATE ${_CURL_LIBRARY_DIRS})
+target_link_options(test_tfr_source PRIVATE ${CURL_LINK_OPTIONS})
+target_include_directories(test_tfr_source PRIVATE ${_CURL_INCLUDE_DIRS})
+target_compile_options(test_tfr_source PRIVATE ${_CURL_CFLAGS_OTHER})
+
 # http_client confirms that transport failures throw
 add_osect_test(http_client  ${CMAKE_SOURCE_DIR}/src/http_client.cpp)
-target_link_libraries(test_http_client PRIVATE ${CURL_STATIC_LIBRARIES})
-target_link_directories(test_http_client PRIVATE ${CURL_STATIC_LIBRARY_DIRS})
+target_link_libraries(test_http_client PRIVATE ${_CURL_LIBRARIES})
+target_link_directories(test_http_client PRIVATE ${_CURL_LIBRARY_DIRS})
 target_link_options(test_http_client PRIVATE ${CURL_LINK_OPTIONS})
-target_include_directories(test_http_client PRIVATE ${CURL_STATIC_INCLUDE_DIRS})
-target_compile_options(test_http_client PRIVATE ${CURL_STATIC_CFLAGS_OTHER})
+target_include_directories(test_http_client PRIVATE ${_CURL_INCLUDE_DIRS})
+target_compile_options(test_http_client PRIVATE ${_CURL_CFLAGS_OTHER})
 
 # flight_route pulls in the DB layer and needs the sqlite wrapper
 add_osect_test(flight_route

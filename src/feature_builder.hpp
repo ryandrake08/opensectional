@@ -57,6 +57,13 @@ namespace osect
         std::optional<feature> selection;
         std::optional<flight_route> route;
         bool route_selected = true;
+
+        // Frozen snapshots of every ephemeral source the build path
+        // reads. Captured by the caller (feature_renderer::update)
+        // under the source's shared_lock so the worker thread sees
+        // immutable data with no further synchronization.
+        std::vector<tfr> tfrs;
+        std::vector<tfr_segment> tfr_segments;
     };
 
     // A label candidate from the feature build pass (world-space)
@@ -89,6 +96,8 @@ namespace osect
     struct build_context
     {
         const nasr_database& db;
+        const std::vector<tfr>& tfrs;
+        const std::vector<tfr_segment>& tfr_segments;
         const chart_style& styles;
         const feature_build_request& req;
         double mx_offset;
@@ -134,7 +143,7 @@ namespace osect
         feature_builder& operator=(const feature_builder&) = delete;
 
         // Submit a build request. Replaces any pending (not yet started) request.
-        void request(const feature_build_request& req);
+        void request(feature_build_request req);
 
         // Return the completed result, if any.
         std::optional<feature_build_result> drain_result();

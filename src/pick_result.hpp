@@ -1,6 +1,7 @@
 #pragma once
 
 #include "nasr_database.hpp"
+#include "tfr.hpp"
 #include <variant>
 #include <vector>
 

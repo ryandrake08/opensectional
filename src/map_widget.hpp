@@ -18,6 +18,7 @@ namespace osect
     struct layer_visibility;
     struct search_hit;
     class feature_type;
+    class ephemeral_data;
 }
 
 // The main map widget: owns the tile renderer, feature renderer, label
@@ -31,8 +32,12 @@ class map_widget
 public:
     // `tile_path` may be null if no basemap is available.
     // `conf_path` is the chart style INI.
+    // `eph` is the app's ephemeral data facade; the feature
+    // build/pick paths read TFRs (and any future ephemeral
+    // sources) through it in place of SQL-backed queries.
     map_widget(sdl::device& dev, const char* tile_path,
                const char* db_path, const char* conf_path,
+               osect::ephemeral_data& eph,
                int viewport_width, int viewport_height);
     ~map_widget();
 

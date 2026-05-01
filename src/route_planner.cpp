@@ -19,8 +19,8 @@ namespace osect
     {
         // Approximate bounding box of `radius_nm` around (lat, lon).
         // Over-estimates near the poles and across the antimeridian
-        // (stage 2 assumes CONUS use; the caller still filters
-        // results by exact haversine distance).
+        // (CONUS-only at v1; the caller still filters results by
+        // exact haversine distance).
         geo_bbox bbox_around(double lat, double lon, double radius_nm)
         {
             constexpr auto NM_PER_DEG = 60.0;
@@ -478,11 +478,10 @@ namespace osect
 
         // Pick the fix along `airway_id` that a point at (lat, lon)
         // projects closest to, then choose the adjacent fix that is
-        // closer to (toward_lat, toward_lon). This is the
-        // "project-and-walk" selection described in the Stage 4 plan:
-        // the projected point lies on some segment Fi-Fi+1; we return
-        // whichever of {Fi, Fi+1} points in the direction we intend
-        // to traverse the airway.
+        // closer to (toward_lat, toward_lon). The "project-and-walk"
+        // selection: the projected point lies on some segment
+        // Fi-Fi+1; we return whichever of {Fi, Fi+1} points in the
+        // direction we intend to traverse the airway.
         struct project_walk_result
         {
             std::string fix_id;

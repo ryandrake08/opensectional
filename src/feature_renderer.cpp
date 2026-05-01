@@ -1,9 +1,11 @@
 #include "feature_renderer.hpp"
+#include "ephemeral_data.hpp"
 #include "feature_builder.hpp"
 #include "geo_types.hpp"
 #include "line_renderer.hpp"
 #include "map_view.hpp"
 #include "render_context.hpp"
+#include "tfr_source.hpp"
 #include "ui_overlay.hpp"
 #include <algorithm>
 #include <cmath>
@@ -23,6 +25,7 @@ namespace osect
     struct feature_renderer::impl
     {
         sdl::device& dev;
+        const ephemeral_data& eph;
 
         // Background builder (owns worker thread + database connection)
         feature_builder builder;
@@ -56,8 +59,10 @@ namespace osect
         std::optional<flight_route> route;
         bool route_selected = true;
 
-        impl(sdl::device& dev, const char* db_path, const chart_style& styles)
+        impl(sdl::device& dev, const char* db_path,
+             const chart_style& styles, const ephemeral_data& eph)
             : dev(dev)
+            , eph(eph)
             , builder(db_path, styles)
             , half_extent_y(HALF_CIRCUMFERENCE)
             , query_bbox{0, 0, 0, 0}
@@ -117,8 +122,9 @@ namespace osect
     };
 
     feature_renderer::feature_renderer(sdl::device& dev, const char* db_path,
-                                       const chart_style& cs)
-        : pimpl(std::make_unique<impl>(dev, db_path, cs))
+                                       const chart_style& cs,
+                                       const ephemeral_data& eph)
+        : pimpl(std::make_unique<impl>(dev, db_path, cs, eph))
     {
     }
 
@@ -153,7 +159,11 @@ namespace osect
             req.selection = pimpl->selection;
             req.route = pimpl->route;
             req.route_selected = pimpl->route_selected;
-            pimpl->builder.request(req);
+            // Snapshot ephemeral state into the request so the worker
+            // thread reads from frozen vectors without further locking.
+            req.tfrs = pimpl->eph.tfrs().snapshot();
+            req.tfr_segments = pimpl->eph.tfrs().snapshot_segments();
+            pimpl->builder.request(std::move(req));
 
             // Speculatively update cache so we don't re-request next frame
             pimpl->query_bbox = {req.lon_min, req.lat_min, req.lon_max, req.lat_max};
@@ -274,6 +284,11 @@ namespace osect
     {
         if(pimpl->route_selected == selected) return;
         pimpl->route_selected = selected;
+        pimpl->has_cached_query = false;
+    }
+
+    void feature_renderer::invalidate()
+    {
         pimpl->has_cached_query = false;
     }
 

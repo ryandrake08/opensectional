@@ -4,10 +4,9 @@
 // per-type logic — pick, build, info, summary, etc. — in one place.
 // The application holds a single vector of instances; map_widget,
 // ui_overlay, and feature_builder all iterate that vector instead of
-// branching on feature type.
-//
-// Stage 1 only exposes pick() + metadata. Later stages will add
-// build/render, info_kv, summary, and variant-visitor helpers.
+// branching on feature type. Each instance exposes pick(), build(),
+// build_selection(), info_kv(), summary(), and variant-visitor
+// helpers.
 
 #include "feature_builder.hpp"   // build_context, polyline_data, polygon_fill_data
 #include "geo_types.hpp"
@@ -28,9 +27,12 @@ namespace osect
     // style/visibility predicates, the click location in several forms,
     // and the point-feature pick radius. Built once per click by the
     // dispatcher.
+    class ephemeral_data;
+
     struct pick_context
     {
         const nasr_database& db;
+        const ephemeral_data& eph;
         const chart_style& styles;
         const layer_visibility& vis;
         double zoom;

@@ -43,3 +43,9 @@ set(ENV{PKG_CONFIG_SYSROOT_DIR} "${MINGW_DEPS_PREFIX}")
 
 # Static linking for MinGW runtime
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-static-libgcc -static-libstdc++")
+
+# libcurl in the mingw-deps prefix is libcurl.a; pull its
+# Libs.private (Schannel, winsock, zlib) at link time, and add
+# -DCURL_STATICLIB so the curl headers stop decorating with
+# __declspec(dllimport).
+set(OSECT_CURL_STATIC ON CACHE BOOL "Link libcurl statically" FORCE)

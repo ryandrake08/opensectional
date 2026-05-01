@@ -29,15 +29,39 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 pkg_check_modules(CURL REQUIRED libcurl)
 
-# pkg-config emits `-framework Foo` as two list items in
-# CURL_STATIC_LDFLAGS_OTHER. cmake's target_link_options would pass
-# each list element as its own linker arg, so `-framework` and `Foo`
+# Distribution builds (universal macOS, mingw cross) link curl
+# statically and need its private dependencies pulled in via
+# Libs.private (zlib, openssl, idn2, …). Native dev builds link the
+# system shared libcurl, which carries those dependencies internally
+# via DT_NEEDED — pulling them in here triggers spurious
+# `-lunistring`/`-lgpg-error` lookups on Linux/Alpine where those
+# transitive packages aren't installed individually. The toolchain
+# files for the distribution targets set this ON; default is OFF.
+option(OSECT_CURL_STATIC "Link libcurl statically with its Libs.private dependencies" OFF)
+
+if(OSECT_CURL_STATIC)
+    set(_CURL_LIBRARIES        "${CURL_STATIC_LIBRARIES}")
+    set(_CURL_LIBRARY_DIRS     "${CURL_STATIC_LIBRARY_DIRS}")
+    set(_CURL_LDFLAGS_OTHER    "${CURL_STATIC_LDFLAGS_OTHER}")
+    set(_CURL_INCLUDE_DIRS     "${CURL_STATIC_INCLUDE_DIRS}")
+    set(_CURL_CFLAGS_OTHER     "${CURL_STATIC_CFLAGS_OTHER}")
+else()
+    set(_CURL_LIBRARIES        "${CURL_LIBRARIES}")
+    set(_CURL_LIBRARY_DIRS     "${CURL_LIBRARY_DIRS}")
+    set(_CURL_LDFLAGS_OTHER    "${CURL_LDFLAGS_OTHER}")
+    set(_CURL_INCLUDE_DIRS     "${CURL_INCLUDE_DIRS}")
+    set(_CURL_CFLAGS_OTHER     "${CURL_CFLAGS_OTHER}")
+endif()
+
+# pkg-config emits `-framework Foo` as two list items in the
+# `_LDFLAGS_OTHER` view. cmake's target_link_options would pass each
+# list element as its own linker arg, so `-framework` and `Foo`
 # arrive separately and clang treats `Foo` as a positional input
 # file. Glue each `-framework <name>` pair into one SHELL: token so
 # the two stay adjacent on the actual link line.
 set(CURL_LINK_OPTIONS)
 set(_curl_prev "")
-foreach(_flag IN LISTS CURL_STATIC_LDFLAGS_OTHER)
+foreach(_flag IN LISTS _CURL_LDFLAGS_OTHER)
     if(_curl_prev STREQUAL "-framework")
         list(APPEND CURL_LINK_OPTIONS "SHELL:-framework ${_flag}")
         set(_curl_prev "")
@@ -51,6 +75,18 @@ endforeach()
 
 # Third-party libraries
 add_subdirectory(thirdparty/imgui)
+
+# pugixml — vendored XML parser used by the XNOTAM (TFR / NOTAM) path.
+# Single source file; build it as its own static library so we can
+# expose the include dir to the app without leaking it elsewhere.
+add_library(pugixml STATIC thirdparty/pugixml-1.14/pugixml.cpp)
+target_include_directories(pugixml PUBLIC thirdparty/pugixml-1.14)
+target_compile_features(pugixml PRIVATE cxx_std_11)
+target_compile_options(pugixml PRIVATE
+    $<$<CONFIG:Debug>:${DEBUG_COMPILE_OPTIONS}>
+    $<$<CONFIG:Release>:-O3>
+    $<$<CONFIG:RelWithDebInfo>:${RELWITHDEBINFO_COMPILE_OPTIONS}>
+)
 
 # Tests (doctest, opt-in). Built as a separate binary with ctest integration.
 option(BUILD_TESTING "Build unit tests" ON)
@@ -91,10 +127,13 @@ add_executable(osect
     src/chart_style.cpp
     src/data_source.cpp
     src/ephemeral_cache.cpp
+    src/ephemeral_data.cpp
     src/http_client.cpp
+    src/tfr_source.cpp
     src/tile_renderer.cpp
     src/ui_overlay.cpp
     src/ui_sectioned_list.cpp
+    src/xnotam_parser.cpp
 )
 target_compile_definitions(osect PRIVATE
     OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
@@ -209,31 +248,35 @@ endif()
 
 # Link libraries.
 #
-# libcurl is wired in via its --static pkg-config view (CURL_STATIC_*).
-# The universal macOS build statically links libcurl.a, which depends
-# on SecureTransport's Security / CoreFoundation / SystemConfiguration
-# frameworks; those references live in libcurl.pc's `Libs.private:`
-# line and only show up when pkg-config is asked for static flags.
-# `_LDFLAGS_OTHER` carries the `-framework` pairs and the `-l`-less
-# linker flags; pass it via target_link_options so cmake doesn't try
-# to interpret framework names as library lookups. `_LIBRARIES` and
+# libcurl is wired in via the pkg-config view selected above by
+# OSECT_CURL_STATIC. With OSECT_CURL_STATIC=ON (universal macOS,
+# mingw cross), the static view pulls in libcurl.a's `Libs.private`
+# dependencies — SecureTransport frameworks on macOS, schannel/winsock
+# on Windows, and the openssl/zlib/idn2/… cluster everywhere. With
+# OSECT_CURL_STATIC=OFF (native dev builds), we link the system
+# shared libcurl and its transitive deps come from DT_NEEDED.
+# `_LDFLAGS_OTHER` carries `-framework` pairs and other `-l`-less
+# linker flags; we pass it via target_link_options (after pairing
+# `-framework <name>` above) so cmake doesn't try to interpret
+# framework names as library lookups. `_LIBRARIES` and
 # `_LIBRARY_DIRS` carry the plain `-lcurl -lz` style entries that
 # target_link_libraries handles natively.
 target_link_libraries(osect PRIVATE
     imgui_wrapper
     sqlite_wrapper
+    pugixml
     Threads::Threads
-    ${CURL_STATIC_LIBRARIES}
+    ${_CURL_LIBRARIES}
 )
-target_link_directories(osect PRIVATE ${CURL_STATIC_LIBRARY_DIRS})
+target_link_directories(osect PRIVATE ${_CURL_LIBRARY_DIRS})
 target_link_options(osect PRIVATE ${CURL_LINK_OPTIONS})
-target_include_directories(osect PRIVATE ${CURL_STATIC_INCLUDE_DIRS})
+target_include_directories(osect PRIVATE ${_CURL_INCLUDE_DIRS})
 # `-DCURL_STATICLIB` lives in CURL_STATIC_CFLAGS_OTHER. Without it the
 # Windows curl header decorates exports with `__declspec(dllimport)`,
 # which the linker resolves as `__imp_curl_*` symbols that the static
 # archive doesn't provide. macOS/Linux silently tolerate the missing
 # define because their compilers ignore the dllimport attribute.
-target_compile_options(osect PRIVATE ${CURL_STATIC_CFLAGS_OTHER})
+target_compile_options(osect PRIVATE ${_CURL_CFLAGS_OTHER})
 
 # Embed font as C header
 find_program(XXD xxd REQUIRED)

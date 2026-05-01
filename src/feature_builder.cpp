@@ -74,7 +74,8 @@ namespace osect
             local.lon_max = bbox.lon_max;
             local.lat_max = bbox.lat_max;
 
-            build_context ctx{db, styles, local, mx_offset, poly, labels, state};
+            build_context ctx{db, req.tfrs, req.tfr_segments, styles,
+                              local, mx_offset, poly, labels, state};
             for(const auto& t : types)
                 t->build(ctx);
         }
@@ -232,7 +233,8 @@ namespace osect
                                       polyline_data& out,
                                       polygon_fill_data& fill_out)
         {
-            build_context ctx{db, styles, req, 0.0, poly, labels, state};
+            build_context ctx{db, req.tfrs, req.tfr_segments, styles,
+                              req, 0.0, poly, labels, state};
             find_feature_type(types, sel).build_selection(ctx, sel, out, fill_out);
         }
 
@@ -245,7 +247,7 @@ namespace osect
                     std::unique_lock<std::mutex> lock(mutex);
                     cv.wait(lock, [this] { return shutdown || pending_request.has_value(); });
                     if(shutdown) return;
-                    req = *pending_request;
+                    req = std::move(*pending_request);
                     pending_request.reset();
                 }
 
@@ -283,10 +285,10 @@ namespace osect
         pimpl->worker.join();
     }
 
-    void feature_builder::request(const feature_build_request& req)
+    void feature_builder::request(feature_build_request req)
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);
-        pimpl->pending_request = req;
+        pimpl->pending_request = std::move(req);
         pimpl->cv.notify_one();
     }
 
