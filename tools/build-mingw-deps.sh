@@ -15,6 +15,10 @@ SDL3_IMAGE_TAG=release-3.4.2
 SDL3_TTF_TAG=release-3.2.2
 SQLITE_YEAR=2025
 SQLITE_URL="https://www.sqlite.org/${SQLITE_YEAR}/sqlite-autoconf-3490100.tar.gz"
+ZLIB_VERSION=1.3.1
+ZLIB_URL="https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz"
+CURL_VERSION=8.13.0
+CURL_URL="https://curl.se/download/curl-${CURL_VERSION}.tar.gz"
 
 # Write a minimal toolchain file for dependency builds
 DEPS_TOOLCHAIN="${BUILDDIR}/toolchain.cmake"
@@ -101,6 +105,80 @@ if [ ! -f Makefile ] || [ ! -f .configured ]; then
         --prefix="${PREFIX}" \
         --enable-static \
         --disable-shared
+    touch .configured
+fi
+make -j "${JOBS}"
+make install
+cd -
+
+# ---------- zlib ----------
+# Required by libcurl for transparent gzip decompression of HTTP
+# responses. The cross-compile target has no system zlib, so build a
+# static one into the deps prefix.
+echo "--- zlib (${ZLIB_VERSION}) ---"
+if [ ! -d "${BUILDDIR}/zlib" ]; then
+    mkdir -p "${BUILDDIR}/zlib"
+    curl -L "${ZLIB_URL}" | tar xz -C "${BUILDDIR}/zlib" --strip-components=1
+fi
+cmake -S "${BUILDDIR}/zlib" -B "${BUILDDIR}/zlib/build" \
+    -DCMAKE_TOOLCHAIN_FILE="${DEPS_TOOLCHAIN}" \
+    -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DZLIB_BUILD_EXAMPLES=OFF \
+    -DBUILD_SHARED_LIBS=OFF
+cmake --build "${BUILDDIR}/zlib/build" -j "${JOBS}"
+cmake --install "${BUILDDIR}/zlib/build"
+# zlib's CMakeLists installs both the static and import-lib variants
+# even with BUILD_SHARED_LIBS=OFF. Strip the dll/import-lib leftovers
+# so curl's configure picks up the static archive unambiguously.
+rm -f "${PREFIX}/lib/libzlib.dll.a" "${PREFIX}/lib/zlib.lib" \
+      "${PREFIX}/bin/zlib1.dll" 2>/dev/null || true
+# zlib's CMake build on MinGW installs `libzlibstatic.a` rather than
+# the canonical `libz.a` — the OUTPUT_NAME=z rename only fires when
+# CMake's UNIX flag is set, and a Windows cross-compile target has
+# UNIX=FALSE. zlib.pc still says `-lz` though, so consumers (curl,
+# osect itself) look for libz.a. Copy the static archive to that name
+# so `-lz` resolves.
+if [ -f "${PREFIX}/lib/libzlibstatic.a" ] && [ ! -f "${PREFIX}/lib/libz.a" ]; then
+    cp "${PREFIX}/lib/libzlibstatic.a" "${PREFIX}/lib/libz.a"
+fi
+
+# ---------- libcurl ----------
+# Build with Schannel (Windows' native TLS) so we don't drag OpenSSL
+# into the static-linked binary. Trims the protocol set down to what
+# we actually use (HTTPS); everything else is disabled to keep the
+# static .a small.
+echo "--- libcurl (${CURL_VERSION}) ---"
+if [ ! -d "${BUILDDIR}/curl" ]; then
+    mkdir -p "${BUILDDIR}/curl"
+    curl -L "${CURL_URL}" | tar xz -C "${BUILDDIR}/curl" --strip-components=1
+fi
+cd "${BUILDDIR}/curl"
+if [ ! -f .configured ]; then
+    # MinGW configure tests for individual socket functions
+    # (select/recv/etc.) link without inheriting earlier checks'
+    # cached lib list, so each one fails unless -lws2_32 is present
+    # in LIBS from the start. Schannel itself pulls in -lcrypt32
+    # and -lbcrypt for cert handling; declare them up front too so
+    # configure's TLS detection succeeds.
+    LIBS="-lws2_32 -lcrypt32 -lbcrypt" \
+    PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig" \
+    CPPFLAGS="-I${PREFIX}/include" \
+    LDFLAGS="-L${PREFIX}/lib" \
+    ./configure \
+        --host=${TOOLCHAIN_PREFIX} \
+        --prefix="${PREFIX}" \
+        --disable-shared --enable-static \
+        --with-schannel \
+        --with-zlib \
+        --disable-ldap --disable-ldaps \
+        --disable-rtsp --disable-dict --disable-telnet \
+        --disable-tftp --disable-pop3 --disable-imap \
+        --disable-smtp --disable-smb --disable-gopher \
+        --disable-mqtt --disable-manual \
+        --without-libpsl --without-libidn2 \
+        --without-nghttp2 --without-zstd --without-brotli \
+        --without-libssh2 --without-librtmp
     touch .configured
 fi
 make -j "${JOBS}"

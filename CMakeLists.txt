@@ -27,6 +27,27 @@ find_package(SDL3_ttf REQUIRED CONFIG)
 find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SQLITE3 REQUIRED sqlite3)
+pkg_check_modules(CURL REQUIRED libcurl)
+
+# pkg-config emits `-framework Foo` as two list items in
+# CURL_STATIC_LDFLAGS_OTHER. cmake's target_link_options would pass
+# each list element as its own linker arg, so `-framework` and `Foo`
+# arrive separately and clang treats `Foo` as a positional input
+# file. Glue each `-framework <name>` pair into one SHELL: token so
+# the two stay adjacent on the actual link line.
+set(CURL_LINK_OPTIONS)
+set(_curl_prev "")
+foreach(_flag IN LISTS CURL_STATIC_LDFLAGS_OTHER)
+    if(_curl_prev STREQUAL "-framework")
+        list(APPEND CURL_LINK_OPTIONS "SHELL:-framework ${_flag}")
+        set(_curl_prev "")
+    elseif(_flag STREQUAL "-framework")
+        set(_curl_prev "-framework")
+    else()
+        list(APPEND CURL_LINK_OPTIONS "${_flag}")
+        set(_curl_prev "")
+    endif()
+endforeach()
 
 # Third-party libraries
 add_subdirectory(thirdparty/imgui)
@@ -69,6 +90,7 @@ add_executable(osect
     src/tile_loader.cpp
     src/chart_style.cpp
     src/data_source.cpp
+    src/http_client.cpp
     src/tile_renderer.cpp
     src/ui_overlay.cpp
     src/ui_sectioned_list.cpp
@@ -181,12 +203,33 @@ if(MINGW)
     target_link_options(osect PRIVATE $<$<CONFIG:Release>:-mwindows>)
 endif()
 
-# Link libraries
+# Link libraries.
+#
+# libcurl is wired in via its --static pkg-config view (CURL_STATIC_*).
+# The universal macOS build statically links libcurl.a, which depends
+# on SecureTransport's Security / CoreFoundation / SystemConfiguration
+# frameworks; those references live in libcurl.pc's `Libs.private:`
+# line and only show up when pkg-config is asked for static flags.
+# `_LDFLAGS_OTHER` carries the `-framework` pairs and the `-l`-less
+# linker flags; pass it via target_link_options so cmake doesn't try
+# to interpret framework names as library lookups. `_LIBRARIES` and
+# `_LIBRARY_DIRS` carry the plain `-lcurl -lz` style entries that
+# target_link_libraries handles natively.
 target_link_libraries(osect PRIVATE
     imgui_wrapper
     sqlite_wrapper
     Threads::Threads
+    ${CURL_STATIC_LIBRARIES}
 )
+target_link_directories(osect PRIVATE ${CURL_STATIC_LIBRARY_DIRS})
+target_link_options(osect PRIVATE ${CURL_LINK_OPTIONS})
+target_include_directories(osect PRIVATE ${CURL_STATIC_INCLUDE_DIRS})
+# `-DCURL_STATICLIB` lives in CURL_STATIC_CFLAGS_OTHER. Without it the
+# Windows curl header decorates exports with `__declspec(dllimport)`,
+# which the linker resolves as `__imp_curl_*` symbols that the static
+# archive doesn't provide. macOS/Linux silently tolerate the missing
+# define because their compilers ignore the dllimport attribute.
+target_compile_options(osect PRIVATE ${CURL_STATIC_CFLAGS_OTHER})
 
 # Embed font as C header
 find_program(XXD xxd REQUIRED)
