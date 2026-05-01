@@ -32,10 +32,11 @@ add_osect_test(lru_set)
 add_osect_test(altitude_filter)
 
 # Tests that compile one .cpp alongside the test
-add_osect_test(geo_math     ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
-add_osect_test(map_view     ${CMAKE_SOURCE_DIR}/src/map_view.cpp)
-add_osect_test(ini_config   ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
-add_osect_test(data_source  ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
+add_osect_test(geo_math        ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
+add_osect_test(map_view        ${CMAKE_SOURCE_DIR}/src/map_view.cpp)
+add_osect_test(ini_config      ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
+add_osect_test(data_source     ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
+add_osect_test(ephemeral_cache ${CMAKE_SOURCE_DIR}/src/ephemeral_cache.cpp)
 
 # http_client confirms that transport failures throw
 add_osect_test(http_client  ${CMAKE_SOURCE_DIR}/src/http_client.cpp)
