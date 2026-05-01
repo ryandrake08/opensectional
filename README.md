@@ -54,36 +54,37 @@ tools/env/bin/python3 tools/render_basemap.py mapdata/natural_earth_vector.gpkg.
 | SDL3_ttf | Text rendering | System package |
 | Dear ImGui | UI widgets (layer controls, FPS) | Vendored (thirdparty/) |
 | SQLite3 | NASR database queries | System package |
+| libcurl | Ephemeral-data HTTP client (NOTAMs, weather, TFRs) | System package |
 | GLM | Matrix/vector math | Vendored (thirdparty/) |
 
 ### macOS (MacPorts)
 
 ```bash
-sudo port install cmake SDL3 SDL3_image SDL3_ttf sqlite3 glslang spirv-cross
+sudo port install cmake SDL3 SDL3_image SDL3_ttf sqlite3 curl glslang spirv-cross
 ```
 
 ### macOS (Homebrew)
 
 ```bash
-brew install cmake sdl3 sdl3_image sdl3_ttf sqlite3 glslang spirv-cross
+brew install cmake sdl3 sdl3_image sdl3_ttf sqlite3 curl glslang spirv-cross
 ```
 
 ### Linux (Debian/Ubuntu)
 
 ```bash
-sudo apt install cmake libsdl3-dev libsdl3-image-dev libsdl3-ttf-dev libsqlite3-dev xxd glslang-tools
+sudo apt install cmake libsdl3-dev libsdl3-image-dev libsdl3-ttf-dev libsqlite3-dev libcurl4-openssl-dev xxd glslang-tools
 ```
 
 ### Linux (Alpine)
 
 ```bash
-sudo apk add cmake sdl3-dev sdl3_image-dev sdl3_ttf-dev sqlite-dev xxd glslang
+sudo apk add cmake sdl3-dev sdl3_image-dev sdl3_ttf-dev sqlite-dev curl-dev xxd glslang
 ```
 
 ### FreeBSD
 
 ```bash
-pkg install cmake sdl3 sdl3_image sdl3_ttf sqlite3 xxd glslang
+pkg install cmake sdl3 sdl3_image sdl3_ttf sqlite3 curl xxd glslang
 ```
 
 ### macOS (universal binary for distribution)
@@ -106,8 +107,8 @@ The native and universal builds produce structurally different binaries. They ar
 
 | | Native (`cmake -B build`) | Universal (`-DCMAKE_TOOLCHAIN_FILE=macos-toolchain.cmake`) |
 |---|---|---|
-| **SDL3 / SDL3_image / SDL3_ttf / sqlite3** | Dynamic, from Homebrew/MacPorts | Static, from `macos-universal-deps/` |
-| **System frameworks** (Cocoa, Metal, …) | Dynamic (always — they live in the SDK / `/System/Library/Frameworks/`) | Same |
+| **SDL3 / SDL3_image / SDL3_ttf / sqlite3 / libcurl / zlib** | Dynamic, from Homebrew/MacPorts | Static, from `macos-universal-deps/` |
+| **System frameworks** (Cocoa, Metal, Security/CoreFoundation/SystemConfiguration for libcurl's SecureTransport, …) | Dynamic (always — they live in the SDK / `/System/Library/Frameworks/`) | Same |
 | **MoltenVK** (used by Vulkan backend, the default) | Bundled into `OpenSectional.app/Contents/Frameworks/libMoltenVK.dylib` via the install step. | Same — MoltenVK is `dlopen`ed at runtime regardless of how SDL3 itself was linked. |
 | **`OpenSectional.app/Contents/Frameworks/`** | Populated by `fixup_bundle` at install time with the Homebrew dylibs, then re-codesigned | Empty — the executable is self-contained |
 | **Binary size** | Smaller executable, dylibs alongside | Larger single-file executable (~+5–10 MB per arch) |
@@ -462,7 +463,8 @@ License texts live next to each component:
 `thirdparty/fonts/OFL.txt`.
 
 External runtime dependencies (not vendored): SDL3, SDL3_image, SDL3_ttf,
-SQLite3.
+SQLite3, libcurl (curl, MIT-style license — used by ephemeral data
+sources to fetch NOTAM / weather / TFR feeds at runtime).
 
 Bundled into the macOS distribution `.app` only (downloaded at deps-build
 time, not in the source tree):

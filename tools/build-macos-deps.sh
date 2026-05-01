@@ -25,6 +25,10 @@ SDL3_IMAGE_TAG=release-3.4.2
 SDL3_TTF_TAG=release-3.2.2
 SQLITE_YEAR=2025
 SQLITE_URL="https://www.sqlite.org/${SQLITE_YEAR}/sqlite-autoconf-3490100.tar.gz"
+ZLIB_VERSION=1.3.1
+ZLIB_URL="https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz"
+CURL_VERSION=8.13.0
+CURL_URL="https://curl.se/download/curl-${CURL_VERSION}.tar.gz"
 # MoltenVK ships precompiled universal (arm64+x86_64) binaries on its
 # GitHub releases page, which avoids dragging in their large fetched
 # dependency tree (SPIRV-Cross, glslang, SPIRV-Tools, ...) just to build
@@ -150,6 +154,69 @@ Version: ${SQLITE_VERSION}
 Libs: -L\${libdir} -lsqlite3
 Cflags: -I\${includedir}
 PCEOF
+cd -
+
+# ---------- zlib ----------
+# Built into macos-universal-deps for the same reason curl is: the
+# universal binary needs a fat libz.a, and MacPorts/Homebrew ship
+# single-arch copies that would poison the link. zlib's own configure
+# can produce a universal static lib when handed CC with `-arch arm64
+# -arch x86_64`.
+echo "--- zlib (${ZLIB_VERSION}) ---"
+if [ ! -d "${BUILDDIR}/zlib" ]; then
+    mkdir -p "${BUILDDIR}/zlib"
+    curl -L "${ZLIB_URL}" | tar xz -C "${BUILDDIR}/zlib" --strip-components=1
+fi
+cd "${BUILDDIR}/zlib"
+if [ ! -f .configured ]; then
+    CC="clang ${ARCH_FLAGS} -mmacosx-version-min=${DEPLOYMENT_TARGET}" \
+        ./configure --prefix="${PREFIX}" --static
+    touch .configured
+fi
+make -j "${JOBS}"
+make install
+cd -
+
+# ---------- libcurl ----------
+# SecureTransport is deprecated by Apple but still functional through
+# at least macOS 14, and avoids dragging OpenSSL into the static deps
+# tree. zlib is consumed from the universal static copy we just built
+# above — system libz lives at /usr/lib but MacPorts/Homebrew copies
+# in pkg-config search paths would otherwise pollute the link with
+# single-arch -L hints.
+#
+# Universal-build trick: pass `-arch arm64 -arch x86_64` via CC so each
+# autoconf conftest is compiled fat. Configure's feature probes don't
+# look at slice-specific output, so a single configure run produces a
+# universal libcurl.a.
+echo "--- libcurl (${CURL_VERSION}) ---"
+if [ ! -d "${BUILDDIR}/curl" ]; then
+    mkdir -p "${BUILDDIR}/curl"
+    curl -L "${CURL_URL}" | tar xz -C "${BUILDDIR}/curl" --strip-components=1
+fi
+cd "${BUILDDIR}/curl"
+if [ ! -f .configured ]; then
+    PKG_CONFIG_LIBDIR="${PREFIX}/lib/pkgconfig" \
+    CC="clang ${ARCH_FLAGS}" \
+    CFLAGS="-mmacosx-version-min=${DEPLOYMENT_TARGET}" \
+    LDFLAGS="-mmacosx-version-min=${DEPLOYMENT_TARGET}" \
+    ./configure \
+        --prefix="${PREFIX}" \
+        --disable-shared --enable-static \
+        --with-secure-transport \
+        --with-zlib="${PREFIX}" \
+        --disable-ldap --disable-ldaps \
+        --disable-rtsp --disable-dict --disable-telnet \
+        --disable-tftp --disable-pop3 --disable-imap \
+        --disable-smtp --disable-smb --disable-gopher \
+        --disable-mqtt --disable-manual \
+        --without-libpsl --without-libidn2 \
+        --without-nghttp2 --without-zstd --without-brotli \
+        --without-libssh2 --without-librtmp
+    touch .configured
+fi
+make -j "${JOBS}"
+make install
 cd -
 
 # ---------- MoltenVK ----------

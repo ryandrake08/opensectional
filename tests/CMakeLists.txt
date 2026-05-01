@@ -37,6 +37,14 @@ add_osect_test(map_view     ${CMAKE_SOURCE_DIR}/src/map_view.cpp)
 add_osect_test(ini_config   ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
 add_osect_test(data_source  ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
 
+# http_client confirms that transport failures throw
+add_osect_test(http_client  ${CMAKE_SOURCE_DIR}/src/http_client.cpp)
+target_link_libraries(test_http_client PRIVATE ${CURL_STATIC_LIBRARIES})
+target_link_directories(test_http_client PRIVATE ${CURL_STATIC_LIBRARY_DIRS})
+target_link_options(test_http_client PRIVATE ${CURL_LINK_OPTIONS})
+target_include_directories(test_http_client PRIVATE ${CURL_STATIC_INCLUDE_DIRS})
+target_compile_options(test_http_client PRIVATE ${CURL_STATIC_CFLAGS_OTHER})
+
 # flight_route pulls in the DB layer and needs the sqlite wrapper
 add_osect_test(flight_route
     ${CMAKE_SOURCE_DIR}/src/flight_route.cpp

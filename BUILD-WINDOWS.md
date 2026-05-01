@@ -53,6 +53,7 @@ pacman -S --needed \
     mingw-w64-x86_64-sdl3-image \
     mingw-w64-x86_64-sdl3-ttf \
     mingw-w64-x86_64-sqlite3 \
+    mingw-w64-x86_64-curl \
     mingw-w64-x86_64-glslang \
     mingw-w64-x86_64-imagemagick \
     vim
