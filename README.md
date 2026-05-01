@@ -383,6 +383,7 @@ Routing preferences are configured in the `[route_plan]` section of `osect.ini`.
 | `-b <path>`, `--basemap <path>` | XYZ tile directory for the basemap layer |
 | `-d <path>`, `--database <path>` | NASR SQLite database |
 | `-c <path>`, `--conf <path>` | Chart style INI config |
+| `--offline` | Skip every network fetch on startup and during refresh; render whatever's in the on-disk ephemeral cache |
 
 Any of `-b`, `-d`, `-c` that are omitted are resolved first from next to the
 executable (installer layout), then from the current working directory. The
@@ -391,6 +392,38 @@ basemap layer is skipped if no basemap is found; the database is required.
 Layer visibility (basemap, airports, runways, navaids, fixes, airways, MTRs,
 airspace, SUA, ADIZ, ARTCC, PJA, MAA, TFR, obstacles, AWOS, RCO) is controlled
 via checkbox panel in the top-right corner.
+
+## Network and offline mode
+
+Static data ships in `osect.db` and never causes runtime network
+traffic. Ephemeral data — TFRs, NOTAMs, weather, etc. — is fetched
+in-app on a per-source schedule once the corresponding source lands.
+At present no source is wired up, so a default-launched binary makes
+zero outbound requests; this section is here to document what to
+expect as those sources land.
+
+**Endpoints contacted (as sources land in later stages):**
+
+| Source | Endpoint | Cadence |
+|--------|----------|---------|
+| _(none yet)_ | _(TBD per source)_ | _(TBD per source)_ |
+
+**Cache directory.** Cached responses live under a per-platform
+directory:
+
+- macOS: `~/Library/Caches/org.existens.opensectional/ephemeral/`
+- Linux/BSD: `${XDG_CACHE_HOME:-$HOME/.cache}/osect/ephemeral/`
+- Windows: `%LOCALAPPDATA%\osect\ephemeral\`
+
+One file per source, with a versioned binary header. Safe to delete
+manually — sources fall back to "no prior data" and re-fetch on next
+launch.
+
+**`--offline` flag.** Suppresses every outbound HTTP request for the
+process lifetime. Sources catch the resulting "offline mode" exception
+and fall back to whatever is in the cache; sources whose cache is
+missing display empty layers. Useful for working on a plane, behind a
+captive portal, or against a stale-but-frozen view of the world.
 
 ## Project Structure
 
