@@ -90,10 +90,14 @@ add_executable(osect
     src/tile_loader.cpp
     src/chart_style.cpp
     src/data_source.cpp
+    src/ephemeral_cache.cpp
     src/http_client.cpp
     src/tile_renderer.cpp
     src/ui_overlay.cpp
     src/ui_sectioned_list.cpp
+)
+target_compile_definitions(osect PRIVATE
+    OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
 )
 
 # SDL C++ wrapper library
