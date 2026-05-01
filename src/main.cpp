@@ -1,3 +1,5 @@
+#include "ephemeral_cache.hpp"
+#include "http_client.hpp"
 #include "ini_config.hpp"
 #include "map_widget.hpp"
 #include "nasr_database.hpp"
@@ -42,6 +44,7 @@ namespace
             << "  -b, --basemap <path>       Basemap tile directory\n"
             << "  -d, --database <osect.db>   NASR SQLite database\n"
             << "  -c, --conf <osect.ini> Chart style config\n"
+            << "  --offline                  Skip all network fetches; use cached ephemeral data only\n"
             << "\n"
             << "When a path option is omitted, the asset is loaded from next to\n"
             << "the executable (installer layout) or the current directory.\n";
@@ -55,6 +58,7 @@ int main(int argc, char** argv)
     const char* tile_path = nullptr;
     const char* db_path = nullptr;
     const char* conf_path = nullptr;
+    bool offline = false;
     auto argi = 1;
     while(argi < argc && argv[argi][0] == '-')
     {
@@ -81,6 +85,8 @@ int main(int argc, char** argv)
             db_path = argv[++argi];
         else if((std::strcmp(argv[argi], "-c") == 0 || std::strcmp(argv[argi], "--conf") == 0) && argi + 1 < argc)
             conf_path = argv[++argi];
+        else if(std::strcmp(argv[argi], "--offline") == 0)
+            offline = true;
         else
         {
             std::cerr << "Unknown option: " << argv[argi] << std::endl;
@@ -166,6 +172,16 @@ int main(int argc, char** argv)
         // the use-airways toggle on a per-submission basis.
         ini_config plan_ini(conf_path);
         auto plan_options = osect::load_route_plan_options(plan_ini);
+
+        // Ephemeral data plumbing: one shared HTTP client and one
+        // shared on-disk cache. Constructed here so the cache directory
+        // is created at startup (failure surfaces immediately) and so
+        // any --offline misconfiguration is a single decision the
+        // whole app inherits.
+        osect::http_client http(offline);
+        osect::ephemeral_cache cache;
+        (void)http;    // consumed by ephemeral sources, not yet wired
+        (void)cache;   // ditto
 
         osect::ui_overlay ui;
         ui.set_route_planner_defaults(plan_options.max_leg_length_nm,

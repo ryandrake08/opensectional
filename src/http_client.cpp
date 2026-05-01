@@ -61,8 +61,9 @@ namespace osect
     struct http_client::impl
     {
         CURL* curl = nullptr;
+        bool offline = false;
 
-        impl()
+        explicit impl(bool offline_) : offline(offline_)
         {
             ensure_global_init();
             curl = curl_easy_init();
@@ -76,11 +77,17 @@ namespace osect
         impl& operator=(const impl&) = delete;
     };
 
-    http_client::http_client() : pimpl(std::make_unique<impl>()) {}
+    http_client::http_client(bool offline) : pimpl(std::make_unique<impl>(offline)) {}
     http_client::~http_client() = default;
 
     http_client::response http_client::get(const request& req)
     {
+        if(pimpl->offline)
+        {
+            throw std::runtime_error(
+                "HTTP request failed: offline mode (" + req.url + ")");
+        }
+
         auto* curl = pimpl->curl;
         curl_easy_reset(curl);
 

@@ -23,7 +23,11 @@ namespace osect
         std::unique_ptr<impl> pimpl;
 
     public:
-        http_client();
+        // `offline=true` short-circuits every get() into a thrown
+        // std::runtime_error before any network syscall. Sources are
+        // expected to catch and fall back to whatever they have
+        // cached. Wired up by the app's --offline CLI flag.
+        explicit http_client(bool offline = false);
         ~http_client();
 
         http_client(const http_client&) = delete;
