@@ -324,11 +324,11 @@ struct map_widget::impl : public sdl::event_listener
         // Draw grid lines at regular lat/lon intervals
         // Choose interval based on zoom level
         auto approx_zoom = view.zoom_level();
-        const auto grid_step = approx_zoom < 3 ? 30.0
-                             : approx_zoom < 5 ? 10.0
-                             : approx_zoom < 7 ? 5.0
-                             : approx_zoom < 9 ? 1.0
-                             :                   0.5;
+        double grid_step = 0.5;
+        if(approx_zoom < 3)      grid_step = 30.0;
+        else if(approx_zoom < 5) grid_step = 10.0;
+        else if(approx_zoom < 7) grid_step = 5.0;
+        else if(approx_zoom < 9) grid_step = 1.0;
         auto lon_step = grid_step;
         auto lat_step = grid_step;
 

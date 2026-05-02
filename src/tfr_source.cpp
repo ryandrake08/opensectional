@@ -37,8 +37,8 @@ namespace osect
             if(points.empty()) return chunks;
 
             std::vector<airspace_point> closed = points;
-            if(!(closed.front().lat == closed.back().lat &&
-                 closed.front().lon == closed.back().lon))
+            if(closed.front().lat != closed.back().lat ||
+               closed.front().lon != closed.back().lon)
             {
                 closed.push_back(closed.front());
             }
@@ -64,8 +64,8 @@ namespace osect
                 // function is inlined into append_segments_for.
                 const auto& chunk_last = closed[end - 1];
                 if(end == n &&
-                   !(chunk_last.lat == closed.front().lat &&
-                     chunk_last.lon == closed.front().lon))
+                   (chunk_last.lat != closed.front().lat ||
+                    chunk_last.lon != closed.front().lon))
                 {
                     chunk.push_back(closed.front());
                 }

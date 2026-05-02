@@ -66,8 +66,8 @@ namespace osect
                 lat_min = std::min(lat_min, p.lat);
                 lat_max = std::max(lat_max, p.lat);
             }
-            return !(lon_max < bbox.lon_min || lon_min > bbox.lon_max ||
-                     lat_max < bbox.lat_min || lat_min > bbox.lat_max);
+            return lon_max >= bbox.lon_min && lon_min <= bbox.lon_max &&
+                   lat_max >= bbox.lat_min && lat_min <= bbox.lat_max;
         }
 
         void triangulate_polygon(

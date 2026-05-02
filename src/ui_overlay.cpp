@@ -373,7 +373,7 @@ namespace osect
                 case data_source_status::expired:
                     color = IM_COL32(230, 90, 90, 255);  tag = "EXP"; break;
                 case data_source_status::unknown:
-                    color = IM_COL32(180, 180, 180, 255); tag = "?";  break;
+                    break;
                 }
                 ImGui::PushStyleColor(ImGuiCol_Text, color);
                 ImGui::Text("[%-5s]", tag);

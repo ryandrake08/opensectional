@@ -1579,7 +1579,7 @@ namespace osect
         {
             y -= m <= 2;
             const int era = (y >= 0 ? y : y - 399) / 400;
-            const unsigned yoe = static_cast<unsigned>(y - era * 400);
+            const auto yoe = static_cast<unsigned>(y - era * 400);
             const unsigned doy =
                 (153U * (m + (m > 2 ? -3U : 9U)) + 2U) / 5U + d - 1U;
             const unsigned doe = yoe * 365U + yoe / 4U - yoe / 100U + doy;
