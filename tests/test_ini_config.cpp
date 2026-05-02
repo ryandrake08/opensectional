@@ -154,3 +154,36 @@ TEST_CASE("keys before any [section] header are ignored")
     CHECK_FALSE(cfg.exists("orphan"));
     CHECK(cfg.exists("section.key"));
 }
+
+TEST_CASE("default-constructed ini_config is empty")
+{
+    ini_config cfg;
+    CHECK_FALSE(cfg.exists("section.key"));
+    CHECK_THROWS_AS(cfg.get<std::string>("section.key"), std::runtime_error);
+}
+
+TEST_CASE("merge: later layer overrides earlier, missing keys preserved")
+{
+    tmp_ini base("[s]\nkept = base_kept\noverridden = base_value\n");
+    tmp_ini layer("[s]\noverridden = layer_value\nadded = layer_added\n");
+
+    ini_config cfg(base.path);
+    cfg.merge(ini_config(layer.path));
+
+    // Key only in base survives
+    CHECK(cfg.get<std::string>("s.kept") == "base_kept");
+    // Key in both takes layer's value
+    CHECK(cfg.get<std::string>("s.overridden") == "layer_value");
+    // Key only in layer is added
+    CHECK(cfg.get<std::string>("s.added") == "layer_added");
+}
+
+TEST_CASE("merge into empty config absorbs the other config")
+{
+    tmp_ini f("[s]\na = 1\nb = 2\n");
+    ini_config cfg;
+    cfg.merge(ini_config(f.path));
+
+    CHECK(cfg.get<int>("s.a") == 1);
+    CHECK(cfg.get<int>("s.b") == 2);
+}

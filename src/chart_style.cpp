@@ -3,7 +3,6 @@
 #include "nasr_database.hpp"
 #include <algorithm>
 #include <array>
-#include <fstream>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -174,10 +173,9 @@ namespace osect
         }
     }
 
-    static feature_style load_style(const ini_config& ini, const std::string& prefix,
-                                     const feature_style& fallback)
+    static void apply_overrides(feature_style& s, const ini_config& ini,
+                                 const std::string& prefix)
     {
-        auto s = fallback;
         read_into(ini, prefix + "min_zoom", s.min_zoom);
         read_into(ini, prefix + "max_zoom", s.max_zoom);
         read_into(ini, prefix + "color", s.r, s.g, s.b, s.a);
@@ -189,56 +187,150 @@ namespace osect
         read_into(ini, prefix + "border_width", s.border_width);
         read_into(ini, prefix + "dash_length", s.dash_length);
         read_into(ini, prefix + "gap_length", s.gap_length);
+    }
+
+    // Per-key VFR defaults. Mirrors osect.ini row-for-row. Color is a CSS
+    // name (or hex) parsed at construction time; an empty color string
+    // leaves r/g/b/a at feature_style{}'s white default — used by zoom-only
+    // keys like airport_class_*, fix_airway/noairway whose color comes from
+    // a sibling key.
+    struct style_default
+    {
+        const char* key;
+        double min_zoom;
+        const char* color;          // "" → white default
+        float line_width;
+        float dash_length;
+        float gap_length;
+    };
+
+    static constexpr std::array<style_default, 70> vfr_defaults = {{
+        // Airports — zoom thresholds keyed by airspace class
+        {"airport_class_b",   7.0,  "",                1.0F, 0.0F, 0.0F},
+        {"airport_class_c",   8.0,  "",                1.0F, 0.0F, 0.0F},
+        {"airport_class_d",   9.0,  "",                1.0F, 0.0F, 0.0F},
+        {"airport_class_e",  10.0,  "",                1.0F, 0.0F, 0.0F},
+        {"airport_other",    11.0,  "",                1.0F, 0.0F, 0.0F},
+        // Airports — colors by tower presence
+        {"airport_towered",   0.0,  "royalblue",       1.0F, 0.0F, 0.0F},
+        {"airport_untowered", 0.0,  "mediumorchid",    1.0F, 0.0F, 0.0F},
+        // Navaids
+        {"navaid_vor",        9.0,  "limegreen",       1.0F, 0.0F, 0.0F},
+        {"navaid_ndb",        9.0,  "saddlebrown",     1.0F, 0.0F, 0.0F},
+        // Fixes — zoom thresholds by airway membership
+        {"fix_airway",        9.0,  "",                1.0F, 0.0F, 0.0F},
+        {"fix_noairway",     10.0,  "",                1.0F, 0.0F, 0.0F},
+        // Fixes — colors by use_code
+        {"fix_wp",            0.0,  "limegreen",       1.0F, 0.0F, 0.0F},
+        {"fix_rp",            0.0,  "limegreen",       1.0F, 0.0F, 0.0F},
+        {"fix_vfr",           0.0,  "saddlebrown",     1.0F, 0.0F, 0.0F},
+        {"fix_cn",            0.0,  "forestgreen",     1.0F, 0.0F, 0.0F},
+        {"fix_mr",            0.0,  "gray",            1.0F, 0.0F, 0.0F},
+        {"fix_mw",            0.0,  "gray",            1.0F, 0.0F, 0.0F},
+        {"fix_nrs",           0.0,  "darkslategray",   1.0F, 0.0F, 0.0F},
+        // RCO / AWOS
+        {"rco",              11.0,  "teal",            1.0F, 0.0F, 0.0F},
+        {"awos",             11.0,  "teal",            1.0F, 0.0F, 0.0F},
+        // Obstacles by AGL height
+        {"obstacle_1000ft",  12.0,  "crimson",         1.0F, 0.0F, 0.0F},
+        {"obstacle_200ft",   13.0,  "orange",          1.0F, 0.0F, 0.0F},
+        {"obstacle_low",     14.0,  "darkgray",        1.0F, 0.0F, 0.0F},
+        // Airways — low-altitude conventional/RNAV (dark cyan on VFR)
+        {"airway_v",          9.0,  "darkcyan",        1.0F, 0.0F, 0.0F},
+        {"airway_t",          9.0,  "darkcyan",        1.0F, 0.0F, 0.0F},
+        {"airway_tk",         9.0,  "darkcyan",        1.0F, 0.0F, 0.0F},
+        // Airways — high-altitude (IFR-high colors, gated by High band)
+        {"airway_j",          9.0,  "black",           1.0F, 0.0F, 0.0F},
+        {"airway_q",          9.0,  "darkblue",        1.0F, 0.0F, 0.0F},
+        {"airway_y",          9.0,  "darkblue",        1.0F, 0.0F, 0.0F},
+        {"airway_h",          9.0,  "black",           1.0F, 0.0F, 0.0F},
+        // Airways — dual-band (ICAO ATS / Bahama / Atlantic / PR)
+        {"airway_m",          9.0,  "darkcyan",        1.0F, 0.0F, 0.0F},
+        {"airway_l",          9.0,  "darkcyan",        1.0F, 0.0F, 0.0F},
+        {"airway_w",          9.0,  "darkcyan",        1.0F, 0.0F, 0.0F},
+        {"airway_n",          9.0,  "darkcyan",        1.0F, 0.0F, 0.0F},
+        {"airway_br",         9.0,  "darkcyan",        1.0F, 0.0F, 0.0F},
+        {"airway_ar",         9.0,  "darkcyan",        1.0F, 0.0F, 0.0F},
+        {"airway_rte",        9.0,  "darkcyan",        1.0F, 0.0F, 0.0F},
+        // Airways — LF/MF colored (low-altitude, magenta on VFR)
+        {"airway_r",          9.0,  "darkmagenta",     1.0F, 0.0F, 0.0F},
+        {"airway_a",          9.0,  "darkmagenta",     1.0F, 0.0F, 0.0F},
+        {"airway_g",          9.0,  "darkmagenta",     1.0F, 0.0F, 0.0F},
+        {"airway_b",          9.0,  "darkmagenta",     1.0F, 0.0F, 0.0F},
+        // MTR
+        {"mtr",               9.0,  "gray",            1.0F, 0.0F, 0.0F},
+        // PJA
+        {"pja_area",          8.0,  "tan",             1.0F, 12.0F, 6.0F},
+        {"pja_point",         8.0,  "tan",             1.0F, 0.0F, 0.0F},
+        // MAA
+        {"maa_area",          8.0,  "tan",             1.0F, 12.0F, 6.0F},
+        {"maa_point",         8.0,  "tan",             1.0F, 0.0F, 0.0F},
+        // ADIZ
+        {"adiz",              6.0,  "orchid",          2.0F, 0.0F, 0.0F},
+        // Class airspace
+        {"airspace_b",        5.0,  "royalblue",       2.0F, 0.0F, 0.0F},
+        {"airspace_c",        6.0,  "darkorchid",      2.0F, 0.0F, 0.0F},
+        {"airspace_d",        6.0,  "royalblue",       1.0F, 12.0F, 6.0F},
+        {"airspace_e2",       9.0,  "darkorchid",      1.0F, 12.0F, 6.0F},
+        {"airspace_e3",       9.0,  "darkorchid",      1.0F, 12.0F, 6.0F},
+        {"airspace_e4",       9.0,  "darkorchid",      1.0F, 12.0F, 6.0F},
+        // E5/E6/E7 are not depicted on VFR — min_zoom=99 hides them
+        {"airspace_e5",      99.0,  "",                1.0F, 0.0F, 0.0F},
+        {"airspace_e6",      99.0,  "",                1.0F, 0.0F, 0.0F},
+        {"airspace_e7",      99.0,  "",                1.0F, 0.0F, 0.0F},
+        // ARTCC
+        {"artcc_low",         3.0,  "midnightblue",    1.0F, 0.0F, 0.0F},
+        {"artcc_high",        3.0,  "midnightblue",    1.0F, 0.0F, 0.0F},
+        {"artcc_unlimited_fir",  3.0,  "midnightblue", 1.0F, 0.0F, 0.0F},
+        {"artcc_unlimited_cta", 99.0, "",              1.0F, 0.0F, 0.0F},
+        {"artcc_unlimited_uta", 99.0, "",              1.0F, 0.0F, 0.0F},
+        // SUA
+        {"sua_prohibited",    6.0,  "crimson",         2.0F, 0.0F, 0.0F},
+        {"sua_restricted",    6.0,  "orange",          2.0F, 0.0F, 0.0F},
+        {"sua_warning",       6.0,  "orange",          2.0F, 15.0F, 8.0F},
+        {"sua_alert",         9.0,  "plum",            2.0F, 0.0F, 0.0F},
+        {"sua_moa",           7.0,  "plum",            2.0F, 15.0F, 8.0F},
+        {"sua_nsa",           9.0,  "saddlebrown",     2.0F, 0.0F, 0.0F},
+        // Runway
+        {"runway",           10.0,  "silver",          3.0F, 0.0F, 0.0F},
+        // Route
+        {"route",             0.0,  "magenta",         3.0F, 0.0F, 0.0F},
+        // TFR
+        {"tfr",               6.0,  "crimson",         2.0F, 15.0F, 8.0F},
+    }};
+
+    static feature_style resolve_default(const style_default& d)
+    {
+        feature_style s;
+        s.min_zoom = d.min_zoom;
+        s.line_width = d.line_width;
+        s.dash_length = d.dash_length;
+        s.gap_length = d.gap_length;
+        // Match osect.ini's runway override: explicit border_width=0
+        if(std::string(d.key) == "runway") s.border_width = 0.0F;
+        // Route ships with border_width=1, same as the struct default;
+        // no special-case needed.
+        if(d.color && d.color[0] != '\0')
+        {
+            if(!parse_css_color(d.color, s.r, s.g, s.b, s.a))
+            {
+                throw std::runtime_error(
+                    std::string("chart_style: bad default color '") + d.color +
+                    "' for key '" + d.key + "'");
+            }
+        }
         return s;
     }
 
-    // All known feature keys that the renderer may look up
-    static constexpr std::array all_keys = {
-        "airport_class_b", "airport_class_c", "airport_class_d",
-        "airport_class_e", "airport_other",
-        "airport_towered", "airport_untowered",
-        "navaid_vor", "navaid_ndb",
-        "mtr",
-        "fix_airway", "fix_noairway",
-        "fix_wp", "fix_rp", "fix_vfr", "fix_cn", "fix_mr", "fix_mw", "fix_nrs",
-        "obstacle_1000ft", "obstacle_200ft", "obstacle_low",
-        "airway_v", "airway_t", "airway_br", "airway_tk",
-        "airway_j", "airway_q", "airway_ar", "airway_rte", "airway_h",
-        "airway_m", "airway_l", "airway_y", "airway_w", "airway_n",
-        "airway_r", "airway_a", "airway_g", "airway_b",
-        "airspace_b", "airspace_c", "airspace_d",
-        "airspace_e2", "airspace_e3", "airspace_e4",
-        "airspace_e5", "airspace_e6", "airspace_e7",
-        "artcc_low", "artcc_high",
-        "artcc_unlimited_cta", "artcc_unlimited_fir", "artcc_unlimited_uta",
-        "pja_area", "pja_point",
-        "maa_area", "maa_point",
-        "adiz",
-        "tfr",
-        "sua_prohibited", "sua_restricted", "sua_warning",
-        "sua_alert", "sua_moa", "sua_nsa",
-        "runway",
-        "rco", "awos",
-        "route",
-    };
-
-    chart_style::chart_style(const std::string& ini_path, chart_mode mode)
+    chart_style::chart_style(const ini_config& ini, chart_mode mode)
     {
-        std::ifstream test(ini_path);
-        if(!test.good())
-        {
-            throw std::runtime_error("Chart style INI not found: " + ini_path);
-        }
-        test.close();
-
-        ini_config ini(ini_path);
         auto suffix = mode_suffix(mode);
 
-        feature_style defaults;
-        for(const char* key : all_keys)
+        for(const auto& d : vfr_defaults)
         {
-            auto prefix = std::string(key) + "." + suffix + ".";
-            styles[key] = load_style(ini, prefix, defaults);
+            auto s = resolve_default(d);
+            apply_overrides(s, ini, std::string(d.key) + "." + suffix + ".");
+            styles[d.key] = s;
         }
     }
 

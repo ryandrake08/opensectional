@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
+class ini_config;
+
 namespace osect
 {
     struct airport;
@@ -38,8 +40,9 @@ namespace osect
         bool visible(const std::string& key, double zoom) const;
 
     public:
-        // Build with hardcoded defaults, optionally overridden from INI
-        chart_style(const std::string& ini_path,
+        // Build with hardcoded defaults, optionally overridden from INI.
+        // Pass an empty ini_config{} for defaults-only.
+        chart_style(const ini_config& ini,
                     chart_mode mode = chart_mode::vfr);
 
         // Airport visibility and style (keyed by airspace class)

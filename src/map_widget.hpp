@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+class ini_config;
+
 namespace sdl
 {
     class command_buffer;
@@ -31,12 +33,13 @@ class map_widget
 
 public:
     // `tile_path` may be null if no basemap is available.
-    // `conf_path` is the chart style INI.
+    // `ini` carries chart-style overrides; pass an empty ini_config{}
+    // for code defaults only.
     // `eph` is the app's ephemeral data facade; the feature
     // build/pick paths read TFRs (and any future ephemeral
     // sources) through it in place of SQL-backed queries.
     map_widget(sdl::device& dev, const char* tile_path,
-               const char* db_path, const char* conf_path,
+               const char* db_path, const ini_config& ini,
                osect::ephemeral_data& eph,
                int viewport_width, int viewport_height);
     ~map_widget();

@@ -28,9 +28,11 @@ curl -L -o mapdata/natural_earth_vector.gpkg.zip \
 # 7. Render the basemap tile pyramid into basemap/
 tools/env/bin/python3 tools/render_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/
 
-# 8. Run. With no options, osect looks for osect.db, basemap/, and
-#    osect.ini next to the executable (installer layout) or in the
-#    current working directory (dev).
+# 8. Run. With no options, osect looks for osect.db and basemap/ next
+#    to the executable (installer layout) or in the current working
+#    directory (dev). Configuration is optional — sensible chart-style
+#    and routing defaults are baked into the binary; see "Configuration"
+#    below for the override file format.
 ./build/osect
 
 # Override any asset path explicitly:
@@ -227,7 +229,6 @@ The package scripts run `cpack` against pre-generated runtime assets that aren't
 
 - `osect.db` — built from FAA NASR data (see [Data Preparation](#data-preparation))
 - `basemap/` — rendered from Natural Earth (see [Data Preparation](#data-preparation))
-- `osect.ini` — already in source control
 
 `cpack` aborts with `Installer asset missing: ...` until those exist. The macOS bundle additionally needs `osect.png` for icon generation (via `sips` + `iconutil`); the Windows installer uses the same PNG via ImageMagick `magick`. If the icon-generation tool is missing the installer still builds, just without a custom icon.
 
@@ -394,7 +395,20 @@ Insert a `?` between two waypoints (or between a waypoint and an airway token) a
 
 The "Use airways" checkbox in the Route panel turns on the airway-class preference (Victor PREFER by default, etc.) and forces airway-routable navaids and WP/RP/CN/MR fixes to INCLUDE for that submission. The "Max leg (nm)" input next to it caps any single A\* hop at the chosen distance. While planning runs on a background thread the input is disabled and an animated indicator is shown. Cross-country plans (e.g. `KSFO ? KJFK`) take a couple of seconds; short hops are imperceptible.
 
-Routing preferences are configured in the `[route_plan]` section of `osect.ini`. Each waypoint subtype (airport, balloonport, seaplane base, gliderport, heliport, ultralight, VOR, VORTAC, VOR/DME, DME, NDB, NDB/DME, VFR fix) and each airway class (Victor, Jet, RNAV, color, other) takes one of `PREFER` / `INCLUDE` / `AVOID` / `REJECT` (cost multipliers 0.8 / 1.0 / 1.25 / 1000). A separate `route_airway_gap` key controls how A\* prices crossings of published airway discontinuities — `PREFER` makes following a named airway through its gaps cost-attractive; `INCLUDE` is neutral; `AVOID`/`REJECT` push the planner toward switching airways.
+Routing preferences are configured in the `[route_plan]` section of an `osect.ini` override file (see [Configuration](#configuration)). Each waypoint subtype (airport, balloonport, seaplane base, gliderport, heliport, ultralight, VOR, VORTAC, VOR/DME, DME, NDB, NDB/DME, VFR fix) and each airway class (Victor, Jet, RNAV, color, other) takes one of `PREFER` / `INCLUDE` / `AVOID` / `REJECT` (cost multipliers 0.8 / 1.0 / 1.25 / 1000). A separate `route_airway_gap` key controls how A\* prices crossings of published airway discontinuities — `PREFER` makes following a named airway through its gaps cost-attractive; `INCLUDE` is neutral; `AVOID`/`REJECT` push the planner toward switching airways.
+
+### Configuration
+
+OpenSectional ships with sensible chart-style and routing defaults baked into the binary — no configuration file is required. To override defaults, drop an `osect.ini` in any of the following locations (each layers on top of the previous, last wins):
+
+1. Next to the executable (installer layout, contributor builds running from the build dir).
+2. The platform-specific user config dir:
+   - macOS: `~/Library/Application Support/org.existens.opensectional/osect.ini`
+   - Windows: `%APPDATA%\osect\osect.ini`
+   - Linux: `${XDG_CONFIG_HOME:-~/.config}/osect/osect.ini`
+3. An explicit `-c <path>` / `--conf <path>` on the command line.
+
+The repo's [`osect.ini`](osect.ini) at the source root is a worked example of every key — the values it sets exactly reproduce the in-code defaults, so it's safe to copy and edit as a starting point.
 
 ### Command Line Options
 
@@ -409,12 +423,14 @@ Routing preferences are configured in the `[route_plan]` section of `osect.ini`.
 | `-g direct3d12`, `--gpu direct3d12` | Force Direct3D 12 backend (Windows only) |
 | `-b <path>`, `--basemap <path>` | XYZ tile directory for the basemap layer |
 | `-d <path>`, `--database <path>` | NASR SQLite database |
-| `-c <path>`, `--conf <path>` | Chart style INI config |
+| `-c <path>`, `--conf <path>` | Override INI layered last over the default cascade (see [Configuration](#configuration)). Errors if the path does not exist. |
 | `--offline` | Skip every network fetch on startup and during refresh; render whatever's in the on-disk ephemeral cache |
 
-Any of `-b`, `-d`, `-c` that are omitted are resolved first from next to the
+When `-b` / `-d` are omitted they're resolved first from next to the
 executable (installer layout), then from the current working directory. The
 basemap layer is skipped if no basemap is found; the database is required.
+`-c` is fully optional — see [Configuration](#configuration) for the
+override-file lookup order.
 
 Layer visibility (basemap, airports, runways, navaids, fixes, airways, MTRs,
 airspace, SUA, ADIZ, ARTCC, PJA, MAA, TFR, obstacles, AWOS, RCO) is controlled

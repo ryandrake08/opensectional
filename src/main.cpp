@@ -42,11 +42,13 @@ namespace
 #endif
             << "  -b, --basemap <path>       Basemap tile directory\n"
             << "  -d, --database <osect.db>   NASR SQLite database\n"
-            << "  -c, --conf <osect.ini> Chart style config\n"
+            << "  -c, --conf <osect.ini>     Override INI (optional; layered over defaults)\n"
             << "  --offline                  Skip all network fetches; use cached ephemeral data only\n"
             << "\n"
-            << "When a path option is omitted, the asset is loaded from next to\n"
-            << "the executable (installer layout) or the current directory.\n";
+            << "When -b/-d are omitted, the asset is loaded from next to the\n"
+            << "executable (installer layout) or the current directory. -c is\n"
+            << "fully optional; chart-style and routing defaults are baked in,\n"
+            << "with bundled / per-user / -c override files cascading on top.\n";
     }
 }
 
@@ -127,12 +129,6 @@ int main(int argc, char** argv)
         tile_path_owned = sdl::resolve_bundled_asset("basemap");
         if(!tile_path_owned.empty()) tile_path = tile_path_owned.c_str();
     }
-    std::string ini_path_owned;
-    if(!conf_path)
-    {
-        ini_path_owned = sdl::resolve_bundled_asset("osect.ini");
-        conf_path = ini_path_owned.empty() ? "osect.ini" : ini_path_owned.c_str();
-    }
 
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
@@ -163,7 +159,18 @@ int main(int argc, char** argv)
         // than from osect.db.
         osect::ephemeral_data eph(offline);
 
-        map_widget map(dev, tile_path, db_path, conf_path, eph, 1280, 1024);
+        // Build the cascaded ini override layer. Each layer is optional;
+        // a missing file is silently skipped. Layered last-wins so the
+        // explicit -c/--conf path takes precedence over user, which
+        // takes precedence over the bundled ini.
+        ini_config ini;
+        auto bundled = sdl::resolve_bundled_asset("osect.ini");
+        if(!bundled.empty()) ini.merge(ini_config(bundled));
+        auto user = sdl::resolve_user_asset("osect.ini");
+        if(!user.empty()) ini.merge(ini_config(user));
+        if(conf_path) ini.merge(ini_config(conf_path));
+
+        map_widget map(dev, tile_path, db_path, ini, eph, 1280, 1024);
         event_mgr.add_listener(map.event_listener());
 
         // Sigil expansion runs on its own database/planner instance
@@ -173,11 +180,9 @@ int main(int argc, char** argv)
         osect::route_planner planner(planner_db);
         osect::route_submitter submitter(planner);
 
-        // Load route-planner preference defaults from the same ini
-        // that drives chart styling. The GUI overrides max_leg and
-        // the use-airways toggle on a per-submission basis.
-        ini_config plan_ini(conf_path);
-        auto plan_options = osect::load_route_plan_options(plan_ini);
+        // Route-planner preferences come from the same ini; GUI
+        // overrides max_leg and the use-airways toggle per submission.
+        auto plan_options = osect::load_route_plan_options(ini);
 
         osect::ui_overlay ui;
         ui.set_route_planner_defaults(plan_options.max_leg_length_nm,
