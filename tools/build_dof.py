@@ -11,7 +11,9 @@ import re
 import sys
 import zipfile
 
-from build_common import _parse_date_loose, open_output_db, write_meta
+from build_common import (
+    _parse_date_loose, normalize_iso_date, open_output_db, write_meta,
+)
 
 
 def parse_dof_dms(dms_str):
@@ -109,7 +111,8 @@ def build_obstacles(conn, dof_zf):
                 marking = line[100:102].strip() if len(line) > 102 else ""
                 faa_study = line[102:118].strip() if len(line) > 118 else ""
                 action = line[118:120].strip() if len(line) > 120 else ""
-                jdate = line[120:128].strip() if len(line) > 128 else ""
+                jdate_raw = line[120:128].strip() if len(line) > 128 else ""
+                jdate = normalize_iso_date(jdate_raw)
 
                 rows.append((oas_num, verify_status, country, state, city,
                              lat, lon, obs_type, quantity, agl_ht, amsl_ht,
