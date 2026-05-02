@@ -1,4 +1,5 @@
 #include "tile_loader.hpp"
+#include "wake_main.hpp"
 #include <condition_variable>
 #include <deque>
 #include <iostream>
@@ -61,6 +62,7 @@ namespace osect
                     std::lock_guard<std::mutex> lock(mutex);
                     result_queue.push_back({ req.key, std::move(surf) });
                 }
+                wake_main_thread();
             }
         }
     };

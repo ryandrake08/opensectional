@@ -54,8 +54,9 @@ add_osect_test(tfr_source
     ${CMAKE_SOURCE_DIR}/src/tfr_source.cpp
     ${CMAKE_SOURCE_DIR}/src/http_client.cpp
     ${CMAKE_SOURCE_DIR}/src/ephemeral_cache.cpp
+    ${CMAKE_SOURCE_DIR}/src/wake_main.cpp
     ${CMAKE_SOURCE_DIR}/src/xnotam_parser.cpp)
-target_link_libraries(test_tfr_source PRIVATE pugixml CURL::libcurl)
+target_link_libraries(test_tfr_source PRIVATE pugixml CURL::libcurl sdl_wrapper)
 
 # http_client confirms that transport failures throw
 add_osect_test(http_client  ${CMAKE_SOURCE_DIR}/src/http_client.cpp)

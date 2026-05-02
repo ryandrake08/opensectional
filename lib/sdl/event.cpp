@@ -1,5 +1,4 @@
 #include "event.hpp"
-#include "error.hpp"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <functional>
@@ -110,13 +109,11 @@ namespace sdl
     {
         SDL_Event event;
 
-        // Use a timeout so the loop wakes periodically to pick up
-        // background work (e.g. tiles loaded on a worker thread)
-        // even when no input events are arriving.
-        if(!SDL_WaitEventTimeout(&event, 100))
-        {
-            return false;
-        }
+        // Block until any event arrives. Background producers
+        // (tile_loader, feature_builder, tfr_source, route_submitter)
+        // call wake_main_thread() — i.e. push_user_event() — to wake
+        // us when they have results to drain.
+        SDL_WaitEvent(&event);
 
         if(pimpl->dispatch(event))
         {

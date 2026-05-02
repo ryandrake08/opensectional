@@ -260,6 +260,7 @@ add_executable(osect
     src/tfr_source.cpp
     src/tile_renderer.cpp
     src/ui_overlay.cpp
+    src/wake_main.cpp
     src/ui_sectioned_list.cpp
     src/xnotam_parser.cpp
 )

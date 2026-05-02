@@ -6,6 +6,7 @@
 #include "geo_math.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
+#include "wake_main.hpp"
 
 #include <cmath>
 #include <condition_variable>
@@ -265,6 +266,7 @@ namespace osect
                     std::lock_guard<std::mutex> lock(mutex);
                     completed_result = std::move(result);
                 }
+                wake_main_thread();
             }
         }
     };

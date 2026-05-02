@@ -35,7 +35,7 @@ namespace osect
         tile_loader& operator=(const tile_loader&) = delete;
 
         // Enqueue a tile for background loading.
-        // Pushes a user event when loading completes to wake the main loop.
+        // Wakes the main loop when loading completes.
         void request(const tile_key& key, const std::string& path);
 
         // Clear all queued requests (in-flight and completed are unaffected)

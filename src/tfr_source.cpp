@@ -2,6 +2,7 @@
 
 #include "ephemeral_cache.hpp"
 #include "http_client.hpp"
+#include "wake_main.hpp"
 #include "xnotam_parser.hpp"
 
 #include <array>
@@ -481,6 +482,10 @@ namespace osect
             {
                 std::cerr << "tfr cache write failed: " << e.what() << "\n";
             }
+
+            // 6. Wake the main loop so poll_advance() observes the swap
+            //    promptly instead of waiting for the next input event.
+            wake_main_thread();
         }
         catch(const std::exception& e)
         {

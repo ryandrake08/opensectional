@@ -2,6 +2,7 @@
 
 #include "flight_route.hpp"  // route_parse_error
 #include "route_planner.hpp"
+#include "wake_main.hpp"
 
 #include <atomic>
 #include <thread>
@@ -40,6 +41,7 @@ namespace osect
             try { d.result = d.planner.expand_sigils(text, opts); }
             catch(const std::exception& e) { d.error = e.what(); }
             d.done = true;
+            wake_main_thread();
         });
     }
 
