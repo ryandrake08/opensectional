@@ -466,7 +466,6 @@ endif()
 # regenerate them via tools/ before running `cpack`.
 set(BUNDLED_DB      "${CMAKE_SOURCE_DIR}/osect.db")
 set(BUNDLED_BASEMAP "${CMAKE_SOURCE_DIR}/basemap")
-set(BUNDLED_INI     "${CMAKE_SOURCE_DIR}/osect.ini")
 
 set(ICON_PNG            "${CMAKE_SOURCE_DIR}/osect.png")
 set(INSTALLER_ICON_ICNS "${CMAKE_BINARY_DIR}/osect.icns")
@@ -568,7 +567,6 @@ if(APPLE)
     # Bundled assets go into Contents/Resources/ alongside the icon
     set(_rsrc "OpenSectional.app/Contents/Resources")
     install(FILES "${BUNDLED_DB}"  DESTINATION "${_rsrc}")
-    install(FILES "${BUNDLED_INI}" DESTINATION "${_rsrc}")
     install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION "${_rsrc}")
 
     # Bundle MoltenVK so the .app's Vulkan backend works on a fresh Mac
@@ -643,7 +641,6 @@ if(APPLE)
 
     _require_asset("${BUNDLED_DB}")
     _require_asset("${BUNDLED_BASEMAP}")
-    _require_asset("${BUNDLED_INI}")
     include(CPack)
 
 elseif(WIN32)
@@ -657,7 +654,6 @@ elseif(WIN32)
     # alongside the executable). No bin/ subdir, which is a Unix-ism.
     install(TARGETS osect RUNTIME DESTINATION .)
     install(FILES "${BUNDLED_DB}"  DESTINATION .)
-    install(FILES "${BUNDLED_INI}" DESTINATION .)
     install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION .)
 
     # MinGW runtime DLLs (SDL3/SDL3_image/SDL3_ttf/sqlite3 are statically
@@ -709,6 +705,5 @@ elseif(WIN32)
 
     _require_asset("${BUNDLED_DB}")
     _require_asset("${BUNDLED_BASEMAP}")
-    _require_asset("${BUNDLED_INI}")
     include(CPack)
 endif()

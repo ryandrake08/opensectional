@@ -115,9 +115,31 @@ ini_config::cache_type::iterator ini_config::find(const std::string& section_dot
     return key_it;
 }
 
-// construction
-ini_config::ini_config(const std::string& filename) : filename(filename), cache(ini_config::parse(std::ifstream(filename))), needs_sync(false)
+ini_config::ini_config() : needs_sync(false)
 {
+}
+
+namespace
+{
+    std::ifstream open_or_throw(const std::string& filename)
+    {
+        std::ifstream in(filename);
+        if(!in.good())
+            throw std::runtime_error("ini_config: cannot open " + filename);
+        return in;
+    }
+}
+
+ini_config::ini_config(const std::string& filename) : filename(filename), cache(ini_config::parse(open_or_throw(filename))), needs_sync(false)
+{
+}
+
+void ini_config::merge(const ini_config& other)
+{
+    for(const auto& kv : other.cache)
+    {
+        this->cache[kv.first].value = kv.second.value;
+    }
 }
 
 // get value for section.key

@@ -42,8 +42,18 @@ private:
     cache_type::iterator find(const std::string& section_dot_key);
 
 public:
-    // construction
+    // Empty config — every exists() returns false. Used by callers that
+    // want to apply pure code defaults with no override layer.
+    ini_config();
+
+    // Load from disk. Throws if the file is unreadable.
     explicit ini_config(const std::string& filename);
+
+    // Overlay another config on top of this one. Keys present in
+    // `other` overwrite keys here; keys absent in `other` are
+    // preserved. Used to cascade override layers (bundled → user →
+    // explicit). Observers are not transferred.
+    void merge(const ini_config& other);
 
     // get value for section.key
     template<typename T>

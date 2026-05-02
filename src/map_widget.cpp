@@ -3,6 +3,7 @@
 #include "feature_type.hpp"
 #include "feature_renderer.hpp"
 #include "geo_math.hpp"
+#include "ini_config.hpp"
 #include "label_renderer.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
@@ -264,7 +265,7 @@ struct map_widget::impl : public sdl::event_listener
     double cursor_last_y = 0;
 
     impl(sdl::device& dev, const char* tile_path,
-         const char* db_path, const char* conf_path,
+         const char* db_path, const ini_config& ini,
          osect::ephemeral_data& eph,
          int viewport_width, int viewport_height)
         : dev(dev)
@@ -289,11 +290,11 @@ struct map_widget::impl : public sdl::event_listener
               ? std::make_unique<osect::tile_renderer>(dev, tile_path)
               : nullptr)
         , features(dev, db_path,
-              osect::chart_style(conf_path, osect::chart_mode::vfr), eph)
+              osect::chart_style(ini, osect::chart_mode::vfr), eph)
         , labels(dev)
         , pick_db(db_path)
         , eph(eph)
-        , styles(conf_path, osect::chart_mode::vfr)
+        , styles(ini, osect::chart_mode::vfr)
         , feature_types(osect::make_feature_types())
     {
         set_viewport(viewport_width, viewport_height);
@@ -922,10 +923,10 @@ struct map_widget::impl : public sdl::event_listener
 };
 
 map_widget::map_widget(sdl::device& dev, const char* tile_path,
-                       const char* db_path, const char* conf_path,
+                       const char* db_path, const ini_config& ini,
                        osect::ephemeral_data& eph,
                        int viewport_width, int viewport_height)
-    : pimpl(std::make_shared<impl>(dev, tile_path, db_path, conf_path,
+    : pimpl(std::make_shared<impl>(dev, tile_path, db_path, ini,
                                     eph, viewport_width, viewport_height))
 {
 }
