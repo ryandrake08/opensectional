@@ -17,7 +17,6 @@ namespace osect
 
         explicit impl(bool offline)
             : http(offline)
-            , cache()
             , tfrs(http, cache)
         {
         }

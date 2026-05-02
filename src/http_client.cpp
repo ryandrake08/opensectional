@@ -15,12 +15,20 @@ namespace osect
         // explicitly documented as risky in mixed-library processes
         // (see CURLOPT_NOSIGNAL and the curl_global_init manpage), so
         // we never call it — process exit handles release.
-        std::once_flag global_init_flag;
         void ensure_global_init()
         {
+            static std::once_flag global_init_flag;
             std::call_once(global_init_flag, []() {
                 curl_global_init(CURL_GLOBAL_DEFAULT);
             });
+        }
+
+        CURL* make_curl_handle()
+        {
+            ensure_global_init();
+            CURL* c = curl_easy_init();
+            if(!c) throw std::runtime_error("curl_easy_init failed");
+            return c;
         }
 
         size_t write_body_cb(char* ptr, size_t size, size_t nmemb,
@@ -63,11 +71,10 @@ namespace osect
         CURL* curl = nullptr;
         bool offline = false;
 
-        explicit impl(bool offline_) : offline(offline_)
+        explicit impl(bool offline_)
+            : curl(make_curl_handle())
+            , offline(offline_)
         {
-            ensure_global_init();
-            curl = curl_easy_init();
-            if(!curl) throw std::runtime_error("curl_easy_init failed");
         }
         ~impl()
         {
@@ -75,6 +82,8 @@ namespace osect
         }
         impl(const impl&) = delete;
         impl& operator=(const impl&) = delete;
+        impl(impl&&) = delete;
+        impl& operator=(impl&&) = delete;
     };
 
     http_client::http_client(bool offline) : pimpl(std::make_unique<impl>(offline)) {}
