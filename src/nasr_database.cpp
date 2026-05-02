@@ -551,8 +551,8 @@ namespace osect
                 FROM APT_BASE
                 WHERE FACILITY_USE_CODE = 'PU'
                   AND ARPT_STATUS = 'O'
-                  AND lat != 0
-                  AND lon != 0
+                  AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != ''
+                  AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''
             )", 5))
 
             , stmt_load_routable_navaids(prepare_checked(db, R"(
@@ -565,8 +565,8 @@ namespace osect
                       'TACAN', 'VOT', 'FAN MARKER',
                       'MARINE NDB', 'MARINE NDB/DME',
                       'CONSOLAN', 'UHF/NDB')
-                  AND lat != 0
-                  AND lon != 0
+                  AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != ''
+                  AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''
             )", 5))
 
             , stmt_load_routable_fixes(prepare_checked(db, R"(
@@ -575,8 +575,8 @@ namespace osect
                        CAST(LONG_DECIMAL AS REAL) AS lon
                 FROM FIX_BASE
                 WHERE FIX_USE_CODE NOT IN ('MW', 'NRS', 'RADAR')
-                  AND lat != 0
-                  AND lon != 0
+                  AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != ''
+                  AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''
             )", 5))
 
             , stmt_load_airway_edges(prepare_checked(db, R"(
@@ -872,16 +872,14 @@ namespace osect
                   s.column_int(6), s.column_text(7),
                   s.column_int(8), s.column_text(9), {}};
 
-            // Load shape polygon for shape-defined entries
-            if (m.lat == 0.0)
+            // Shape-defined MAAs have rows in MAA_SHP; point/radius MAAs
+            // do not. m.shape stays empty for the latter.
+            d.stmt_maa_shape.reset();
+            d.stmt_maa_shape.bind(1, m.maa_id);
+            while (d.stmt_maa_shape.step())
             {
-                d.stmt_maa_shape.reset();
-                d.stmt_maa_shape.bind(1, m.maa_id);
-                while (d.stmt_maa_shape.step())
-                {
-                    m.shape.push_back({d.stmt_maa_shape.column_double(1),
-                                       d.stmt_maa_shape.column_double(0)});
-                }
+                m.shape.push_back({d.stmt_maa_shape.column_double(1),
+                                   d.stmt_maa_shape.column_double(0)});
             }
             return m;
         });
@@ -1355,25 +1353,40 @@ namespace osect
         const auto& entity_type = hit.entity_type;
         auto entity_rowid = hit.entity_rowid;
         // Per-type SQL. Point entities return a degenerate bbox built from
-        // the source table's lat/lon columns; areal entities read their
-        // BASE_RTREE; line entities (AWY/MTR) aggregate over their segment
-        // tables. Prepared on demand — search navigation happens at click
-        // rate, so compile cost is negligible.
+        // the source table's lat/lon columns and skip rows with missing
+        // coords via NULL/empty filters; areal entities read their
+        // BASE_RTREE (which by construction has no NULL bounds); line
+        // entities (AWY/MTR) aggregate over their segment tables and use
+        // HAVING to drop empty aggregations. Prepared on demand — search
+        // navigation happens at click rate, so compile cost is negligible.
         const char* sql = nullptr;
         if(entity_type == "APT")
-            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM APT_BASE WHERE rowid = ?1";
+            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM APT_BASE "
+                  "WHERE rowid = ?1 AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != '' "
+                  "AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''";
         else if(entity_type == "NAV")
-            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM NAV_BASE WHERE rowid = ?1";
+            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM NAV_BASE "
+                  "WHERE rowid = ?1 AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != '' "
+                  "AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''";
         else if(entity_type == "FIX")
-            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM FIX_BASE WHERE rowid = ?1";
+            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM FIX_BASE "
+                  "WHERE rowid = ?1 AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != '' "
+                  "AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''";
         else if(entity_type == "FSS")
-            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM FSS_BASE WHERE rowid = ?1";
+            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM FSS_BASE "
+                  "WHERE rowid = ?1 AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != '' "
+                  "AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''";
         else if(entity_type == "AWOS")
-            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM AWOS WHERE rowid = ?1";
+            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM AWOS "
+                  "WHERE rowid = ?1 AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != '' "
+                  "AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''";
         else if(entity_type == "COM")
-            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM COM WHERE rowid = ?1";
+            sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM COM "
+                  "WHERE rowid = ?1 AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != '' "
+                  "AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''";
         else if(entity_type == "PJA")
-            sql = "SELECT LON, LON, LAT, LAT FROM PJA_BASE WHERE rowid = ?1";
+            sql = "SELECT LON, LON, LAT, LAT FROM PJA_BASE "
+                  "WHERE rowid = ?1 AND LAT IS NOT NULL AND LON IS NOT NULL";
         else if(entity_type == "SUA")
             sql = "SELECT min_lon, max_lon, min_lat, max_lat FROM SUA_BASE_RTREE WHERE id = ?1";
         else if(entity_type == "CLS")
@@ -1384,10 +1397,12 @@ namespace osect
             sql = "SELECT min_lon, max_lon, min_lat, max_lat FROM ADIZ_BASE_RTREE WHERE id = ?1";
         else if(entity_type == "AWY")
             sql = "SELECT MIN(FROM_LON), MAX(FROM_LON), MIN(FROM_LAT), MAX(FROM_LAT) "
-                  "FROM AWY_SEG WHERE AWY_ID = (SELECT AWY_ID FROM AWY_BASE WHERE rowid = ?1)";
+                  "FROM AWY_SEG WHERE AWY_ID = (SELECT AWY_ID FROM AWY_BASE WHERE rowid = ?1) "
+                  "HAVING MIN(FROM_LON) IS NOT NULL";
         else if(entity_type == "MTR")
             sql = "SELECT MIN(FROM_LON), MAX(FROM_LON), MIN(FROM_LAT), MAX(FROM_LAT) "
-                  "FROM MTR_SEG WHERE MTR_ID = (SELECT ROUTE_ID FROM MTR_BASE WHERE rowid = ?1)";
+                  "FROM MTR_SEG WHERE MTR_ID = (SELECT ROUTE_ID FROM MTR_BASE WHERE rowid = ?1) "
+                  "HAVING MIN(FROM_LON) IS NOT NULL";
 
         if(!sql) return std::nullopt;
 
@@ -1397,15 +1412,12 @@ namespace osect
         stmt.bind(1, entity_rowid);
         if(!stmt.step()) return std::nullopt;
 
-        geo_bbox bb{
+        return geo_bbox{
             stmt.column_double(0),
             stmt.column_double(2),
             stmt.column_double(1),
             stmt.column_double(3)
         };
-        if(bb.lon_min == 0 && bb.lon_max == 0 && bb.lat_min == 0 && bb.lat_max == 0)
-            return std::nullopt;  // null/missing coords
-        return bb;
     }
 
     std::vector<airport> nasr_database::lookup_airports(const std::string& id) const

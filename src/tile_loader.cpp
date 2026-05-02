@@ -1,6 +1,7 @@
 #include "tile_loader.hpp"
 #include <condition_variable>
 #include <deque>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <sdl/surface.hpp>
@@ -47,8 +48,9 @@ namespace osect
                 {
                     surf = std::make_unique<sdl::surface>(req.path.c_str());
                 }
-                catch(...)
+                catch(const std::exception& e)
                 {
+                    std::cerr << "tile load failed: " << e.what() << "\n";
                     std::lock_guard<std::mutex> lock(mutex);
                     pending_set.erase(req.key);
                     failed_set.insert(req.key);
