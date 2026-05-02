@@ -185,6 +185,95 @@ def _parse_date_loose(s):
     return None
 
 
+def normalize_iso_date(s):
+    """Normalize an FAA date column value to an ISO 8601 string.
+
+    The osect.db convention is that every date-bearing column stores
+    ISO 8601, with the precision the source actually provides preserved
+    (a YYYY/MM activation date stays YYYY-MM rather than getting padded
+    to a fake day). Handles every form the ingest pipeline encounters:
+
+      "2026/04/16"   → "2026-04-16"   (NASR full date)
+      "2026/04"      → "2026-04"      (NASR partial — APT_BASE.ACTIVATION_DATE)
+      "2026"         → "2026"         (year only)
+      "2014138"      → "2014-05-18"   (DOF Julian YYYYJJJ)
+      "2026-04-16"   → "2026-04-16"   (already ISO; pass through)
+      "2026-04"      → "2026-04"      (idempotent)
+      "" / None      → None
+
+    Returns None for unrecognized or invalid input — FAA data is the
+    project's outer boundary, where we drop the field rather than
+    aborting the whole build.
+    """
+    if s is None:
+        return None
+    s = str(s).strip()
+    if not s:
+        return None
+
+    # Already ISO. Validate only the full-date form via fromisoformat.
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        try:
+            datetime.date.fromisoformat(s)
+            return s
+        except ValueError:
+            return None
+    if re.fullmatch(r"\d{4}-\d{2}", s):
+        if 1 <= int(s[5:7]) <= 12:
+            return s
+        return None
+    if re.fullmatch(r"\d{4}", s):
+        return s
+
+    # NASR slash forms.
+    m = re.fullmatch(r"(\d{4})/(\d{2})/(\d{2})", s)
+    if m:
+        try:
+            return datetime.date(int(m[1]), int(m[2]), int(m[3])).isoformat()
+        except ValueError:
+            return None
+    m = re.fullmatch(r"(\d{4})/(\d{2})", s)
+    if m:
+        if 1 <= int(m[2]) <= 12:
+            return f"{int(m[1]):04d}-{int(m[2]):02d}"
+        return None
+
+    # DOF Julian YYYYJJJ (year + day-of-year).
+    m = re.fullmatch(r"(\d{4})(\d{3})", s)
+    if m:
+        y, doy = int(m[1]), int(m[2])
+        try:
+            d = datetime.date(y, 1, 1) + datetime.timedelta(days=doy - 1)
+            if d.year != y:  # day-of-year overflow into next year
+                return None
+            return d.isoformat()
+        except (ValueError, OverflowError):
+            return None
+
+    return None
+
+
+def normalize_date_column(conn, table, column):
+    """Rewrite a TEXT date column from raw FAA forms to ISO 8601 in-place.
+
+    Apply once after `import_csv` for every column that carries a date.
+    Values that fail to parse become NULL — see `normalize_iso_date`.
+    """
+    rows = conn.execute(
+        f"SELECT rowid, \"{column}\" FROM \"{table}\" "
+        f"WHERE \"{column}\" IS NOT NULL AND \"{column}\" != ''"
+    ).fetchall()
+    updates = []
+    for rowid, raw in rows:
+        iso = normalize_iso_date(raw)
+        if iso != raw:
+            updates.append((iso, rowid))
+    if updates:
+        conn.executemany(
+            f"UPDATE \"{table}\" SET \"{column}\" = ? WHERE rowid = ?",
+            updates)
+
+
 def write_meta(conn, name, *, kind="static",
                effective=None, expires=None, info=""):
     """Upsert a META row for one data source.

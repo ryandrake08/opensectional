@@ -19,8 +19,8 @@ import zipfile
 from collections import defaultdict
 
 from build_common import (
-    _parse_date_loose, handle_antimeridian, open_output_db,
-    subdivide_ring, write_meta,
+    _parse_date_loose, handle_antimeridian, normalize_date_column,
+    open_output_db, subdivide_ring, write_meta,
 )
 
 
@@ -134,6 +134,7 @@ def build_apt(conn, csv_zf):
         "FUEL_TYPES", "LGT_SKED", "BCN_LGT_SKED",
         "TWR_TYPE_CODE", "ICAO_ID",
     ])
+    normalize_date_column(conn, "APT_BASE", "ACTIVATION_DATE")
 
     # R-tree index on lat/lon
     conn.execute("""
@@ -941,6 +942,7 @@ def build_dp(conn, csv_zf):
         "DP_NAME", "AMENDMENT_NO", "ARTCC", "DP_AMEND_EFF_DATE",
         "RNAV_FLAG", "DP_COMPUTER_CODE", "GRAPHICAL_DP_TYPE", "SERVED_ARPT",
     ])
+    normalize_date_column(conn, "DP_BASE", "DP_AMEND_EFF_DATE")
     conn.execute("CREATE INDEX idx_dp_base ON DP_BASE(DP_COMPUTER_CODE)")
 
     import_csv(conn, "DP_APT", csv_zf, "DP_APT.csv", [
@@ -965,6 +967,7 @@ def build_star(conn, csv_zf):
         "ARRIVAL_NAME", "AMENDMENT_NO", "ARTCC", "STAR_AMEND_EFF_DATE",
         "RNAV_FLAG", "STAR_COMPUTER_CODE", "SERVED_ARPT",
     ])
+    normalize_date_column(conn, "STAR_BASE", "STAR_AMEND_EFF_DATE")
     conn.execute("CREATE INDEX idx_star_base ON STAR_BASE(STAR_COMPUTER_CODE)")
 
     import_csv(conn, "STAR_APT", csv_zf, "STAR_APT.csv", [
@@ -1123,6 +1126,7 @@ def build_awos(conn, csv_zf):
         "PHONE_NO", "SECOND_PHONE_NO",
         "SITE_NO", "SITE_TYPE_CODE", "REMARK",
     ])
+    normalize_date_column(conn, "AWOS", "COMMISSIONED_DATE")
     conn.execute("CREATE INDEX idx_awos_site_no ON AWOS(SITE_NO)")
 
     # R-tree spatial index for viewport queries
