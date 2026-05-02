@@ -2026,7 +2026,7 @@ namespace osect
                         ls, ctx.mx_offset);
                     is_area = true;
                 }
-                else if(m.lat != 0.0 && point_vis)
+                else if(point_vis)
                 {
                     auto cx = lon_to_mx(m.lon) + ctx.mx_offset;
                     auto cy = lat_to_my(m.lat);

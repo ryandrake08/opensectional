@@ -495,41 +495,41 @@ def build_maa(conn, csv_zf):
         "MAX_ALT", "MIN_ALT",
     ])
 
-    # Import shape points and convert DMS to decimal
+    # Import shape points and convert DMS to decimal. Rows whose DMS
+    # cannot be parsed are skipped entirely rather than carrying a (0,0)
+    # placeholder, so any (lat, lon) in MAA_SHP is real shape data.
     import_csv(conn, "MAA_SHP_RAW", csv_zf, "MAA_SHP.csv", [
         "MAA_ID", "POINT_SEQ", "LATITUDE", "LONGITUDE",
     ])
 
     conn.execute("""
-        CREATE TABLE MAA_SHP AS
-        SELECT MAA_ID,
-               CAST(POINT_SEQ AS INTEGER) AS POINT_SEQ,
-               LATITUDE AS LAT_DMS,
-               LONGITUDE AS LON_DMS,
-               0.0 AS LAT_DECIMAL,
-               0.0 AS LON_DECIMAL
-        FROM MAA_SHP_RAW
+        CREATE TABLE MAA_SHP (
+            MAA_ID TEXT,
+            POINT_SEQ INTEGER,
+            LAT_DECIMAL REAL,
+            LON_DECIMAL REAL
+        )
     """)
-    conn.execute("DROP TABLE MAA_SHP_RAW")
-
-    cursor = conn.execute("SELECT rowid, LAT_DMS, LON_DMS FROM MAA_SHP")
-    updates = []
-    for row in cursor:
-        lat = parse_dms(row[1])
-        lon = parse_dms(row[2])
+    inserts = []
+    for maa_id, seq, lat_dms, lon_dms in conn.execute(
+            "SELECT MAA_ID, CAST(POINT_SEQ AS INTEGER), LATITUDE, LONGITUDE "
+            "FROM MAA_SHP_RAW"):
+        lat = parse_dms(lat_dms)
+        lon = parse_dms(lon_dms)
         if lat is not None and lon is not None:
-            updates.append((lat, lon, row[0]))
+            inserts.append((maa_id, seq, lat, lon))
     conn.executemany(
-        "UPDATE MAA_SHP SET LAT_DECIMAL = ?, LON_DECIMAL = ? WHERE rowid = ?",
-        updates)
-    print(f"  MAA_SHP: {len(updates)} shape points converted")
+        "INSERT INTO MAA_SHP (MAA_ID, POINT_SEQ, LAT_DECIMAL, LON_DECIMAL) "
+        "VALUES (?, ?, ?, ?)", inserts)
+    conn.execute("DROP TABLE MAA_SHP_RAW")
+    print(f"  MAA_SHP: {len(inserts)} shape points converted")
 
     # Reorder shape points into convex hull winding order.
     # FAA data stores quad vertices in arbitrary order (often as opposite
     # corner pairs), causing bowtie rendering artifacts.
     rows = conn.execute(
         "SELECT MAA_ID, POINT_SEQ, LAT_DECIMAL, LON_DECIMAL FROM MAA_SHP "
-        "WHERE LAT_DECIMAL != 0.0 ORDER BY MAA_ID, POINT_SEQ").fetchall()
+        "ORDER BY MAA_ID, POINT_SEQ").fetchall()
 
     by_id = {}
     for maa_id, seq, lat, lon in rows:
@@ -591,7 +591,10 @@ def build_maa(conn, csv_zf):
             return int(s[:-3]), "MSL"
         return 0, ""
 
-    # Build MAA_BASE with parsed coordinates and altitudes
+    # Build MAA_BASE with parsed coordinates and altitudes. LAT/LON are
+    # NULL for shape-defined MAAs (no center point); the C++ side detects
+    # shape MAAs by joining to MAA_SHP rather than by checking a coord
+    # sentinel.
     conn.execute("""
         CREATE TABLE MAA_BASE AS
         SELECT
@@ -600,8 +603,8 @@ def build_maa(conn, csv_zf):
             MAA_NAME AS NAME,
             LATITUDE AS LAT_DMS,
             LONGITUDE AS LON_DMS,
-            0.0 AS LAT,
-            0.0 AS LON,
+            CAST(NULL AS REAL) AS LAT,
+            CAST(NULL AS REAL) AS LON,
             CASE WHEN MAA_RADIUS IS NOT NULL AND TRIM(MAA_RADIUS) != ''
                  THEN CAST(MAA_RADIUS AS REAL) ELSE 0.0 END AS RADIUS_NM,
             0 AS MAX_ALT_FT,
@@ -639,18 +642,19 @@ def build_maa(conn, csv_zf):
     conn.execute("ALTER TABLE MAA_BASE DROP COLUMN LON_DMS")
 
     total = conn.execute("SELECT COUNT(*) FROM MAA_BASE").fetchone()[0]
-    pts = conn.execute("SELECT COUNT(*) FROM MAA_BASE WHERE LAT != 0.0").fetchone()[0]
+    pts = conn.execute("SELECT COUNT(*) FROM MAA_BASE WHERE LAT IS NOT NULL").fetchone()[0]
     shps = total - pts
     print(f"  MAA_BASE: {total} areas ({pts} point/radius, {shps} shape-defined)")
 
-    # R-tree: point-based use their coordinates, shape-based use MAA_SHP bbox
+    # R-tree: point-based MAAs use their coordinates; shape-based MAAs
+    # (LAT IS NULL) use the bounding box of their MAA_SHP polygon.
     conn.execute("""
         CREATE VIRTUAL TABLE MAA_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
         )
     """)
     maa_point_rows = conn.execute(
-        "SELECT rowid, LON, LAT, RADIUS_NM FROM MAA_BASE WHERE LAT != 0.0"
+        "SELECT rowid, LON, LAT, RADIUS_NM FROM MAA_BASE WHERE LAT IS NOT NULL"
     ).fetchall()
     conn.executemany(
         "INSERT INTO MAA_BASE_RTREE (id, min_lon, max_lon, min_lat, max_lat) "
@@ -663,7 +667,7 @@ def build_maa(conn, csv_zf):
                MIN(s.LAT_DECIMAL), MAX(s.LAT_DECIMAL)
         FROM MAA_BASE b
         JOIN MAA_SHP s ON s.MAA_ID = b.MAA_ID
-        WHERE b.LAT = 0.0 AND s.LAT_DECIMAL != 0.0
+        WHERE b.LAT IS NULL
         GROUP BY b.rowid
     """)
 
