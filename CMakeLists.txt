@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
-project(osect CXX)
+project(osect C CXX)
 
 # Package metadata (used by CPack on both platforms and by the macOS bundle)
 set(MAJOR_VERSION "0")
@@ -20,60 +20,188 @@ else()
     set(RELWITHDEBINFO_COMPILE_OPTIONS -O2 -g -pg)
 endif()
 
-# Find SDL3 (system-installed)
-find_package(SDL3 REQUIRED CONFIG)
-find_package(SDL3_image REQUIRED CONFIG)
-find_package(SDL3_ttf REQUIRED CONFIG)
 find_package(Threads REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SQLITE3 REQUIRED sqlite3)
-pkg_check_modules(CURL REQUIRED libcurl)
 
-# Distribution builds (universal macOS, mingw cross) link curl
-# statically and need its private dependencies pulled in via
-# Libs.private (zlib, openssl, idn2, …). Native dev builds link the
-# system shared libcurl, which carries those dependencies internally
-# via DT_NEEDED — pulling them in here triggers spurious
-# `-lunistring`/`-lgpg-error` lookups on Linux/Alpine where those
-# transitive packages aren't installed individually. The toolchain
-# files for the distribution targets set this ON; default is OFF.
-option(OSECT_CURL_STATIC "Link libcurl statically with its Libs.private dependencies" OFF)
+# OSECT_VENDOR_DEPS — when ON, every dependency is built from the
+# in-tree submodules + amalgamation tarballs under thirdparty/. When
+# OFF (the default for contributor builds), each dep is resolved
+# against system packages via find_package, and the submodules can
+# stay un-initialized. The per-platform package scripts in tools/
+# (build-macos-package.sh, build-mingw-package.sh) flip this ON for
+# release builds where we ship a self-contained binary.
+option(OSECT_VENDOR_DEPS "Build dependencies from vendored submodules instead of using system packages" OFF)
 
-if(OSECT_CURL_STATIC)
-    set(_CURL_LIBRARIES        "${CURL_STATIC_LIBRARIES}")
-    set(_CURL_LIBRARY_DIRS     "${CURL_STATIC_LIBRARY_DIRS}")
-    set(_CURL_LDFLAGS_OTHER    "${CURL_STATIC_LDFLAGS_OTHER}")
-    set(_CURL_INCLUDE_DIRS     "${CURL_STATIC_INCLUDE_DIRS}")
-    set(_CURL_CFLAGS_OTHER     "${CURL_STATIC_CFLAGS_OTHER}")
+if(OSECT_VENDOR_DEPS)
+    # Vendored mode is only used by the macOS and MinGW package scripts.
+    # On Linux native, curl's OpenSSL probe fails inside CMake try_compile
+    # because our ZLIB::ZLIB ALIAS target cannot be reproduced in the
+    # sub-build (the underlying non-imported zlibstatic target isn't
+    # visible there). Linux has no installer story right now, so vendoring
+    # provides no benefit over the system-deps path. Refuse here with a
+    # helpful pointer rather than failing deep in curl's configure.
+    if(UNIX AND NOT APPLE AND NOT MINGW)
+        message(FATAL_ERROR
+            "OSECT_VENDOR_DEPS=ON is only supported on macOS and MinGW "
+            "(the platforms with a packaged release). On Linux, use the "
+            "default system-deps build:\n"
+            "  cmake -B build && cmake --build build -j\n"
+            "and install the dependency packages listed in the README.")
+    endif()
+
+    # The submodules and tarballs must be in place.
+    # tools/build-<platform>-package.sh runs `git submodule update --init`
+    # for the platform's subset before configuring, so this check fires
+    # only when someone enables OSECT_VENDOR_DEPS without that step.
+    set(_required_thirdparty SDL SDL_image SDL_ttf zlib curl)
+    foreach(_dep ${_required_thirdparty})
+        if(NOT EXISTS "${CMAKE_SOURCE_DIR}/thirdparty/${_dep}/CMakeLists.txt")
+            message(FATAL_ERROR
+                "thirdparty/${_dep} is empty. OSECT_VENDOR_DEPS=ON requires "
+                "all dependency submodules to be initialized — run the "
+                "appropriate tools/build-<platform>-package.sh script, or "
+                "`git submodule update --init thirdparty/${_dep}` manually.")
+        endif()
+    endforeach()
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/thirdparty/sqlite/sqlite3.c")
+        message(FATAL_ERROR
+            "thirdparty/sqlite/sqlite3.c is missing. OSECT_VENDOR_DEPS=ON "
+            "requires the SQLite amalgamation tarball to be downloaded — "
+            "the per-platform package scripts handle this automatically.")
+    endif()
+
+    # cmake/FindZLIB.cmake short-circuits curl's `find_package(ZLIB)` to
+    # the in-tree zlibstatic target so the arch matches the rest of the
+    # build (universal slicing on macOS, cross-compile on MinGW).
+    list(PREPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+
+    # SDL3 — static-only, Vulkan on. SDL_VULKAN=ON is the default but
+    # spelled out for explicitness across platforms.
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON  CACHE BOOL "" FORCE)
+    set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+    set(SDL_VULKAN ON CACHE BOOL "" FORCE)
+    add_subdirectory(thirdparty/SDL EXCLUDE_FROM_ALL)
+
+    # zlib — built in-tree as `zlibstatic`. Added before SDL_image and
+    # curl so any vendored library that calls `find_package(ZLIB)`
+    # (SDL_image's libtiff, libcurl) resolves through our FindZLIB shim.
+    # ZLIB_BUILD_EXAMPLES OFF skips the example binaries;
+    # ZLIB_BUILD_TESTING OFF skips registering zlib's example-as-tests
+    # with our top-level ctest.
+    set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(ZLIB_BUILD_TESTING  OFF CACHE BOOL "" FORCE)
+    add_subdirectory(thirdparty/zlib EXCLUDE_FROM_ALL)
+    if(NOT TARGET ZLIB::ZLIB)
+        add_library(ZLIB::ZLIB ALIAS zlibstatic)
+    endif()
+
+    # SDL3_image / SDL3_ttf — static, vendored decoders / vendored
+    # freetype+harfbuzz. AVIF/WebP off to keep the static .a small (we
+    # only load PNG tiles). SDLIMAGE_PNG_LIBPNG OFF routes PNG decoding
+    # through SDL_image's built-in stb_image rather than its vendored
+    # libpng — that skips SDL_image's separate vendored zlib (which
+    # would conflict with our top-level thirdparty/zlib).
+    set(BUILD_SHARED_LIBS    OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_VENDORED    ON  CACHE BOOL "" FORCE)
+    set(SDLIMAGE_AVIF        OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_WEBP        OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_PNG_LIBPNG  OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_TESTS       OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_SAMPLES     OFF CACHE BOOL "" FORCE)
+    add_subdirectory(thirdparty/SDL_image EXCLUDE_FROM_ALL)
+
+    set(SDLTTF_VENDORED ON CACHE BOOL "" FORCE)
+    set(SDLTTF_SAMPLES  OFF CACHE BOOL "" FORCE)
+    add_subdirectory(thirdparty/SDL_ttf EXCLUDE_FROM_ALL)
+
+    # libcurl — Schannel on Windows, SecureTransport on macOS. Other
+    # protocol/feature surface beyond HTTPS is disabled to keep the
+    # static archive small and the configure surface narrow.
+    set(BUILD_CURL_EXE      OFF CACHE BOOL "" FORCE)
+    set(BUILD_STATIC_LIBS   ON  CACHE BOOL "" FORCE)
+    set(BUILD_LIBCURL_DOCS  OFF CACHE BOOL "" FORCE)
+    # Curl reads the global BUILD_TESTING; if we forced it OFF in
+    # cache, our own option() call below would see the cached value
+    # and skip osect's test suite. Save the caller's setting now and
+    # restore it after curl's add_subdirectory, so curl's tests stay
+    # off but ours stay under user control.
+    set(_osect_saved_build_testing "${BUILD_TESTING}")
+    set(BUILD_TESTING       OFF CACHE BOOL "" FORCE)
+    # We never install or export-target curl from osect's build — it
+    # links statically into the osect binary. Disabling install/export
+    # avoids the "target X requires Y that is not in any export set"
+    # diagnostic when curl's export references zlibstatic.
+    set(CURL_DISABLE_INSTALL      ON  CACHE BOOL "" FORCE)
+    set(CURL_ENABLE_EXPORT_TARGET OFF CACHE BOOL "" FORCE)
+    set(CURL_USE_LIBPSL     OFF CACHE BOOL "" FORCE)
+    set(CURL_USE_LIBSSH2    OFF CACHE BOOL "" FORCE)
+    set(CURL_USE_LIBSSH     OFF CACHE BOOL "" FORCE)
+    set(USE_LIBIDN2         OFF CACHE BOOL "" FORCE)
+    set(CURL_USE_GSSAPI     OFF CACHE BOOL "" FORCE)
+    set(USE_LIBRTMP         OFF CACHE BOOL "" FORCE)
+    set(USE_NGHTTP2         OFF CACHE BOOL "" FORCE)
+    set(CURL_BROTLI         OFF CACHE BOOL "" FORCE)
+    set(CURL_ZSTD           OFF CACHE BOOL "" FORCE)
+    set(CURL_ZLIB           ON  CACHE STRING "" FORCE)
+    set(CURL_DISABLE_LDAP   ON  CACHE BOOL "" FORCE)
+    set(CURL_DISABLE_LDAPS  ON  CACHE BOOL "" FORCE)
+    set(CURL_DISABLE_RTSP   ON  CACHE BOOL "" FORCE)
+    set(CURL_DISABLE_DICT   ON  CACHE BOOL "" FORCE)
+    set(CURL_DISABLE_TELNET ON  CACHE BOOL "" FORCE)
+    set(CURL_DISABLE_TFTP   ON  CACHE BOOL "" FORCE)
+    set(CURL_DISABLE_POP3   ON  CACHE BOOL "" FORCE)
+    set(CURL_DISABLE_IMAP   ON  CACHE BOOL "" FORCE)
+    set(CURL_DISABLE_SMTP   ON  CACHE BOOL "" FORCE)
+    set(CURL_DISABLE_SMB    ON  CACHE BOOL "" FORCE)
+    set(CURL_DISABLE_GOPHER ON  CACHE BOOL "" FORCE)
+    set(CURL_DISABLE_MQTT   ON  CACHE BOOL "" FORCE)
+    set(ENABLE_MANUAL       OFF CACHE BOOL "" FORCE)
+    set(PICKY_COMPILER      OFF CACHE BOOL "" FORCE)
+    if(APPLE)
+        set(CURL_USE_SECTRANSP ON  CACHE BOOL "" FORCE)
+        set(CURL_USE_OPENSSL   OFF CACHE BOOL "" FORCE)
+    elseif(WIN32)
+        set(CURL_USE_SCHANNEL  ON  CACHE BOOL "" FORCE)
+        set(CURL_USE_OPENSSL   OFF CACHE BOOL "" FORCE)
+    endif()
+    add_subdirectory(thirdparty/curl EXCLUDE_FROM_ALL)
+    # Restore BUILD_TESTING (see save above) so the osect tests block
+    # sees the caller's intent.
+    if(DEFINED _osect_saved_build_testing AND NOT "${_osect_saved_build_testing}" STREQUAL "")
+        set(BUILD_TESTING "${_osect_saved_build_testing}" CACHE BOOL "" FORCE)
+    else()
+        unset(BUILD_TESTING CACHE)
+    endif()
+
+    # SQLite amalgamation — single C file built into a static library.
+    # RTREE = spatial bbox queries; FTS5 = the search index built by
+    # tools/build_search.py. Both off by default in the amalgamation;
+    # we need them.
+    add_library(sqlite3 STATIC thirdparty/sqlite/sqlite3.c)
+    target_include_directories(sqlite3 PUBLIC ${CMAKE_SOURCE_DIR}/thirdparty/sqlite)
+    target_compile_definitions(sqlite3 PRIVATE
+        SQLITE_ENABLE_RTREE=1
+        SQLITE_ENABLE_FTS5=1)
+    target_compile_options(sqlite3 PRIVATE -O2)
+    add_library(SQLite::SQLite3 ALIAS sqlite3)
 else()
-    set(_CURL_LIBRARIES        "${CURL_LIBRARIES}")
-    set(_CURL_LIBRARY_DIRS     "${CURL_LIBRARY_DIRS}")
-    set(_CURL_LDFLAGS_OTHER    "${CURL_LDFLAGS_OTHER}")
-    set(_CURL_INCLUDE_DIRS     "${CURL_INCLUDE_DIRS}")
-    set(_CURL_CFLAGS_OTHER     "${CURL_CFLAGS_OTHER}")
+    # System mode (default for contributor builds). Each dependency
+    # comes from the host's package manager — apt, brew, pacman/MSYS2.
+    # Runtime links are dynamic. The submodules under thirdparty/ are
+    # not consulted and don't need to be initialized.
+    # SDL3 3.2 is the first stable line shipped in distros. The
+    # vendored submodule is pinned ahead of this for release builds,
+    # but contributors using system packages on Ubuntu/brew/MSYS2 get
+    # whatever stable point release the distro ships.
+    find_package(SDL3       3.2 REQUIRED CONFIG)
+    find_package(SDL3_image     REQUIRED CONFIG)
+    find_package(SDL3_ttf       REQUIRED CONFIG)
+    find_package(CURL           REQUIRED)
+    find_package(ZLIB           REQUIRED)
+    find_package(SQLite3        REQUIRED)
 endif()
 
-# pkg-config emits `-framework Foo` as two list items in the
-# `_LDFLAGS_OTHER` view. cmake's target_link_options would pass each
-# list element as its own linker arg, so `-framework` and `Foo`
-# arrive separately and clang treats `Foo` as a positional input
-# file. Glue each `-framework <name>` pair into one SHELL: token so
-# the two stay adjacent on the actual link line.
-set(CURL_LINK_OPTIONS)
-set(_curl_prev "")
-foreach(_flag IN LISTS _CURL_LDFLAGS_OTHER)
-    if(_curl_prev STREQUAL "-framework")
-        list(APPEND CURL_LINK_OPTIONS "SHELL:-framework ${_flag}")
-        set(_curl_prev "")
-    elseif(_flag STREQUAL "-framework")
-        set(_curl_prev "-framework")
-    else()
-        list(APPEND CURL_LINK_OPTIONS "${_flag}")
-        set(_curl_prev "")
-    endif()
-endforeach()
-
-# Third-party libraries
+# Third-party libraries (header-only / single-source vendored)
 add_subdirectory(thirdparty/imgui)
 
 # pugixml — vendored XML parser used by the XNOTAM (TFR / NOTAM) path.
@@ -200,8 +328,7 @@ add_library(sqlite_wrapper STATIC
 )
 target_compile_features(sqlite_wrapper PRIVATE cxx_std_11)
 target_include_directories(sqlite_wrapper PUBLIC ${CMAKE_SOURCE_DIR}/lib)
-target_link_libraries(sqlite_wrapper PUBLIC ${SQLITE3_LINK_LIBRARIES})
-target_include_directories(sqlite_wrapper PUBLIC ${SQLITE3_INCLUDE_DIRS})
+target_link_libraries(sqlite_wrapper PUBLIC SQLite::SQLite3)
 target_compile_options(sqlite_wrapper PRIVATE -Wall -Wextra)
 target_compile_options(sqlite_wrapper PRIVATE
     $<$<CONFIG:Debug>:${DEBUG_COMPILE_OPTIONS}>
@@ -246,37 +373,17 @@ if(MINGW)
     target_link_options(osect PRIVATE $<$<CONFIG:Release>:-mwindows>)
 endif()
 
-# Link libraries.
-#
-# libcurl is wired in via the pkg-config view selected above by
-# OSECT_CURL_STATIC. With OSECT_CURL_STATIC=ON (universal macOS,
-# mingw cross), the static view pulls in libcurl.a's `Libs.private`
-# dependencies — SecureTransport frameworks on macOS, schannel/winsock
-# on Windows, and the openssl/zlib/idn2/… cluster everywhere. With
-# OSECT_CURL_STATIC=OFF (native dev builds), we link the system
-# shared libcurl and its transitive deps come from DT_NEEDED.
-# `_LDFLAGS_OTHER` carries `-framework` pairs and other `-l`-less
-# linker flags; we pass it via target_link_options (after pairing
-# `-framework <name>` above) so cmake doesn't try to interpret
-# framework names as library lookups. `_LIBRARIES` and
-# `_LIBRARY_DIRS` carry the plain `-lcurl -lz` style entries that
-# target_link_libraries handles natively.
+# Link libraries. CURL::libcurl is the in-tree static libcurl whose
+# transitive deps (SecureTransport frameworks on macOS, Schannel /
+# winsock on Windows, zlibstatic everywhere) ride along through the
+# imported target's INTERFACE_LINK_LIBRARIES.
 target_link_libraries(osect PRIVATE
     imgui_wrapper
     sqlite_wrapper
     pugixml
     Threads::Threads
-    ${_CURL_LIBRARIES}
+    CURL::libcurl
 )
-target_link_directories(osect PRIVATE ${_CURL_LIBRARY_DIRS})
-target_link_options(osect PRIVATE ${CURL_LINK_OPTIONS})
-target_include_directories(osect PRIVATE ${_CURL_INCLUDE_DIRS})
-# `-DCURL_STATICLIB` lives in CURL_STATIC_CFLAGS_OTHER. Without it the
-# Windows curl header decorates exports with `__declspec(dllimport)`,
-# which the linker resolves as `__imp_curl_*` symbols that the static
-# archive doesn't provide. macOS/Linux silently tolerate the missing
-# define because their compilers ignore the dllimport attribute.
-target_compile_options(osect PRIVATE ${_CURL_CFLAGS_OTHER})
 
 # Embed font as C header
 find_program(XXD xxd REQUIRED)
@@ -468,45 +575,41 @@ if(APPLE)
     # with no Vulkan SDK / Homebrew installed. SDL3 searches
     # @executable_path/../Frameworks/libMoltenVK.dylib first when loading
     # Vulkan on macOS, so this just works once the file is in place.
-    # Source order: universal-deps build first (DMG distribution path);
-    # then Vulkan SDK and the package managers (native dev builds).
-    find_file(MOLTENVK_DYLIB libMoltenVK.dylib
-        PATHS
-            "${CMAKE_SOURCE_DIR}/macos-universal-deps/lib"
-            "$ENV{VULKAN_SDK}/lib"
-            "/opt/homebrew/lib"
-            "/usr/local/lib"
-            "/opt/local/lib"
-        NO_DEFAULT_PATH)
-    if(MOLTENVK_DYLIB)
-        message(STATUS "MoltenVK: bundling ${MOLTENVK_DYLIB}")
-        install(FILES "${MOLTENVK_DYLIB}"
-                DESTINATION "OpenSectional.app/Contents/Frameworks")
-        # Apache-2.0 requires shipping the LICENSE alongside the binary.
-        # Try the universal-deps copy first (placed there by build-macos-deps.sh);
-        # fall back to a couple of known package-manager locations.
-        find_file(MOLTENVK_LICENSE LICENSE
-            PATHS
-                "${CMAKE_SOURCE_DIR}/macos-universal-deps/share/doc/MoltenVK"
-                "/opt/homebrew/share/doc/molten-vk"
-                "/usr/local/share/doc/molten-vk"
-                "/opt/local/share/doc/MoltenVK"
-            NO_DEFAULT_PATH)
-        if(MOLTENVK_LICENSE)
-            install(FILES "${MOLTENVK_LICENSE}"
-                    DESTINATION "${_rsrc}"
-                    RENAME "LICENSE-MoltenVK.txt")
+    # MoltenVK ships as a precompiled universal (arm64+x86_64) dylib via
+    # the binary tarball that tools/build-macos-package.sh extracts into
+    # thirdparty/MoltenVK/. Layout has shifted across releases (v1.2.x
+    # used .xcframework/macos-arm64_x86_64/; v1.3.x uses
+    # dynamic/dylib/macOS/), so glob for the dylib rather than hard-code
+    # a path. file(GLOB) re-runs each configure, picking up a newer
+    # release if the package script updates the pin.
+    # Gated on OSECT_VENDOR_DEPS — dev builds use Homebrew/MacPorts
+    # MoltenVK (or the runtime Vulkan loader); only the package flow
+    # extracts the MoltenVK tarball into thirdparty/MoltenVK/.
+    if(OSECT_VENDOR_DEPS)
+        file(GLOB_RECURSE MOLTENVK_DYLIB
+            "${CMAKE_SOURCE_DIR}/thirdparty/MoltenVK/*/libMoltenVK.dylib")
+        list(GET MOLTENVK_DYLIB 0 MOLTENVK_DYLIB)
+        if(MOLTENVK_DYLIB AND EXISTS "${MOLTENVK_DYLIB}")
+            message(STATUS "MoltenVK: bundling ${MOLTENVK_DYLIB}")
+            install(FILES "${MOLTENVK_DYLIB}"
+                    DESTINATION "OpenSectional.app/Contents/Frameworks")
+            # Apache-2.0 requires shipping the LICENSE alongside the binary.
+            file(GLOB_RECURSE MOLTENVK_LICENSE
+                "${CMAKE_SOURCE_DIR}/thirdparty/MoltenVK/*/LICENSE")
+            list(GET MOLTENVK_LICENSE 0 MOLTENVK_LICENSE)
+            if(MOLTENVK_LICENSE AND EXISTS "${MOLTENVK_LICENSE}")
+                install(FILES "${MOLTENVK_LICENSE}"
+                        DESTINATION "${_rsrc}"
+                        RENAME "LICENSE-MoltenVK.txt")
+            else()
+                message(WARNING "MoltenVK LICENSE not found alongside the dylib in "
+                    "thirdparty/MoltenVK/. Apache-2.0 requires shipping it.")
+            endif()
         else()
-            message(WARNING "MoltenVK LICENSE not found alongside the dylib; "
-                "Apache-2.0 requires shipping it. Either install MoltenVK via a "
-                "channel that includes LICENSE next to the dylib, or add the file "
-                "manually to Contents/Resources/LICENSE-MoltenVK.txt.")
+            message(FATAL_ERROR "MoltenVK dylib missing from thirdparty/MoltenVK/. "
+                "Run tools/build-macos-package.sh, which downloads it as part "
+                "of the packaging flow.")
         endif()
-    else()
-        message(WARNING "MoltenVK not found; the .app's default Vulkan backend "
-            "will fail unless the user has MoltenVK installed elsewhere on the host. "
-            "Install via Homebrew (brew install molten-vk) or build the universal "
-            "deps (./tools/build-macos-deps.sh).")
     endif()
 
     # Bundle brew-installed SDL dylibs into the .app via fixup_bundle at
@@ -558,8 +661,8 @@ elseif(WIN32)
     install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION .)
 
     # MinGW runtime DLLs (SDL3/SDL3_image/SDL3_ttf/sqlite3 are statically
-    # linked by build-mingw-deps.sh, so only libstdc++/libgcc/winpthread
-    # need to ship).
+    # linked when OSECT_VENDOR_DEPS=ON via build-mingw-package.sh, so only
+    # libstdc++/libgcc/winpthread need to ship).
     set(_mingw_runtime_dlls
         libgcc_s_seh-1.dll
         libstdc++-6.dll

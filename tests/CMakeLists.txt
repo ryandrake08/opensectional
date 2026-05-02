@@ -52,19 +52,11 @@ add_osect_test(tfr_source
     ${CMAKE_SOURCE_DIR}/src/http_client.cpp
     ${CMAKE_SOURCE_DIR}/src/ephemeral_cache.cpp
     ${CMAKE_SOURCE_DIR}/src/xnotam_parser.cpp)
-target_link_libraries(test_tfr_source PRIVATE pugixml ${_CURL_LIBRARIES})
-target_link_directories(test_tfr_source PRIVATE ${_CURL_LIBRARY_DIRS})
-target_link_options(test_tfr_source PRIVATE ${CURL_LINK_OPTIONS})
-target_include_directories(test_tfr_source PRIVATE ${_CURL_INCLUDE_DIRS})
-target_compile_options(test_tfr_source PRIVATE ${_CURL_CFLAGS_OTHER})
+target_link_libraries(test_tfr_source PRIVATE pugixml CURL::libcurl)
 
 # http_client confirms that transport failures throw
 add_osect_test(http_client  ${CMAKE_SOURCE_DIR}/src/http_client.cpp)
-target_link_libraries(test_http_client PRIVATE ${_CURL_LIBRARIES})
-target_link_directories(test_http_client PRIVATE ${_CURL_LIBRARY_DIRS})
-target_link_options(test_http_client PRIVATE ${CURL_LINK_OPTIONS})
-target_include_directories(test_http_client PRIVATE ${_CURL_INCLUDE_DIRS})
-target_compile_options(test_http_client PRIVATE ${_CURL_CFLAGS_OTHER})
+target_link_libraries(test_http_client PRIVATE CURL::libcurl)
 
 # flight_route pulls in the DB layer and needs the sqlite wrapper
 add_osect_test(flight_route

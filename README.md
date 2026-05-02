@@ -4,13 +4,11 @@ A desktop application for visualizing FAA NASR (National Airspace System Resourc
 
 ## Quick Start
 
-See [Dependencies](#dependencies) for the per-platform install commands and [Shader Compiler Toolchain](#shader-compiler-toolchain) for details on the build-time HLSL → SPIR-V / MSL / DXIL pipeline.
-
 ```bash
-# 1. Install dependencies (macOS with MacPorts)
-sudo port install cmake SDL3 SDL3_image SDL3_ttf sqlite3 glslang spirv-cross
+# 1. Install system dependencies (see "Build from source" below for the
+#    Ubuntu / brew / MSYS2 package lists).
 
-# 2. Build
+# 2. Build:
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 
@@ -45,116 +43,134 @@ tools/env/bin/python3 tools/render_basemap.py mapdata/natural_earth_vector.gpkg.
 ./build/osect --help
 ```
 
-## Dependencies
+## Build from source
 
-| Library | Purpose | Integration |
-|---------|---------|-------------|
-| SDL3 | Window, input, GPU rendering | System package |
-| SDL3_image | Tile image loading (PNG) | System package |
-| SDL3_ttf | Text rendering | System package |
-| Dear ImGui | UI widgets (layer controls, FPS) | Vendored (thirdparty/) |
-| SQLite3 | NASR database queries | System package |
-| libcurl | Ephemeral-data HTTP client (NOTAMs, weather, TFRs) | System package |
-| GLM | Matrix/vector math | Vendored (thirdparty/) |
+Two paths exist:
+
+- **Contributor build (default).** Dependencies come from your system package manager. Fast configure, fast build, dynamic linkage. This is the path described below.
+- **Release/installer build.** Dependencies are pinned via in-tree submodules and built statically into a self-contained binary. Triggered by the per-platform scripts under `tools/build-*-package.sh`. See [Cutting a release](#cutting-a-release).
+
+`git clone` the repo without `--recurse-submodules` — the submodules under `thirdparty/SDL`, `thirdparty/SDL_image`, `thirdparty/SDL_ttf`, `thirdparty/zlib`, and `thirdparty/curl` are only needed for release builds and stay un-initialized otherwise.
+
+### Library dependencies
+
+| Library | Source for contributor build | Purpose |
+|---|---|---|
+| SDL3 | system (libsdl3-dev / sdl3 / mingw-w64-x86_64-SDL3) | Window, input, GPU rendering |
+| SDL3_image | system | Tile image loading (PNG) |
+| SDL3_ttf | system | Text rendering (freetype + harfbuzz) |
+| libcurl | system | Ephemeral-data HTTP client |
+| zlib | system | gzip/deflate (libcurl dependency) |
+| SQLite3 | system | NASR database queries |
+| Dear ImGui | in-repo | UI widgets |
+| GLM | in-repo | Matrix/vector math |
+| pugixml | in-repo | XML parser (XNOTAM) |
+| mapbox/earcut | in-repo | Polygon triangulation |
+| doctest | in-repo | Unit-test harness |
+| Noto Sans (Regular) | in-repo | Embedded UI font |
+
+Plus `xxd` (vim) for embedding shaders/font as C headers, and the shader cross-compilation toolchain — `glslangValidator` (or `dxc`) for HLSL → SPIR-V, and `spirv-cross` on macOS for SPIR-V → MSL. Each per-platform package list below includes these. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) bundles all of them and is sufficient on its own, but is **not required** — the build searches `$VULKAN_SDK/bin` first when set, then falls through to `PATH`, so distro / Homebrew / MacPorts packages work without any Vulkan SDK install. The SDK is only strictly needed on Windows when you want the experimental D3D12 backend, which requires `dxc` (the Microsoft compiler that produces DXIL bytecode). SDL3 must be 3.2 or newer.
 
 ### macOS (MacPorts)
 
 ```bash
-sudo port install cmake SDL3 SDL3_image SDL3_ttf sqlite3 curl glslang spirv-cross
+sudo port install cmake pkgconfig SDL3 SDL3_image SDL3_ttf sqlite3 curl glslang spirv-cross
 ```
 
 ### macOS (Homebrew)
 
 ```bash
-brew install cmake sdl3 sdl3_image sdl3_ttf sqlite3 curl glslang spirv-cross
+brew install cmake pkgconf sdl3 sdl3_image sdl3_ttf sqlite curl shaderc spirv-cross
 ```
+
+Apple's Command Line Tools provide `xxd`, `git`, and the C/C++ toolchain. Full Xcode is optional (it provides the Metal compiler for `.metallib` precompilation; without it, osect falls back to compiling MSL at runtime — same correctness, slightly slower first frame).
 
 ### Linux (Debian/Ubuntu)
 
 ```bash
-sudo apt install cmake libsdl3-dev libsdl3-image-dev libsdl3-ttf-dev libsqlite3-dev libcurl4-openssl-dev xxd glslang-tools
+sudo apt install build-essential cmake pkgconf xxd \
+    libsdl3-dev libsdl3-image-dev libsdl3-ttf-dev \
+    libcurl4-openssl-dev libsqlite3-dev \
+    glslang-tools
 ```
+
+`libsdl3-dev` pulls in all the X11/Wayland/audio dev headers SDL3 needs (libx11-dev, libwayland-dev, libxkbcommon-dev, libasound2-dev, libpulse-dev, libpipewire-0.3-dev, libdecor-0-dev, …) as transitive dependencies; `libcurl4-openssl-dev` similarly pulls in libssl-dev and zlib1g-dev. `glslang-tools` ships `glslangValidator`, the HLSL → SPIR-V compiler. `spirv-cross` is not needed on Linux — the Linux build doesn't produce MSL or DXIL.
 
 ### Linux (Alpine)
 
 ```bash
-sudo apk add cmake sdl3-dev sdl3_image-dev sdl3_ttf-dev sqlite-dev curl-dev xxd glslang
+sudo apk add build-base cmake pkgconf vim \
+    sdl3-dev sdl3_image-dev sdl3_ttf-dev \
+    curl-dev sqlite-dev \
+    glslang spirv-cross-dev
 ```
 
 ### FreeBSD
 
 ```bash
-pkg install cmake sdl3 sdl3_image sdl3_ttf sqlite3 curl xxd glslang
+pkg install cmake pkgconf vim sdl3 sdl3-image sdl3-ttf curl sqlite3 glslang spirv-cross
 ```
 
-### macOS (universal binary for distribution)
-
-This is a maintainer path for producing a universal (arm64+x86_64) statically-linked osect binary suitable for the DMG installer. Most users should use the native macOS dependency lists above instead.
-
-Universal binaries can't be built against Homebrew/MacPorts — those only install the host's architecture. `tools/build-macos-deps.sh` produces universal static builds of SDL3, SDL3_image, SDL3_ttf, and SQLite3 from source using only Xcode-provided clang (no Homebrew/MacPorts assumed):
+### Windows (MSYS2 / MinGW-w64)
 
 ```bash
-./tools/build-macos-deps.sh
-cmake -B build-universal -DCMAKE_TOOLCHAIN_FILE=macos-toolchain.cmake -DCMAKE_BUILD_TYPE=Release
-cmake --build build-universal -j
+pacman -S mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake \
+          mingw-w64-x86_64-pkgconf \
+          mingw-w64-x86_64-SDL3 mingw-w64-x86_64-SDL3_image mingw-w64-x86_64-SDL3_ttf \
+          mingw-w64-x86_64-curl mingw-w64-x86_64-zlib mingw-w64-x86_64-sqlite3 \
+          mingw-w64-x86_64-vulkan-headers mingw-w64-x86_64-vulkan-loader \
+          mingw-w64-x86_64-shaderc mingw-w64-x86_64-spirv-cross
 ```
 
-The deps land in `macos-universal-deps/`, and the toolchain wires them in. The resulting binary contains both arm64 and x86_64 slices and runs on any supported Mac, at roughly double the binary size of a single-arch build.
+MSVC is not supported. See [BUILD-WINDOWS.md](BUILD-WINDOWS.md) for a step-by-step walkthrough.
 
-#### Two linking models
-
-The native and universal builds produce structurally different binaries. They are functionally equivalent, but worth understanding when packaging or debugging:
-
-| | Native (`cmake -B build`) | Universal (`-DCMAKE_TOOLCHAIN_FILE=macos-toolchain.cmake`) |
-|---|---|---|
-| **SDL3 / SDL3_image / SDL3_ttf / sqlite3 / libcurl / zlib** | Dynamic, from Homebrew/MacPorts | Static, from `macos-universal-deps/` |
-| **System frameworks** (Cocoa, Metal, Security/CoreFoundation/SystemConfiguration for libcurl's SecureTransport, …) | Dynamic (always — they live in the SDK / `/System/Library/Frameworks/`) | Same |
-| **MoltenVK** (used by Vulkan backend, the default) | Bundled into `OpenSectional.app/Contents/Frameworks/libMoltenVK.dylib` via the install step. | Same — MoltenVK is `dlopen`ed at runtime regardless of how SDL3 itself was linked. |
-| **`OpenSectional.app/Contents/Frameworks/`** | Populated by `fixup_bundle` at install time with the Homebrew dylibs, then re-codesigned | Empty — the executable is self-contained |
-| **Binary size** | Smaller executable, dylibs alongside | Larger single-file executable (~+5–10 MB per arch) |
-| **Use for** | Local development, fast incremental rebuilds | Distribution DMG, no Homebrew/MacPorts required at the user's machine |
-
-CPack's DragNDrop packaging step works for both — `fixup_bundle` simply finds nothing to copy in the static case.
-
-### Windows (cross-compiled from Linux)
-
-Cross-compile using MinGW-w64. The toolchain and dependency build script are included. The cross-compiled Windows binary runs on Vulkan by default and only needs the host's HLSL→SPIR-V compiler (covered by the Linux dependencies above). To additionally include the experimental D3D12 backend, install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) on the host so `dxc` is available; otherwise the configure step skips DXIL automatically and the binary builds Vulkan-only.
+### Build commands
 
 ```bash
-# Install MinGW toolchain (Debian/Ubuntu)
-sudo apt install g++-mingw-w64-x86-64
-
-# Build cross-compiled dependencies (SDL3, SDL3_image, SDL3_ttf, SQLite3)
-./tools/build-mingw-deps.sh
-
-# Build
-cmake -B build-mingw -DCMAKE_TOOLCHAIN_FILE=mingw-w64-toolchain.cmake -DCMAKE_BUILD_TYPE=Release
-cmake --build build-mingw -j
-```
-
-The resulting `build-mingw/osect.exe` is self-contained (all dependencies statically linked, font embedded). The target machine needs a Vulkan-capable GPU with up-to-date drivers.
-
-### Windows (native, on a Windows host)
-
-For contributors who only have access to Windows, OpenSectional can be built natively using MSYS2 + MinGW-w64. This uses the same compiler and ABI as the cross-compile path above, so the build behaves identically. The official Windows installer is still produced from the Linux cross-compile path. See [BUILD-WINDOWS.md](BUILD-WINDOWS.md) for step-by-step instructions.
-
-MSVC is not supported.
-
-## Installers
-
-Once `osect.db`, `basemap/`, and `osect.ini` exist in the source tree (see [Data Preparation](#data-preparation)), CPack produces end-user installers that bundle the application together with all three assets.
-
-### macOS (DragNDrop DMG)
-
-```bash
+# Release build (optimized)
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-cd build && cpack
+
+# Debug build (with AddressSanitizer on Linux/macOS)
+cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-debug -j
+
+# Tests
+ctest --test-dir build --output-on-failure
 ```
 
-Produces `OpenSectional-0.1.0-Darwin.dmg`. `OpenSectional.app` bundles the Homebrew SDL3 dylibs into `Contents/Frameworks/` via `fixup_bundle` at install time, so the DMG is self-contained. The bundle is ad-hoc signed (`codesign --sign -`) at install time so it launches on Apple Silicon (the kernel rejects unsigned Mach-Os whose `LC_LOAD_DYLIB` paths were rewritten by `fixup_bundle`).
+## Cutting a release
 
-The DMG is **not signed by a Developer ID and not notarized.** On a user's machine the first launch will be blocked by Gatekeeper. To open it the first time:
+The macOS DMG and Windows NSIS installers ship a self-contained binary with all C/C++ dependencies (SDL3, SDL3_image, SDL3_ttf, libcurl, zlib, SQLite3) built from pinned submodules and linked statically. TLS comes from the OS-native backend on each platform (SecureTransport on macOS, Schannel on Windows).
+
+Both package scripts initialize the dependency submodules, download the SQLite amalgamation (sha256-verified), configure CMake with `-DOSECT_VENDOR_DEPS=ON`, build, run `cpack`, and then **restore `thirdparty/` to its pre-build state by default** — submodules deinitialized, tarball-extracted directories and `.cache/` removed. Pass `--no-clean` to keep the build state in place when iterating on the installer (faster re-runs since submodules don't need to re-init).
+
+### macOS DMG
+
+```bash
+./tools/build-macos-package.sh              # build then clean
+./tools/build-macos-package.sh --no-clean   # build, leave thirdparty/ initialized
+```
+
+Additionally downloads a precompiled universal MoltenVK dylib (sha256-verified) and ships it in `Contents/Frameworks/`, so the .app runs without requiring the user to install Vulkan SDK or Homebrew. Builds a universal (arm64+x86_64) binary via `cmake/macos-toolchain.cmake` (`CMAKE_OSX_ARCHITECTURES=arm64;x86_64`, `CMAKE_OSX_DEPLOYMENT_TARGET=11.0`). Output: `build-macos-package/OpenSectional-X.Y.Z-Darwin.dmg`.
+
+The DMG is **not signed by a Developer ID and not notarized.** First-launch instructions and the optional Developer ID / notarization workflow are documented in [Installer signing](#installer-signing) below.
+
+### Windows NSIS (MinGW-w64 cross-compile)
+
+```bash
+sudo apt install g++-mingw-w64-x86-64 nsis    # Debian/Ubuntu host
+./tools/build-mingw-package.sh                # build then clean
+./tools/build-mingw-package.sh --no-clean     # build, leave thirdparty/ initialized
+```
+
+The resulting `osect.exe` is self-contained: the only DLLs shipped alongside it are the MinGW C++ runtime (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`). Output: `build-mingw-package/OpenSectional-X.Y.Z-win64.exe`.
+
+To additionally include the experimental D3D12 backend, install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) on the build host so `dxc` is available; otherwise the configure step skips DXIL automatically and the binary builds Vulkan-only.
+
+### Installer signing — macOS
+
+The macOS DMG is ad-hoc signed (`codesign --sign -`) at install time so it launches on Apple Silicon, but **not signed by a Developer ID and not notarized.** On a user's machine the first launch will be blocked by Gatekeeper. To open it the first time:
 
 1. Drag `OpenSectional.app` from the DMG to `/Applications`.
 2. Double-click and dismiss the warning ("Apple could not verify…").
@@ -166,39 +182,54 @@ Alternative for terminal users: strip the quarantine attribute after dragging ou
 xattr -dr com.apple.quarantine /Applications/OpenSectional.app
 ```
 
-Subsequent launches open normally.
-
 To distribute without the Gatekeeper warning you need a paid Apple Developer Program membership for a Developer ID certificate and notarization:
 
 ```bash
 codesign --deep --force --options runtime --sign "Developer ID Application: Your Name (TEAMID)" \
-    build/_CPack_Packages/Darwin/DragNDrop/OpenSectional-0.1.0-Darwin/ALL_IN_ONE/OpenSectional.app
-xcrun notarytool submit build/OpenSectional-0.1.0-Darwin.dmg \
+    build-macos-package/_CPack_Packages/Darwin/DragNDrop/OpenSectional-0.1.0-Darwin/ALL_IN_ONE/OpenSectional.app
+xcrun notarytool submit build-macos-package/OpenSectional-0.1.0-Darwin.dmg \
     --apple-id <your-apple-id> --team-id TEAMID --password <app-specific-password> --wait
-xcrun stapler staple build/OpenSectional-0.1.0-Darwin.dmg
+xcrun stapler staple build-macos-package/OpenSectional-0.1.0-Darwin.dmg
 ```
 
-### Windows (NSIS)
+### Installer signing — Windows
 
-Cross-compile from Linux, then run `cpack`:
+The MinGW-cross-built `osect.exe` and the NSIS installer (`OpenSectional-X.Y.Z-win64.exe`) ship **unsigned**. There is no Windows analogue to macOS's free `codesign --sign -` ad-hoc signing — Authenticode requires a CA-issued certificate by design, so the unsigned binaries are simply unsigned. They still run; the user just sees a SmartScreen warning on first launch. To open the installer the first time:
+
+1. Click **More info** in the "Windows protected your PC" dialog.
+2. Click **Run anyway**.
+
+The accept persists per-machine, so subsequent launches open without the prompt.
+
+To distribute without the SmartScreen warning you need a code-signing certificate from a CA (Sectigo, DigiCert, GlobalSign — typically $200–$300/year). Note the trade-off: a standard **OV** certificate identifies the publisher but doesn't immediately remove the SmartScreen warning — it has to "build reputation" through download volume, which can take weeks or months for a low-volume project. An **EV** certificate (hardware token, higher cost) bypasses the reputation gate immediately. Sign on the Linux build host with `osslsigncode` against both the inner executable and the NSIS installer, including an RFC 3161 timestamp so the signature stays valid past the cert's expiration:
 
 ```bash
-cmake -B build-mingw -DCMAKE_TOOLCHAIN_FILE=mingw-w64-toolchain.cmake -DCMAKE_BUILD_TYPE=Release
-cmake --build build-mingw -j
-cd build-mingw && cpack -G NSIS
+sudo apt install osslsigncode
+
+osslsigncode sign \
+    -pkcs12 path/to/cert.pfx -pass 'redacted' \
+    -t http://timestamp.sectigo.com \
+    -in  build-mingw-package/osect.exe \
+    -out build-mingw-package/osect-signed.exe
+
+osslsigncode sign \
+    -pkcs12 path/to/cert.pfx -pass 'redacted' \
+    -t http://timestamp.sectigo.com \
+    -in  build-mingw-package/OpenSectional-0.1.0-win64.exe \
+    -out build-mingw-package/OpenSectional-0.1.0-win64-signed.exe
 ```
 
-Produces `OpenSectional-0.1.0-win64.exe`. Installs into `Program Files\OpenSectional\`, creates a Start Menu shortcut, and registers an uninstaller. Bundles the MinGW C++ runtime DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`); SDL3/SDL3_image/SDL3_ttf/sqlite3 are statically linked by `build-mingw-deps.sh`.
+For a clean signed installer, sign `osect.exe` *before* `cpack` runs (so the NSIS installer wraps an already-signed binary), then sign the produced installer afterward. The package script doesn't currently automate this; invoke `osslsigncode` manually around `tools/build-mingw-package.sh` with `--no-clean`, or extend the script when you have a cert in hand.
 
-NSIS (`makensis`) must be installed on the build host. Debian/Ubuntu: `sudo apt install nsis`.
+### Installer assets and packaging notes
 
-### App icon
+The package scripts run `cpack` against pre-generated runtime assets that aren't checked in:
 
-`osect.png` (1024×1024) is the app icon source. The build generates `osect.icns` (macOS, via `sips` + `iconutil`) or `osect.ico` (Windows, via ImageMagick `magick`) into the build directory and hands it to the installer. If the required tool is missing, the icon step is skipped silently and the installer ships without a custom icon.
+- `osect.db` — built from FAA NASR data (see [Data Preparation](#data-preparation))
+- `basemap/` — rendered from Natural Earth (see [Data Preparation](#data-preparation))
+- `osect.ini` — already in source control
 
-### Asset gap
-
-`osect.db` and `basemap/` are not in source control (too large, rebuilt from FAA / Natural Earth sources). `cpack` aborts with `Installer asset missing: ...` until they have been generated. See [Data Preparation](#data-preparation).
+`cpack` aborts with `Installer asset missing: ...` until those exist. The macOS bundle additionally needs `osect.png` for icon generation (via `sips` + `iconutil`); the Windows installer uses the same PNG via ImageMagick `magick`. If the icon-generation tool is missing the installer still builds, just without a custom icon.
 
 ### GPU Backend
 
@@ -216,17 +247,7 @@ Shaders are written in HLSL and cross-compiled during the build. The build searc
 - **xxd**: embeds shader bytecode as C headers. Ships with `vim` on most systems.
 - **Xcode** (macOS only): full Xcode provides `metal` and `metallib` for precompiling shaders to `.metallib` bytecode (fastest startup). If only Command Line Tools (`xcode-select --install`) is installed, the build automatically falls back to embedding MSL source for the Metal driver to compile at first use — runtime behavior is identical, just a small per-shader compile on first frame. (Apple no longer ships a standalone Metal compiler download.)
 
-## Building
-
-```bash
-# Release build (optimized)
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-
-# Debug build (with AddressSanitizer)
-cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-debug -j
-```
+## Shader pipeline
 
 Shaders are cross-compiled automatically during the build:
 - macOS: HLSL → SPIR-V (always) + HLSL → SPIR-V → MSL source (always) + MSL → .metallib (when full Xcode is available)
@@ -460,6 +481,7 @@ lib/imgui/                ImGui RAII wrapper library
 lib/sdl/                  SDL3 GPU API wrapper library
 lib/sqlite/               SQLite RAII wrapper library
 shaders/                  HLSL shaders (cross-compiled to Metal/SPIR-V/DXIL)
+cmake/                    CMake helpers: macOS / MinGW toolchain files, FindZLIB shim
 thirdparty/               Vendored dependencies (see "Third-Party Components")
 tools/
   download_all.py         FAA data downloader (supports --only for per-source fetches)
@@ -472,7 +494,8 @@ tools/
   build_adiz.py           ADIZ GeoJSON ingester
   build_search.py         FTS5 search index builder (run last)
   render_basemap.py       Natural Earth basemap tile renderer
-  build-mingw-deps.sh     Cross-compile Windows dependencies
+  build-macos-package.sh  Vendored universal-binary build → DMG installer (cleans thirdparty/ on success unless --no-clean)
+  build-mingw-package.sh  Vendored MinGW-w64 cross build → NSIS installer  (cleans thirdparty/ on success unless --no-clean)
   test_nasr_queries.py    Database query correctness and performance tests
 ```
 
@@ -485,31 +508,30 @@ tools/env/bin/python3 tools/test_nasr_queries.py osect.db
 
 ## Third-Party Components
 
-Vendored under `thirdparty/`:
+Contributor builds link the SDL trio, libcurl, zlib, and SQLite3 from the host's package manager. Release builds (DMG / NSIS) link them statically from pinned in-tree submodules. Either way the runtime contract — version floor, feature set, license obligations — matches the table below. Smaller header-only / single-source components are always in-repo and list their license texts alongside the source.
 
-| Component | Version | License | Source |
+| Component | Version pin (release build) | License | Source |
 |---|---|---|---|
+| SDL3 | 3.4.4 (submodule) | zlib | https://github.com/libsdl-org/SDL |
+| SDL3_image | 3.4.2 (submodule) | zlib | https://github.com/libsdl-org/SDL_image |
+| SDL3_ttf | 3.2.2 (submodule) | zlib | https://github.com/libsdl-org/SDL_ttf |
+| zlib | 1.3.1 (submodule) | zlib | https://github.com/madler/zlib |
+| libcurl | 8.13.0 (submodule) | curl (MIT-style) | https://github.com/curl/curl |
+| SQLite3 | 3.49.1 (tarball, sha256-pinned) | Public domain | https://www.sqlite.org |
+| MoltenVK | 1.3.0 (binary tarball, macOS only, sha256-pinned) | Apache-2.0 | https://github.com/KhronosGroup/MoltenVK |
 | Dear ImGui | tracked | MIT | https://github.com/ocornut/imgui |
 | GLM | 1.0.1 | MIT (or Happy Bunny) | https://github.com/g-truc/glm |
+| pugixml | 1.14 | MIT | https://github.com/zeux/pugixml |
 | mapbox/earcut.hpp | tracked | ISC | https://github.com/mapbox/earcut.hpp |
+| doctest | tracked | MIT | https://github.com/doctest/doctest |
 | Noto Sans (Regular) | 2022 | SIL Open Font License 1.1 | https://github.com/notofonts/latin-greek-cyrillic |
 
-License texts live next to each component:
+License texts for in-repo components:
 `thirdparty/imgui/LICENSE.txt`,
 `thirdparty/glm-1.0.1/copying.txt`,
+`thirdparty/pugixml-1.14/LICENSE.md`,
 `thirdparty/mapbox/LICENSE`,
+`thirdparty/doctest/LICENSE.txt`,
 `thirdparty/fonts/OFL.txt`.
 
-External runtime dependencies (not vendored): SDL3, SDL3_image, SDL3_ttf,
-SQLite3, libcurl (curl, MIT-style license — used by ephemeral data
-sources to fetch NOTAM / weather / TFR feeds at runtime).
-
-Bundled into the macOS distribution `.app` only (downloaded at deps-build
-time, not in the source tree):
-
-| Component | Version | License | Source |
-|---|---|---|---|
-| MoltenVK | pinned in `tools/build-macos-deps.sh` (currently v1.3.0) | Apache-2.0 | https://github.com/KhronosGroup/MoltenVK |
-
-The Apache-2.0 LICENSE text from MoltenVK's release tarball ships in the
-installed bundle as `Contents/Resources/LICENSE-MoltenVK.txt`.
+The Apache-2.0 LICENSE text from MoltenVK's release tarball ships in the installed macOS bundle as `Contents/Resources/LICENSE-MoltenVK.txt`.
