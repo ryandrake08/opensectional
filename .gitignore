@@ -4,10 +4,9 @@
 .vscode
 __pycache__
 /build*
-/mingw-deps
-/mingw-deps-build
-/macos-universal-deps
-/macos-universal-deps-build
+/thirdparty/.cache
+/thirdparty/sqlite
+/thirdparty/MoltenVK
 tools/env*
 nasr_data
 osect.db

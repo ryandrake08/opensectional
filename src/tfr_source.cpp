@@ -57,9 +57,14 @@ namespace osect
                 std::vector<airspace_point> chunk(
                     closed.begin() + static_cast<std::ptrdiff_t>(offset),
                     closed.begin() + static_cast<std::ptrdiff_t>(end));
+                // chunk is non-empty (end > offset by construction). Read
+                // the last element via closed[end-1] rather than chunk.back()
+                // to avoid a GCC 15 -Warray-bounds false positive when this
+                // function is inlined into append_segments_for.
+                const auto& chunk_last = closed[end - 1];
                 if(end == n &&
-                   !(chunk.back().lat == closed.front().lat &&
-                     chunk.back().lon == closed.front().lon))
+                   !(chunk_last.lat == closed.front().lat &&
+                     chunk_last.lon == closed.front().lon))
                 {
                     chunk.push_back(closed.front());
                 }
