@@ -290,11 +290,11 @@ struct map_widget::impl : public sdl::event_listener
               ? std::make_unique<osect::tile_renderer>(dev, tile_path)
               : nullptr)
         , features(dev, db_path,
-              osect::chart_style(ini, osect::chart_mode::vfr), eph)
+              osect::chart_style(ini), eph)
         , labels(dev)
         , pick_db(db_path)
         , eph(eph)
-        , styles(ini, osect::chart_mode::vfr)
+        , styles(ini)
         , feature_types(osect::make_feature_types())
     {
         set_viewport(viewport_width, viewport_height);

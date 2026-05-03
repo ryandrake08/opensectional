@@ -33,10 +33,10 @@ namespace
     };
 }
 
-TEST_CASE("defaults-only chart_style produces canonical VFR styles")
+TEST_CASE("defaults-only chart_style produces canonical styles")
 {
     ini_config empty;
-    osect::chart_style cs(empty, osect::chart_mode::vfr);
+    osect::chart_style cs(empty);
 
     // tfr.vfr: min_zoom=6, color=crimson, line_width=2, dash=15, gap=8
     const auto& tfr = cs.tfr_style();
@@ -79,12 +79,12 @@ TEST_CASE("defaults-only chart_style produces canonical VFR styles")
 TEST_CASE("ini override layers on top of defaults")
 {
     tmp_ini f(
-        "[tfr.vfr]\n"
+        "[tfr]\n"
         "line_width = 7.5\n"
-        "[runway.vfr]\n"
+        "[runway]\n"
         "color = red\n");
     ini_config ini(f.path);
-    osect::chart_style cs(ini, osect::chart_mode::vfr);
+    osect::chart_style cs(ini);
 
     // Overridden keys take the new value
     CHECK(cs.tfr_style().line_width == 7.5F);
@@ -109,10 +109,10 @@ TEST_CASE("repo osect.ini reproduces the defaults-only style")
     REQUIRE(test.good());
 
     ini_config defaults_ini;
-    osect::chart_style defaults(defaults_ini, osect::chart_mode::vfr);
+    osect::chart_style defaults(defaults_ini);
 
     ini_config from_file("osect.ini");
-    osect::chart_style from_ini(from_file, osect::chart_mode::vfr);
+    osect::chart_style from_ini(from_file);
 
     auto same = [](const osect::feature_style& a, const osect::feature_style& b)
     {

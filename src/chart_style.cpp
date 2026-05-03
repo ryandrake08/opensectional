@@ -8,17 +8,6 @@
 
 namespace osect
 {
-    static std::string mode_suffix(chart_mode mode)
-    {
-        switch(mode)
-        {
-        case chart_mode::vfr: return "vfr";
-        case chart_mode::ifr_low: return "ifr_low";
-        case chart_mode::ifr_high: return "ifr_high";
-        }
-        return "vfr";
-    }
-
     // Parse a CSS color name or hex string (#RGB, #RRGGBB, #RRGGBBAA)
     static bool parse_css_color(const std::string& name, float& r, float& g, float& b, float& a)
     {
@@ -189,7 +178,7 @@ namespace osect
         read_into(ini, prefix + "gap_length", s.gap_length);
     }
 
-    // Per-key VFR defaults. Mirrors osect.ini row-for-row. Color is a CSS
+    // Per-key defaults. Mirrors osect.ini row-for-row. Color is a CSS
     // name (or hex) parsed at construction time; an empty color string
     // leaves r/g/b/a at feature_style{}'s white default — used by zoom-only
     // keys like airport_class_*, fix_airway/noairway whose color comes from
@@ -204,7 +193,7 @@ namespace osect
         float gap_length;
     };
 
-    static constexpr std::array<style_default, 70> vfr_defaults = {{
+    static constexpr std::array<style_default, 70> defaults = {{
         // Airports — zoom thresholds keyed by airspace class
         {"airport_class_b",   7.0,  "",                1.0F, 0.0F, 0.0F},
         {"airport_class_c",   8.0,  "",                1.0F, 0.0F, 0.0F},
@@ -322,14 +311,12 @@ namespace osect
         return s;
     }
 
-    chart_style::chart_style(const ini_config& ini, chart_mode mode)
+    chart_style::chart_style(const ini_config& ini)
     {
-        auto suffix = mode_suffix(mode);
-
-        for(const auto& d : vfr_defaults)
+        for(const auto& d : defaults)
         {
             auto s = resolve_default(d);
-            apply_overrides(s, ini, std::string(d.key) + "." + suffix + ".");
+            apply_overrides(s, ini, std::string(d.key) + ".");
             styles[d.key] = s;
         }
     }
