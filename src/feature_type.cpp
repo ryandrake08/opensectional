@@ -1825,11 +1825,47 @@ namespace osect
             return sua_type.c_str();
         }
 
+        // Viewport center in mercator world units (offset 0). Used by the
+        // label-position helpers below to detect "view fully inside this
+        // airspace" and snap the label anchor on-screen.
+        std::pair<double, double> view_center_mercator(
+            const feature_build_request& req)
+        {
+            return {(lon_to_mx(req.lon_min) + lon_to_mx(req.lon_max)) * 0.5,
+                    (lat_to_my(req.lat_min) + lat_to_my(req.lat_max)) * 0.5};
+        }
+
+        // Standard ray-cast point-in-polygon, with polygon points
+        // projected to mercator and shifted by mx_offset to match the
+        // current antimeridian copy.
+        bool polygon_contains_mercator(
+            const std::vector<airspace_point>& pts, double mx_offset,
+            double qx, double qy)
+        {
+            if(pts.size() < 3) return false;
+            bool inside = false;
+            for(size_t i = 0, j = pts.size() - 1; i < pts.size(); j = i++)
+            {
+                auto ix = lon_to_mx(pts[i].lon) + mx_offset;
+                auto iy = lat_to_my(pts[i].lat);
+                auto jx = lon_to_mx(pts[j].lon) + mx_offset;
+                auto jy = lat_to_my(pts[j].lat);
+                if((iy > qy) != (jy > qy) &&
+                   qx < (jx - ix) * (qy - iy) / (jy - iy) + ix)
+                    inside = !inside;
+            }
+            return inside;
+        }
+
         // Pick a label position inside an airspace polygon: midpoint of
         // the longest edge, nudged 30% toward the centroid so the label
-        // sits inside the boundary rather than on it.
+        // sits inside the boundary rather than on it. If the polygon
+        // (as drawn at this mx_offset) encloses the viewport center,
+        // snap the anchor to the viewport center so a "you are inside
+        // this airspace" indicator stays on screen.
         std::pair<double, double> polygon_label_pos(
-            const std::vector<airspace_point>& pts, double mx_offset)
+            const std::vector<airspace_point>& pts, double mx_offset,
+            double view_mx, double view_my)
         {
             if(pts.size() < 2)
             {
@@ -1837,6 +1873,9 @@ namespace osect
                 auto my = lat_to_my(pts[0].lat);
                 return {mx, my};
             }
+
+            if(polygon_contains_mercator(pts, mx_offset, view_mx, view_my))
+                return {view_mx, view_my};
 
             // Centroid
             auto sum_mx = 0.0;
@@ -1880,9 +1919,18 @@ namespace osect
 
         // Label position for a circular airspace: a point on the
         // circumference (upper-right quadrant), nudged 30% toward center.
+        // If the circle contains the viewport center (geodesic test, so
+        // antimeridian-correct via inverse-mercator with the offset
+        // removed), snap the anchor to the viewport center.
         std::pair<double, double> circle_label_pos(
-            double lat, double lon, double radius_nm, double mx_offset)
+            double lat, double lon, double radius_nm, double mx_offset,
+            double view_mx, double view_my)
         {
+            auto view_lon = mx_to_lon(view_mx - mx_offset);
+            auto view_lat = my_to_lat(view_my);
+            if(haversine_nm(lat, lon, view_lat, view_lon) <= radius_nm)
+                return {view_mx, view_my};
+
             constexpr auto NM_TO_DEG_LAT = 1.0 / 60.0;
             auto edge_lat = lat + radius_nm * NM_TO_DEG_LAT * 0.707;
             auto edge_lon = lon + radius_nm * NM_TO_DEG_LAT * 0.707
@@ -1942,8 +1990,9 @@ namespace osect
                     continue;
                 if(st.parts.empty() || st.parts[0].points.empty()) continue;
 
+                auto [vmx, vmy] = view_center_mercator(ctx.req);
                 auto [cmx, cmy] = polygon_label_pos(st.parts[0].points,
-                                                    ctx.mx_offset);
+                                                    ctx.mx_offset, vmx, vmy);
                 emit_airspace_label(ctx, sua_type_label(s.sua_type),
                     cmx, cmy, layer_sua,
                     format_altitude(st.upper_ft_val, st.upper_ft_ref),
@@ -1979,8 +2028,10 @@ namespace osect
 
                     if(ctx.req.zoom >= AIRSPACE_LABEL_MIN_ZOOM)
                     {
+                        auto [vmx, vmy] = view_center_mercator(ctx.req);
                         auto [mx, my] = circle_label_pos(
-                            p.lat, p.lon, p.radius_nm, ctx.mx_offset);
+                            p.lat, p.lon, p.radius_nm, ctx.mx_offset,
+                            vmx, vmy);
                         std::string upper = p.max_altitude_ft_msl > 0
                             ? format_altitude(p.max_altitude_ft_msl, "MSL")
                             : "UNL";
@@ -2037,10 +2088,11 @@ namespace osect
 
                 if(is_area && ctx.req.zoom >= AIRSPACE_LABEL_MIN_ZOOM)
                 {
+                    auto [vmx, vmy] = view_center_mercator(ctx.req);
                     auto [mx, my] = !m.shape.empty()
-                        ? polygon_label_pos(m.shape, ctx.mx_offset)
+                        ? polygon_label_pos(m.shape, ctx.mx_offset, vmx, vmy)
                         : circle_label_pos(m.lat, m.lon, m.radius_nm,
-                                           ctx.mx_offset);
+                                           ctx.mx_offset, vmx, vmy);
                     std::string upper = format_altitude(m.max_alt_ft,
                         m.max_alt_ref.empty() ? "MSL" : m.max_alt_ref);
                     std::string lower = format_altitude(m.min_alt_ft,
@@ -2087,7 +2139,9 @@ namespace osect
                         continue;
                     if(area.points.empty()) continue;
                     if(!polyline_intersects_bbox(area.points, bbox)) continue;
-                    auto [cmx, cmy] = polygon_label_pos(area.points, ctx.mx_offset);
+                    auto [vmx, vmy] = view_center_mercator(ctx.req);
+                    auto [cmx, cmy] = polygon_label_pos(area.points,
+                                                        ctx.mx_offset, vmx, vmy);
                     emit_airspace_label(ctx, "TFR", cmx, cmy, layer_tfr,
                         format_altitude(area.upper_ft_val, area.upper_ft_ref),
                         format_altitude(area.lower_ft_val, area.lower_ft_ref),
@@ -2110,7 +2164,9 @@ namespace osect
             for(const auto& a : adizs)
             {
                 if(a.parts.empty() || a.parts[0].empty()) continue;
-                auto [cmx, cmy] = polygon_label_pos(a.parts[0], ctx.mx_offset);
+                auto [vmx, vmy] = view_center_mercator(ctx.req);
+                auto [cmx, cmy] = polygon_label_pos(a.parts[0], ctx.mx_offset,
+                                                    vmx, vmy);
                 emit_airspace_label(ctx, "ADIZ", cmx, cmy, layer_adiz,
                     "UNL", "SFC", ctx.styles.adiz_style());
             }
@@ -2142,7 +2198,9 @@ namespace osect
                 if(!altitude_filter_allows(ctx.req.altitude, artcc_bands(a.altitude)))
                     continue;
                 if(a.points.empty()) continue;
-                auto [cmx, cmy] = polygon_label_pos(a.points, ctx.mx_offset);
+                auto [vmx, vmy] = view_center_mercator(ctx.req);
+                auto [cmx, cmy] = polygon_label_pos(a.points, ctx.mx_offset,
+                                                    vmx, vmy);
                 emit_airspace_label(ctx, "ARTCC", cmx, cmy, layer_artcc,
                     a.location_id, a.altitude,
                     ctx.styles.artcc_style(a.altitude, a.type));
@@ -2190,8 +2248,9 @@ namespace osect
                 if(!ctx.styles.airspace_visible(a.airspace_class, a.local_type,
                                                  ctx.req.zoom)) continue;
                 if(a.parts.empty() || a.parts[0].points.empty()) continue;
+                auto [vmx, vmy] = view_center_mercator(ctx.req);
                 auto [cmx, cmy] = polygon_label_pos(a.parts[0].points,
-                                                    ctx.mx_offset);
+                                                    ctx.mx_offset, vmx, vmy);
                 const auto& fs = ctx.styles.airspace_style(
                     a.airspace_class, a.local_type);
                 // Undefined upper (class E) defaults to 18000 MSL (FL180)
