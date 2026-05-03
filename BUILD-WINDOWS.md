@@ -86,7 +86,7 @@ Windows](https://vulkan.lunarg.com/sdk/home) and make `dxc.exe` reachable on
 ## 3. Get the source
 
 ```bash
-git clone https://github.com/<your fork or upstream>/osect.git
+git clone https://github.com/ryandrake08/osect.git
 cd osect
 ```
 
