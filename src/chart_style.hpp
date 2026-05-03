@@ -11,13 +11,6 @@ namespace osect
 {
     struct airport;
 
-    enum class chart_mode
-    {
-        vfr,
-        ifr_low,
-        ifr_high
-    };
-
     struct feature_style
     {
         double min_zoom = 0.0;
@@ -42,8 +35,7 @@ namespace osect
     public:
         // Build with hardcoded defaults, optionally overridden from INI.
         // Pass an empty ini_config{} for defaults-only.
-        chart_style(const ini_config& ini,
-                    chart_mode mode = chart_mode::vfr);
+        explicit chart_style(const ini_config& ini);
 
         // Airport visibility and style (keyed by airspace class)
         bool airport_visible(const airport& apt, double zoom) const;
