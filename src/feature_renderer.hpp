@@ -25,15 +25,12 @@ namespace osect
         std::unique_ptr<impl> pimpl;
 
     public:
-        feature_renderer(sdl::device& dev, const char* db_path,
-                         const chart_style& cs, const ephemeral_data& eph);
+        feature_renderer(sdl::device& dev, const char* db_path, const chart_style& cs, const ephemeral_data& eph);
         ~feature_renderer();
 
         // Recompute visible features from database
-        void update(double view_x_min, double view_y_min,
-                    double view_x_max, double view_y_max,
-                    double half_extent_y, int viewport_height,
-                    double aspect_ratio);
+        void update(double view_x_min, double view_y_min, double view_x_max, double view_y_max, double half_extent_y,
+                    int viewport_height, double aspect_ratio);
 
         // Drain background builder results and rebuild SDF lines.
         // Returns true if new results were available.

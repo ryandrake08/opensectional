@@ -29,11 +29,15 @@ namespace sdl
         impl& operator=(impl&&) = default;
     };
 
-    text_engine::text_engine(const device& dev) : pimpl(new impl(dev)) {}
+    text_engine::text_engine(const device& dev) : pimpl(new impl(dev))
+    {
+    }
 
     text_engine::~text_engine() = default;
 
-    text_engine::text_engine(text_engine&& other) noexcept : pimpl(std::move(other.pimpl)) {}
+    text_engine::text_engine(text_engine&& other) noexcept : pimpl(std::move(other.pimpl))
+    {
+    }
 
     text_engine& text_engine::operator=(text_engine&& other) noexcept
     {

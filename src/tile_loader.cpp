@@ -60,15 +60,14 @@ namespace osect
 
                 {
                     std::lock_guard<std::mutex> lock(mutex);
-                    result_queue.push_back({ req.key, std::move(surf) });
+                    result_queue.push_back({req.key, std::move(surf)});
                 }
                 wake_main_thread();
             }
         }
     };
 
-    tile_loader::tile_loader()
-        : pimpl(std::make_unique<impl>())
+    tile_loader::tile_loader() : pimpl(std::make_unique<impl>())
     {
         pimpl->worker = std::thread(&impl::worker_loop, pimpl.get());
     }
@@ -89,7 +88,7 @@ namespace osect
         if(!pimpl->pending_set.count(key) && !pimpl->failed_set.count(key))
         {
             pimpl->pending_set.insert(key);
-            pimpl->request_queue.push_back({ key, path });
+            pimpl->request_queue.push_back({key, path});
             pimpl->cv.notify_one();
         }
     }

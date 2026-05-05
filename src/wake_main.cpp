@@ -1,5 +1,4 @@
 #include "wake_main.hpp"
-
 #include <sdl/event.hpp>
 
 namespace osect

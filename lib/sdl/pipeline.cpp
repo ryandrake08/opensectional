@@ -2,8 +2,8 @@
 #include "device.hpp"
 #include "error.hpp"
 #include "shader.hpp"
-#include <array>
 #include <SDL3/SDL.h>
+#include <array>
 #include <cstddef>
 #include <memory>
 
@@ -15,14 +15,10 @@ namespace sdl
         SDL_GPUDevice* device;           // Non-owning
         SDL_GPUGraphicsPipeline* handle; // Owning
 
-        static SDL_GPUGraphicsPipeline* create_pipeline(
-            SDL_GPUDevice* dev,
-            SDL_GPUShader* vs,
-            SDL_GPUShader* fs,
-            SDL_GPUTextureFormat swapchain_format,
-            SDL_GPUPrimitiveType topology,
-            SDL_GPUTextureFormat depth_format,
-            bool use_vertex_input)
+        static SDL_GPUGraphicsPipeline* create_pipeline(SDL_GPUDevice* dev, SDL_GPUShader* vs, SDL_GPUShader* fs,
+                                                        SDL_GPUTextureFormat swapchain_format,
+                                                        SDL_GPUPrimitiveType topology,
+                                                        SDL_GPUTextureFormat depth_format, bool use_vertex_input)
         {
             // Set up standard vertex attributes for vertex_t2f_c4ub_v3f
             std::array<SDL_GPUVertexAttribute, 3> attributes = {};
@@ -101,15 +97,15 @@ namespace sdl
             return SDL_CreateGPUGraphicsPipeline(dev, &info);
         }
 
-        impl(
-            SDL_GPUDevice* dev,
-            shader&& vs,  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved) — consumed at scope end, not stored
-            shader&& fs,  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
-            SDL_GPUTextureFormat swapchain_format,
-            SDL_GPUPrimitiveType topology,
-            SDL_GPUTextureFormat depth_format,
-            bool use_vertex_input) : device(dev),
-                                     handle(create_pipeline(dev, vs.get(), fs.get(), swapchain_format, topology, depth_format, use_vertex_input))
+        impl(SDL_GPUDevice* dev,
+             shader&&
+                 vs, // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved) — consumed at scope end, not stored
+             shader&& fs, // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+             SDL_GPUTextureFormat swapchain_format, SDL_GPUPrimitiveType topology, SDL_GPUTextureFormat depth_format,
+             bool use_vertex_input)
+            : device(dev),
+              handle(
+                  create_pipeline(dev, vs.get(), fs.get(), swapchain_format, topology, depth_format, use_vertex_input))
         {
             if(!handle)
             {
@@ -120,16 +116,22 @@ namespace sdl
             {
                 switch(topology)
                 {
-                case SDL_GPU_PRIMITIVETYPE_TRIANGLELIST:  return "triangle_list";
-                case SDL_GPU_PRIMITIVETYPE_TRIANGLESTRIP: return "triangle_strip";
-                case SDL_GPU_PRIMITIVETYPE_LINELIST:      return "line_list";
-                case SDL_GPU_PRIMITIVETYPE_LINESTRIP:     return "line_strip";
-                case SDL_GPU_PRIMITIVETYPE_POINTLIST:     return "point_list";
-                default:                                  return "unknown";
+                case SDL_GPU_PRIMITIVETYPE_TRIANGLELIST:
+                    return "triangle_list";
+                case SDL_GPU_PRIMITIVETYPE_TRIANGLESTRIP:
+                    return "triangle_strip";
+                case SDL_GPU_PRIMITIVETYPE_LINELIST:
+                    return "line_list";
+                case SDL_GPU_PRIMITIVETYPE_LINESTRIP:
+                    return "line_strip";
+                case SDL_GPU_PRIMITIVETYPE_POINTLIST:
+                    return "point_list";
+                default:
+                    return "unknown";
                 }
             }();
-            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Pipeline created: %s, depth: %s",
-                         topo_name, (depth_format != SDL_GPU_TEXTUREFORMAT_INVALID) ? "yes" : "no");
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Pipeline created: %s, depth: %s", topo_name,
+                         (depth_format != SDL_GPU_TEXTUREFORMAT_INVALID) ? "yes" : "no");
         }
 
         ~impl() noexcept
@@ -164,19 +166,12 @@ namespace sdl
     }
 
     // Constructor from vertex and fragment shaders
-    pipeline::pipeline(
-        const device& dev,
-        shader&& vertex_shader,
-        shader&& fragment_shader,
-        primitive_type_t topology,
-        texture_format_t depth_format,
-        bool vertex_input) : pimpl(new impl(dev.get(),
-                                            std::move(vertex_shader),
-                                            std::move(fragment_shader),
-                                            static_cast<SDL_GPUTextureFormat>(dev.get_swapchain_format().value),
-                                            static_cast<SDL_GPUPrimitiveType>(topology.value),
-                                            static_cast<SDL_GPUTextureFormat>(depth_format.value),
-                                            vertex_input))
+    pipeline::pipeline(const device& dev, shader&& vertex_shader, shader&& fragment_shader, primitive_type_t topology,
+                       texture_format_t depth_format, bool vertex_input)
+        : pimpl(new impl(dev.get(), std::move(vertex_shader), std::move(fragment_shader),
+                         static_cast<SDL_GPUTextureFormat>(dev.get_swapchain_format().value),
+                         static_cast<SDL_GPUPrimitiveType>(topology.value),
+                         static_cast<SDL_GPUTextureFormat>(depth_format.value), vertex_input))
     {
     }
 } // namespace sdl

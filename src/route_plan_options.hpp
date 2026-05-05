@@ -9,10 +9,10 @@ namespace osect
     // Cost-modifier presets used by route_plan_options. Values
     // match g3xfplan: PREFER discounts, INCLUDE is neutral, AVOID
     // penalizes mildly, REJECT effectively excludes.
-    inline constexpr double cost_prefer  = 0.8;
+    inline constexpr double cost_prefer = 0.8;
     inline constexpr double cost_include = 1.0;
-    inline constexpr double cost_avoid   = 1.25;
-    inline constexpr double cost_reject  = 1000.0;
+    inline constexpr double cost_avoid = 1.25;
+    inline constexpr double cost_reject = 1000.0;
 
     // Fine-grained per-node classification. Drives the
     // per-waypoint cost modifier in the A* search. Layout matters:
@@ -20,12 +20,12 @@ namespace osect
     enum class wp_subtype : std::uint8_t
     {
         // Airports (SITE_TYPE_CODE)
-        airport_landplane,    // A
-        airport_balloonport,  // B
-        airport_seaplane,     // C
-        airport_gliderport,   // G
-        airport_heliport,     // H
-        airport_ultralight,   // U
+        airport_landplane,   // A
+        airport_balloonport, // B
+        airport_seaplane,    // C
+        airport_gliderport,  // G
+        airport_heliport,    // H
+        airport_ultralight,  // U
 
         // Navaids (NAV_TYPE)
         navaid_vor,
@@ -36,11 +36,11 @@ namespace osect
         navaid_ndb_dme,
 
         // Fixes (FIX_USE_CODE)
-        fix_wp,    // generic waypoint
-        fix_rp,    // reporting point
-        fix_cn,    // coordination fix
-        fix_mr,    // military reporting
-        fix_vfr,   // VFR waypoint
+        fix_wp,  // generic waypoint
+        fix_rp,  // reporting point
+        fix_cn,  // coordination fix
+        fix_mr,  // military reporting
+        fix_vfr, // VFR waypoint
 
         count,
         unknown = count
@@ -50,11 +50,11 @@ namespace osect
     // one or two characters of the airway ID.
     enum class awy_class : std::uint8_t
     {
-        victor,   // V*
-        jet,      // J*
-        rnav,     // T*, Q*, TK*
-        color,    // G*, A*, R*, B* (excluding AT/AR/BR/BF prefixes)
-        other,    // AT, AR, BR, BF, PA, PR, anything else
+        victor, // V*
+        jet,    // J*
+        rnav,   // T*, Q*, TK*
+        color,  // G*, A*, R*, B* (excluding AT/AR/BR/BF prefixes)
+        other,  // AT, AR, BR, BF, PA, PR, anything else
 
         count
     };
@@ -72,13 +72,11 @@ namespace osect
         // Per-subtype cost modifier. Default-initialized to
         // `cost_include` so a default-constructed value is
         // uniform-cost.
-        std::array<double, static_cast<std::size_t>(wp_subtype::count)>
-            wp_cost;
+        std::array<double, static_cast<std::size_t>(wp_subtype::count)> wp_cost;
 
         // Per-airway-class cost modifier. Only applied when
         // `use_airways` is true.
-        std::array<double, static_cast<std::size_t>(awy_class::count)>
-            awy_cost;
+        std::array<double, static_cast<std::size_t>(awy_class::count)> awy_cost;
 
         // Cost factor for an airway edge marked `is_gap`. Applied
         // in place of `awy_cost[type]` for that edge, and only
@@ -95,9 +93,7 @@ namespace osect
         // airway edges receive no special treatment.
         bool use_airways = false;
 
-        route_plan_options()
-            : wp_cost{}
-            , awy_cost{}
+        route_plan_options() : wp_cost{}, awy_cost{}
         {
             wp_cost.fill(cost_include);
             awy_cost.fill(cost_include);

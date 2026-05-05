@@ -14,17 +14,15 @@ namespace osect
 
     // Generate points on a geodesic circle (constant great-circle distance
     // from center). Returns n+1 points (closed ring).
-    std::vector<airspace_point> geodesic_circle(double center_lat, double center_lon,
-                                                 double radius_nm,
-                                                 int n = GEODESIC_CIRCLE_SEGMENTS);
+    std::vector<airspace_point> geodesic_circle(double center_lat, double center_lon, double radius_nm,
+                                                int n = GEODESIC_CIRCLE_SEGMENTS);
 
     // Subdivide a great-circle arc between two points so that no segment
     // exceeds max_segment_nm. Returns the full sequence including both
     // endpoints. If the arc is already short enough, returns just the
     // two endpoints.
-    std::vector<airspace_point> geodesic_interpolate(double lat1, double lon1,
-                                                      double lat2, double lon2,
-                                                      double max_segment_nm = GEODESIC_INTERPOLATION_THRESHOLD_NM);
+    std::vector<airspace_point> geodesic_interpolate(double lat1, double lon1, double lat2, double lon2,
+                                                     double max_segment_nm = GEODESIC_INTERPOLATION_THRESHOLD_NM);
 
     // Great-circle distance between two lat/lon points, in nautical
     // miles. Spherical-earth approximation.
@@ -35,8 +33,7 @@ namespace osect
     // endpoint, the returned distance is just the haversine to that
     // endpoint. Uses a local planar approximation — accurate to well
     // under 1% for segments of a few hundred nautical miles.
-    double point_to_segment_distance_nm(double lat_a, double lon_a,
-                                         double lat_b, double lon_b,
-                                         double lat_p, double lon_p);
+    double point_to_segment_distance_nm(double lat_a, double lon_a, double lat_b, double lon_b, double lat_p,
+                                        double lon_p);
 
 } // namespace osect

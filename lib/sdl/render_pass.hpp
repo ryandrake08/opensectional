@@ -38,12 +38,8 @@ namespace sdl
          * @param clear_a Clear color alpha component (default: 1)
          * @throws std::runtime_error if render pass creation fails
          */
-        render_pass(command_buffer& cmd,
-                    const texture& color_target,
-                    float clear_r = 0.0F,
-                    float clear_g = 0.0F,
-                    float clear_b = 0.0F,
-                    float clear_a = 1.0F);
+        render_pass(command_buffer& cmd, const texture& color_target, float clear_r = 0.0F, float clear_g = 0.0F,
+                    float clear_b = 0.0F, float clear_a = 1.0F);
 
         /**
          * Begin render pass with color and depth targets.
@@ -58,14 +54,8 @@ namespace sdl
          * @param clear_depth Clear depth value (default: 1.0 = far)
          * @throws std::runtime_error if render pass creation fails
          */
-        render_pass(command_buffer& cmd,
-                    const texture& color_target,
-                    const texture& depth_target,
-                    float clear_r = 0.0F,
-                    float clear_g = 0.0F,
-                    float clear_b = 0.0F,
-                    float clear_a = 1.0F,
-                    float clear_depth = 1.0F);
+        render_pass(command_buffer& cmd, const texture& color_target, const texture& depth_target, float clear_r = 0.0F,
+                    float clear_g = 0.0F, float clear_b = 0.0F, float clear_a = 1.0F, float clear_depth = 1.0F);
 
         /**
          * End render pass.
@@ -175,11 +165,8 @@ namespace sdl
          * @param first_vertex First vertex index (default: 0)
          * @param first_instance First instance index (default: 0)
          */
-        void draw(
-            uint32_t vertex_count,
-            uint32_t instance_count = 1,
-            uint32_t first_vertex = 0,
-            uint32_t first_instance = 0);
+        void draw(uint32_t vertex_count, uint32_t instance_count = 1, uint32_t first_vertex = 0,
+                  uint32_t first_instance = 0);
 
         /**
          * Draw indexed primitives.
@@ -190,12 +177,8 @@ namespace sdl
          * @param vertex_offset Vertex offset added to index (default: 0)
          * @param first_instance First instance index (default: 0)
          */
-        void draw_indexed(
-            uint32_t index_count,
-            uint32_t instance_count = 1,
-            uint32_t first_index = 0,
-            int32_t vertex_offset = 0,
-            uint32_t first_instance = 0);
+        void draw_indexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0,
+                          int32_t vertex_offset = 0, uint32_t first_instance = 0);
 
         /**
          * Set scissor rectangle for clipping.

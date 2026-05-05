@@ -32,15 +32,9 @@ namespace sdl
          * @param num_samplers Number of samplers this shader uses (default: 0)
          * @param num_storage_buffers Number of storage buffers this shader uses (default: 0)
          */
-        shader(
-            const device& dev,
-            const unsigned char* code_array,
-            unsigned int code_len,
-            const std::string& entrypoint,
-            shader_stage_t stage,
-            shader_format_t format = shader_format::invalid,
-            uint32_t num_samplers = 0,
-            uint32_t num_storage_buffers = 0);
+        shader(const device& dev, const unsigned char* code_array, unsigned int code_len, const std::string& entrypoint,
+               shader_stage_t stage, shader_format_t format = shader_format::invalid, uint32_t num_samplers = 0,
+               uint32_t num_storage_buffers = 0);
 
         /**
          * Destroy shader.

@@ -32,15 +32,12 @@ namespace osect
 
         // Reproject label positions and rebuild geometry for the current
         // viewport (called every frame).
-        void update_positions(double center_x, double center_y,
-                              double half_extent_y,
-                              int viewport_width, int viewport_height,
-                              const layer_visibility& vis);
+        void update_positions(double center_x, double center_y, double half_extent_y, int viewport_width,
+                              int viewport_height, const layer_visibility& vis);
 
         bool needs_upload() const;
         void copy(sdl::copy_pass& pass, sdl::device& dev);
-        void render(sdl::render_pass& pass, const render_context& ctx,
-                    int viewport_width, int viewport_height) const;
+        void render(sdl::render_pass& pass, const render_context& ctx, int viewport_width, int viewport_height) const;
     };
 
 } // namespace osect

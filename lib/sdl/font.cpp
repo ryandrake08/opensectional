@@ -46,8 +46,12 @@ namespace sdl
             return font;
         }
 
-        impl(const char* path, int ptsize) : handle(load_from_path(path, ptsize)) {}
-        impl(const void* data, size_t size, int ptsize) : handle(load_from_memory(data, size, ptsize)) {}
+        impl(const char* path, int ptsize) : handle(load_from_path(path, ptsize))
+        {
+        }
+        impl(const void* data, size_t size, int ptsize) : handle(load_from_memory(data, size, ptsize))
+        {
+        }
 
         ~impl() noexcept
         {
@@ -65,7 +69,8 @@ namespace sdl
         // Note: engine parameter is unused, but enforces initialization order at compile time
     }
 
-    font::font(const text_engine& /* engine */, const void* data, size_t size, int ptsize) : pimpl(new impl(data, size, ptsize))
+    font::font(const text_engine& /* engine */, const void* data, size_t size, int ptsize)
+        : pimpl(new impl(data, size, ptsize))
     {
     }
 

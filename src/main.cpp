@@ -6,20 +6,20 @@
 #include "route_planner.hpp"
 #include "route_submitter.hpp"
 #include "ui_overlay.hpp"
-#include <cstring>
+#include <imgui/context.hpp>
 #include <csignal>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
-#include <imgui/context.hpp>
 #include <iostream>
 #include <sdl/command_buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
-#include <sdl/render_pass.hpp>
-#include <sdl/texture.hpp>
 #include <sdl/event.hpp>
 #include <sdl/filesystem.hpp>
 #include <sdl/instance.hpp>
+#include <sdl/render_pass.hpp>
+#include <sdl/texture.hpp>
 #include <sdl/timer.hpp>
 #include <sdl/window.hpp>
 
@@ -71,7 +71,11 @@ int main(int argc, char** argv)
         else if(argv[argi][1] == 'v' && argv[argi][2] != '-')
         {
             const char* p = argv[argi] + 1;
-            while(*p == 'v') { verbosity++; p++; }
+            while(*p == 'v')
+            {
+                verbosity++;
+                p++;
+            }
             if(*p != '\0')
             {
                 std::cerr << "Unknown option: " << argv[argi] << std::endl;
@@ -79,15 +83,25 @@ int main(int argc, char** argv)
             }
         }
         else if((std::strcmp(argv[argi], "-g") == 0 || std::strcmp(argv[argi], "--gpu") == 0) && argi + 1 < argc)
+        {
             gpu_driver = argv[++argi];
+        }
         else if((std::strcmp(argv[argi], "-b") == 0 || std::strcmp(argv[argi], "--basemap") == 0) && argi + 1 < argc)
+        {
             tile_path = argv[++argi];
+        }
         else if((std::strcmp(argv[argi], "-d") == 0 || std::strcmp(argv[argi], "--database") == 0) && argi + 1 < argc)
+        {
             db_path = argv[++argi];
+        }
         else if((std::strcmp(argv[argi], "-c") == 0 || std::strcmp(argv[argi], "--conf") == 0) && argi + 1 < argc)
+        {
             conf_path = argv[++argi];
+        }
         else if(std::strcmp(argv[argi], "--offline") == 0)
+        {
             offline = true;
+        }
         else
         {
             std::cerr << "Unknown option: " << argv[argi] << std::endl;
@@ -117,7 +131,8 @@ int main(int argc, char** argv)
         db_path_owned = sdl::resolve_bundled_asset("osect.db");
         if(db_path_owned.empty())
         {
-            std::cerr << "No osect.db supplied and none found next to the executable or in the current directory." << std::endl;
+            std::cerr << "No osect.db supplied and none found next to the executable or in the current directory."
+                      << std::endl;
             print_usage(std::cerr, argv[0]);
             return EXIT_FAILURE;
         }
@@ -127,7 +142,10 @@ int main(int argc, char** argv)
     if(!tile_path)
     {
         tile_path_owned = sdl::resolve_bundled_asset("basemap");
-        if(!tile_path_owned.empty()) tile_path = tile_path_owned.c_str();
+        if(!tile_path_owned.empty())
+        {
+            tile_path = tile_path_owned.c_str();
+        }
     }
 
     std::signal(SIGINT, signal_handler);
@@ -148,9 +166,7 @@ int main(int argc, char** argv)
         imgui::context imgui_ctx(dev, win);
 
         sdl::event_manager event_mgr;
-        event_mgr.set_raw_event_hook([&imgui_ctx](const void* event) {
-            imgui_ctx.process_event(event);
-        });
+        event_mgr.set_raw_event_hook([&imgui_ctx](const void* event) { imgui_ctx.process_event(event); });
 
         // Ephemeral data facade: owns the shared HTTP client, the
         // on-disk cache, and every per-source module that consumes
@@ -165,10 +181,19 @@ int main(int argc, char** argv)
         // takes precedence over the bundled ini.
         ini_config ini;
         auto bundled = sdl::resolve_bundled_asset("osect.ini");
-        if(!bundled.empty()) ini.merge(ini_config(bundled));
+        if(!bundled.empty())
+        {
+            ini.merge(ini_config(bundled));
+        }
         auto user = sdl::resolve_user_asset("osect.ini");
-        if(!user.empty()) ini.merge(ini_config(user));
-        if(conf_path) ini.merge(ini_config(conf_path));
+        if(!user.empty())
+        {
+            ini.merge(ini_config(user));
+        }
+        if(conf_path)
+        {
+            ini.merge(ini_config(conf_path));
+        }
 
         osect::map_widget map(dev, tile_path, db_path, ini, eph, 1280, 1024);
         event_mgr.add_listener(map.event_listener());
@@ -185,8 +210,7 @@ int main(int argc, char** argv)
         auto plan_options = osect::load_route_plan_options(ini);
 
         osect::ui_overlay ui;
-        ui.set_route_planner_defaults(plan_options.max_leg_length_nm,
-                                       plan_options.use_airways);
+        ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
 
         // Static-source META rows are read once at startup; the
         // ephemeral source rows get pushed every frame so freshness
@@ -202,11 +226,16 @@ int main(int argc, char** argv)
             {
                 // Filter out the legacy static "tfr" META row — the
                 // ephemeral source replaces it.
-                if(s.name == "tfr") continue;
+                if(s.name == "tfr")
+                {
+                    continue;
+                }
                 merged.push_back(s);
             }
             for(auto& s : eph_sources)
+            {
                 merged.push_back(std::move(s));
+            }
             return merged;
         };
 
@@ -220,7 +249,10 @@ int main(int argc, char** argv)
             map.set_imgui_wants_mouse(imgui_ctx.wants_mouse());
             map.set_imgui_wants_keyboard(imgui_ctx.wants_keyboard());
 
-            if(event_mgr.dispatch_events()) break;
+            if(event_mgr.dispatch_events())
+            {
+                break;
+            }
 
             needs_render = map.update();
 
@@ -241,7 +273,9 @@ int main(int argc, char** argv)
             {
                 auto idx = *ui_result.selected_hit_index;
                 if(idx >= 0 && idx < static_cast<int>(ui.search_results().size()))
+                {
                     map.focus_on_hit(ui.search_results()[idx]);
+                }
                 ui.set_search_results({});
                 last_search_query.clear();
                 needs_render = true;
@@ -249,10 +283,8 @@ int main(int argc, char** argv)
             else if(ui_result.search_query != last_search_query)
             {
                 last_search_query = ui_result.search_query;
-                ui.set_search_results(
-                    last_search_query.empty()
-                        ? std::vector<osect::search_hit>{}
-                        : map.search(last_search_query, SEARCH_RESULT_LIMIT));
+                ui.set_search_results(last_search_query.empty() ? std::vector<osect::search_hit>{}
+                                                                : map.search(last_search_query, SEARCH_RESULT_LIMIT));
                 needs_render = true;
             }
 
@@ -291,15 +323,24 @@ int main(int argc, char** argv)
             // so the UI can animate its indicator.
             auto plan_pending = submitter.pending();
             ui.set_route_planning(plan_pending);
-            if(plan_pending) needs_render = true;
+            if(plan_pending)
+            {
+                needs_render = true;
+            }
 
             try
             {
                 if(auto route = submitter.drain())
                 {
                     map.set_route(std::move(*route));
-                    if(map.route()) ui.set_route_state(*map.route());
-                    else ui.clear_route_state();
+                    if(map.route())
+                    {
+                        ui.set_route_state(*map.route());
+                    }
+                    else
+                    {
+                        ui.clear_route_state();
+                    }
                     needs_render = true;
                 }
             }
@@ -311,14 +352,29 @@ int main(int argc, char** argv)
 
             if(map.drain_route_dirty())
             {
-                if(map.route()) ui.set_route_state(*map.route());
-                else ui.clear_route_state();
+                if(map.route())
+                {
+                    ui.set_route_state(*map.route());
+                }
+                else
+                {
+                    ui.clear_route_state();
+                }
                 needs_render = true;
             }
 
-            if(map.draw_imgui()) needs_render = true;
-            if(imgui_ctx.wants_mouse()) needs_render = true;
-            if(imgui_ctx.warming_up()) needs_render = true;
+            if(map.draw_imgui())
+            {
+                needs_render = true;
+            }
+            if(imgui_ctx.wants_mouse())
+            {
+                needs_render = true;
+            }
+            if(imgui_ctx.warming_up())
+            {
+                needs_render = true;
+            }
 
             imgui_ctx.end_frame();
 

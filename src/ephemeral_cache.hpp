@@ -36,9 +36,7 @@ namespace osect
         };
 
         std::optional<entry> load(const std::string& source_name) const;
-        void store(const std::string& source_name,
-                   const std::string& body,
-                   const std::string& etag);
+        void store(const std::string& source_name, const std::string& body, const std::string& etag);
         void clear(const std::string& source_name);
 
         // Per-platform default cache directory:
@@ -49,7 +47,10 @@ namespace osect
         // variables are unset (HOME / LOCALAPPDATA).
         static std::filesystem::path default_dir();
 
-        const std::filesystem::path& dir() const { return dir_; }
+        const std::filesystem::path& dir() const
+        {
+            return dir_;
+        }
 
     private:
         std::filesystem::path dir_;

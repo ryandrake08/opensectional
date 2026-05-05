@@ -10,7 +10,10 @@ namespace imgui
 
     scoped_window::~scoped_window()
     {
-        if(!ended) ImGui::End();
+        if(!ended)
+        {
+            ImGui::End();
+        }
     }
 
     void scoped_window::end()
@@ -29,7 +32,10 @@ namespace imgui
 
     scoped_table::~scoped_table()
     {
-        if(opened) ImGui::EndTable();
+        if(opened)
+        {
+            ImGui::EndTable();
+        }
     }
 
     bool right_aligned_close_button(const char* id)
@@ -38,7 +44,9 @@ namespace imgui
         auto btn_w = ImGui::GetFrameHeight();
         auto avail = ImGui::GetContentRegionAvail().x;
         if(avail > btn_w)
+        {
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btn_w);
+        }
         return ImGui::SmallButton(id);
     }
 

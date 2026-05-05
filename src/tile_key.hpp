@@ -20,7 +20,7 @@ namespace osect
 
 namespace std
 {
-    template<>
+    template <>
     struct hash<osect::tile_key>
     {
         size_t operator()(const osect::tile_key& k) const

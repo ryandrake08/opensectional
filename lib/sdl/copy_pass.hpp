@@ -61,11 +61,11 @@ namespace sdl
          * @param data Vector of data to upload (must not be empty)
          * @return Created and populated buffer
          */
-        template<typename T>
+        template <typename T>
         buffer create_and_upload_buffer(const device& dev, buffer_usage_t usage, const std::vector<T>& data)
         {
-            return create_and_upload_buffer_raw(dev, usage, data.data(),
-                static_cast<uint32_t>(data.size()), static_cast<uint32_t>(sizeof(T)));
+            return create_and_upload_buffer_raw(dev, usage, data.data(), static_cast<uint32_t>(data.size()),
+                                                static_cast<uint32_t>(sizeof(T)));
         }
 
         /**
@@ -80,8 +80,8 @@ namespace sdl
         texture create_and_upload_texture(const device& dev, const surface& surf);
 
     private:
-        buffer create_and_upload_buffer_raw(const device& dev, buffer_usage_t usage,
-                                            const void* data, uint32_t count, uint32_t element_size);
+        buffer create_and_upload_buffer_raw(const device& dev, buffer_usage_t usage, const void* data, uint32_t count,
+                                            uint32_t element_size);
     };
 
 } // namespace sdl

@@ -16,10 +16,8 @@ namespace sdl
         SDL_GPURenderPass* handle;        // Owning (ended on destruction)
         SDL_GPUCommandBuffer* cmd_buffer; // Non-owning (for push uniforms)
 
-        static SDL_GPURenderPass* begin_render_pass(SDL_GPUCommandBuffer* command_buffer,
-                                                    SDL_GPUTexture* color_target,
-                                                    SDL_GPUTexture* depth_target,
-                                                    const SDL_FColor& clear_color,
+        static SDL_GPURenderPass* begin_render_pass(SDL_GPUCommandBuffer* command_buffer, SDL_GPUTexture* color_target,
+                                                    SDL_GPUTexture* depth_target, const SDL_FColor& clear_color,
                                                     float clear_depth)
         {
             if(!color_target)
@@ -52,12 +50,9 @@ namespace sdl
             return SDL_BeginGPURenderPass(command_buffer, &color_target_info, 1, nullptr);
         }
 
-        impl(SDL_GPUCommandBuffer* cmd,
-             SDL_GPUTexture* color_target,
-             SDL_GPUTexture* depth_target,
-             const SDL_FColor& clear_color,
-             float clear_depth) : handle(begin_render_pass(cmd, color_target, depth_target, clear_color, clear_depth)),
-                                  cmd_buffer(cmd)
+        impl(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* color_target, SDL_GPUTexture* depth_target,
+             const SDL_FColor& clear_color, float clear_depth)
+            : handle(begin_render_pass(cmd, color_target, depth_target, clear_color, clear_depth)), cmd_buffer(cmd)
         {
             if(!handle)
             {
@@ -65,7 +60,10 @@ namespace sdl
             }
         }
 
-        ~impl() noexcept { SDL_EndGPURenderPass(handle); }
+        ~impl() noexcept
+        {
+            SDL_EndGPURenderPass(handle);
+        }
 
         impl(const impl&) = delete;
         impl& operator=(const impl&) = delete;
@@ -73,31 +71,16 @@ namespace sdl
         impl& operator=(impl&&) = default;
     };
 
-    render_pass::render_pass(command_buffer& cmd,
-                             const texture& color_target,
-                             float clear_r,
-                             float clear_g,
-                             float clear_b,
-                             float clear_a) : pimpl(new impl(cmd.get(),
-                                                             color_target.get(),
-                                                             nullptr,
-                                                             SDL_FColor { clear_r, clear_g, clear_b, clear_a },
-                                                             1.0F))
+    render_pass::render_pass(command_buffer& cmd, const texture& color_target, float clear_r, float clear_g,
+                             float clear_b, float clear_a)
+        : pimpl(new impl(cmd.get(), color_target.get(), nullptr, SDL_FColor{clear_r, clear_g, clear_b, clear_a}, 1.0F))
     {
     }
 
-    render_pass::render_pass(command_buffer& cmd,
-                             const texture& color_target,
-                             const texture& depth_target,
-                             float clear_r,
-                             float clear_g,
-                             float clear_b,
-                             float clear_a,
-                             float clear_depth) : pimpl(new impl(cmd.get(),
-                                                                 color_target.get(),
-                                                                 depth_target.get(),
-                                                                 SDL_FColor { clear_r, clear_g, clear_b, clear_a },
-                                                                 clear_depth))
+    render_pass::render_pass(command_buffer& cmd, const texture& color_target, const texture& depth_target,
+                             float clear_r, float clear_g, float clear_b, float clear_a, float clear_depth)
+        : pimpl(new impl(cmd.get(), color_target.get(), depth_target.get(),
+                         SDL_FColor{clear_r, clear_g, clear_b, clear_a}, clear_depth))
     {
     }
 
@@ -179,19 +162,22 @@ namespace sdl
         }
     }
 
-    void render_pass::draw(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance)
+    void render_pass::draw(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex,
+                           uint32_t first_instance)
     {
         SDL_DrawGPUPrimitives(pimpl->handle, vertex_count, instance_count, first_vertex, first_instance);
     }
 
-    void render_pass::draw_indexed(uint32_t index_count, uint32_t instance_count, uint32_t first_index, int32_t vertex_offset, uint32_t first_instance)
+    void render_pass::draw_indexed(uint32_t index_count, uint32_t instance_count, uint32_t first_index,
+                                   int32_t vertex_offset, uint32_t first_instance)
     {
-        SDL_DrawGPUIndexedPrimitives(pimpl->handle, index_count, instance_count, first_index, vertex_offset, first_instance);
+        SDL_DrawGPUIndexedPrimitives(pimpl->handle, index_count, instance_count, first_index, vertex_offset,
+                                     first_instance);
     }
 
     void render_pass::set_scissor(int x, int y, int w, int h)
     {
-        SDL_Rect rect = { x, y, w, h };
+        SDL_Rect rect = {x, y, w, h};
         SDL_SetGPUScissor(pimpl->handle, &rect);
     }
 

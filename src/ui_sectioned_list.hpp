@@ -12,7 +12,7 @@ namespace osect
     struct ui_section
     {
         const char* header;
-        std::vector<std::string> items;  // display text, already formatted
+        std::vector<std::string> items; // display text, already formatted
     };
 
     // Canonical feature sections shared by the pick popup and the search
@@ -39,7 +39,6 @@ namespace osect
     //
     // Empty sections are skipped. The helper owns no state; callers map the
     // returned indices back to their own data.
-    std::optional<std::pair<int, int>> draw_sectioned_selectable_list(
-        const std::vector<ui_section>& sections);
+    std::optional<std::pair<int, int>> draw_sectioned_selectable_list(const std::vector<ui_section>& sections);
 
 } // namespace osect

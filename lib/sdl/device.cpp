@@ -72,10 +72,12 @@ namespace sdl
                 throw error("Failed to set swapchain parameters");
             }
 
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  Swapchain composition: %s, present mode: %s", compositionName, presentationName);
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  Swapchain composition: %s, present mode: %s", compositionName,
+                        presentationName);
 
             const char* backend_name = SDL_GetGPUDeviceDriver(dev);
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GPU device created: %s", backend_name ? backend_name : "Unknown");
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GPU device created: %s",
+                        backend_name ? backend_name : "Unknown");
 
             SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(dev);
             std::string format_list;
@@ -103,7 +105,10 @@ namespace sdl
             return dev;
         }
 
-        impl(SDL_Window* win, bool vsync, const char* preferred_driver) : window(win), handle(create_device(win, vsync, preferred_driver)) {}
+        impl(SDL_Window* win, bool vsync, const char* preferred_driver)
+            : window(win), handle(create_device(win, vsync, preferred_driver))
+        {
+        }
 
         ~impl() noexcept
         {
@@ -117,7 +122,8 @@ namespace sdl
         impl& operator=(impl&&) = default;
     };
 
-    device::device(const sdl::window& win, bool vsync, const char* preferred_driver) : pimpl(new impl(win.get(), vsync, preferred_driver))
+    device::device(const sdl::window& win, bool vsync, const char* preferred_driver)
+        : pimpl(new impl(win.get(), vsync, preferred_driver))
     {
     }
 

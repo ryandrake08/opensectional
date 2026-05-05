@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
-template<typename value_t>
+template <typename value_t>
 class lru_set
 {
     // our map will point to list iterators, which we will use when looking up/using items

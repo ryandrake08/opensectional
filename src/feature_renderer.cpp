@@ -59,13 +59,8 @@ namespace osect
         std::optional<flight_route> route;
         bool route_selected = true;
 
-        impl(sdl::device& dev, const char* db_path,
-             const chart_style& styles, const ephemeral_data& eph)
-            : dev(dev)
-            , eph(eph)
-            , builder(db_path, styles)
-            , half_extent_y(HALF_CIRCUMFERENCE)
-            , query_bbox{0, 0, 0, 0}
+        impl(sdl::device& dev, const char* db_path, const chart_style& styles, const ephemeral_data& eph)
+            : dev(dev), eph(eph), builder(db_path, styles), half_extent_y(HALF_CIRCUMFERENCE), query_bbox{0, 0, 0, 0}
         {
         }
 
@@ -99,30 +94,26 @@ namespace osect
 
             for(int i = 0; i < layer_sdf_count; i++)
             {
-                if(!vis[i]) continue;
-                all_polylines.insert(all_polylines.end(),
-                    poly.at(i).polylines.begin(), poly.at(i).polylines.end());
-                all_styles.insert(all_styles.end(),
-                    poly.at(i).styles.begin(), poly.at(i).styles.end());
-                all_circles.insert(all_circles.end(),
-                    poly.at(i).circles.begin(), poly.at(i).circles.end());
+                if(!vis[i])
+                {
+                    continue;
+                }
+                all_polylines.insert(all_polylines.end(), poly.at(i).polylines.begin(), poly.at(i).polylines.end());
+                all_styles.insert(all_styles.end(), poly.at(i).styles.begin(), poly.at(i).styles.end());
+                all_circles.insert(all_circles.end(), poly.at(i).circles.begin(), poly.at(i).circles.end());
             }
 
             // Selection overlay rendered last so it sits on top of every layer.
-            all_polylines.insert(all_polylines.end(),
-                selection_overlay.polylines.begin(), selection_overlay.polylines.end());
-            all_styles.insert(all_styles.end(),
-                selection_overlay.styles.begin(), selection_overlay.styles.end());
-            all_circles.insert(all_circles.end(),
-                selection_overlay.circles.begin(), selection_overlay.circles.end());
+            all_polylines.insert(all_polylines.end(), selection_overlay.polylines.begin(),
+                                 selection_overlay.polylines.end());
+            all_styles.insert(all_styles.end(), selection_overlay.styles.begin(), selection_overlay.styles.end());
+            all_circles.insert(all_circles.end(), selection_overlay.circles.begin(), selection_overlay.circles.end());
 
-            sdf_lines.set_data(std::move(all_polylines), std::move(all_styles),
-                               std::move(all_circles));
+            sdf_lines.set_data(std::move(all_polylines), std::move(all_styles), std::move(all_circles));
         }
     };
 
-    feature_renderer::feature_renderer(sdl::device& dev, const char* db_path,
-                                       const chart_style& cs,
+    feature_renderer::feature_renderer(sdl::device& dev, const char* db_path, const chart_style& cs,
                                        const ephemeral_data& eph)
         : pimpl(std::make_unique<impl>(dev, db_path, cs, eph))
     {
@@ -130,17 +121,14 @@ namespace osect
 
     feature_renderer::~feature_renderer() = default;
 
-    void feature_renderer::update(double vx_min, double vy_min,
-                                   double vx_max, double vy_max,
-                                   double half_extent_y, int viewport_height,
-                                   double aspect_ratio)
+    void feature_renderer::update(double vx_min, double vy_min, double vx_max, double vy_max, double half_extent_y,
+                                  int viewport_height, double aspect_ratio)
     {
         pimpl->half_extent_y = half_extent_y;
         pimpl->viewport_height = viewport_height;
         pimpl->aspect_ratio = aspect_ratio;
 
-        geo_bbox view_bbox{mx_to_lon(vx_min), my_to_lat(vy_min),
-                            mx_to_lon(vx_max), my_to_lat(vy_max)};
+        geo_bbox view_bbox{mx_to_lon(vx_min), my_to_lat(vy_min), mx_to_lon(vx_max), my_to_lat(vy_max)};
 
         if(pimpl->needs_requery(view_bbox))
         {
@@ -189,12 +177,15 @@ namespace osect
             for(const auto& v : src)
             {
                 sdl::vertex_t2f_c4ub_v3f out{};
-                out.s = 0; out.t = 0;
+                out.s = 0;
+                out.t = 0;
                 out.r = static_cast<uint8_t>(std::clamp(v.color.r, 0.0F, 1.0F) * 255.0F);
                 out.g = static_cast<uint8_t>(std::clamp(v.color.g, 0.0F, 1.0F) * 255.0F);
                 out.b = static_cast<uint8_t>(std::clamp(v.color.b, 0.0F, 1.0F) * 255.0F);
                 out.a = static_cast<uint8_t>(std::clamp(v.color.a, 0.0F, 1.0F) * 255.0F);
-                out.x = v.pos.x; out.y = v.pos.y; out.z = 0;
+                out.x = v.pos.x;
+                out.y = v.pos.y;
+                out.z = 0;
                 pimpl->fill_vertices.push_back(out);
             }
             pimpl->fill_needs_upload = true;
@@ -224,17 +215,14 @@ namespace osect
             pimpl->fill_buffer.reset();
             if(!pimpl->fill_vertices.empty())
             {
-                auto buf = pass.create_and_upload_buffer(pimpl->dev,
-                    sdl::buffer_usage::vertex, pimpl->fill_vertices);
+                auto buf = pass.create_and_upload_buffer(pimpl->dev, sdl::buffer_usage::vertex, pimpl->fill_vertices);
                 pimpl->fill_buffer = std::make_unique<sdl::buffer>(std::move(buf));
             }
             pimpl->fill_needs_upload = false;
         }
     }
 
-    void feature_renderer::render(sdl::render_pass& pass,
-                                   const render_context& ctx,
-                                   const glm::mat4& view_matrix) const
+    void feature_renderer::render(sdl::render_pass& pass, const render_context& ctx, const glm::mat4& view_matrix) const
     {
         if(ctx.current_pass == render_pass_id::polygon_fill_0)
         {
@@ -252,8 +240,7 @@ namespace osect
         else if(ctx.current_pass == render_pass_id::line_sdf_0)
         {
             auto vw = static_cast<int>(pimpl->aspect_ratio * pimpl->viewport_height);
-            pimpl->sdf_lines.render(pass, ctx.projection_matrix, view_matrix,
-                                    vw, pimpl->viewport_height);
+            pimpl->sdf_lines.render(pass, ctx.projection_matrix, view_matrix, vw, pimpl->viewport_height);
         }
     }
 
@@ -282,7 +269,10 @@ namespace osect
 
     void feature_renderer::set_route_selected(bool selected)
     {
-        if(pimpl->route_selected == selected) return;
+        if(pimpl->route_selected == selected)
+        {
+            return;
+        }
         pimpl->route_selected = selected;
         pimpl->has_cached_query = false;
     }
@@ -297,7 +287,10 @@ namespace osect
         bool line_vis_changed = false;
         for(int i = 0; i < layer_sdf_count; i++)
         {
-            if(pimpl->vis[i] != vis[i]) line_vis_changed = true;
+            if(pimpl->vis[i] != vis[i])
+            {
+                line_vis_changed = true;
+            }
         }
         auto altitude_changed = pimpl->vis.altitude != vis.altitude;
 

@@ -1,0 +1,89 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: c++17
+
+ColumnLimit: 120
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+
+# Allman braces
+BreakBeforeBraces: Allman
+
+# Pointer / reference style: T* p, T& r
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+
+# Namespaces: indent body, add closing comments, no compaction
+NamespaceIndentation: All
+FixNamespaceComments: false
+CompactNamespaces: false
+
+# Always brace, never collapse to one-liners (except short lambdas / empty fn bodies)
+InsertBraces: true
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortLambdasOnASingleLine: All
+
+# Prefer single-line declarations / calls when they fit in ColumnLimit; when
+# they wrap, bin-pack to fill each line up to the column limit.
+BinPackParameters: true
+BinPackArguments: true
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowAllArgumentsOnNextLine: true
+
+# Continuation alignment under the open paren
+AlignAfterOpenBracket: Align
+AlignOperands: Align
+
+# Member init lists
+BreakConstructorInitializers: BeforeColon
+PackConstructorInitializers: NextLine
+ConstructorInitializerIndentWidth: 4
+
+# Includes: sort, regroup; own header stays first via IncludeIsMainRegex default
+SortIncludes: CaseSensitive
+IncludeBlocks: Merge
+IncludeCategories:
+  - Regex:    '^<(SDL3|imgui|curl|sqlite3|doctest|GL|vulkan)'
+    Priority: 3
+  - Regex:    '^<.*\.h>$'
+    Priority: 5
+  - Regex:    '^<.*>$'
+    Priority: 4
+  - Regex:    '^".*"$'
+    Priority: 2
+
+# Spacing
+SpaceAfterTemplateKeyword: true
+SpaceBeforeParens: Never
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceAfterCStyleCast: false
+SpaceBeforeAssignmentOperators: true
+
+# Whitespace
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+
+# Comments
+ReflowComments: true
+AlignTrailingComments: true
+
+# Class / struct
+EmptyLineBeforeAccessModifier: LogicalBlock
+IndentCaseLabels: false
+IndentCaseBlocks: false
+
+# Templates
+AlwaysBreakTemplateDeclarations: Yes
+
+# Bias against splitting return type onto its own line, since we have 120 cols
+PenaltyReturnTypeOnItsOwnLine: 1000

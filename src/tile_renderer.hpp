@@ -24,10 +24,8 @@ namespace osect
         ~tile_renderer();
 
         // Recompute visible tiles and enqueue background loads
-        void update(double view_x_min, double view_y_min,
-                    double view_x_max, double view_y_max,
-                    double half_extent_y, int viewport_height,
-                    double aspect_ratio);
+        void update(double view_x_min, double view_y_min, double view_x_max, double view_y_max, double half_extent_y,
+                    int viewport_height, double aspect_ratio);
 
         // Drain background loader into staging buffer
         void drain();

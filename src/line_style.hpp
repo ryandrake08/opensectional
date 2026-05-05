@@ -11,7 +11,7 @@ namespace osect
         float border_width; // border width in pixels (outside of path)
         float dash_length;  // dash length in pixels (0 = solid)
         float gap_length;   // gap length in pixels
-        float r, g, b, a;  // line color (border is always black)
+        float r, g, b, a;   // line color (border is always black)
         float fill_width;   // border width on inside of path (0 = same as border_width)
     };
 

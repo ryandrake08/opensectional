@@ -1,6 +1,6 @@
 #pragma once
 
-#include "geo_types.hpp"  // airspace_point
+#include "geo_types.hpp" // airspace_point
 #include <string>
 #include <vector>
 

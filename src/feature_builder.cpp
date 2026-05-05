@@ -1,5 +1,4 @@
 #include "feature_builder.hpp"
-#include <algorithm>
 #include "chart_style.hpp"
 #include "feature_type.hpp"
 #include "flight_route.hpp"
@@ -7,7 +6,7 @@
 #include "map_view.hpp"
 #include "nasr_database.hpp"
 #include "wake_main.hpp"
-
+#include <algorithm>
 #include <cmath>
 #include <condition_variable>
 #include <memory>
@@ -23,14 +22,13 @@ namespace osect
         constexpr auto NAVAID_OVERLAP_TOL = 0.1F;
         auto tol = state.navaid_clearance * NAVAID_OVERLAP_TOL;
         auto tol_sq = tol * tol;
-        return std::any_of(state.navaid_positions.begin(),
-            state.navaid_positions.end(),
-            [&](const auto& np)
-            {
-                auto dx = x - np.x;
-                auto dy = y - np.y;
-                return dx * dx + dy * dy < tol_sq;
-            });
+        return std::any_of(state.navaid_positions.begin(), state.navaid_positions.end(),
+                           [&](const auto& np)
+                           {
+                               auto dx = x - np.x;
+                               auto dy = y - np.y;
+                               return dx * dx + dy * dy < tol_sq;
+                           });
     }
 
     bool build_context::fix_on_airway(const std::string& fix_id) const
@@ -56,18 +54,14 @@ namespace osect
         std::array<polyline_data, layer_sdf_count> poly;
         std::vector<label_candidate> labels;
 
-        impl(const char* db_path, chart_style cs)
-            : db(db_path)
-            , styles(std::move(cs))
-            , types(make_feature_types())
+        impl(const char* db_path, chart_style cs) : db(db_path), styles(std::move(cs)), types(make_feature_types())
         {
         }
 
         // Dispatch a single build pass at a given horizontal Mercator
         // offset (0 for the primary pass; ±WORLD_SIZE for antimeridian
         // wrap copies).
-        void build_all_features(const geo_bbox& bbox, const feature_build_request& req,
-                                 double mx_offset)
+        void build_all_features(const geo_bbox& bbox, const feature_build_request& req, double mx_offset)
         {
             auto local = req;
             local.lon_min = bbox.lon_min;
@@ -75,15 +69,19 @@ namespace osect
             local.lon_max = bbox.lon_max;
             local.lat_max = bbox.lat_max;
 
-            build_context ctx{db, req.tfrs, req.tfr_segments, styles,
-                              local, mx_offset, poly, labels, state};
+            build_context ctx{db, req.tfrs, req.tfr_segments, styles, local, mx_offset, poly, labels, state};
             for(const auto& t : types)
+            {
                 t->build(ctx);
+            }
         }
 
         void build_route(const feature_build_request& req, double mx_offset)
         {
-            if(!req.route) return;
+            if(!req.route)
+            {
+                return;
+            }
             const auto& wps = req.route->waypoints;
 
             auto& pd = poly[layer_route];
@@ -123,9 +121,10 @@ namespace osect
                 std::vector<glm::vec2> polyline;
                 polyline.reserve(arc.size());
                 for(const auto& p : arc)
-                    polyline.emplace_back(
-                        static_cast<float>(lon_to_mx(p.lon) + mx_offset),
-                        static_cast<float>(lat_to_my(p.lat)));
+                {
+                    polyline.emplace_back(static_cast<float>(lon_to_mx(p.lon) + mx_offset),
+                                          static_cast<float>(lat_to_my(p.lat)));
+                }
 
                 pd.polylines.push_back(std::move(polyline));
                 pd.styles.push_back(ls);
@@ -178,9 +177,8 @@ namespace osect
                 {
                     auto angle = 2.0 * M_PI * s / HALO_SEGMENTS;
                     auto hr = halo_r * 0.5;
-                    pts.emplace_back(
-                        static_cast<float>(cx + hr * std::cos(angle)),
-                        static_cast<float>(cy + hr * std::sin(angle)));
+                    pts.emplace_back(static_cast<float>(cx + hr * std::cos(angle)),
+                                     static_cast<float>(cy + hr * std::sin(angle)));
                 }
                 halo_pd.polylines.push_back(std::move(pts));
                 halo_pd.styles.push_back(halo_ls);
@@ -205,7 +203,10 @@ namespace osect
 
             geo_bbox qbox{req.lon_min, req.lat_min, req.lon_max, req.lat_max};
 
-            for(auto& p : poly) p.clear();
+            for(auto& p : poly)
+            {
+                p.clear();
+            }
             labels.clear();
 
             build_all_features(qbox, req, 0.0);
@@ -213,15 +214,13 @@ namespace osect
 
             if(qbox.lon_max > 180.0)
             {
-                geo_bbox shifted{qbox.lon_min - 360.0, qbox.lat_min,
-                                 qbox.lon_max - 360.0, qbox.lat_max};
+                geo_bbox shifted{qbox.lon_min - 360.0, qbox.lat_min, qbox.lon_max - 360.0, qbox.lat_max};
                 build_all_features(shifted, req, WORLD_SIZE);
                 build_route(req, WORLD_SIZE);
             }
             if(qbox.lon_min < -180.0)
             {
-                geo_bbox shifted{qbox.lon_min + 360.0, qbox.lat_min,
-                                 qbox.lon_max + 360.0, qbox.lat_max};
+                geo_bbox shifted{qbox.lon_min + 360.0, qbox.lat_min, qbox.lon_max + 360.0, qbox.lat_max};
                 build_all_features(shifted, req, -WORLD_SIZE);
                 build_route(req, -WORLD_SIZE);
             }
@@ -229,13 +228,10 @@ namespace osect
 
         // Build the halo + re-emitted icon/outline for the currently-
         // selected feature, dispatching to the feature_type that owns it.
-        void build_selection_overlay(const feature_build_request& req,
-                                      const feature& sel,
-                                      polyline_data& out,
-                                      polygon_fill_data& fill_out)
+        void build_selection_overlay(const feature_build_request& req, const feature& sel, polyline_data& out,
+                                     polygon_fill_data& fill_out)
         {
-            build_context ctx{db, req.tfrs, req.tfr_segments, styles,
-                              req, 0.0, poly, labels, state};
+            build_context ctx{db, req.tfrs, req.tfr_segments, styles, req, 0.0, poly, labels, state};
             find_feature_type(types, sel).build_selection(ctx, sel, out, fill_out);
         }
 
@@ -247,7 +243,10 @@ namespace osect
                 {
                     std::unique_lock<std::mutex> lock(mutex);
                     cv.wait(lock, [this] { return shutdown || pending_request.has_value(); });
-                    if(shutdown) return;
+                    if(shutdown)
+                    {
+                        return;
+                    }
                     req = std::move(*pending_request);
                     pending_request.reset();
                 }
@@ -257,9 +256,9 @@ namespace osect
                 feature_build_result result;
                 result.poly = std::move(poly);
                 if(req.selection)
-                    build_selection_overlay(req, *req.selection,
-                                             result.selection_overlay,
-                                             result.selection_fill);
+                {
+                    build_selection_overlay(req, *req.selection, result.selection_overlay, result.selection_fill);
+                }
                 result.labels = std::move(labels);
 
                 {

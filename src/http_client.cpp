@@ -1,7 +1,6 @@
 #include "http_client.hpp"
-
-#include <cctype>
 #include <curl/curl.h>
+#include <cctype>
 #include <mutex>
 #include <stdexcept>
 #include <string_view>
@@ -18,21 +17,21 @@ namespace osect
         void ensure_global_init()
         {
             static std::once_flag global_init_flag;
-            std::call_once(global_init_flag, []() {
-                curl_global_init(CURL_GLOBAL_DEFAULT);
-            });
+            std::call_once(global_init_flag, []() { curl_global_init(CURL_GLOBAL_DEFAULT); });
         }
 
         CURL* make_curl_handle()
         {
             ensure_global_init();
             CURL* c = curl_easy_init();
-            if(!c) throw std::runtime_error("curl_easy_init failed");
+            if(!c)
+            {
+                throw std::runtime_error("curl_easy_init failed");
+            }
             return c;
         }
 
-        size_t write_body_cb(char* ptr, size_t size, size_t nmemb,
-                             void* userdata)
+        size_t write_body_cb(char* ptr, size_t size, size_t nmemb, void* userdata)
         {
             const auto total = size * nmemb;
             static_cast<std::string*>(userdata)->append(ptr, total);
@@ -42,25 +41,33 @@ namespace osect
         // Header callback: scan each line for ETag and capture its
         // value (verbatim, including surrounding quotes — that's the
         // shape callers will hand back as If-None-Match).
-        size_t header_cb(char* buffer, size_t size, size_t nitems,
-                         void* userdata)
+        size_t header_cb(char* buffer, size_t size, size_t nitems, void* userdata)
         {
             const auto total = size * nitems;
             std::string_view line(buffer, total);
             // Strip CRLF.
             while(!line.empty() && (line.back() == '\n' || line.back() == '\r'))
+            {
                 line.remove_suffix(1);
+            }
             constexpr std::string_view prefix("ETag:");
-            if(line.size() < prefix.size()) return total;
+            if(line.size() < prefix.size())
+            {
+                return total;
+            }
             for(std::size_t i = 0; i < prefix.size(); ++i)
             {
                 if(std::tolower(static_cast<unsigned char>(line[i])) !=
                    std::tolower(static_cast<unsigned char>(prefix[i])))
+                {
                     return total;
+                }
             }
             line.remove_prefix(prefix.size());
             while(!line.empty() && (line.front() == ' ' || line.front() == '\t'))
+            {
                 line.remove_prefix(1);
+            }
             static_cast<std::string*>(userdata)->assign(line);
             return total;
         }
@@ -71,14 +78,15 @@ namespace osect
         CURL* curl = nullptr;
         bool offline = false;
 
-        explicit impl(bool offline_)
-            : curl(make_curl_handle())
-            , offline(offline_)
+        explicit impl(bool offline_) : curl(make_curl_handle()), offline(offline_)
         {
         }
         ~impl()
         {
-            if(curl) curl_easy_cleanup(curl);
+            if(curl)
+            {
+                curl_easy_cleanup(curl);
+            }
         }
         impl(const impl&) = delete;
         impl& operator=(const impl&) = delete;
@@ -86,15 +94,16 @@ namespace osect
         impl& operator=(impl&&) = delete;
     };
 
-    http_client::http_client(bool offline) : pimpl(std::make_unique<impl>(offline)) {}
+    http_client::http_client(bool offline) : pimpl(std::make_unique<impl>(offline))
+    {
+    }
     http_client::~http_client() = default;
 
     http_client::response http_client::get(const request& req)
     {
         if(pimpl->offline)
         {
-            throw std::runtime_error(
-                "HTTP request failed: offline mode (" + req.url + ")");
+            throw std::runtime_error("HTTP request failed: offline mode (" + req.url + ")");
         }
 
         auto* curl = pimpl->curl;
@@ -106,8 +115,7 @@ namespace osect
         if(!req.if_none_match.empty())
         {
             if_none_match_header = "If-None-Match: " + req.if_none_match;
-            headers = curl_slist_append(headers,
-                                         if_none_match_header.c_str());
+            headers = curl_slist_append(headers, if_none_match_header.c_str());
         }
 
         curl_easy_setopt(curl, CURLOPT_URL, req.url.c_str());
@@ -139,9 +147,8 @@ namespace osect
 
         if(rc != CURLE_OK)
         {
-            throw std::runtime_error(
-                std::string("HTTP request failed: ") +
-                curl_easy_strerror(rc) + " (" + req.url + ")");
+            throw std::runtime_error(std::string("HTTP request failed: ") + curl_easy_strerror(rc) + " (" + req.url +
+                                     ")");
         }
 
         long http_code = 0;

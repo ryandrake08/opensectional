@@ -29,22 +29,15 @@ namespace sdl
             return {device, SDL_CreateGPUTexture(device, &createInfo)};
         }
 
-        impl(SDL_GPUDevice* dev,
-             Uint32 w,
-             Uint32 h,
-             SDL_GPUTextureFormat format) : device(dev),
-                                            fmt(format),
-                                            width(w),
-                                            height(h),
-                                            tex(create_texture(dev, fmt, width, height))
+        impl(SDL_GPUDevice* dev, Uint32 w, Uint32 h, SDL_GPUTextureFormat format)
+            : device(dev), fmt(format), width(w), height(h), tex(create_texture(dev, fmt, width, height))
         {
         }
     };
 
-    depth_buffer::depth_buffer(device& dev, unsigned width, unsigned height, texture_format_t format) : pimpl(new impl(dev.get(),
-                                                                                                                        static_cast<Uint32>(width),
-                                                                                                                        static_cast<Uint32>(height),
-                                                                                                                        static_cast<SDL_GPUTextureFormat>(format.value)))
+    depth_buffer::depth_buffer(device& dev, unsigned width, unsigned height, texture_format_t format)
+        : pimpl(new impl(dev.get(), static_cast<Uint32>(width), static_cast<Uint32>(height),
+                         static_cast<SDL_GPUTextureFormat>(format.value)))
     {
     }
 

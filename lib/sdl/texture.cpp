@@ -13,7 +13,8 @@ namespace sdl
         SDL_GPUTexture* handle; // Owning or non-owning based on whether device is nullptr
 
         // Owning constructor - creates texture
-        impl(SDL_GPUDevice* dev, const SDL_GPUTextureCreateInfo& info) : device(dev), handle(SDL_CreateGPUTexture(dev, &info))
+        impl(SDL_GPUDevice* dev, const SDL_GPUTextureCreateInfo& info)
+            : device(dev), handle(SDL_CreateGPUTexture(dev, &info))
         {
             if(!handle)
             {
@@ -70,7 +71,9 @@ namespace sdl
 
     texture::~texture() = default;
 
-    texture::texture(texture&& other) noexcept : pimpl(std::move(other.pimpl)) {}
+    texture::texture(texture&& other) noexcept : pimpl(std::move(other.pimpl))
+    {
+    }
 
     texture& texture::operator=(texture&& other) noexcept
     {

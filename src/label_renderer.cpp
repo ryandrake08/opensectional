@@ -1,11 +1,10 @@
 #include "label_renderer.hpp"
 #include "render_context.hpp"
-#include <NotoSans_Regular_ttf.h>
+#include <glm/ext/matrix_clip_space.hpp>
 #include <algorithm>
 #include <cmath>
 #include <memory>
 #include <optional>
-#include <glm/ext/matrix_clip_space.hpp>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
@@ -16,6 +15,7 @@
 #include <sdl/text_engine.hpp>
 #include <sdl/types.hpp>
 #include <vector>
+#include <NotoSans_Regular_ttf.h>
 
 namespace
 {
@@ -99,19 +99,17 @@ namespace osect
         bool dirty = false;
 
         explicit impl(sdl::device& dev)
-            : dev(dev)
-            , engine(dev)
-            , font(load_font(engine, 13))
-            , outline_font(load_font(engine, 13))
-            , sampler(dev, sdl::filter::nearest, sdl::filter::nearest,
-                      sdl::sampler_address_mode::clamp_to_edge)
+            : dev(dev),
+              engine(dev),
+              font(load_font(engine, 13)),
+              outline_font(load_font(engine, 13)),
+              sampler(dev, sdl::filter::nearest, sdl::filter::nearest, sdl::sampler_address_mode::clamp_to_edge)
         {
             outline_font.set_outline(1);
         }
     };
 
-    label_renderer::label_renderer(sdl::device& dev)
-        : pimpl(std::make_unique<impl>(dev))
+    label_renderer::label_renderer(sdl::device& dev) : pimpl(std::make_unique<impl>(dev))
     {
     }
 
@@ -131,8 +129,7 @@ namespace osect
             {
                 pimpl->labels.push_back(cached_label{
                     .fill = std::move(fill),
-                    .outline = sdl::text(pimpl->engine, pimpl->outline_font,
-                                         lc.text.c_str()),
+                    .outline = sdl::text(pimpl->engine, pimpl->outline_font, lc.text.c_str()),
                     .mx = lc.mx,
                     .my = lc.my,
                     .width = bounds.width(),
@@ -165,8 +162,7 @@ namespace osect
 
             pimpl->labels.push_back(cached_label{
                 .fill = std::move(fill),
-                .outline = sdl::text(pimpl->engine, pimpl->outline_font,
-                                     lc.text.c_str()),
+                .outline = sdl::text(pimpl->engine, pimpl->outline_font, lc.text.c_str()),
                 .mx = lc.mx,
                 .my = lc.my,
                 .width = total_w,
@@ -178,14 +174,11 @@ namespace osect
                 .outline_g = lc.outline_g,
                 .outline_b = lc.outline_b,
                 .upper_fill = std::move(uf),
-                .upper_outline = sdl::text(pimpl->engine, pimpl->outline_font,
-                                            lc.upper_text.c_str()),
+                .upper_outline = sdl::text(pimpl->engine, pimpl->outline_font, lc.upper_text.c_str()),
                 .lower_fill = std::move(lf),
-                .lower_outline = sdl::text(pimpl->engine, pimpl->outline_font,
-                                            lc.lower_text.c_str()),
+                .lower_outline = sdl::text(pimpl->engine, pimpl->outline_font, lc.lower_text.c_str()),
                 .divider_fill = std::move(df),
-                .divider_outline = sdl::text(pimpl->engine, pimpl->outline_font,
-                                              dashes.c_str()),
+                .divider_outline = sdl::text(pimpl->engine, pimpl->outline_font, dashes.c_str()),
                 .type_width = type_w,
                 .upper_width = upper_w,
                 .lower_width = lower_w,
@@ -196,10 +189,8 @@ namespace osect
         }
     }
 
-    void label_renderer::update_positions(double center_x, double center_y,
-                                          double half_extent_y,
-                                          int viewport_width, int viewport_height,
-                                          const layer_visibility& vis)
+    void label_renderer::update_positions(double center_x, double center_y, double half_extent_y, int viewport_width,
+                                          int viewport_height, const layer_visibility& vis)
     {
         // World-to-screen transform
         auto scale = viewport_height / (2.0 * half_extent_y);
@@ -214,13 +205,13 @@ namespace osect
             sorted_indices.push_back(i);
         }
         std::sort(sorted_indices.begin(), sorted_indices.end(),
-            [this](size_t a, size_t b)
-            {
-                return pimpl->labels[a].priority > pimpl->labels[b].priority;
-            });
+                  [this](size_t a, size_t b) { return pimpl->labels[a].priority > pimpl->labels[b].priority; });
 
         // Greedy overlap elimination
-        struct placed_rect { float x0, y0, x1, y1; };
+        struct placed_rect
+        {
+            float x0, y0, x1, y1;
+        };
         std::vector<placed_rect> placed;
         placed.reserve(sorted_indices.size());
 
@@ -237,10 +228,8 @@ namespace osect
             }
 
             // Project world to screen (Y-down)
-            auto sx = static_cast<float>(
-                (lbl.mx - center_x) * scale + screen_cx);
-            auto sy = static_cast<float>(
-                screen_cy - (lbl.my - center_y) * scale);
+            auto sx = static_cast<float>((lbl.mx - center_x) * scale + screen_cx);
+            auto sy = static_cast<float>(screen_cy - (lbl.my - center_y) * scale);
 
             auto x0 = 0.0F;
             auto y0 = 0.0F;
@@ -306,7 +295,10 @@ namespace osect
                     break;
                 }
             }
-            if(overlaps) continue;
+            if(overlaps)
+            {
+                continue;
+            }
 
             placed.push_back({x0, y0, x1, y1});
 
@@ -341,15 +333,12 @@ namespace osect
                 auto mid_y = pos.y;
 
                 // TYPE: right-justified, vertically centered
-                glm::vec3 type_pos(right_x - lbl.type_width - COMPOSITE_GAP,
-                                   mid_y - lbl.line_height * 0.5F, 0.0F);
+                glm::vec3 type_pos(right_x - lbl.type_width - COMPOSITE_GAP, mid_y - lbl.line_height * 0.5F, 0.0F);
                 glm::vec3 type_opos(type_pos.x - ofs, type_pos.y + ofs, 0.0F);
-                lbl.outline.append_geometry(
-                    pimpl->outline_vertices, pimpl->outline_indices, type_opos,
-                    lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
-                lbl.fill.append_geometry(
-                    pimpl->fill_vertices, pimpl->fill_indices, type_pos,
-                    FILL_R, FILL_G, FILL_B, FILL_A);
+                lbl.outline.append_geometry(pimpl->outline_vertices, pimpl->outline_indices, type_opos, lbl.outline_r,
+                                            lbl.outline_g, lbl.outline_b, OUTLINE_A);
+                lbl.fill.append_geometry(pimpl->fill_vertices, pimpl->fill_indices, type_pos, FILL_R, FILL_G, FILL_B,
+                                         FILL_A);
 
                 // Center of right column for centering text
                 auto right_cx = right_x + lbl.right_col_width * 0.5F;
@@ -358,58 +347,45 @@ namespace osect
                 auto upper_x = right_cx - lbl.upper_width * 0.5F;
                 glm::vec3 upper_pos(upper_x, mid_y + lbl.line_height * 0.5F, 0.0F);
                 glm::vec3 upper_opos(upper_pos.x - ofs, upper_pos.y + ofs, 0.0F);
-                lbl.upper_outline->append_geometry(
-                    pimpl->outline_vertices, pimpl->outline_indices, upper_opos,
-                    lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
-                lbl.upper_fill->append_geometry(
-                    pimpl->fill_vertices, pimpl->fill_indices, upper_pos,
-                    FILL_R, FILL_G, FILL_B, FILL_A);
+                lbl.upper_outline->append_geometry(pimpl->outline_vertices, pimpl->outline_indices, upper_opos,
+                                                   lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
+                lbl.upper_fill->append_geometry(pimpl->fill_vertices, pimpl->fill_indices, upper_pos, FILL_R, FILL_G,
+                                                FILL_B, FILL_A);
 
                 // DIVIDER: centered on right column
                 auto div_x = right_cx - lbl.divider_width * 0.5F;
                 glm::vec3 div_pos(div_x, mid_y - lbl.line_height * 0.5F, 0.0F);
                 glm::vec3 div_opos(div_pos.x - ofs, div_pos.y + ofs, 0.0F);
-                lbl.divider_outline->append_geometry(
-                    pimpl->outline_vertices, pimpl->outline_indices, div_opos,
-                    lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
-                lbl.divider_fill->append_geometry(
-                    pimpl->fill_vertices, pimpl->fill_indices, div_pos,
-                    FILL_R, FILL_G, FILL_B, FILL_A);
+                lbl.divider_outline->append_geometry(pimpl->outline_vertices, pimpl->outline_indices, div_opos,
+                                                     lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
+                lbl.divider_fill->append_geometry(pimpl->fill_vertices, pimpl->fill_indices, div_pos, FILL_R, FILL_G,
+                                                  FILL_B, FILL_A);
 
                 // LOWER: below divider, centered on right column
                 auto lower_x = right_cx - lbl.lower_width * 0.5F;
-                glm::vec3 lower_pos(lower_x,
-                                    mid_y - lbl.line_height * 1.5F, 0.0F);
+                glm::vec3 lower_pos(lower_x, mid_y - lbl.line_height * 1.5F, 0.0F);
                 glm::vec3 lower_opos(lower_pos.x - ofs, lower_pos.y + ofs, 0.0F);
-                lbl.lower_outline->append_geometry(
-                    pimpl->outline_vertices, pimpl->outline_indices, lower_opos,
-                    lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
-                lbl.lower_fill->append_geometry(
-                    pimpl->fill_vertices, pimpl->fill_indices, lower_pos,
-                    FILL_R, FILL_G, FILL_B, FILL_A);
+                lbl.lower_outline->append_geometry(pimpl->outline_vertices, pimpl->outline_indices, lower_opos,
+                                                   lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
+                lbl.lower_fill->append_geometry(pimpl->fill_vertices, pimpl->fill_indices, lower_pos, FILL_R, FILL_G,
+                                                FILL_B, FILL_A);
             }
             else if(lbl.angle == 0.0F)
             {
                 glm::vec3 opos(pos.x - ofs, pos.y + ofs, 0.0F);
-                lbl.outline.append_geometry(
-                    pimpl->outline_vertices, pimpl->outline_indices, opos,
-                    OUTLINE_R, OUTLINE_G, OUTLINE_B, OUTLINE_A);
+                lbl.outline.append_geometry(pimpl->outline_vertices, pimpl->outline_indices, opos, OUTLINE_R, OUTLINE_G,
+                                            OUTLINE_B, OUTLINE_A);
 
-                lbl.fill.append_geometry(
-                    pimpl->fill_vertices, pimpl->fill_indices, pos,
-                    FILL_R, FILL_G, FILL_B, FILL_A);
+                lbl.fill.append_geometry(pimpl->fill_vertices, pimpl->fill_indices, pos, FILL_R, FILL_G, FILL_B,
+                                         FILL_A);
             }
             else
             {
-                lbl.outline.append_geometry(
-                    pimpl->outline_vertices, pimpl->outline_indices,
-                    pos, lbl.angle,
-                    lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
+                lbl.outline.append_geometry(pimpl->outline_vertices, pimpl->outline_indices, pos, lbl.angle,
+                                            lbl.outline_r, lbl.outline_g, lbl.outline_b, OUTLINE_A);
 
-                lbl.fill.append_geometry(
-                    pimpl->fill_vertices, pimpl->fill_indices,
-                    pos, lbl.angle,
-                    FILL_R, FILL_G, FILL_B, FILL_A);
+                lbl.fill.append_geometry(pimpl->fill_vertices, pimpl->fill_indices, pos, lbl.angle, FILL_R, FILL_G,
+                                         FILL_B, FILL_A);
             }
         }
 
@@ -433,12 +409,10 @@ namespace osect
         pimpl->outline_index_buffer.reset();
         if(!pimpl->outline_vertices.empty())
         {
-            auto vbuf = pass.create_and_upload_buffer(
-                dev, sdl::buffer_usage::vertex, pimpl->outline_vertices);
+            auto vbuf = pass.create_and_upload_buffer(dev, sdl::buffer_usage::vertex, pimpl->outline_vertices);
             pimpl->outline_vertex_buffer = std::make_unique<sdl::buffer>(std::move(vbuf));
 
-            auto ibuf = pass.create_and_upload_buffer(
-                dev, sdl::buffer_usage::index, pimpl->outline_indices);
+            auto ibuf = pass.create_and_upload_buffer(dev, sdl::buffer_usage::index, pimpl->outline_indices);
             pimpl->outline_index_buffer = std::make_unique<sdl::buffer>(std::move(ibuf));
         }
 
@@ -447,21 +421,17 @@ namespace osect
         pimpl->fill_index_buffer.reset();
         if(!pimpl->fill_vertices.empty())
         {
-            auto vbuf = pass.create_and_upload_buffer(
-                dev, sdl::buffer_usage::vertex, pimpl->fill_vertices);
+            auto vbuf = pass.create_and_upload_buffer(dev, sdl::buffer_usage::vertex, pimpl->fill_vertices);
             pimpl->fill_vertex_buffer = std::make_unique<sdl::buffer>(std::move(vbuf));
 
-            auto ibuf = pass.create_and_upload_buffer(
-                dev, sdl::buffer_usage::index, pimpl->fill_indices);
+            auto ibuf = pass.create_and_upload_buffer(dev, sdl::buffer_usage::index, pimpl->fill_indices);
             pimpl->fill_index_buffer = std::make_unique<sdl::buffer>(std::move(ibuf));
         }
 
         pimpl->dirty = false;
     }
 
-    void label_renderer::render(sdl::render_pass& pass,
-                                const render_context& ctx,
-                                int viewport_width,
+    void label_renderer::render(sdl::render_pass& pass, const render_context& ctx, int viewport_width,
                                 int viewport_height) const
     {
         if(ctx.current_pass != render_pass_id::text_labels_0)
@@ -475,10 +445,8 @@ namespace osect
         }
 
         // Pixel-space orthographic projection (origin bottom-left, Y-up)
-        auto proj = glm::orthoLH_ZO(
-            0.0F, static_cast<float>(viewport_width),
-            0.0F, static_cast<float>(viewport_height),
-            -1.0F, 1.0F);
+        auto proj = glm::orthoLH_ZO(0.0F, static_cast<float>(viewport_width), 0.0F, static_cast<float>(viewport_height),
+                                    -1.0F, 1.0F);
 
         auto uniforms = sdl::uniform_buffer{};
         uniforms.projection_matrix = proj;

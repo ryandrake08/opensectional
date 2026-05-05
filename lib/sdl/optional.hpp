@@ -12,7 +12,7 @@ namespace sdl
      * Provides a subset of the std::optional interface sufficient for
      * holding an optional value that may or may not be present.
      */
-    template<typename T>
+    template <typename T>
     class optional
     {
         typename std::aligned_storage<sizeof(T), alignof(T)>::type storage;

@@ -2,7 +2,6 @@
 
 #include "flight_route.hpp"
 #include "route_planner.hpp"
-
 #include <memory>
 #include <optional>
 #include <string>
@@ -36,8 +35,7 @@ namespace osect
         // destroy its copy immediately. `text` must be non-empty;
         // callers handle the "clear route" case directly without
         // round-tripping through the worker.
-        void submit(const std::string& text,
-                     const route_planner::options& opts);
+        void submit(const std::string& text, const route_planner::options& opts);
 
         // True while a background expansion is in progress.
         bool pending() const;

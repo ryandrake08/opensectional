@@ -46,9 +46,9 @@ namespace osect
         struct response
         {
             int status_code = 0;
-            std::string body;            // gzip-decompressed by curl
-            std::string etag;            // verbatim including surrounding quotes
-            bool not_modified = false;   // shorthand for status_code == 304
+            std::string body;          // gzip-decompressed by curl
+            std::string etag;          // verbatim including surrounding quotes
+            bool not_modified = false; // shorthand for status_code == 304
         };
 
         response get(const request& req);

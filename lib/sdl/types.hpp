@@ -2,8 +2,8 @@
 
 #include "bitflags.hpp"
 #include "opaque_typedef.hpp"
-#include <cstdint>
 #include <glm/glm.hpp>
+#include <cstdint>
 
 /**
  * SDL GPU type wrappers and forward declarations.
@@ -236,15 +236,16 @@ namespace sdl
         float y_max; // 4 bytes, offset 348 - Maximum Y for clip test
 
         // Default constructor: Initialize all fields to safe defaults
-        uniform_buffer() : projection_matrix(1.0F), // Identity matrix
-                           view_matrix(1.0F),       // Identity matrix
-                           model_matrix(1.0F),      // Identity matrix
-                           texture_matrix(1.0F),    // Identity matrix
-                           color_matrix(1.0F),      // Identity matrix
-                           outline_color(0.0F),     // Transparent black
-                           texture_size(0),         // Zero size
-                           y_min(-1e9F),            // Default min far below (effectively disabled)
-                           y_max(1e9F)              // Default max far above (effectively disabled)
+        uniform_buffer()
+            : projection_matrix(1.0F), // Identity matrix
+              view_matrix(1.0F),       // Identity matrix
+              model_matrix(1.0F),      // Identity matrix
+              texture_matrix(1.0F),    // Identity matrix
+              color_matrix(1.0F),      // Identity matrix
+              outline_color(0.0F),     // Transparent black
+              texture_size(0),         // Zero size
+              y_min(-1e9F),            // Default min far below (effectively disabled)
+              y_max(1e9F)              // Default max far above (effectively disabled)
         {
         }
     };

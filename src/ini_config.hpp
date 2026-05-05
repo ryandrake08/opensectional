@@ -12,7 +12,8 @@ public:
         virtual ~observer();
 
         // called when a config varialbe changes
-        virtual void observe_config_change(const std::string& section_dot_key, const std::string& from, const std::string& to) = 0;
+        virtual void observe_config_change(const std::string& section_dot_key, const std::string& from,
+                                           const std::string& to) = 0;
     };
 
 private:
@@ -56,11 +57,11 @@ public:
     void merge(const ini_config& other);
 
     // get value for section.key
-    template<typename T>
+    template <typename T>
     T get(const std::string& section_dot_key) const;
 
     // set value for section.key
-    template<typename T>
+    template <typename T>
     void set(const std::string& section_dot_key, const T& value);
 
     // write cache to disk

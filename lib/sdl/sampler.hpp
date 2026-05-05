@@ -29,11 +29,8 @@ namespace sdl
          * @param address_mode Address mode for UVW (default: CLAMP_TO_EDGE)
          * @throws std::runtime_error if sampler creation fails
          */
-        sampler(
-            const device& dev,
-            filter_t min_filter = filter::linear,
-            filter_t mag_filter = filter::linear,
-            sampler_address_mode_t address_mode = sampler_address_mode::clamp_to_edge);
+        sampler(const device& dev, filter_t min_filter = filter::linear, filter_t mag_filter = filter::linear,
+                sampler_address_mode_t address_mode = sampler_address_mode::clamp_to_edge);
 
         /**
          * Destroy sampler.

@@ -27,7 +27,8 @@ namespace sdl
 
             if(is_grayscale)
             {
-                SDL_Surface* rgba_surface = SDL_CreateSurface(loaded_surface->w, loaded_surface->h, SDL_PIXELFORMAT_ABGR8888);
+                SDL_Surface* rgba_surface =
+                    SDL_CreateSurface(loaded_surface->w, loaded_surface->h, SDL_PIXELFORMAT_ABGR8888);
                 if(!rgba_surface)
                 {
                     SDL_DestroySurface(loaded_surface);
@@ -51,7 +52,8 @@ namespace sdl
                 }
 
                 SDL_DestroySurface(loaded_surface);
-                SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Surface loaded: %s (%dx%d)", file_path, rgba_surface->w, rgba_surface->h);
+                SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Surface loaded: %s (%dx%d)", file_path, rgba_surface->w,
+                             rgba_surface->h);
                 return rgba_surface;
             }
 
@@ -63,15 +65,19 @@ namespace sdl
                 {
                     throw error("Failed to convert image to RGBA8888");
                 }
-                SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Surface loaded: %s (%dx%d)", file_path, rgba_surface->w, rgba_surface->h);
+                SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Surface loaded: %s (%dx%d)", file_path, rgba_surface->w,
+                             rgba_surface->h);
                 return rgba_surface;
             }
 
-            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Surface loaded: %s (%dx%d)", file_path, loaded_surface->w, loaded_surface->h);
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Surface loaded: %s (%dx%d)", file_path, loaded_surface->w,
+                         loaded_surface->h);
             return loaded_surface;
         }
 
-        explicit impl(const char* file_path) : handle(load_image(file_path)) {}
+        explicit impl(const char* file_path) : handle(load_image(file_path))
+        {
+        }
 
         ~impl() noexcept
         {

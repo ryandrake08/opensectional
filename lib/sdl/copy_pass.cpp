@@ -3,12 +3,12 @@
 #include "command_buffer.hpp"
 #include "device.hpp"
 #include "error.hpp"
-#include <glm/glm.hpp>
 #include "surface.hpp"
 #include "texture.hpp"
 #include "transfer_buffer.hpp"
 #include "types.hpp"
 #include <SDL3/SDL.h>
+#include <glm/glm.hpp>
 #include <vector>
 
 namespace sdl
@@ -18,8 +18,7 @@ namespace sdl
         SDL_GPUCopyPass* handle;
         std::vector<transfer_buffer> transfers;
 
-        explicit impl(SDL_GPUCommandBuffer* cmd)
-            : handle(SDL_BeginGPUCopyPass(cmd))
+        explicit impl(SDL_GPUCommandBuffer* cmd) : handle(SDL_BeginGPUCopyPass(cmd))
         {
             if(!handle)
             {
@@ -38,8 +37,7 @@ namespace sdl
         impl& operator=(impl&&) = default;
     };
 
-    copy_pass::copy_pass(command_buffer& cmd)
-        : pimpl(new impl(cmd.get()))
+    copy_pass::copy_pass(command_buffer& cmd) : pimpl(new impl(cmd.get()))
     {
     }
 
@@ -87,8 +85,8 @@ namespace sdl
         return tex;
     }
 
-    buffer copy_pass::create_and_upload_buffer_raw(const device& dev, buffer_usage_t usage,
-                                                   const void* data, uint32_t count, uint32_t element_size)
+    buffer copy_pass::create_and_upload_buffer_raw(const device& dev, buffer_usage_t usage, const void* data,
+                                                   uint32_t count, uint32_t element_size)
     {
         if(count == 0)
         {

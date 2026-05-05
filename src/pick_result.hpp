@@ -7,24 +7,8 @@
 
 namespace osect
 {
-    using feature = std::variant<
-        airport,
-        navaid,
-        fix,
-        obstacle,
-        class_airspace,
-        sua,
-        artcc,
-        adiz,
-        tfr,
-        maa,
-        pja,
-        awos,
-        comm_outlet,
-        airway_segment,
-        mtr_segment,
-        runway
-    >;
+    using feature = std::variant<airport, navaid, fix, obstacle, class_airspace, sua, artcc, adiz, tfr, maa, pja, awos,
+                                 comm_outlet, airway_segment, mtr_segment, runway>;
 
     struct pick_result
     {

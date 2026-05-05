@@ -12,11 +12,8 @@ namespace sdl
         SDL_GPUDevice* device;  // Non-owning
         SDL_GPUSampler* handle; // Owning
 
-        static SDL_GPUSampler* create_sampler(
-            SDL_GPUDevice* dev,
-            SDL_GPUFilter min_filter,
-            SDL_GPUFilter mag_filter,
-            SDL_GPUSamplerAddressMode address_mode)
+        static SDL_GPUSampler* create_sampler(SDL_GPUDevice* dev, SDL_GPUFilter min_filter, SDL_GPUFilter mag_filter,
+                                              SDL_GPUSamplerAddressMode address_mode)
         {
             SDL_GPUSamplerCreateInfo sampler_info = {};
             sampler_info.min_filter = min_filter;
@@ -36,11 +33,9 @@ namespace sdl
             return SDL_CreateGPUSampler(dev, &sampler_info);
         }
 
-        impl(
-            SDL_GPUDevice* dev,
-            SDL_GPUFilter min_filter,
-            SDL_GPUFilter mag_filter,
-            SDL_GPUSamplerAddressMode address_mode) : device(dev), handle(create_sampler(dev, min_filter, mag_filter, address_mode))
+        impl(SDL_GPUDevice* dev, SDL_GPUFilter min_filter, SDL_GPUFilter mag_filter,
+             SDL_GPUSamplerAddressMode address_mode)
+            : device(dev), handle(create_sampler(dev, min_filter, mag_filter, address_mode))
         {
             if(!handle)
             {
@@ -59,14 +54,10 @@ namespace sdl
         impl& operator=(impl&&) = default;
     };
 
-    sampler::sampler(
-        const device& dev,
-        filter_t min_filter,
-        filter_t mag_filter,
-        sampler_address_mode_t address_mode) : pimpl(new impl(dev.get(),
-                                                              static_cast<SDL_GPUFilter>(min_filter.value),
-                                                              static_cast<SDL_GPUFilter>(mag_filter.value),
-                                                              static_cast<SDL_GPUSamplerAddressMode>(address_mode.value)))
+    sampler::sampler(const device& dev, filter_t min_filter, filter_t mag_filter, sampler_address_mode_t address_mode)
+        : pimpl(new impl(dev.get(), static_cast<SDL_GPUFilter>(min_filter.value),
+                         static_cast<SDL_GPUFilter>(mag_filter.value),
+                         static_cast<SDL_GPUSamplerAddressMode>(address_mode.value)))
     {
     }
 

@@ -12,16 +12,14 @@
 namespace osect
 {
     // Prepare a statement and validate its column count at startup
-    static sqlite::statement prepare_checked(sqlite::database& db, const char* sql,
-                                              int expected_columns)
+    static sqlite::statement prepare_checked(sqlite::database& db, const char* sql, int expected_columns)
     {
         auto stmt = db.prepare(sql);
         auto actual = stmt.column_count();
         if(actual != expected_columns)
         {
-            throw std::runtime_error(
-                "Column count mismatch: expected " + std::to_string(expected_columns) +
-                " but got " + std::to_string(actual));
+            throw std::runtime_error("Column count mismatch: expected " + std::to_string(expected_columns) +
+                                     " but got " + std::to_string(actual));
         }
         return stmt;
     }
@@ -92,7 +90,8 @@ namespace osect
         impl(const char* db_path)
             : db(db_path)
 
-            , stmt_airports(prepare_checked(db, R"(
+              ,
+              stmt_airports(prepare_checked(db, R"(
                 SELECT * FROM (
                     SELECT a.SITE_TYPE_CODE, a.STATE_CODE, a.ARPT_ID, a.CITY,
                            a.COUNTRY_CODE, a.ARPT_NAME,
@@ -119,9 +118,11 @@ namespace osect
                     )
                 )
                 WHERE ?5 IS NULL OR airspace_class IN (SELECT value FROM json_each(?5))
-            )", 26))
+            )",
+                                            26))
 
-            , stmt_navaids(prepare_checked(db, R"(
+              ,
+              stmt_navaids(prepare_checked(db, R"(
                 SELECT NAV_ID, NAV_TYPE, STATE_CODE, CITY, COUNTRY_CODE,
                        NAV_STATUS, NAME, OPER_HOURS,
                        HIGH_ALT_ARTCC_ID, LOW_ALT_ARTCC_ID,
@@ -137,9 +138,11 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 23))
+            )",
+                                           23))
 
-            , stmt_fixes(prepare_checked(db, R"(
+              ,
+              stmt_fixes(prepare_checked(db, R"(
                 SELECT FIX_ID, STATE_CODE, COUNTRY_CODE, ICAO_REGION_CODE,
                        LAT_DECIMAL, LONG_DECIMAL, FIX_USE_CODE,
                        ARTCC_ID_HIGH, ARTCC_ID_LOW,
@@ -151,9 +154,11 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 11))
+            )",
+                                         11))
 
-            , stmt_airways(prepare_checked(db, R"(
+              ,
+              stmt_airways(prepare_checked(db, R"(
                 SELECT AWY_ID, AWY_LOCATION, POINT_SEQ, FROM_POINT, TO_POINT,
                        FROM_LAT, FROM_LON, TO_LAT, TO_LON,
                        AWY_SEG_GAP_FLAG, MIN_ENROUTE_ALT, MAG_COURSE_DIST
@@ -164,30 +169,38 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 12))
+            )",
+                                           12))
 
-            , stmt_airway_by_id(prepare_checked(db, R"(
+              ,
+              stmt_airway_by_id(prepare_checked(db, R"(
                 SELECT AWY_ID, AWY_LOCATION, POINT_SEQ, FROM_POINT, TO_POINT,
                        FROM_LAT, FROM_LON, TO_LAT, TO_LON,
                        AWY_SEG_GAP_FLAG, MIN_ENROUTE_ALT, MAG_COURSE_DIST
                 FROM AWY_SEG
                 WHERE AWY_ID = ?1
-            )", 12))
+            )",
+                                                12))
 
-            , stmt_adjacent_airways(prepare_checked(db, R"(
+              ,
+              stmt_adjacent_airways(prepare_checked(db, R"(
                 SELECT DISTINCT AWY_ID FROM AWY_SEG
                 WHERE AWY_SEG_GAP_FLAG != 'Y'
                   AND ((FROM_POINT = ?1 AND TO_POINT = ?2)
                     OR (FROM_POINT = ?2 AND TO_POINT = ?1))
-            )", 1))
+            )",
+                                                    1))
 
-            , stmt_airways_containing(prepare_checked(db, R"(
+              ,
+              stmt_airways_containing(prepare_checked(db, R"(
                 SELECT DISTINCT AWY_ID FROM AWY_SEG
                 WHERE AWY_SEG_GAP_FLAG != 'Y'
                   AND (FROM_POINT = ?1 OR TO_POINT = ?1)
-            )", 1))
+            )",
+                                                      1))
 
-            , stmt_mtrs(prepare_checked(db, R"(
+              ,
+              stmt_mtrs(prepare_checked(db, R"(
                 SELECT MTR_ID, ROUTE_TYPE_CODE, FROM_POINT, TO_POINT,
                        FROM_LAT, FROM_LON, TO_LAT, TO_LON
                 FROM MTR_SEG
@@ -196,16 +209,20 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 8))
+            )",
+                                        8))
 
-            , stmt_mtr_by_id(prepare_checked(db, R"(
+              ,
+              stmt_mtr_by_id(prepare_checked(db, R"(
                 SELECT MTR_ID, ROUTE_TYPE_CODE, FROM_POINT, TO_POINT,
                        FROM_LAT, FROM_LON, TO_LAT, TO_LON
                 FROM MTR_SEG
                 WHERE MTR_ID = ?1
-            )", 8))
+            )",
+                                             8))
 
-            , stmt_maas(prepare_checked(db, R"(
+              ,
+              stmt_maas(prepare_checked(db, R"(
                 SELECT MAA_ID, TYPE, NAME, LAT, LON, RADIUS_NM,
                        MAX_ALT_FT, MAX_ALT_REF, MIN_ALT_FT, MIN_ALT_REF
                 FROM MAA_BASE
@@ -214,16 +231,20 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 10))
+            )",
+                                        10))
 
-            , stmt_maa_shape(prepare_checked(db, R"(
+              ,
+              stmt_maa_shape(prepare_checked(db, R"(
                 SELECT LON_DECIMAL, LAT_DECIMAL
                 FROM MAA_SHP
                 WHERE MAA_ID = ?1
                 ORDER BY POINT_SEQ
-            )", 2))
+            )",
+                                             2))
 
-            , stmt_cls_arsp(prepare_checked(db, R"(
+              ,
+              stmt_cls_arsp(prepare_checked(db, R"(
                 SELECT ARSP_ID, NAME, CLASS, LOCAL_TYPE,
                        IDENT, SECTOR,
                        UPPER_FT, UPPER_REF, LOWER_FT, LOWER_REF,
@@ -234,16 +255,20 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 12))
+            )",
+                                            12))
 
-            , stmt_cls_arsp_shape(prepare_checked(db, R"(
+              ,
+              stmt_cls_arsp_shape(prepare_checked(db, R"(
                 SELECT PART_NUM, IS_HOLE, LON_DECIMAL, LAT_DECIMAL
                 FROM CLS_ARSP_SHP
                 WHERE ARSP_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
-            )", 4))
+            )",
+                                                  4))
 
-            , stmt_runways(prepare_checked(db, R"(
+              ,
+              stmt_runways(prepare_checked(db, R"(
                 SELECT SITE_NO, RWY_ID,
                        END1_LAT, END1_LON, END2_LAT, END2_LON
                 FROM RWY_SEG
@@ -252,9 +277,11 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 6))
+            )",
+                                           6))
 
-            , stmt_sua(prepare_checked(db, R"(
+              ,
+              stmt_sua(prepare_checked(db, R"(
                 SELECT SUA_ID, DESIGNATOR, NAME, SUA_TYPE,
                        UPPER_LIMIT, LOWER_LIMIT,
                        MIN_ALT_LIMIT, MAX_ALT_LIMIT,
@@ -270,9 +297,11 @@ namespace osect
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 AND (?5 IS NULL OR SUA_TYPE IN (SELECT value FROM json_each(?5)))
-            )", 20))
+            )",
+                                       20))
 
-            , stmt_sua_strata(prepare_checked(db, R"(
+              ,
+              stmt_sua_strata(prepare_checked(db, R"(
                 SELECT STRATUM_ID, STRATUM_ORDER,
                        UPPER_LIMIT, LOWER_LIMIT,
                        UPPER_FT_VAL, UPPER_FT_REF,
@@ -280,16 +309,20 @@ namespace osect
                 FROM SUA_STRATUM
                 WHERE SUA_ID = ?1
                 ORDER BY STRATUM_ORDER
-            )", 8))
+            )",
+                                              8))
 
-            , stmt_sua_shape(prepare_checked(db, R"(
+              ,
+              stmt_sua_shape(prepare_checked(db, R"(
                 SELECT PART_NUM, IS_HOLE, LON_DECIMAL, LAT_DECIMAL
                 FROM SUA_SHP
                 WHERE STRATUM_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
-            )", 4))
+            )",
+                                             4))
 
-            , stmt_sua_schedules(prepare_checked(db, R"(
+              ,
+              stmt_sua_schedules(prepare_checked(db, R"(
                 SELECT DAY_OF_WEEK, DAY_TIL,
                        START_TIME, END_TIME,
                        START_EVENT, END_EVENT,
@@ -298,23 +331,29 @@ namespace osect
                 FROM SUA_SCHEDULE
                 WHERE SUA_ID = ?1
                 ORDER BY SCHED_SEQ
-            )", 11))
+            )",
+                                                 11))
 
-            , stmt_sua_freqs(prepare_checked(db, R"(
+              ,
+              stmt_sua_freqs(prepare_checked(db, R"(
                 SELECT MODE, TX_FREQ, RX_FREQ,
                        COMM_ALLOWED, CHARTED, SECTORS
                 FROM SUA_FREQ
                 WHERE SUA_ID = ?1
                 ORDER BY FREQ_SEQ
-            )", 6))
+            )",
+                                             6))
 
-            , stmt_sua_circle(prepare_checked(db, R"(
+              ,
+              stmt_sua_circle(prepare_checked(db, R"(
                 SELECT PART_NUM, CENTER_LON, CENTER_LAT, RADIUS_NM
                 FROM SUA_CIRCLE
                 WHERE STRATUM_ID = ?1
-            )", 4))
+            )",
+                                              4))
 
-            , stmt_sua_circles_bbox(prepare_checked(db, R"(
+              ,
+              stmt_sua_circles_bbox(prepare_checked(db, R"(
                 SELECT b.SUA_TYPE, c.CENTER_LON, c.CENTER_LAT, c.RADIUS_NM,
                        s.UPPER_FT_VAL, s.UPPER_FT_REF,
                        s.LOWER_FT_VAL, s.LOWER_FT_REF
@@ -327,9 +366,11 @@ namespace osect
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 AND (?5 IS NULL OR b.SUA_TYPE IN (SELECT value FROM json_each(?5)))
-            )", 8))
+            )",
+                                                    8))
 
-            , stmt_obstacles(prepare_checked(db, R"(
+              ,
+              stmt_obstacles(prepare_checked(db, R"(
                 SELECT OAS_NUM, VERIFY_STATUS, COUNTRY, STATE, CITY,
                        LAT_DECIMAL, LON_DECIMAL,
                        OBSTACLE_TYPE, QUANTITY, AGL_HT, AMSL_HT,
@@ -341,9 +382,11 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 18))
+            )",
+                                             18))
 
-            , stmt_artcc(prepare_checked(db, R"(
+              ,
+              stmt_artcc(prepare_checked(db, R"(
                 SELECT ARTCC_ID, LOCATION_ID, LOCATION_NAME, ALTITUDE, TYPE,
                        ICAO_ID, LOCATION_TYPE, CITY, STATE, COUNTRY_CODE, CROSS_REF
                 FROM ARTCC_BASE
@@ -352,16 +395,20 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 11))
+            )",
+                                         11))
 
-            , stmt_artcc_shape(prepare_checked(db, R"(
+              ,
+              stmt_artcc_shape(prepare_checked(db, R"(
                 SELECT LON_DECIMAL, LAT_DECIMAL
                 FROM ARTCC_SHP
                 WHERE ARTCC_ID = ?1
                 ORDER BY POINT_SEQ
-            )", 2))
+            )",
+                                               2))
 
-            , stmt_pjas(prepare_checked(db, R"(
+              ,
+              stmt_pjas(prepare_checked(db, R"(
                 SELECT PJA_ID, NAME, LAT, LON, RADIUS_NM, MAX_ALTITUDE,
                        MAX_ALT_FT_MSL
                 FROM PJA_BASE
@@ -370,9 +417,11 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 7))
+            )",
+                                        7))
 
-            , stmt_adiz(prepare_checked(db, R"(
+              ,
+              stmt_adiz(prepare_checked(db, R"(
                 SELECT ADIZ_ID, NAME, LOCATION, WORKING_HOURS, MILITARY
                 FROM ADIZ_BASE
                 WHERE ADIZ_ID IN (
@@ -380,16 +429,20 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 5))
+            )",
+                                        5))
 
-            , stmt_adiz_shape(prepare_checked(db, R"(
+              ,
+              stmt_adiz_shape(prepare_checked(db, R"(
                 SELECT PART_NUM, LON_DECIMAL, LAT_DECIMAL
                 FROM ADIZ_SHP
                 WHERE ADIZ_ID = ?1
                 ORDER BY PART_NUM, POINT_SEQ
-            )", 3))
+            )",
+                                              3))
 
-            , stmt_fss(prepare_checked(db, R"(
+              ,
+              stmt_fss(prepare_checked(db, R"(
                 SELECT FSS_ID, NAME, FSS_FAC_TYPE, VOICE_CALL,
                        CITY, STATE_CODE, COUNTRY_CODE,
                        CAST(LAT_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
@@ -400,9 +453,11 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 13))
+            )",
+                                       13))
 
-            , stmt_awos(prepare_checked(db, R"(
+              ,
+              stmt_awos(prepare_checked(db, R"(
                 SELECT ASOS_AWOS_ID, ASOS_AWOS_TYPE, STATE_CODE, CITY,
                        COUNTRY_CODE, COMMISSIONED_DATE, NAVAID_FLAG,
                        CAST(LAT_DECIMAL AS REAL), CAST(LONG_DECIMAL AS REAL),
@@ -415,9 +470,11 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 15))
+            )",
+                                        15))
 
-            , stmt_comm_outlets(prepare_checked(db, R"(
+              ,
+              stmt_comm_outlets(prepare_checked(db, R"(
                 SELECT COMM_LOC_ID, COMM_TYPE, NAV_ID, NAV_TYPE,
                        CITY, STATE_CODE, COUNTRY_CODE,
                        COMM_OUTLET_NAME,
@@ -431,9 +488,11 @@ namespace osect
                     WHERE max_lon >= ?1 AND min_lon <= ?3
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
-            )", 15))
+            )",
+                                                15))
 
-            , stmt_artcc_seg(prepare_checked(db, R"(
+              ,
+              stmt_artcc_seg(prepare_checked(db, R"(
                 SELECT SEG_ID, ALTITUDE, TYPE, LON_DECIMAL, LAT_DECIMAL
                 FROM ARTCC_SEG
                 WHERE SEG_ID IN (
@@ -442,9 +501,11 @@ namespace osect
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 ORDER BY SEG_ID, POINT_SEQ
-            )", 5))
+            )",
+                                             5))
 
-            , stmt_adiz_seg(prepare_checked(db, R"(
+              ,
+              stmt_adiz_seg(prepare_checked(db, R"(
                 SELECT SEG_ID, LON_DECIMAL, LAT_DECIMAL
                 FROM ADIZ_SEG
                 WHERE SEG_ID IN (
@@ -453,13 +514,15 @@ namespace osect
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
                 ORDER BY SEG_ID, POINT_SEQ
-            )", 3))
+            )",
+                                            3))
 
-            // Shadowed airspaces (ARSP_IDs with a higher-priority class at
-            // the same IDENT) are filtered in query_class_airspace_segments
-            // using a precomputed set — doing it per-row in SQL was O(N²)
-            // at continental zoom.
-            , stmt_cls_arsp_seg(prepare_checked(db, R"(
+              // Shadowed airspaces (ARSP_IDs with a higher-priority class at
+              // the same IDENT) are filtered in query_class_airspace_segments
+              // using a precomputed set — doing it per-row in SQL was O(N²)
+              // at continental zoom.
+              ,
+              stmt_cls_arsp_seg(prepare_checked(db, R"(
                 SELECT s.SEG_ID, s.ARSP_ID, s.CLASS, s.LOCAL_TYPE,
                        s.LON_DECIMAL, s.LAT_DECIMAL
                 FROM CLS_ARSP_SEG s
@@ -472,9 +535,11 @@ namespace osect
                      OR s.CLASS IN (SELECT value FROM json_each(?5))
                      OR s.LOCAL_TYPE IN (SELECT value FROM json_each(?5)))
                 ORDER BY s.SEG_ID, s.POINT_SEQ
-            )", 6))
+            )",
+                                                6))
 
-            , stmt_sua_seg(prepare_checked(db, R"(
+              ,
+              stmt_sua_seg(prepare_checked(db, R"(
                 SELECT SEG_ID, SUA_TYPE, LON_DECIMAL, LAT_DECIMAL,
                        UPPER_FT_VAL, UPPER_FT_REF,
                        LOWER_FT_VAL, LOWER_FT_REF
@@ -486,18 +551,22 @@ namespace osect
                 )
                 AND (?5 IS NULL OR SUA_TYPE IN (SELECT value FROM json_each(?5)))
                 ORDER BY SEG_ID, POINT_SEQ
-            )", 8))
+            )",
+                                           8))
 
-            , stmt_search(prepare_checked(db, R"(
+              ,
+              stmt_search(prepare_checked(db, R"(
                 SELECT entity_type, entity_rowid, ids, name,
                        bm25(search_fts, 0, 0, 10.0, 3.0, 1.0) AS rank
                 FROM search_fts
                 WHERE search_fts MATCH ?1
                 ORDER BY rank
                 LIMIT ?2
-            )", 5))
+            )",
+                                          5))
 
-            , stmt_lookup_airport(prepare_checked(db, R"(
+              ,
+              stmt_lookup_airport(prepare_checked(db, R"(
                 SELECT a.SITE_TYPE_CODE, a.STATE_CODE, a.ARPT_ID, a.CITY,
                        a.COUNTRY_CODE, a.ARPT_NAME,
                        a.OWNERSHIP_TYPE_CODE, a.FACILITY_USE_CODE,
@@ -518,9 +587,11 @@ namespace osect
                 LEFT JOIN CLS_ARSP c ON c.SITE_NO = a.SITE_NO
                 WHERE a.ICAO_ID = ?1
                    OR (a.ARPT_ID = ?1 AND a.ICAO_ID = '')
-            )", 26))
+            )",
+                                                  26))
 
-            , stmt_lookup_navaid(prepare_checked(db, R"(
+              ,
+              stmt_lookup_navaid(prepare_checked(db, R"(
                 SELECT NAV_ID, NAV_TYPE, STATE_CODE, CITY, COUNTRY_CODE,
                        NAV_STATUS, NAME, OPER_HOURS,
                        HIGH_ALT_ARTCC_ID, LOW_ALT_ARTCC_ID,
@@ -531,18 +602,22 @@ namespace osect
                        IS_LOW_NAV, IS_HIGH_NAV
                 FROM NAV_BASE
                 WHERE NAV_STATUS != 'SHUTDOWN' AND NAV_ID = ?1
-            )", 23))
+            )",
+                                                 23))
 
-            , stmt_lookup_fix(prepare_checked(db, R"(
+              ,
+              stmt_lookup_fix(prepare_checked(db, R"(
                 SELECT FIX_ID, STATE_CODE, COUNTRY_CODE, ICAO_REGION_CODE,
                        LAT_DECIMAL, LONG_DECIMAL, FIX_USE_CODE,
                        ARTCC_ID_HIGH, ARTCC_ID_LOW,
                        IS_LOW_FIX, IS_HIGH_FIX
                 FROM FIX_BASE
                 WHERE FIX_ID = ?1
-            )", 11))
+            )",
+                                              11))
 
-            , stmt_load_routable_airports(prepare_checked(db, R"(
+              ,
+              stmt_load_routable_airports(prepare_checked(db, R"(
                 SELECT rowid,
                        COALESCE(NULLIF(ICAO_ID, ''), ARPT_ID) AS id,
                        SITE_TYPE_CODE,
@@ -553,9 +628,11 @@ namespace osect
                   AND ARPT_STATUS = 'O'
                   AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != ''
                   AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''
-            )", 5))
+            )",
+                                                          5))
 
-            , stmt_load_routable_navaids(prepare_checked(db, R"(
+              ,
+              stmt_load_routable_navaids(prepare_checked(db, R"(
                 SELECT rowid, NAV_ID, NAV_TYPE,
                        CAST(LAT_DECIMAL AS REAL) AS lat,
                        CAST(LONG_DECIMAL AS REAL) AS lon
@@ -567,9 +644,11 @@ namespace osect
                       'CONSOLAN', 'UHF/NDB')
                   AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != ''
                   AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''
-            )", 5))
+            )",
+                                                         5))
 
-            , stmt_load_routable_fixes(prepare_checked(db, R"(
+              ,
+              stmt_load_routable_fixes(prepare_checked(db, R"(
                 SELECT rowid, FIX_ID, FIX_USE_CODE,
                        CAST(LAT_DECIMAL AS REAL) AS lat,
                        CAST(LONG_DECIMAL AS REAL) AS lon
@@ -577,44 +656,55 @@ namespace osect
                 WHERE FIX_USE_CODE NOT IN ('MW', 'NRS', 'RADAR')
                   AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != ''
                   AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''
-            )", 5))
+            )",
+                                                       5))
 
-            , stmt_load_airway_edges(prepare_checked(db, R"(
+              ,
+              stmt_load_airway_edges(prepare_checked(db, R"(
                 SELECT FROM_POINT, FROM_LAT, FROM_LON,
                        TO_POINT, TO_LAT, TO_LON, AWY_ID,
                        AWY_SEG_GAP_FLAG = 'Y' AS is_gap
                 FROM AWY_SEG
-            )", 8))
+            )",
+                                                     8))
 
-            , stmt_rtree_bbox_airports(prepare_checked(db, R"(
+              ,
+              stmt_rtree_bbox_airports(prepare_checked(db, R"(
                 SELECT id FROM APT_BASE_RTREE
                 WHERE max_lon >= ?1 AND min_lon <= ?3
                   AND max_lat >= ?2 AND min_lat <= ?4
-            )", 1))
+            )",
+                                                       1))
 
-            , stmt_rtree_bbox_navaids(prepare_checked(db, R"(
+              ,
+              stmt_rtree_bbox_navaids(prepare_checked(db, R"(
                 SELECT id FROM NAV_BASE_RTREE
                 WHERE max_lon >= ?1 AND min_lon <= ?3
                   AND max_lat >= ?2 AND min_lat <= ?4
-            )", 1))
+            )",
+                                                      1))
 
-            , stmt_rtree_bbox_fixes(prepare_checked(db, R"(
+              ,
+              stmt_rtree_bbox_fixes(prepare_checked(db, R"(
                 SELECT id FROM FIX_BASE_RTREE
                 WHERE max_lon >= ?1 AND min_lon <= ?3
                   AND max_lat >= ?2 AND min_lat <= ?4
-            )", 1))
+            )",
+                                                    1))
 
-            // META is part of the contract: every osect.db must carry
-            // a freshness row per source. A missing table fails the
-            // prepare and aborts construction; main.cpp surfaces that
-            // as "rebuild your osect.db".
-            , stmt_meta(prepare_checked(db, R"(
+              // META is part of the contract: every osect.db must carry
+              // a freshness row per source. A missing table fails the
+              // prepare and aborts construction; main.cpp surfaces that
+              // as "rebuild your osect.db".
+              ,
+              stmt_meta(prepare_checked(db, R"(
                 SELECT name,
                        COALESCE(info, ''),
                        COALESCE(expires, '')
                 FROM META
                 ORDER BY name
-            )", 3))
+            )",
+                                        3))
         {
             // Precompute the set of shadowed ARSP_IDs. Any class airspace
             // that has a lower-class neighbor at the same non-empty IDENT
@@ -628,9 +718,12 @@ namespace osect
                     WHERE other.IDENT = me.IDENT
                       AND other.CLASS < me.CLASS
                   )
-            )", 1));
+            )",
+                                                           1));
             while(stmt_shadows.step())
+            {
                 shadowed_arsp_ids.insert(stmt_shadows.column_int(0));
+            }
         }
 
         void bind_bbox(sqlite::statement& stmt, const geo_bbox& bbox)
@@ -645,9 +738,8 @@ namespace osect
         // Binds a filter list at the given parameter index: NULL when the
         // filter is absent (SQL treats the filter clause as a no-op), or a
         // JSON array string consumed by json_each() otherwise.
-        std::string filter_json;  // kept alive for the duration of step()
-        void bind_filter(sqlite::statement& stmt, int index,
-                         const std::optional<std::vector<std::string>>& filter)
+        std::string filter_json; // kept alive for the duration of step()
+        void bind_filter(sqlite::statement& stmt, int index, const std::optional<std::vector<std::string>>& filter)
         {
             if(!filter)
             {
@@ -659,7 +751,10 @@ namespace osect
             auto first = true;
             for(const auto& v : *filter)
             {
-                if(!first) filter_json.push_back(',');
+                if(!first)
+                {
+                    filter_json.push_back(',');
+                }
                 first = false;
                 filter_json.push_back('"');
                 filter_json.append(v);
@@ -669,33 +764,28 @@ namespace osect
             stmt.bind(index, filter_json);
         }
 
-        template<typename RowMapper>
-        auto query_bbox(sqlite::statement& stmt,
-                         const geo_bbox& bbox,
-                         const RowMapper& map_row)
+        template <typename RowMapper>
+        auto query_bbox(sqlite::statement& stmt, const geo_bbox& bbox, const RowMapper& map_row)
         {
             using T = std::invoke_result_t<RowMapper&, sqlite::statement&>;
             std::vector<T> results;
             bind_bbox(stmt, bbox);
-            while (stmt.step())
+            while(stmt.step())
             {
                 results.push_back(map_row(stmt));
             }
             return results;
         }
 
-        template<typename RowMapper>
-        auto query_bbox_filtered(
-            sqlite::statement& stmt,
-            const geo_bbox& bbox,
-            const std::optional<std::vector<std::string>>& filter,
-            const RowMapper& map_row)
+        template <typename RowMapper>
+        auto query_bbox_filtered(sqlite::statement& stmt, const geo_bbox& bbox,
+                                 const std::optional<std::vector<std::string>>& filter, const RowMapper& map_row)
         {
             using T = std::invoke_result_t<RowMapper&, sqlite::statement&>;
             std::vector<T> results;
             bind_bbox(stmt, bbox);
             bind_filter(stmt, 5, filter);
-            while (stmt.step())
+            while(stmt.step())
             {
                 results.push_back(map_row(stmt));
             }
@@ -709,91 +799,80 @@ namespace osect
 
     nasr_database::~nasr_database() = default;
 
-    std::vector<airport> nasr_database::query_airports(const geo_bbox& bbox,
-                                                        const filter_list& class_filter) const
+    std::vector<airport> nasr_database::query_airports(const geo_bbox& bbox, const filter_list& class_filter) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox_filtered(d.stmt_airports,
-            bbox, class_filter, [](sqlite::statement& s)
-        {
-            return airport{
-                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
-                s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7),
-                s.column_double(8), s.column_double(9), s.column_double(10),
-                s.column_text(11), s.column_text(12), s.column_text(13),
-                s.column_text(14), s.column_text(15), s.column_text(16),
-                s.column_text(17), s.column_text(18), s.column_text(19),
-                s.column_text(20), s.column_text(21),
-                s.column_text(22), s.column_text(23),
-                s.column_int(24) != 0,
-                s.column_text(25)};
-        });
+        return d.query_bbox_filtered(
+            d.stmt_airports, bbox, class_filter,
+            [](sqlite::statement& s)
+            {
+                return airport{s.column_text(0),      s.column_text(1),   s.column_text(2),    s.column_text(3),
+                               s.column_text(4),      s.column_text(5),   s.column_text(6),    s.column_text(7),
+                               s.column_double(8),    s.column_double(9), s.column_double(10), s.column_text(11),
+                               s.column_text(12),     s.column_text(13),  s.column_text(14),   s.column_text(15),
+                               s.column_text(16),     s.column_text(17),  s.column_text(18),   s.column_text(19),
+                               s.column_text(20),     s.column_text(21),  s.column_text(22),   s.column_text(23),
+                               s.column_int(24) != 0, s.column_text(25)};
+            });
     }
 
     std::vector<navaid> nasr_database::query_navaids(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_navaids,
-            bbox, [](sqlite::statement& s)
-        {
-            return navaid{
-                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
-                s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7),
-                s.column_text(8), s.column_text(9),
-                s.column_double(10), s.column_double(11), s.column_double(12),
-                s.column_text(13), s.column_text(14), s.column_text(15),
-                s.column_text(16), s.column_text(17), s.column_text(18),
-                s.column_text(19), s.column_text(20),
-                s.column_int(21) != 0, s.column_int(22) != 0};
-        });
+        return d.query_bbox(
+            d.stmt_navaids, bbox,
+            [](sqlite::statement& s)
+            {
+                return navaid{s.column_text(0),    s.column_text(1),      s.column_text(2),     s.column_text(3),
+                              s.column_text(4),    s.column_text(5),      s.column_text(6),     s.column_text(7),
+                              s.column_text(8),    s.column_text(9),      s.column_double(10),  s.column_double(11),
+                              s.column_double(12), s.column_text(13),     s.column_text(14),    s.column_text(15),
+                              s.column_text(16),   s.column_text(17),     s.column_text(18),    s.column_text(19),
+                              s.column_text(20),   s.column_int(21) != 0, s.column_int(22) != 0};
+            });
     }
 
     std::vector<fix> nasr_database::query_fixes(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_fixes,
-            bbox, [](sqlite::statement& s)
-        {
-            return fix{
-                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
-                s.column_double(4), s.column_double(5),
-                s.column_text(6), s.column_text(7), s.column_text(8),
-                s.column_int(9) != 0, s.column_int(10) != 0};
-        });
+        return d.query_bbox(d.stmt_fixes, bbox,
+                            [](sqlite::statement& s)
+                            {
+                                return fix{s.column_text(0),     s.column_text(1),     s.column_text(2),
+                                           s.column_text(3),     s.column_double(4),   s.column_double(5),
+                                           s.column_text(6),     s.column_text(7),     s.column_text(8),
+                                           s.column_int(9) != 0, s.column_int(10) != 0};
+                            });
     }
 
     std::vector<airway_segment> nasr_database::query_airways(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_airways,
-            bbox, [](sqlite::statement& s)
-        {
-            return airway_segment{
-                s.column_text(0), s.column_text(1), s.column_int(2),
-                s.column_text(3), s.column_text(4),
-                s.column_double(5), s.column_double(6),
-                s.column_double(7), s.column_double(8),
-                s.column_text(9), s.column_text(10), s.column_text(11)};
-        });
+        return d.query_bbox(d.stmt_airways, bbox,
+                            [](sqlite::statement& s)
+                            {
+                                return airway_segment{s.column_text(0),   s.column_text(1),   s.column_int(2),
+                                                      s.column_text(3),   s.column_text(4),   s.column_double(5),
+                                                      s.column_double(6), s.column_double(7), s.column_double(8),
+                                                      s.column_text(9),   s.column_text(10),  s.column_text(11)};
+                            });
     }
 
     std::vector<mtr_segment> nasr_database::query_mtrs(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_mtrs,
-            bbox, [](sqlite::statement& s)
-        {
-            return mtr_segment{
-                s.column_text(0), s.column_text(1),
-                s.column_text(2), s.column_text(3),
-                s.column_double(4), s.column_double(5),
-                s.column_double(6), s.column_double(7)};
-        });
+        return d.query_bbox(d.stmt_mtrs, bbox,
+                            [](sqlite::statement& s)
+                            {
+                                return mtr_segment{s.column_text(0),   s.column_text(1),   s.column_text(2),
+                                                   s.column_text(3),   s.column_double(4), s.column_double(5),
+                                                   s.column_double(6), s.column_double(7)};
+                            });
     }
 
     std::vector<airway_segment> nasr_database::query_airway_by_id(const std::string& awy_id) const
@@ -805,18 +884,14 @@ namespace osect
         std::vector<airway_segment> out;
         while(s.step())
         {
-            out.push_back(airway_segment{
-                s.column_text(0), s.column_text(1), s.column_int(2),
-                s.column_text(3), s.column_text(4),
-                s.column_double(5), s.column_double(6),
-                s.column_double(7), s.column_double(8),
-                s.column_text(9), s.column_text(10), s.column_text(11)});
+            out.push_back(airway_segment{s.column_text(0), s.column_text(1), s.column_int(2), s.column_text(3),
+                                         s.column_text(4), s.column_double(5), s.column_double(6), s.column_double(7),
+                                         s.column_double(8), s.column_text(9), s.column_text(10), s.column_text(11)});
         }
         return out;
     }
 
-    std::vector<std::string> nasr_database::adjacent_airways(
-        const std::string& a, const std::string& b) const
+    std::vector<std::string> nasr_database::adjacent_airways(const std::string& a, const std::string& b) const
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);
         auto& s = pimpl->stmt_adjacent_airways;
@@ -825,12 +900,13 @@ namespace osect
         s.bind(2, b);
         std::vector<std::string> out;
         while(s.step())
+        {
             out.push_back(s.column_text(0));
+        }
         return out;
     }
 
-    std::vector<std::string> nasr_database::airways_containing(
-        const std::string& fix_name) const
+    std::vector<std::string> nasr_database::airways_containing(const std::string& fix_name) const
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);
         auto& s = pimpl->stmt_airways_containing;
@@ -838,7 +914,9 @@ namespace osect
         s.bind(1, fix_name);
         std::vector<std::string> out;
         while(s.step())
+        {
             out.push_back(s.column_text(0));
+        }
         return out;
     }
 
@@ -851,11 +929,8 @@ namespace osect
         std::vector<mtr_segment> out;
         while(s.step())
         {
-            out.push_back(mtr_segment{
-                s.column_text(0), s.column_text(1),
-                s.column_text(2), s.column_text(3),
-                s.column_double(4), s.column_double(5),
-                s.column_double(6), s.column_double(7)});
+            out.push_back(mtr_segment{s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                                      s.column_double(4), s.column_double(5), s.column_double(6), s.column_double(7)});
         }
         return out;
     }
@@ -864,338 +939,346 @@ namespace osect
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_maas,
-            bbox, [&](sqlite::statement& s)
-        {
-            maa m{s.column_text(0), s.column_text(1), s.column_text(2),
-                  s.column_double(3), s.column_double(4), s.column_double(5),
-                  s.column_int(6), s.column_text(7),
-                  s.column_int(8), s.column_text(9), {}};
+        return d.query_bbox(d.stmt_maas, bbox,
+                            [&](sqlite::statement& s)
+                            {
+                                maa m{s.column_text(0),
+                                      s.column_text(1),
+                                      s.column_text(2),
+                                      s.column_double(3),
+                                      s.column_double(4),
+                                      s.column_double(5),
+                                      s.column_int(6),
+                                      s.column_text(7),
+                                      s.column_int(8),
+                                      s.column_text(9),
+                                      {}};
 
-            // Shape-defined MAAs have rows in MAA_SHP; point/radius MAAs
-            // do not. m.shape stays empty for the latter.
-            d.stmt_maa_shape.reset();
-            d.stmt_maa_shape.bind(1, m.maa_id);
-            while (d.stmt_maa_shape.step())
-            {
-                m.shape.push_back({d.stmt_maa_shape.column_double(1),
-                                   d.stmt_maa_shape.column_double(0)});
-            }
-            return m;
-        });
+                                // Shape-defined MAAs have rows in MAA_SHP; point/radius MAAs
+                                // do not. m.shape stays empty for the latter.
+                                d.stmt_maa_shape.reset();
+                                d.stmt_maa_shape.bind(1, m.maa_id);
+                                while(d.stmt_maa_shape.step())
+                                {
+                                    m.shape.push_back(
+                                        {d.stmt_maa_shape.column_double(1), d.stmt_maa_shape.column_double(0)});
+                                }
+                                return m;
+                            });
     }
 
     std::vector<class_airspace> nasr_database::query_class_airspace(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_cls_arsp,
-            bbox, [&](sqlite::statement& s)
-        {
-            class_airspace a{s.column_int(0),
-                s.column_text(1), s.column_text(2), s.column_text(3),
-                s.column_text(4), s.column_text(5),
-                s.column_int(6), s.column_text(7), s.column_int(8), s.column_text(9),
-                s.column_text(10), s.column_text(11), {}};
+        return d.query_bbox(d.stmt_cls_arsp, bbox,
+                            [&](sqlite::statement& s)
+                            {
+                                class_airspace a{s.column_int(0),
+                                                 s.column_text(1),
+                                                 s.column_text(2),
+                                                 s.column_text(3),
+                                                 s.column_text(4),
+                                                 s.column_text(5),
+                                                 s.column_int(6),
+                                                 s.column_text(7),
+                                                 s.column_int(8),
+                                                 s.column_text(9),
+                                                 s.column_text(10),
+                                                 s.column_text(11),
+                                                 {}};
 
-            d.stmt_cls_arsp_shape.reset();
-            d.stmt_cls_arsp_shape.bind(1, a.arsp_id);
-            auto current_part = -1;
-            while (d.stmt_cls_arsp_shape.step())
-            {
-                auto part_num = d.stmt_cls_arsp_shape.column_int(0);
-                if (part_num != current_part)
-                {
-                    polygon_ring ring;
-                    ring.is_hole = d.stmt_cls_arsp_shape.column_int(1) != 0;
-                    a.parts.push_back(std::move(ring));
-                    current_part = part_num;
-                }
-                a.parts.back().points.push_back(
-                    {d.stmt_cls_arsp_shape.column_double(3),
-                     d.stmt_cls_arsp_shape.column_double(2)});
-            }
-            return a;
-        });
+                                d.stmt_cls_arsp_shape.reset();
+                                d.stmt_cls_arsp_shape.bind(1, a.arsp_id);
+                                auto current_part = -1;
+                                while(d.stmt_cls_arsp_shape.step())
+                                {
+                                    auto part_num = d.stmt_cls_arsp_shape.column_int(0);
+                                    if(part_num != current_part)
+                                    {
+                                        polygon_ring ring;
+                                        ring.is_hole = d.stmt_cls_arsp_shape.column_int(1) != 0;
+                                        a.parts.push_back(std::move(ring));
+                                        current_part = part_num;
+                                    }
+                                    a.parts.back().points.push_back({d.stmt_cls_arsp_shape.column_double(3),
+                                                                     d.stmt_cls_arsp_shape.column_double(2)});
+                                }
+                                return a;
+                            });
     }
 
     std::vector<runway> nasr_database::query_runways(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_runways,
-            bbox, [](sqlite::statement& s)
-        {
-            return runway{s.column_text(0), s.column_text(1),
-                          s.column_double(2), s.column_double(3),
-                          s.column_double(4), s.column_double(5)};
-        });
+        return d.query_bbox(d.stmt_runways, bbox,
+                            [](sqlite::statement& s)
+                            {
+                                return runway{s.column_text(0),   s.column_text(1),   s.column_double(2),
+                                              s.column_double(3), s.column_double(4), s.column_double(5)};
+                            });
     }
 
-    std::vector<sua> nasr_database::query_sua(const geo_bbox& bbox,
-                                                const filter_list& type_filter) const
+    std::vector<sua> nasr_database::query_sua(const geo_bbox& bbox, const filter_list& type_filter) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox_filtered(d.stmt_sua,
-            bbox, type_filter, [&](sqlite::statement& s)
-        {
-            sua su{s.column_int(0), s.column_text(1), s.column_text(2), s.column_text(3),
-                   s.column_text(4), s.column_text(5),
-                   s.column_text(6), s.column_text(7),
-                   s.column_text(8), s.column_text(9),
-                   s.column_text(10),
-                   s.column_text(11), s.column_text(12), s.column_text(13),
-                   s.column_text(14), s.column_text(15), s.column_text(16),
-                   s.column_text(17), s.column_text(18), s.column_text(19),
-                   {}, {}, {}};
+        return d.query_bbox_filtered(d.stmt_sua, bbox, type_filter,
+                                     [&](sqlite::statement& s)
+                                     {
+                                         sua su{s.column_int(0),
+                                                s.column_text(1),
+                                                s.column_text(2),
+                                                s.column_text(3),
+                                                s.column_text(4),
+                                                s.column_text(5),
+                                                s.column_text(6),
+                                                s.column_text(7),
+                                                s.column_text(8),
+                                                s.column_text(9),
+                                                s.column_text(10),
+                                                s.column_text(11),
+                                                s.column_text(12),
+                                                s.column_text(13),
+                                                s.column_text(14),
+                                                s.column_text(15),
+                                                s.column_text(16),
+                                                s.column_text(17),
+                                                s.column_text(18),
+                                                s.column_text(19),
+                                                {},
+                                                {},
+                                                {}};
 
-            // Load each stratum with its parts. Strata are ordered by
-            // STRATUM_ORDER (BASE first, then UNION bands, then partial-
-            // cover SUBTR strata).
-            d.stmt_sua_strata.reset();
-            d.stmt_sua_strata.bind(1, su.sua_id);
-            while (d.stmt_sua_strata.step())
-            {
-                sua_stratum st;
-                st.stratum_id = d.stmt_sua_strata.column_int(0);
-                st.stratum_order = d.stmt_sua_strata.column_int(1);
-                st.upper_limit = d.stmt_sua_strata.column_text(2);
-                st.lower_limit = d.stmt_sua_strata.column_text(3);
-                st.upper_ft_val = d.stmt_sua_strata.column_int(4);
-                st.upper_ft_ref = d.stmt_sua_strata.column_text(5);
-                st.lower_ft_val = d.stmt_sua_strata.column_int(6);
-                st.lower_ft_ref = d.stmt_sua_strata.column_text(7);
+                                         // Load each stratum with its parts. Strata are ordered by
+                                         // STRATUM_ORDER (BASE first, then UNION bands, then partial-
+                                         // cover SUBTR strata).
+                                         d.stmt_sua_strata.reset();
+                                         d.stmt_sua_strata.bind(1, su.sua_id);
+                                         while(d.stmt_sua_strata.step())
+                                         {
+                                             sua_stratum st;
+                                             st.stratum_id = d.stmt_sua_strata.column_int(0);
+                                             st.stratum_order = d.stmt_sua_strata.column_int(1);
+                                             st.upper_limit = d.stmt_sua_strata.column_text(2);
+                                             st.lower_limit = d.stmt_sua_strata.column_text(3);
+                                             st.upper_ft_val = d.stmt_sua_strata.column_int(4);
+                                             st.upper_ft_ref = d.stmt_sua_strata.column_text(5);
+                                             st.lower_ft_val = d.stmt_sua_strata.column_int(6);
+                                             st.lower_ft_ref = d.stmt_sua_strata.column_text(7);
 
-                // Circle metadata, if this stratum is a pure circle.
-                auto circle_part = -1;
-                auto c_lon = 0.0;
-                auto c_lat = 0.0;
-                auto c_rad = 0.0;
-                d.stmt_sua_circle.reset();
-                d.stmt_sua_circle.bind(1, st.stratum_id);
-                if (d.stmt_sua_circle.step())
-                {
-                    circle_part = d.stmt_sua_circle.column_int(0);
-                    c_lon = d.stmt_sua_circle.column_double(1);
-                    c_lat = d.stmt_sua_circle.column_double(2);
-                    c_rad = d.stmt_sua_circle.column_double(3);
-                }
+                                             // Circle metadata, if this stratum is a pure circle.
+                                             auto circle_part = -1;
+                                             auto c_lon = 0.0;
+                                             auto c_lat = 0.0;
+                                             auto c_rad = 0.0;
+                                             d.stmt_sua_circle.reset();
+                                             d.stmt_sua_circle.bind(1, st.stratum_id);
+                                             if(d.stmt_sua_circle.step())
+                                             {
+                                                 circle_part = d.stmt_sua_circle.column_int(0);
+                                                 c_lon = d.stmt_sua_circle.column_double(1);
+                                                 c_lat = d.stmt_sua_circle.column_double(2);
+                                                 c_rad = d.stmt_sua_circle.column_double(3);
+                                             }
 
-                d.stmt_sua_shape.reset();
-                d.stmt_sua_shape.bind(1, st.stratum_id);
-                auto current_part = -1;
-                while (d.stmt_sua_shape.step())
-                {
-                    auto part_num = d.stmt_sua_shape.column_int(0);
-                    if (part_num != current_part)
-                    {
-                        sua_ring ring;
-                        ring.is_hole = d.stmt_sua_shape.column_int(1) != 0;
-                        if (part_num == circle_part)
-                        {
-                            ring.is_circle = true;
-                            ring.circle_lon = c_lon;
-                            ring.circle_lat = c_lat;
-                            ring.circle_radius_nm = c_rad;
-                        }
-                        st.parts.push_back(std::move(ring));
-                        current_part = part_num;
-                    }
-                    st.parts.back().points.push_back(
-                        {d.stmt_sua_shape.column_double(3),
-                         d.stmt_sua_shape.column_double(2)});
-                }
-                su.strata.push_back(std::move(st));
-            }
+                                             d.stmt_sua_shape.reset();
+                                             d.stmt_sua_shape.bind(1, st.stratum_id);
+                                             auto current_part = -1;
+                                             while(d.stmt_sua_shape.step())
+                                             {
+                                                 auto part_num = d.stmt_sua_shape.column_int(0);
+                                                 if(part_num != current_part)
+                                                 {
+                                                     sua_ring ring;
+                                                     ring.is_hole = d.stmt_sua_shape.column_int(1) != 0;
+                                                     if(part_num == circle_part)
+                                                     {
+                                                         ring.is_circle = true;
+                                                         ring.circle_lon = c_lon;
+                                                         ring.circle_lat = c_lat;
+                                                         ring.circle_radius_nm = c_rad;
+                                                     }
+                                                     st.parts.push_back(std::move(ring));
+                                                     current_part = part_num;
+                                                 }
+                                                 st.parts.back().points.push_back({d.stmt_sua_shape.column_double(3),
+                                                                                   d.stmt_sua_shape.column_double(2)});
+                                             }
+                                             su.strata.push_back(std::move(st));
+                                         }
 
-            // Schedules: zero-or-more Timesheet entries.
-            d.stmt_sua_schedules.reset();
-            d.stmt_sua_schedules.bind(1, su.sua_id);
-            while (d.stmt_sua_schedules.step())
-            {
-                sua_schedule sc;
-                sc.day                = d.stmt_sua_schedules.column_text(0);
-                sc.day_til            = d.stmt_sua_schedules.column_text(1);
-                sc.start_time         = d.stmt_sua_schedules.column_text(2);
-                sc.end_time           = d.stmt_sua_schedules.column_text(3);
-                sc.start_event        = d.stmt_sua_schedules.column_text(4);
-                sc.end_event          = d.stmt_sua_schedules.column_text(5);
-                sc.start_event_offset = d.stmt_sua_schedules.column_text(6);
-                sc.end_event_offset   = d.stmt_sua_schedules.column_text(7);
-                sc.time_ref           = d.stmt_sua_schedules.column_text(8);
-                sc.time_offset        = d.stmt_sua_schedules.column_text(9);
-                sc.dst_flag           = d.stmt_sua_schedules.column_text(10);
-                su.schedules.push_back(std::move(sc));
-            }
+                                         // Schedules: zero-or-more Timesheet entries.
+                                         d.stmt_sua_schedules.reset();
+                                         d.stmt_sua_schedules.bind(1, su.sua_id);
+                                         while(d.stmt_sua_schedules.step())
+                                         {
+                                             sua_schedule sc;
+                                             sc.day = d.stmt_sua_schedules.column_text(0);
+                                             sc.day_til = d.stmt_sua_schedules.column_text(1);
+                                             sc.start_time = d.stmt_sua_schedules.column_text(2);
+                                             sc.end_time = d.stmt_sua_schedules.column_text(3);
+                                             sc.start_event = d.stmt_sua_schedules.column_text(4);
+                                             sc.end_event = d.stmt_sua_schedules.column_text(5);
+                                             sc.start_event_offset = d.stmt_sua_schedules.column_text(6);
+                                             sc.end_event_offset = d.stmt_sua_schedules.column_text(7);
+                                             sc.time_ref = d.stmt_sua_schedules.column_text(8);
+                                             sc.time_offset = d.stmt_sua_schedules.column_text(9);
+                                             sc.dst_flag = d.stmt_sua_schedules.column_text(10);
+                                             su.schedules.push_back(std::move(sc));
+                                         }
 
-            // Frequencies allocated to this SUA.
-            d.stmt_sua_freqs.reset();
-            d.stmt_sua_freqs.bind(1, su.sua_id);
-            while (d.stmt_sua_freqs.step())
-            {
-                sua_freq f;
-                f.mode         = d.stmt_sua_freqs.column_text(0);
-                f.tx           = d.stmt_sua_freqs.column_text(1);
-                f.rx           = d.stmt_sua_freqs.column_text(2);
-                f.comm_allowed = d.stmt_sua_freqs.column_text(3);
-                f.charted      = d.stmt_sua_freqs.column_text(4);
-                f.sectors      = d.stmt_sua_freqs.column_text(5);
-                su.freqs.push_back(std::move(f));
-            }
-            return su;
-        });
+                                         // Frequencies allocated to this SUA.
+                                         d.stmt_sua_freqs.reset();
+                                         d.stmt_sua_freqs.bind(1, su.sua_id);
+                                         while(d.stmt_sua_freqs.step())
+                                         {
+                                             sua_freq f;
+                                             f.mode = d.stmt_sua_freqs.column_text(0);
+                                             f.tx = d.stmt_sua_freqs.column_text(1);
+                                             f.rx = d.stmt_sua_freqs.column_text(2);
+                                             f.comm_allowed = d.stmt_sua_freqs.column_text(3);
+                                             f.charted = d.stmt_sua_freqs.column_text(4);
+                                             f.sectors = d.stmt_sua_freqs.column_text(5);
+                                             su.freqs.push_back(std::move(f));
+                                         }
+                                         return su;
+                                     });
     }
 
-    std::vector<sua_circle> nasr_database::query_sua_circles(
-        const geo_bbox& bbox, const filter_list& type_filter) const
+    std::vector<sua_circle> nasr_database::query_sua_circles(const geo_bbox& bbox, const filter_list& type_filter) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox_filtered(d.stmt_sua_circles_bbox,
-            bbox, type_filter, [](sqlite::statement& s)
-        {
-            return sua_circle{s.column_text(0),
-                              s.column_double(1),
-                              s.column_double(2),
-                              s.column_double(3),
-                              s.column_int(4),
-                              s.column_text(5),
-                              s.column_int(6),
-                              s.column_text(7)};
-        });
+        return d.query_bbox_filtered(d.stmt_sua_circles_bbox, bbox, type_filter,
+                                     [](sqlite::statement& s)
+                                     {
+                                         return sua_circle{s.column_text(0),   s.column_double(1), s.column_double(2),
+                                                           s.column_double(3), s.column_int(4),    s.column_text(5),
+                                                           s.column_int(6),    s.column_text(7)};
+                                     });
     }
 
     std::vector<obstacle> nasr_database::query_obstacles(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_obstacles,
-            bbox, [](sqlite::statement& s)
-        {
-            return obstacle{
-                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
-                s.column_text(4),
-                s.column_double(5), s.column_double(6),
-                s.column_text(7), s.column_int(8), s.column_int(9), s.column_int(10),
-                s.column_text(11), s.column_text(12), s.column_text(13),
-                s.column_text(14), s.column_text(15), s.column_text(16), s.column_text(17)};
-        });
+        return d.query_bbox(d.stmt_obstacles, bbox,
+                            [](sqlite::statement& s)
+                            {
+                                return obstacle{s.column_text(0),   s.column_text(1),  s.column_text(2),
+                                                s.column_text(3),   s.column_text(4),  s.column_double(5),
+                                                s.column_double(6), s.column_text(7),  s.column_int(8),
+                                                s.column_int(9),    s.column_int(10),  s.column_text(11),
+                                                s.column_text(12),  s.column_text(13), s.column_text(14),
+                                                s.column_text(15),  s.column_text(16), s.column_text(17)};
+                            });
     }
 
     std::vector<artcc> nasr_database::query_artcc(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_artcc,
-            bbox, [&](sqlite::statement& s)
-        {
-            artcc a{s.column_int(0),    s.column_text(1),
-                    s.column_text(2),   s.column_text(3),
-                    s.column_text(4),   s.column_text(5),
-                    s.column_text(6),   s.column_text(7),
-                    s.column_text(8),   s.column_text(9),
-                    s.column_text(10),  {}};
+        return d.query_bbox(d.stmt_artcc, bbox,
+                            [&](sqlite::statement& s)
+                            {
+                                artcc a{s.column_int(0),  s.column_text(1), s.column_text(2),  s.column_text(3),
+                                        s.column_text(4), s.column_text(5), s.column_text(6),  s.column_text(7),
+                                        s.column_text(8), s.column_text(9), s.column_text(10), {}};
 
-            d.stmt_artcc_shape.reset();
-            d.stmt_artcc_shape.bind(1, a.artcc_id);
-            while (d.stmt_artcc_shape.step())
-            {
-                a.points.push_back({d.stmt_artcc_shape.column_double(1),
-                                    d.stmt_artcc_shape.column_double(0)});
-            }
-            return a;
-        });
+                                d.stmt_artcc_shape.reset();
+                                d.stmt_artcc_shape.bind(1, a.artcc_id);
+                                while(d.stmt_artcc_shape.step())
+                                {
+                                    a.points.push_back(
+                                        {d.stmt_artcc_shape.column_double(1), d.stmt_artcc_shape.column_double(0)});
+                                }
+                                return a;
+                            });
     }
 
     std::vector<pja> nasr_database::query_pjas(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_pjas,
-            bbox, [](sqlite::statement& s)
-        {
-            return pja{s.column_text(0), s.column_text(1),
-                       s.column_double(2), s.column_double(3), s.column_double(4),
-                       s.column_text(5), s.column_int(6)};
-        });
+        return d.query_bbox(d.stmt_pjas, bbox,
+                            [](sqlite::statement& s)
+                            {
+                                return pja{s.column_text(0),   s.column_text(1), s.column_double(2), s.column_double(3),
+                                           s.column_double(4), s.column_text(5), s.column_int(6)};
+                            });
     }
 
     std::vector<adiz> nasr_database::query_adiz(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_adiz,
-            bbox, [&](sqlite::statement& s)
-        {
-            adiz a{s.column_int(0), s.column_text(1),
-                   s.column_text(2), s.column_text(3), s.column_text(4), {}};
-
-            d.stmt_adiz_shape.reset();
-            d.stmt_adiz_shape.bind(1, a.adiz_id);
-            auto current_part = -1;
-            while (d.stmt_adiz_shape.step())
+        return d.query_bbox(
+            d.stmt_adiz, bbox,
+            [&](sqlite::statement& s)
             {
-                auto part_num = d.stmt_adiz_shape.column_int(0);
-                if (part_num != current_part)
+                adiz a{s.column_int(0), s.column_text(1), s.column_text(2), s.column_text(3), s.column_text(4), {}};
+
+                d.stmt_adiz_shape.reset();
+                d.stmt_adiz_shape.bind(1, a.adiz_id);
+                auto current_part = -1;
+                while(d.stmt_adiz_shape.step())
                 {
-                    a.parts.push_back({});
-                    current_part = part_num;
+                    auto part_num = d.stmt_adiz_shape.column_int(0);
+                    if(part_num != current_part)
+                    {
+                        a.parts.push_back({});
+                        current_part = part_num;
+                    }
+                    a.parts.back().push_back({d.stmt_adiz_shape.column_double(2), d.stmt_adiz_shape.column_double(1)});
                 }
-                a.parts.back().push_back(
-                    {d.stmt_adiz_shape.column_double(2),
-                     d.stmt_adiz_shape.column_double(1)});
-            }
-            return a;
-        });
+                return a;
+            });
     }
 
     std::vector<fss> nasr_database::query_fss(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_fss,
-            bbox, [](sqlite::statement& s)
-        {
-            return fss{
-                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
-                s.column_text(4), s.column_text(5), s.column_text(6),
-                s.column_double(7), s.column_double(8),
-                s.column_text(9), s.column_text(10),
-                s.column_text(11), s.column_text(12)};
-        });
+        return d.query_bbox(d.stmt_fss, bbox,
+                            [](sqlite::statement& s)
+                            {
+                                return fss{s.column_text(0),   s.column_text(1), s.column_text(2),  s.column_text(3),
+                                           s.column_text(4),   s.column_text(5), s.column_text(6),  s.column_double(7),
+                                           s.column_double(8), s.column_text(9), s.column_text(10), s.column_text(11),
+                                           s.column_text(12)};
+                            });
     }
 
     std::vector<awos> nasr_database::query_awos(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_awos,
-            bbox, [](sqlite::statement& s)
-        {
-            return awos{
-                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
-                s.column_text(4), s.column_text(5), s.column_text(6),
-                s.column_double(7), s.column_double(8), s.column_double(9),
-                s.column_text(10), s.column_text(11),
-                s.column_text(12), s.column_text(13), s.column_text(14)};
-        });
+        return d.query_bbox(d.stmt_awos, bbox,
+                            [](sqlite::statement& s)
+                            {
+                                return awos{s.column_text(0),   s.column_text(1),   s.column_text(2),
+                                            s.column_text(3),   s.column_text(4),   s.column_text(5),
+                                            s.column_text(6),   s.column_double(7), s.column_double(8),
+                                            s.column_double(9), s.column_text(10),  s.column_text(11),
+                                            s.column_text(12),  s.column_text(13),  s.column_text(14)};
+                            });
     }
 
     std::vector<comm_outlet> nasr_database::query_comm_outlets(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(d.stmt_comm_outlets,
-            bbox, [](sqlite::statement& s)
-        {
-            return comm_outlet{
-                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
-                s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7),
-                s.column_double(8), s.column_double(9),
-                s.column_text(10), s.column_text(11),
-                s.column_text(12), s.column_text(13), s.column_text(14)};
-        });
+        return d.query_bbox(d.stmt_comm_outlets, bbox,
+                            [](sqlite::statement& s)
+                            {
+                                return comm_outlet{s.column_text(0),   s.column_text(1),  s.column_text(2),
+                                                   s.column_text(3),   s.column_text(4),  s.column_text(5),
+                                                   s.column_text(6),   s.column_text(7),  s.column_double(8),
+                                                   s.column_double(9), s.column_text(10), s.column_text(11),
+                                                   s.column_text(12),  s.column_text(13), s.column_text(14)};
+                            });
     }
 
     std::vector<boundary_segment> nasr_database::query_artcc_segments(const geo_bbox& bbox) const
@@ -1205,18 +1288,15 @@ namespace osect
         std::vector<boundary_segment> results;
         d.bind_bbox(d.stmt_artcc_seg, bbox);
         auto current_seg = -1;
-        while (d.stmt_artcc_seg.step())
+        while(d.stmt_artcc_seg.step())
         {
             auto seg_id = d.stmt_artcc_seg.column_int(0);
-            if (seg_id != current_seg)
+            if(seg_id != current_seg)
             {
-                results.push_back({d.stmt_artcc_seg.column_text(1),
-                                   d.stmt_artcc_seg.column_text(2), {}});
+                results.push_back({d.stmt_artcc_seg.column_text(1), d.stmt_artcc_seg.column_text(2), {}});
                 current_seg = seg_id;
             }
-            results.back().points.push_back(
-                {d.stmt_artcc_seg.column_double(4),
-                 d.stmt_artcc_seg.column_double(3)});
+            results.back().points.push_back({d.stmt_artcc_seg.column_double(4), d.stmt_artcc_seg.column_double(3)});
         }
         return results;
     }
@@ -1228,23 +1308,21 @@ namespace osect
         std::vector<boundary_segment> results;
         d.bind_bbox(d.stmt_adiz_seg, bbox);
         auto current_seg = -1;
-        while (d.stmt_adiz_seg.step())
+        while(d.stmt_adiz_seg.step())
         {
             auto seg_id = d.stmt_adiz_seg.column_int(0);
-            if (seg_id != current_seg)
+            if(seg_id != current_seg)
             {
                 results.push_back({{}, {}, {}});
                 current_seg = seg_id;
             }
-            results.back().points.push_back(
-                {d.stmt_adiz_seg.column_double(2),
-                 d.stmt_adiz_seg.column_double(1)});
+            results.back().points.push_back({d.stmt_adiz_seg.column_double(2), d.stmt_adiz_seg.column_double(1)});
         }
         return results;
     }
 
-    std::vector<airspace_segment> nasr_database::query_class_airspace_segments(
-        const geo_bbox& bbox, const filter_list& class_filter) const
+    std::vector<airspace_segment> nasr_database::query_class_airspace_segments(const geo_bbox& bbox,
+                                                                               const filter_list& class_filter) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
@@ -1253,29 +1331,32 @@ namespace osect
         d.bind_filter(d.stmt_cls_arsp_seg, 5, class_filter);
         auto current_seg = -1;
         auto skip_current = false;
-        while (d.stmt_cls_arsp_seg.step())
+        while(d.stmt_cls_arsp_seg.step())
         {
             auto seg_id = d.stmt_cls_arsp_seg.column_int(0);
-            if (seg_id != current_seg)
+            if(seg_id != current_seg)
             {
                 auto arsp_id = d.stmt_cls_arsp_seg.column_int(1);
                 skip_current = d.shadowed_arsp_ids.count(arsp_id) != 0;
                 current_seg = seg_id;
-                if (skip_current) continue;
-                results.push_back(
-                    {d.stmt_cls_arsp_seg.column_text(2),
-                     d.stmt_cls_arsp_seg.column_text(3), {}});
+                if(skip_current)
+                {
+                    continue;
+                }
+                results.push_back({d.stmt_cls_arsp_seg.column_text(2), d.stmt_cls_arsp_seg.column_text(3), {}});
             }
-            if (skip_current) continue;
+            if(skip_current)
+            {
+                continue;
+            }
             results.back().points.push_back(
-                {d.stmt_cls_arsp_seg.column_double(5),
-                 d.stmt_cls_arsp_seg.column_double(4)});
+                {d.stmt_cls_arsp_seg.column_double(5), d.stmt_cls_arsp_seg.column_double(4)});
         }
         return results;
     }
 
-    std::vector<sua_segment> nasr_database::query_sua_segments(
-        const geo_bbox& bbox, const filter_list& type_filter) const
+    std::vector<sua_segment> nasr_database::query_sua_segments(const geo_bbox& bbox,
+                                                               const filter_list& type_filter) const
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
@@ -1283,10 +1364,10 @@ namespace osect
         d.bind_bbox(d.stmt_sua_seg, bbox);
         d.bind_filter(d.stmt_sua_seg, 5, type_filter);
         auto current_seg = -1;
-        while (d.stmt_sua_seg.step())
+        while(d.stmt_sua_seg.step())
         {
             auto seg_id = d.stmt_sua_seg.column_int(0);
-            if (seg_id != current_seg)
+            if(seg_id != current_seg)
             {
                 results.push_back({d.stmt_sua_seg.column_text(1),
                                    d.stmt_sua_seg.column_int(4),
@@ -1296,9 +1377,7 @@ namespace osect
                                    {}});
                 current_seg = seg_id;
             }
-            results.back().points.push_back(
-                {d.stmt_sua_seg.column_double(3),
-                 d.stmt_sua_seg.column_double(2)});
+            results.back().points.push_back({d.stmt_sua_seg.column_double(3), d.stmt_sua_seg.column_double(2)});
         }
         return results;
     }
@@ -1313,24 +1392,36 @@ namespace osect
         std::string tok;
         auto flush = [&]()
         {
-            if(tok.empty()) return;
-            if(!expr.empty()) expr.push_back(' ');
+            if(tok.empty())
+            {
+                return;
+            }
+            if(!expr.empty())
+            {
+                expr.push_back(' ');
+            }
             expr.append(tok);
             expr.push_back('*');
             tok.clear();
         };
         for(char c : query)
         {
-            if((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-               (c >= '0' && c <= '9'))
+            if((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
+            {
                 tok.push_back(c);
+            }
             else
+            {
                 flush();
+            }
         }
         flush();
 
         std::vector<search_hit> hits;
-        if(expr.empty()) return hits;
+        if(expr.empty())
+        {
+            return hits;
+        }
 
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
@@ -1339,11 +1430,8 @@ namespace osect
         d.stmt_search.bind(2, limit);
         while(d.stmt_search.step())
         {
-            hits.push_back(search_hit{
-                d.stmt_search.column_text(0),
-                d.stmt_search.column_int(1),
-                d.stmt_search.column_text(2),
-                d.stmt_search.column_text(3)});
+            hits.push_back(search_hit{d.stmt_search.column_text(0), d.stmt_search.column_int(1),
+                                      d.stmt_search.column_text(2), d.stmt_search.column_text(3)});
         }
         return hits;
     }
@@ -1361,63 +1449,90 @@ namespace osect
         // navigation happens at click rate, so compile cost is negligible.
         const char* sql = nullptr;
         if(entity_type == "APT")
+        {
             sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM APT_BASE "
                   "WHERE rowid = ?1 AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != '' "
                   "AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''";
+        }
         else if(entity_type == "NAV")
+        {
             sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM NAV_BASE "
                   "WHERE rowid = ?1 AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != '' "
                   "AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''";
+        }
         else if(entity_type == "FIX")
+        {
             sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM FIX_BASE "
                   "WHERE rowid = ?1 AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != '' "
                   "AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''";
+        }
         else if(entity_type == "FSS")
+        {
             sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM FSS_BASE "
                   "WHERE rowid = ?1 AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != '' "
                   "AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''";
+        }
         else if(entity_type == "AWOS")
+        {
             sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM AWOS "
                   "WHERE rowid = ?1 AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != '' "
                   "AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''";
+        }
         else if(entity_type == "COM")
+        {
             sql = "SELECT LONG_DECIMAL, LONG_DECIMAL, LAT_DECIMAL, LAT_DECIMAL FROM COM "
                   "WHERE rowid = ?1 AND LAT_DECIMAL IS NOT NULL AND LAT_DECIMAL != '' "
                   "AND LONG_DECIMAL IS NOT NULL AND LONG_DECIMAL != ''";
+        }
         else if(entity_type == "PJA")
+        {
             sql = "SELECT LON, LON, LAT, LAT FROM PJA_BASE "
                   "WHERE rowid = ?1 AND LAT IS NOT NULL AND LON IS NOT NULL";
+        }
         else if(entity_type == "SUA")
+        {
             sql = "SELECT min_lon, max_lon, min_lat, max_lat FROM SUA_BASE_RTREE WHERE id = ?1";
+        }
         else if(entity_type == "CLS")
+        {
             sql = "SELECT min_lon, max_lon, min_lat, max_lat FROM CLS_ARSP_BASE_RTREE WHERE id = ?1";
+        }
         else if(entity_type == "ARTCC")
+        {
             sql = "SELECT min_lon, max_lon, min_lat, max_lat FROM ARTCC_BASE_RTREE WHERE id = ?1";
+        }
         else if(entity_type == "ADIZ")
+        {
             sql = "SELECT min_lon, max_lon, min_lat, max_lat FROM ADIZ_BASE_RTREE WHERE id = ?1";
+        }
         else if(entity_type == "AWY")
+        {
             sql = "SELECT MIN(FROM_LON), MAX(FROM_LON), MIN(FROM_LAT), MAX(FROM_LAT) "
                   "FROM AWY_SEG WHERE AWY_ID = (SELECT AWY_ID FROM AWY_BASE WHERE rowid = ?1) "
                   "HAVING MIN(FROM_LON) IS NOT NULL";
+        }
         else if(entity_type == "MTR")
+        {
             sql = "SELECT MIN(FROM_LON), MAX(FROM_LON), MIN(FROM_LAT), MAX(FROM_LAT) "
                   "FROM MTR_SEG WHERE MTR_ID = (SELECT ROUTE_ID FROM MTR_BASE WHERE rowid = ?1) "
                   "HAVING MIN(FROM_LON) IS NOT NULL";
+        }
 
-        if(!sql) return std::nullopt;
+        if(!sql)
+        {
+            return std::nullopt;
+        }
 
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
         auto stmt = d.db.prepare(sql);
         stmt.bind(1, entity_rowid);
-        if(!stmt.step()) return std::nullopt;
+        if(!stmt.step())
+        {
+            return std::nullopt;
+        }
 
-        return geo_bbox{
-            stmt.column_double(0),
-            stmt.column_double(2),
-            stmt.column_double(1),
-            stmt.column_double(3)
-        };
+        return geo_bbox{stmt.column_double(0), stmt.column_double(2), stmt.column_double(1), stmt.column_double(3)};
     }
 
     std::vector<airport> nasr_database::lookup_airports(const std::string& id) const
@@ -1429,17 +1544,13 @@ namespace osect
         std::vector<airport> out;
         while(s.step())
         {
-            out.push_back(airport{
-                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
-                s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7),
-                s.column_double(8), s.column_double(9), s.column_double(10),
-                s.column_text(11), s.column_text(12), s.column_text(13),
-                s.column_text(14), s.column_text(15), s.column_text(16),
-                s.column_text(17), s.column_text(18), s.column_text(19),
-                s.column_text(20), s.column_text(21),
-                s.column_text(22), s.column_text(23),
-                s.column_int(24) != 0,
-                s.column_text(25)});
+            out.push_back(airport{s.column_text(0),      s.column_text(1),   s.column_text(2),    s.column_text(3),
+                                  s.column_text(4),      s.column_text(5),   s.column_text(6),    s.column_text(7),
+                                  s.column_double(8),    s.column_double(9), s.column_double(10), s.column_text(11),
+                                  s.column_text(12),     s.column_text(13),  s.column_text(14),   s.column_text(15),
+                                  s.column_text(16),     s.column_text(17),  s.column_text(18),   s.column_text(19),
+                                  s.column_text(20),     s.column_text(21),  s.column_text(22),   s.column_text(23),
+                                  s.column_int(24) != 0, s.column_text(25)});
         }
         return out;
     }
@@ -1453,15 +1564,12 @@ namespace osect
         std::vector<navaid> out;
         while(s.step())
         {
-            out.push_back(navaid{
-                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
-                s.column_text(4), s.column_text(5), s.column_text(6), s.column_text(7),
-                s.column_text(8), s.column_text(9),
-                s.column_double(10), s.column_double(11), s.column_double(12),
-                s.column_text(13), s.column_text(14), s.column_text(15),
-                s.column_text(16), s.column_text(17), s.column_text(18),
-                s.column_text(19), s.column_text(20),
-                s.column_int(21) != 0, s.column_int(22) != 0});
+            out.push_back(navaid{s.column_text(0),    s.column_text(1),      s.column_text(2),     s.column_text(3),
+                                 s.column_text(4),    s.column_text(5),      s.column_text(6),     s.column_text(7),
+                                 s.column_text(8),    s.column_text(9),      s.column_double(10),  s.column_double(11),
+                                 s.column_double(12), s.column_text(13),     s.column_text(14),    s.column_text(15),
+                                 s.column_text(16),   s.column_text(17),     s.column_text(18),    s.column_text(19),
+                                 s.column_text(20),   s.column_int(21) != 0, s.column_int(22) != 0});
         }
         return out;
     }
@@ -1475,11 +1583,9 @@ namespace osect
         std::vector<fix> out;
         while(s.step())
         {
-            out.push_back(fix{
-                s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
-                s.column_double(4), s.column_double(5),
-                s.column_text(6), s.column_text(7), s.column_text(8),
-                s.column_int(9) != 0, s.column_int(10) != 0});
+            out.push_back(fix{s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
+                              s.column_double(4), s.column_double(5), s.column_text(6), s.column_text(7),
+                              s.column_text(8), s.column_int(9) != 0, s.column_int(10) != 0});
         }
         return out;
     }
@@ -1490,9 +1596,10 @@ namespace osect
         {
             std::vector<route_node_row> out;
             while(s.step())
-                out.push_back(route_node_row{
-                    s.column_int(0), s.column_text(1), s.column_text(2),
-                    s.column_double(3), s.column_double(4)});
+            {
+                out.push_back(route_node_row{s.column_int(0), s.column_text(1), s.column_text(2), s.column_double(3),
+                                             s.column_double(4)});
+            }
             return out;
         }
     }
@@ -1528,17 +1635,17 @@ namespace osect
         s.reset();
         std::vector<route_airway_edge_row> out;
         while(s.step())
-            out.push_back(route_airway_edge_row{
-                s.column_text(0), s.column_double(1), s.column_double(2),
-                s.column_text(3), s.column_double(4), s.column_double(5),
-                s.column_text(6), s.column_int(7) != 0});
+        {
+            out.push_back(route_airway_edge_row{s.column_text(0), s.column_double(1), s.column_double(2),
+                                                s.column_text(3), s.column_double(4), s.column_double(5),
+                                                s.column_text(6), s.column_int(7) != 0});
+        }
         return out;
     }
 
     namespace
     {
-        std::vector<int> drain_rtree_rowids(sqlite::statement& s,
-                                             const geo_bbox& bbox)
+        std::vector<int> drain_rtree_rowids(sqlite::statement& s, const geo_bbox& bbox)
         {
             s.reset();
             s.bind(1, bbox.lon_min);
@@ -1547,7 +1654,9 @@ namespace osect
             s.bind(4, bbox.lat_max);
             std::vector<int> out;
             while(s.step())
+            {
                 out.push_back(s.column_int(0));
+            }
             return out;
         }
     }
@@ -1580,8 +1689,7 @@ namespace osect
             y -= m <= 2;
             const int era = (y >= 0 ? y : y - 399) / 400;
             const auto yoe = static_cast<unsigned>(y - era * 400);
-            const unsigned doy =
-                (153U * (m + (m > 2 ? -3U : 9U)) + 2U) / 5U + d - 1U;
+            const unsigned doy = (153U * (m + (m > 2 ? -3U : 9U)) + 2U) / 5U + d - 1U;
             const unsigned doe = yoe * 365U + yoe / 4U - yoe / 100U + doy;
             return era * 146097 + static_cast<int>(doe) - 719468;
         }
@@ -1594,19 +1702,25 @@ namespace osect
         // Throws std::runtime_error on any malformed input. We control
         // the writer; a parse failure is a writer bug, not a runtime
         // condition the caller should be expected to handle.
-        std::chrono::system_clock::time_point
-        parse_iso8601(const std::string& s)
+        std::chrono::system_clock::time_point parse_iso8601(const std::string& s)
         {
-            const std::runtime_error bad(
-                "META: invalid ISO 8601 timestamp '" + s + "'");
-            if(s.size() < 10) throw bad;
+            const std::runtime_error bad("META: invalid ISO 8601 timestamp '" + s + "'");
+            if(s.size() < 10)
+            {
+                throw bad;
+            }
 
             int y = 0;
             int mo = 0;
             int d = 0;
             if(std::sscanf(s.c_str(), "%4d-%2d-%2d", &y, &mo, &d) != 3)
+            {
                 throw bad;
-            if(mo < 1 || mo > 12 || d < 1 || d > 31) throw bad;
+            }
+            if(mo < 1 || mo > 12 || d < 1 || d > 31)
+            {
+                throw bad;
+            }
 
             int h = 0;
             int mi = 0;
@@ -1615,12 +1729,14 @@ namespace osect
 
             if(s.size() >= 19 && s[10] == 'T')
             {
-                if(std::sscanf(s.c_str() + 11, "%2d:%2d:%2d",
-                               &h, &mi, &sec) != 3)
+                if(std::sscanf(s.c_str() + 11, "%2d:%2d:%2d", &h, &mi, &sec) != 3)
+                {
                     throw bad;
-                if(h < 0 || h > 23 || mi < 0 || mi > 59 ||
-                   sec < 0 || sec > 60)
+                }
+                if(h < 0 || h > 23 || mi < 0 || mi > 59 || sec < 0 || sec > 60)
+                {
                     throw bad;
+                }
 
                 if(s.size() > 19)
                 {
@@ -1633,9 +1749,10 @@ namespace osect
                     {
                         int oh = 0;
                         int om = 0;
-                        if(std::sscanf(tz.c_str() + 1, "%2d:%2d",
-                                       &oh, &om) != 2)
+                        if(std::sscanf(tz.c_str() + 1, "%2d:%2d", &oh, &om) != 2)
+                        {
                             throw bad;
+                        }
                         const int sign = tz[0] == '-' ? -1 : 1;
                         offset_seconds = sign * (oh * 3600LL + om * 60LL);
                     }
@@ -1650,16 +1767,11 @@ namespace osect
                 throw bad;
             }
 
-            const auto days = days_from_civil(y,
-                static_cast<unsigned>(mo), static_cast<unsigned>(d));
-            const long long utc_seconds =
-                static_cast<long long>(days) * 86400LL +
-                static_cast<long long>(h) * 3600LL +
-                static_cast<long long>(mi) * 60LL +
-                static_cast<long long>(sec) -
-                offset_seconds;
-            return std::chrono::system_clock::time_point(
-                std::chrono::seconds(utc_seconds));
+            const auto days = days_from_civil(y, static_cast<unsigned>(mo), static_cast<unsigned>(d));
+            const long long utc_seconds = static_cast<long long>(days) * 86400LL + static_cast<long long>(h) * 3600LL +
+                                          static_cast<long long>(mi) * 60LL + static_cast<long long>(sec) -
+                                          offset_seconds;
+            return std::chrono::system_clock::time_point(std::chrono::seconds(utc_seconds));
         }
     }
 
@@ -1676,7 +1788,9 @@ namespace osect
             s.info = stmt.column_text(1);
             const auto expires_str = stmt.column_text(2);
             if(!expires_str.empty())
+            {
                 s.expires = parse_iso8601(expires_str);
+            }
             out.push_back(std::move(s));
         }
         return out;

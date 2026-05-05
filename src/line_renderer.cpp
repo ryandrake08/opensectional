@@ -13,10 +13,10 @@ namespace osect
     {
         glm::mat4 projection_matrix;      // 64 bytes, offset 0
         glm::mat4 view_matrix;            // 64 bytes, offset 64
-        glm::vec2 viewport_size;           // 8 bytes, offset 128
-        glm::vec2 world_to_screen_scale;   // 8 bytes, offset 136
-        glm::vec2 world_to_screen_offset;  // 8 bytes, offset 144
-        glm::vec2 _pad0;                   // 8 bytes, offset 152
+        glm::vec2 viewport_size;          // 8 bytes, offset 128
+        glm::vec2 world_to_screen_scale;  // 8 bytes, offset 136
+        glm::vec2 world_to_screen_offset; // 8 bytes, offset 144
+        glm::vec2 _pad0;                  // 8 bytes, offset 152
         // total 160 bytes (10 * 16)
     };
 
@@ -27,7 +27,7 @@ namespace osect
     // Per-instance metadata (must match PolylineMetadata in line.hlsl)
     struct polyline_metadata_gpu
     {
-        glm::vec4 bounds_min_max;     // xy=min, zw=max (no margin)
+        glm::vec4 bounds_min_max; // xy=min, zw=max (no margin)
         glm::vec4 line_color;
         glm::vec4 border_color;
         float line_half_width;
@@ -37,10 +37,10 @@ namespace osect
         float fill_width;
         uint32_t segment_count;
         uint32_t point_offset;
-        uint32_t primitive_type;      // 0=polyline, 1=circle
-        float circle_center_x;       // world-space Mercator
+        uint32_t primitive_type; // 0=polyline, 1=circle
+        float circle_center_x;   // world-space Mercator
         float circle_center_y;
-        float circle_radius;          // world-space Mercator
+        float circle_radius; // world-space Mercator
         float _pad2;
         // total 96 bytes (6 * 16)
     };
@@ -59,12 +59,13 @@ namespace osect
         uint32_t instance_count = 0;
     };
 
-    line_renderer::line_renderer() : pimpl(std::make_unique<impl>()) {}
+    line_renderer::line_renderer() : pimpl(std::make_unique<impl>())
+    {
+    }
     line_renderer::~line_renderer() = default;
 
-    void line_renderer::set_data(std::vector<std::vector<glm::vec2>> polylines,
-                                  std::vector<line_style> styles,
-                                  std::vector<circle_data> circles)
+    void line_renderer::set_data(std::vector<std::vector<glm::vec2>> polylines, std::vector<line_style> styles,
+                                 std::vector<circle_data> circles)
     {
         pimpl->polylines = std::move(polylines);
         pimpl->styles = std::move(styles);
@@ -145,9 +146,8 @@ namespace osect
         {
             auto effective_fill = c.style.fill_width > 0 ? c.style.fill_width : c.style.border_width;
             auto meta = polyline_metadata_gpu{};
-            meta.bounds_min_max = glm::vec4(
-                c.center.x - c.radius, c.center.y - c.radius,
-                c.center.x + c.radius, c.center.y + c.radius);
+            meta.bounds_min_max =
+                glm::vec4(c.center.x - c.radius, c.center.y - c.radius, c.center.x + c.radius, c.center.y + c.radius);
             meta.line_color = glm::vec4(c.style.r, c.style.g, c.style.b, c.style.a);
             meta.border_color = glm::vec4(0.0F, 0.0F, 0.0F, c.style.a);
             meta.line_half_width = c.style.line_width * 0.5F;
@@ -174,12 +174,10 @@ namespace osect
                 all_points.emplace_back(0.0F, 0.0F, 0.0F, 0.0F);
             }
 
-            auto pts = pass.create_and_upload_buffer(
-                dev, sdl::buffer_usage::graphics_storage_read, all_points);
+            auto pts = pass.create_and_upload_buffer(dev, sdl::buffer_usage::graphics_storage_read, all_points);
             pimpl->packed_points = std::make_unique<sdl::buffer>(std::move(pts));
 
-            auto meta = pass.create_and_upload_buffer(
-                dev, sdl::buffer_usage::graphics_storage_read, all_metadata);
+            auto meta = pass.create_and_upload_buffer(dev, sdl::buffer_usage::graphics_storage_read, all_metadata);
             pimpl->metadata_buf = std::make_unique<sdl::buffer>(std::move(meta));
         }
         else
@@ -191,11 +189,8 @@ namespace osect
         pimpl->dirty = false;
     }
 
-    void line_renderer::render(sdl::render_pass& pass,
-                               const glm::mat4& projection,
-                               const glm::mat4& view,
-                               int viewport_width,
-                               int viewport_height) const
+    void line_renderer::render(sdl::render_pass& pass, const glm::mat4& projection, const glm::mat4& view,
+                               int viewport_width, int viewport_height) const
     {
         if(pimpl->instance_count == 0)
         {
@@ -206,10 +201,8 @@ namespace osect
         auto vw = static_cast<float>(viewport_width);
         auto vh = static_cast<float>(viewport_height);
 
-        glm::vec2 w2s_scale(pv[0][0] * 0.5F * vw,
-                            -pv[1][1] * 0.5F * vh);
-        glm::vec2 w2s_offset((pv[3][0] + 1.0F) * 0.5F * vw,
-                             (1.0F - pv[3][1]) * 0.5F * vh);
+        glm::vec2 w2s_scale(pv[0][0] * 0.5F * vw, -pv[1][1] * 0.5F * vh);
+        glm::vec2 w2s_offset((pv[3][0] + 1.0F) * 0.5F * vw, (1.0F - pv[3][1]) * 0.5F * vh);
 
         auto uniforms = shared_uniform_buffer{};
         uniforms.projection_matrix = projection;

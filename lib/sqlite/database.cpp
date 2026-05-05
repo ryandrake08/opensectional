@@ -13,7 +13,7 @@ namespace sqlite
         {
             int flags = read_only ? SQLITE_OPEN_READONLY : (SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
             int rc = sqlite3_open_v2(path, &db, flags, nullptr);
-            if (rc != SQLITE_OK)
+            if(rc != SQLITE_OK)
             {
                 std::string msg = "Failed to open database: ";
                 msg += sqlite3_errmsg(db);
@@ -25,8 +25,8 @@ namespace sqlite
             // and put any temp B-trees in RAM. All three soft-fail
             // to defaults if SQLite can't honor them.
             sqlite3_exec(db, "PRAGMA mmap_size = 268435456", nullptr, nullptr, nullptr);
-            sqlite3_exec(db, "PRAGMA cache_size = -32000",   nullptr, nullptr, nullptr);
-            sqlite3_exec(db, "PRAGMA temp_store = MEMORY",   nullptr, nullptr, nullptr);
+            sqlite3_exec(db, "PRAGMA cache_size = -32000", nullptr, nullptr, nullptr);
+            sqlite3_exec(db, "PRAGMA temp_store = MEMORY", nullptr, nullptr, nullptr);
         }
 
         ~impl()
@@ -52,7 +52,7 @@ namespace sqlite
     {
         sqlite3_stmt* stmt = nullptr;
         int rc = sqlite3_prepare_v2(pimpl->db, sql, -1, &stmt, nullptr);
-        if (rc != SQLITE_OK)
+        if(rc != SQLITE_OK)
         {
             std::string msg = "Failed to prepare statement: ";
             msg += sqlite3_errmsg(pimpl->db);
