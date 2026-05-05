@@ -21,7 +21,6 @@ namespace osect
     struct search_hit;
     class feature_type;
     class ephemeral_data;
-}
 
 // The main map widget: owns the tile renderer, feature renderer, label
 // renderer, pick/info popups, GPU pipelines, and map view (pan/zoom).
@@ -40,34 +39,34 @@ public:
     // sources) through it in place of SQL-backed queries.
     map_widget(sdl::device& dev, const char* tile_path,
                const char* db_path, const ini_config& ini,
-               osect::ephemeral_data& eph,
+               ephemeral_data& eph,
                int viewport_width, int viewport_height);
     ~map_widget();
 
     // Apply per-layer and altitude-band visibility from the UI overlay.
-    void set_visibility(const osect::layer_visibility& vis);
+    void set_visibility(const layer_visibility& vis);
 
     // Recenter the map on a search hit and zoom to fit.
-    void focus_on_hit(const osect::search_hit& hit);
+    void focus_on_hit(const search_hit& hit);
 
     // The ordered list of toggleable feature_types. Used by the UI
     // overlay to build its layer-visibility checkboxes.
-    const std::vector<std::unique_ptr<osect::feature_type>>& feature_types() const;
+    const std::vector<std::unique_ptr<feature_type>>& feature_types() const;
 
     // Run a full-text search against the NASR database.
-    std::vector<osect::search_hit> search(const std::string& query, int limit);
+    std::vector<search_hit> search(const std::string& query, int limit);
 
     // Activate a parsed route. Caller is expected to do the parse
     // off the main thread (route_submitter does this) — set_route
     // itself only fits the view, kicks the feature builder, and
     // takes ownership.
-    void set_route(osect::flight_route route);
+    void set_route(flight_route route);
 
     // Clear the active route, if any.
     void clear_route();
 
     // Currently active route (nullopt if none).
-    const std::optional<osect::flight_route>& route() const;
+    const std::optional<flight_route>& route() const;
 
     // Returns true once if the route was mutated internally (e.g. via
     // segment drag-insert) since the last call; used by main() to re-push
@@ -104,3 +103,5 @@ public:
     // is NOT included — caller handles that separately.
     void render_frame(sdl::command_buffer& cmd, sdl::texture& swapchain);
 };
+
+}
