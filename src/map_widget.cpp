@@ -1072,15 +1072,9 @@ std::vector<osect::search_hit> map_widget::search(
     return pimpl->pick_db.search(query, limit);
 }
 
-void map_widget::set_route_text(const std::string& text)
+void map_widget::set_route(osect::flight_route route)
 {
-    if(text.empty())
-    {
-        clear_route();
-        return;
-    }
-    // May throw route_parse_error; caller handles.
-    pimpl->route.emplace(text, pimpl->pick_db);
+    pimpl->route.emplace(std::move(route));
     pimpl->features.set_route(pimpl->route);
 
     // Fit the view to the route's bounding box (20% padding), so the
