@@ -264,14 +264,26 @@ int main(int argc, char** argv)
             }
             else if(ui_result.submit_route_text)
             {
-                // Snapshot the GUI knobs into the planner options
-                // for this submission. ini-driven preferences are
-                // already in `plan_options`; we just overlay
-                // max_leg and use-airways from the UI.
-                auto opts = plan_options;
-                opts.max_leg_length_nm = ui_result.route_max_leg_nm;
-                opts.use_airways = ui_result.route_use_airways;
-                submitter.submit(*ui_result.submit_route_text, opts);
+                if(ui_result.submit_route_text->empty())
+                {
+                    // Submitting blank input is just a clear; no
+                    // reason to round-trip through the worker only
+                    // for the parser to reject it.
+                    map.clear_route();
+                    ui.clear_route_state();
+                }
+                else
+                {
+                    // Snapshot the GUI knobs into the planner
+                    // options for this submission. ini-driven
+                    // preferences are already in `plan_options`; we
+                    // just overlay max_leg and use-airways from the
+                    // UI.
+                    auto opts = plan_options;
+                    opts.max_leg_length_nm = ui_result.route_max_leg_nm;
+                    opts.use_airways = ui_result.route_use_airways;
+                    submitter.submit(*ui_result.submit_route_text, opts);
+                }
                 needs_render = true;
             }
 
@@ -283,19 +295,11 @@ int main(int argc, char** argv)
 
             try
             {
-                if(auto expanded = submitter.drain())
+                if(auto route = submitter.drain())
                 {
-                    if(expanded->empty())
-                    {
-                        map.clear_route();
-                        ui.clear_route_state();
-                    }
-                    else
-                    {
-                        map.set_route_text(*expanded);
-                        if(map.route()) ui.set_route_state(*map.route());
-                        else ui.clear_route_state();
-                    }
+                    map.set_route(std::move(*route));
+                    if(map.route()) ui.set_route_state(*map.route());
+                    else ui.clear_route_state();
                     needs_render = true;
                 }
             }

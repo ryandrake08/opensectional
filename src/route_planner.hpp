@@ -1,5 +1,6 @@
 #pragma once
 
+#include "flight_route.hpp"
 #include "route_plan_options.hpp"
 
 #include <cstddef>
@@ -73,6 +74,15 @@ namespace osect
         // when no path can be found.
         std::string expand_sigils(const std::string& text,
                                    const options& opts) const;
+
+        // Convenience: expand sigils and parse the result into a
+        // flight_route resolved against the planner's database.
+        // Equivalent to `flight_route(expand_sigils(text, opts), db)`
+        // but doesn't expose the database. Throws route_parse_error
+        // on sigil-grammar errors, A* failure, or token-resolution
+        // failure.
+        flight_route parse(const std::string& text,
+                           const options& opts) const;
 
     private:
         // ---- Catalog and A* primitives ----

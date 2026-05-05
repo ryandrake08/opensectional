@@ -11,13 +11,16 @@ set(BUNDLE_IDENTIFIER "org.existens.opensectional")
 # Export compile commands
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Build-type-specific compiler options (MinGW lacks ASan and gprof support)
+# Build-type-specific compiler options (MinGW lacks ASan support).
+# RelWithDebInfo keeps frame pointers so sampling profilers can walk
+# stacks without DWARF unwinding — free on AArch64 where the ABI
+# already requires it, ~1% on x86_64.
 if(MINGW)
     set(DEBUG_COMPILE_OPTIONS -O0 -g)
-    set(RELWITHDEBINFO_COMPILE_OPTIONS -O2 -g)
+    set(RELWITHDEBINFO_COMPILE_OPTIONS -O2 -g -fno-omit-frame-pointer)
 else()
     set(DEBUG_COMPILE_OPTIONS -O0 -ggdb -fsanitize=address)
-    set(RELWITHDEBINFO_COMPILE_OPTIONS -O2 -g -pg)
+    set(RELWITHDEBINFO_COMPILE_OPTIONS -O2 -g -fno-omit-frame-pointer)
 endif()
 
 find_package(Threads REQUIRED)

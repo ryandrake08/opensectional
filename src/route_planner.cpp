@@ -6,12 +6,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <queue>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
-#include <unordered_set>
 
 namespace osect
 {
@@ -31,6 +31,128 @@ namespace osect
                         : 180.0;
             return {lon - dlon, lat - dlat, lon + dlon, lat + dlat};
         }
+
+        // Uniform 1°×1° grid over the routable-waypoint catalog.
+        // Replaces three SQLite R*Tree queries per A* expansion with
+        // direct cell indexing into in-memory vectors. Built once at
+        // route_planner construction; immutable thereafter.
+        struct spatial_grid
+        {
+            static constexpr double cell_deg = 1.0;
+            static constexpr int lat_cells = 180;   // -90..+90
+            static constexpr int lon_cells = 360;   //-180..+180
+
+            struct entry
+            {
+                std::size_t idx;
+                double lat;
+                double lon;
+            };
+            std::vector<std::vector<entry>> cells;
+
+            static int lat_idx(double lat)
+            {
+                auto i = static_cast<int>(
+                    std::floor((lat + 90.0) / cell_deg));
+                if(i < 0) return 0;
+                if(i >= lat_cells) return lat_cells - 1;
+                return i;
+            }
+
+            static int lon_idx(double lon)
+            {
+                // Wrap to [-180, 180); antimeridian queries are split
+                // into two non-wrapping ranges by the caller.
+                auto wrapped = std::fmod(lon + 180.0, 360.0);
+                if(wrapped < 0) wrapped += 360.0;
+                auto i = static_cast<int>(
+                    std::floor(wrapped / cell_deg));
+                if(i < 0) return 0;
+                if(i >= lon_cells) return lon_cells - 1;
+                return i;
+            }
+
+            static std::size_t cell_id(int la, int lo)
+            {
+                return static_cast<std::size_t>(la) * lon_cells
+                     + static_cast<std::size_t>(lo);
+            }
+
+            void reset()
+            {
+                cells.assign(
+                    static_cast<std::size_t>(lat_cells) * lon_cells, {});
+            }
+
+            void insert(std::size_t idx, double lat, double lon)
+            {
+                cells[cell_id(lat_idx(lat), lon_idx(lon))]
+                    .push_back({idx, lat, lon});
+            }
+
+            // Append node indices whose stored point lies inside `bbox`
+            // to `out`. Caller still filters by exact haversine
+            // distance — the grid only prunes obviously-distant nodes.
+            void query(const geo_bbox& bbox,
+                        std::vector<std::size_t>& out) const
+            {
+                auto la_lo = lat_idx(bbox.lat_min);
+                auto la_hi = lat_idx(bbox.lat_max);
+
+                auto emit_lon_range = [&](int lo_lo, int lo_hi)
+                {
+                    for(int la = la_lo; la <= la_hi; ++la)
+                    {
+                        for(int lo = lo_lo; lo <= lo_hi; ++lo)
+                        {
+                            const auto& bucket = cells[cell_id(la, lo)];
+                            for(const auto& e : bucket)
+                            {
+                                if(e.lat >= bbox.lat_min
+                                   && e.lat <= bbox.lat_max
+                                   && e.lon >= bbox.lon_min
+                                   && e.lon <= bbox.lon_max)
+                                    out.push_back(e.idx);
+                            }
+                        }
+                    }
+                };
+
+                // Antimeridian: bbox_around can produce lon_min < -180
+                // or lon_max > 180 at high latitudes. Split into two
+                // ranges that each fit inside [-180, 180).
+                if(bbox.lon_min < -180.0)
+                {
+                    emit_lon_range(0, lon_idx(bbox.lon_max));
+                    emit_lon_range(
+                        lon_idx(bbox.lon_min + 360.0), lon_cells - 1);
+                }
+                else if(bbox.lon_max > 180.0)
+                {
+                    emit_lon_range(0, lon_idx(bbox.lon_max - 360.0));
+                    emit_lon_range(lon_idx(bbox.lon_min), lon_cells - 1);
+                }
+                else
+                {
+                    emit_lon_range(
+                        lon_idx(bbox.lon_min), lon_idx(bbox.lon_max));
+                }
+            }
+        };
+
+        // Per-plan_segment scratch state. Indices into pimpl->nodes
+        // are dense in [0, N), so a flat vector is faster than the
+        // unordered_map version we used to use. Reset between runs by
+        // walking only the entries we touched (`dirty`), keeping the
+        // amortized cost O(visited) rather than O(N).
+        struct astar_scratch
+        {
+            std::vector<double> g;
+            std::vector<std::size_t> came_from;
+            std::vector<std::uint8_t> closed;
+            std::vector<std::size_t> dirty;
+            std::vector<std::size_t> hits;  // reused per expansion
+        };
 
         // Classify an airport SITE_TYPE_CODE into a wp_subtype.
         wp_subtype classify_airport_subtype(
@@ -140,13 +262,19 @@ namespace osect
         // disambiguate airway endpoints by coordinates when multiple
         // fixes/navaids share a name.
         std::unordered_map<std::string, std::vector<std::size_t>> indices_by_id;
-        std::unordered_map<std::size_t, std::vector<airway_edge>> neighbors;
-        // rowid -> flat node index, per source table. Populated at
-        // construction so R*Tree hits can be translated to node
-        // indices without re-querying the base tables.
-        std::unordered_map<int, std::size_t> apt_rowid;
-        std::unordered_map<int, std::size_t> nav_rowid;
-        std::unordered_map<int, std::size_t> fix_rowid;
+        // Adjacency list keyed by node index. Indices are dense in
+        // [0, nodes.size()), so a flat vector is one indirection
+        // shorter than the unordered_map we used to use.
+        std::vector<std::vector<airway_edge>> neighbors;
+        // In-memory 1° grid replacing the per-table SQLite R*Tree
+        // queries that used to run inside the A* hot loop.
+        spatial_grid grid;
+
+        // Reusable A* state. plan_segment is single-threaded in
+        // practice — route_submitter owns the only thread that calls
+        // it — so we keep one scratch buffer here and reset it via
+        // the dirty list between runs.
+        mutable astar_scratch scratch;
 
         const nasr_database& db;
 
@@ -175,29 +303,34 @@ namespace osect
         : pimpl(std::make_unique<impl>(db))
     {
         auto add_node = [&](std::string id, node_kind kind, wp_subtype sub,
-                             double lat, double lon, int rowid,
-                             std::unordered_map<int, std::size_t>& rowid_map)
+                             double lat, double lon)
         {
             auto idx = pimpl->nodes.size();
-            pimpl->nodes.push_back({id, kind, sub, lat, lon});
-            rowid_map.emplace(rowid, idx);
-            pimpl->index_by_id.emplace(id, idx);
-            pimpl->indices_by_id[id].push_back(idx);
+            pimpl->nodes.push_back({std::move(id), kind, sub, lat, lon});
+            const auto& nid = pimpl->nodes.back().id;
+            pimpl->index_by_id.emplace(nid, idx);
+            pimpl->indices_by_id[nid].push_back(idx);
         };
 
         for(auto& r : db.load_routable_airports())
             add_node(std::move(r.id), node_kind::airport,
                      classify_airport_subtype(r.type_code),
-                     r.lat, r.lon, r.rowid, pimpl->apt_rowid);
+                     r.lat, r.lon);
         for(auto& r : db.load_routable_navaids())
             add_node(std::move(r.id), node_kind::navaid,
                      classify_navaid_subtype(r.type_code),
-                     r.lat, r.lon, r.rowid, pimpl->nav_rowid);
+                     r.lat, r.lon);
         for(auto& r : db.load_routable_fixes())
             add_node(std::move(r.id), node_kind::fix,
                      classify_fix_subtype(r.type_code),
-                     r.lat, r.lon, r.rowid, pimpl->fix_rowid);
+                     r.lat, r.lon);
 
+        // Build the spatial grid once now that nodes are stable.
+        pimpl->grid.reset();
+        for(std::size_t i = 0; i < pimpl->nodes.size(); ++i)
+            pimpl->grid.insert(i, pimpl->nodes[i].lat, pimpl->nodes[i].lon);
+
+        pimpl->neighbors.assign(pimpl->nodes.size(), {});
         for(auto& e : db.load_airway_edges())
         {
             auto from_idx = pimpl->resolve_nearest(e.from_id,
@@ -239,9 +372,8 @@ namespace osect
     route_planner::airway_neighbors(std::size_t index) const
     {
         static const std::vector<airway_edge> empty;
-        auto it = pimpl->neighbors.find(index);
-        if(it == pimpl->neighbors.end()) return empty;
-        return it->second;
+        if(index >= pimpl->neighbors.size()) return empty;
+        return pimpl->neighbors[index];
     }
 
     namespace
@@ -297,9 +429,30 @@ namespace osect
         }
         const double heuristic_factor = min_wp * min_wp * min_awy;
 
-        std::unordered_map<std::size_t, double> g;
-        std::unordered_map<std::size_t, std::size_t> came_from;
-        std::unordered_set<std::size_t> closed;
+        constexpr auto INF = std::numeric_limits<double>::infinity();
+        constexpr auto NPOS = static_cast<std::size_t>(-1);
+
+        const auto N = nodes.size();
+        auto& sc = pimpl->scratch;
+        if(sc.g.size() != N)
+        {
+            sc.g.assign(N, INF);
+            sc.came_from.assign(N, NPOS);
+            sc.closed.assign(N, 0);
+            sc.dirty.clear();
+        }
+        else
+        {
+            // Reset only the entries the previous run touched.
+            for(auto i : sc.dirty)
+            {
+                sc.g[i] = INF;
+                sc.came_from[i] = NPOS;
+                sc.closed[i] = 0;
+            }
+            sc.dirty.clear();
+        }
+
         std::priority_queue<open_entry> open;
 
         auto heuristic = [&](std::size_t n) -> double
@@ -330,12 +483,12 @@ namespace osect
         auto relax = [&](std::size_t from, std::size_t to,
                           double cost)
         {
-            auto from_g = (from == PREV_FROM_ORIGIN) ? 0.0 : g.at(from);
+            auto from_g = (from == PREV_FROM_ORIGIN) ? 0.0 : sc.g[from];
             auto tentative = from_g + cost;
-            auto it = g.find(to);
-            if(it != g.end() && tentative >= it->second) return;
-            g[to] = tentative;
-            came_from[to] = from;
+            if(tentative >= sc.g[to]) return;
+            if(sc.g[to] == INF) sc.dirty.push_back(to);
+            sc.g[to] = tentative;
+            sc.came_from[to] = from;
             open.push({tentative + heuristic(to), to});
         };
 
@@ -347,37 +500,18 @@ namespace osect
             if(from_index != PREV_FROM_ORIGIN && from_index != synthetic)
                 from_st = nodes[from_index].subtype;
 
-            // Geometric (off-airway) neighbors. Track which node
-            // indices we've already considered as airway neighbors
-            // so we don't double-cost — but actually airway and
-            // geometric edges are independent A* steps; the cheaper
-            // one wins via `relax`.
-            auto try_geometric_hit = [&](std::size_t to_idx)
+            sc.hits.clear();
+            pimpl->grid.query(bbox, sc.hits);
+            for(auto to_idx : sc.hits)
             {
-                if(to_idx == from_index) return;
-                if(closed.count(to_idx)) return;
+                if(to_idx == from_index) continue;
+                if(sc.closed[to_idx]) continue;
                 auto d = haversine_nm(from_lat, from_lon,
                                       nodes[to_idx].lat,
                                       nodes[to_idx].lon);
-                if(d > max_leg) return;
+                if(d > max_leg) continue;
                 auto cost = edge_cost(from_st, nodes[to_idx].subtype, d, 1.0);
                 relax(from_index, to_idx, cost);
-            };
-
-            for(auto rowid : pimpl->db.query_airport_rowids_bbox(bbox))
-            {
-                auto it = pimpl->apt_rowid.find(rowid);
-                if(it != pimpl->apt_rowid.end()) try_geometric_hit(it->second);
-            }
-            for(auto rowid : pimpl->db.query_navaid_rowids_bbox(bbox))
-            {
-                auto it = pimpl->nav_rowid.find(rowid);
-                if(it != pimpl->nav_rowid.end()) try_geometric_hit(it->second);
-            }
-            for(auto rowid : pimpl->db.query_fix_rowids_bbox(bbox))
-            {
-                auto it = pimpl->fix_rowid.find(rowid);
-                if(it != pimpl->fix_rowid.end()) try_geometric_hit(it->second);
             }
 
             // Airway neighbors get an alternate cost path that
@@ -388,7 +522,7 @@ namespace osect
             {
                 for(const auto& e : airway_neighbors(from_index))
                 {
-                    if(closed.count(e.neighbor_index)) continue;
+                    if(sc.closed[e.neighbor_index]) continue;
                     auto d = haversine_nm(from_lat, from_lon,
                                           nodes[e.neighbor_index].lat,
                                           nodes[e.neighbor_index].lon);
@@ -414,7 +548,8 @@ namespace osect
         {
             auto [f, n] = open.top();
             open.pop();
-            if(!closed.insert(n).second) continue;
+            if(sc.closed[n]) continue;
+            sc.closed[n] = 1;
 
             // Goal test: if the final direct leg from n to destination
             // fits within max_leg, n is the last intermediate node.
@@ -426,7 +561,7 @@ namespace osect
                 while(cur != PREV_FROM_ORIGIN)
                 {
                     path.push_back(cur);
-                    cur = came_from.at(cur);
+                    cur = sc.came_from[cur];
                 }
                 std::reverse(path.begin(), path.end());
                 return path;
@@ -713,6 +848,12 @@ namespace osect
             joined += out[k];
         }
         return joined;
+    }
+
+    flight_route route_planner::parse(const std::string& text,
+                                       const options& opts) const
+    {
+        return flight_route(expand_sigils(text, opts), pimpl->db);
     }
 
 } // namespace osect

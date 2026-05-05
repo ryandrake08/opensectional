@@ -57,10 +57,11 @@ public:
     // Run a full-text search against the NASR database.
     std::vector<osect::search_hit> search(const std::string& query, int limit);
 
-    // Parse `text` as a flight route and activate it. Empty text clears
-    // the route. Throws osect::route_parse_error on parse failure —
-    // the caller is responsible for surfacing the message.
-    void set_route_text(const std::string& text);
+    // Activate a parsed route. Caller is expected to do the parse
+    // off the main thread (route_submitter does this) — set_route
+    // itself only fits the view, kicks the feature builder, and
+    // takes ownership.
+    void set_route(osect::flight_route route);
 
     // Clear the active route, if any.
     void clear_route();

@@ -14,7 +14,7 @@ namespace osect
         const route_planner& planner;
         std::thread worker;
         std::atomic<bool> done{false};
-        std::string result;
+        std::optional<flight_route> result;
         std::string error;
 
         explicit impl(const route_planner& p) : planner(p) {}
@@ -34,11 +34,11 @@ namespace osect
     {
         auto& d = *pimpl;
         if(d.worker.joinable()) d.worker.join();
-        d.result.clear();
+        d.result.reset();
         d.error.clear();
         d.done = false;
         d.worker = std::thread([&d, text, opts] {
-            try { d.result = d.planner.expand_sigils(text, opts); }
+            try { d.result.emplace(d.planner.parse(text, opts)); }
             catch(const std::exception& e) { d.error = e.what(); }
             d.done = true;
             wake_main_thread();
@@ -50,7 +50,7 @@ namespace osect
         return pimpl->worker.joinable() && !pimpl->done;
     }
 
-    std::optional<std::string> route_submitter::drain()
+    std::optional<flight_route> route_submitter::drain()
     {
         auto& d = *pimpl;
         if(!d.worker.joinable() || !d.done) return std::nullopt;

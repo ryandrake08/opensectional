@@ -20,6 +20,13 @@ namespace sqlite
                 sqlite3_close(db);
                 throw std::runtime_error(msg);
             }
+            // Performance hints: mmap the file (faster than pread on
+            // macOS), keep more index pages resident across queries,
+            // and put any temp B-trees in RAM. All three soft-fail
+            // to defaults if SQLite can't honor them.
+            sqlite3_exec(db, "PRAGMA mmap_size = 268435456", nullptr, nullptr, nullptr);
+            sqlite3_exec(db, "PRAGMA cache_size = -32000",   nullptr, nullptr, nullptr);
+            sqlite3_exec(db, "PRAGMA temp_store = MEMORY",   nullptr, nullptr, nullptr);
         }
 
         ~impl()
