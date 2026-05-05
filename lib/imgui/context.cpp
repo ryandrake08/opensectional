@@ -1,12 +1,12 @@
 #include "context.hpp"
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_sdlgpu3.h>
 #include <sdl/command_buffer.hpp>
 #include <sdl/device.hpp>
 #include <sdl/event.hpp>
 #include <sdl/texture.hpp>
 #include <sdl/window.hpp>
-#include <imgui.h>
-#include <imgui_impl_sdl3.h>
-#include <imgui_impl_sdlgpu3.h>
 
 namespace imgui
 {
@@ -17,8 +17,7 @@ namespace imgui
         int warmup_frames = 2;
     };
 
-    context::context(sdl::device& dev, sdl::window& win)
-        : pimpl(new impl())
+    context::context(sdl::device& dev, sdl::window& win) : pimpl(new impl())
     {
         ImGui::CreateContext();
         ImGui::GetIO().IniFilename = nullptr;

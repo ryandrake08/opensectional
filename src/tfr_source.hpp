@@ -2,7 +2,6 @@
 
 #include "data_source.hpp"
 #include "tfr.hpp"
-
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -56,8 +55,7 @@ namespace osect
 
         // Wall-clock time of the most recent successful refresh
         // (or cache load). nullopt if neither has succeeded yet.
-        std::optional<std::chrono::system_clock::time_point>
-        last_updated() const;
+        std::optional<std::chrono::system_clock::time_point> last_updated() const;
 
         // Build a snapshot suitable for the data-source registry
         // panel. Status is computed from last_updated(): fresh

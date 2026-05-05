@@ -1,15 +1,14 @@
 #pragma once
 
+#include "altitude_filter.hpp"
+#include "data_source.hpp"
+#include "flight_route.hpp"
+#include "nasr_database.hpp" // for search_hit (POD struct, not the class)
 #include <array>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
-
-#include "altitude_filter.hpp"
-#include "data_source.hpp"
-#include "flight_route.hpp"
-#include "nasr_database.hpp"  // for search_hit (POD struct, not the class)
 
 namespace osect
 {
@@ -54,8 +53,14 @@ namespace osect
             visible.fill(true);
         }
 
-        bool operator[](int id) const { return visible.at(id); }
-        bool& operator[](int id) { return visible.at(id); }
+        bool operator[](int id) const
+        {
+            return visible.at(id);
+        }
+        bool& operator[](int id)
+        {
+            return visible.at(id);
+        }
     };
 
     struct ui_overlay_result
@@ -77,7 +82,7 @@ namespace osect
         // Current route-planner knobs. Read every frame; the caller
         // funnels these into route_planner::options on submission.
         double route_max_leg_nm = 80.0;
-        bool   route_use_airways = false;
+        bool route_use_airways = false;
     };
 
     class ui_overlay
@@ -126,9 +131,7 @@ namespace osect
         // and (when populated) the data-status panel. `feature_types`
         // supplies the labels+ids for the feature-layer checkboxes
         // (the basemap row is always prepended).
-        ui_overlay_result draw(
-            float last_render_ms,
-            const std::vector<std::unique_ptr<feature_type>>& feature_types);
+        ui_overlay_result draw(float last_render_ms, const std::vector<std::unique_ptr<feature_type>>& feature_types);
 
         // Access the list of visible/invisible layers
         const layer_visibility& visibility() const;

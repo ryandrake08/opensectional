@@ -4,8 +4,8 @@
 #include "line_style.hpp"
 #include "pick_result.hpp"
 #include "ui_overlay.hpp"
-#include <array>
 #include <glm/glm.hpp>
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -34,8 +34,8 @@ namespace osect
 
     struct polygon_fill_vertex
     {
-        glm::vec2 pos;    // world-space Mercator
-        glm::vec4 color;  // RGBA in [0,1]
+        glm::vec2 pos;   // world-space Mercator
+        glm::vec4 color; // RGBA in [0,1]
     };
 
     // Pre-triangulated polygon fills: flat triangle list, 3 vertices per
@@ -43,7 +43,10 @@ namespace osect
     struct polygon_fill_data
     {
         std::vector<polygon_fill_vertex> triangles;
-        void clear() { triangles.clear(); }
+        void clear()
+        {
+            triangles.clear();
+        }
     };
 
     // Parameters the worker needs to build feature geometry
@@ -70,11 +73,11 @@ namespace osect
     struct label_candidate
     {
         std::string text;
-        double mx, my;              // World-space Mercator meters
-        int priority;               // Higher = placed first
-        int layer;                  // layer_id for visibility filtering
-        float angle = 0.0F;         // Rotation in radians (0 = horizontal above point)
-        std::string upper_text = {};  // Composite airspace label (when non-empty)
+        double mx, my;               // World-space Mercator meters
+        int priority;                // Higher = placed first
+        int layer;                   // layer_id for visibility filtering
+        float angle = 0.0F;          // Rotation in radians (0 = horizontal above point)
+        std::string upper_text = {}; // Composite airspace label (when non-empty)
         std::string lower_text = {};
         uint8_t outline_r = 0, outline_g = 0, outline_b = 0;
     };

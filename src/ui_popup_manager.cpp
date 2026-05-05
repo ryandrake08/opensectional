@@ -54,21 +54,19 @@ namespace osect
         // Compute popup placement for a world-space lon/lat anchor.
         // Returns false when the anchor is off-screen — caller should
         // dismiss the popup.
-        bool compute_anchor(const map_view& view, double lon, double lat,
-                            ImVec2& pos, ImVec2& pivot)
+        bool compute_anchor(const map_view& view, double lon, double lat, ImVec2& pos, ImVec2& pivot)
         {
             auto anchor = view.world_to_pixel(lon, lat);
-            if(anchor.x < 0 || anchor.x > view.viewport_width
-               || anchor.y < 0 || anchor.y > view.viewport_height)
+            if(anchor.x < 0 || anchor.x > view.viewport_width || anchor.y < 0 || anchor.y > view.viewport_height)
+            {
                 return false;
+            }
 
-            auto right  = anchor.x >= view.viewport_width * 0.5;
+            auto right = anchor.x >= view.viewport_width * 0.5;
             auto bottom = anchor.y >= view.viewport_height * 0.5;
 
-            pos.x = static_cast<float>(
-                anchor.x + (right  ? -POPUP_ANCHOR_PADDING : POPUP_ANCHOR_PADDING));
-            pos.y = static_cast<float>(
-                anchor.y + (bottom ? -POPUP_ANCHOR_PADDING : POPUP_ANCHOR_PADDING));
+            pos.x = static_cast<float>(anchor.x + (right ? -POPUP_ANCHOR_PADDING : POPUP_ANCHOR_PADDING));
+            pos.y = static_cast<float>(anchor.y + (bottom ? -POPUP_ANCHOR_PADDING : POPUP_ANCHOR_PADDING));
             pivot = ImVec2(right ? 1.0F : 0.0F, bottom ? 1.0F : 0.0F);
             return true;
         }
@@ -81,11 +79,12 @@ namespace osect
         route_state route;
     };
 
-    popup_manager::popup_manager() : pimpl(std::make_unique<impl>()) {}
+    popup_manager::popup_manager() : pimpl(std::make_unique<impl>())
+    {
+    }
     popup_manager::~popup_manager() = default;
 
-    void popup_manager::open_pick(std::vector<feature> features,
-                                  double click_lon, double click_lat)
+    void popup_manager::open_pick(std::vector<feature> features, double click_lon, double click_lat)
     {
         auto& p = pimpl->pick;
         p.open = true;
@@ -103,8 +102,7 @@ namespace osect
         pimpl->pick.features.clear();
     }
 
-    void popup_manager::open_info(const feature& f,
-                                  double anchor_lon, double anchor_lat)
+    void popup_manager::open_info(const feature& f, double anchor_lon, double anchor_lat)
     {
         auto& p = pimpl->info;
         p.open = true;
@@ -140,19 +138,30 @@ namespace osect
         pimpl->route.open = false;
     }
 
-    bool popup_manager::pick_open() const { return pimpl->pick.open; }
-    bool popup_manager::info_open() const { return pimpl->info.open; }
-    bool popup_manager::route_open() const { return pimpl->route.open; }
+    bool popup_manager::pick_open() const
+    {
+        return pimpl->pick.open;
+    }
+    bool popup_manager::info_open() const
+    {
+        return pimpl->info.open;
+    }
+    bool popup_manager::route_open() const
+    {
+        return pimpl->route.open;
+    }
 
     namespace
     {
         // Draw the pick selector. Returns the warmup-still-running flag.
         // Dismissal/selection are reported through `out`.
-        bool draw_pick(pick_state& p, popup_manager::actions& out,
-                       const map_view& view,
+        bool draw_pick(pick_state& p, popup_manager::actions& out, const map_view& view,
                        const std::vector<std::unique_ptr<feature_type>>& feature_types)
         {
-            if(!p.open) return false;
+            if(!p.open)
+            {
+                return false;
+            }
 
             ImVec2 pos;
             ImVec2 pivot;
@@ -166,14 +175,10 @@ namespace osect
 
             ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
             ImGui::SetNextWindowBgAlpha(0.9F);
-            ImGui::SetNextWindowSizeConstraints(
-                ImVec2(220, 0),
-                ImVec2(FLT_MAX, view.viewport_height * 0.8F));
+            ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.8F));
             imgui::scoped_window window(p.window_id.c_str(),
-                ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoSavedSettings |
-                ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoTitleBar);
+                                        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+                                            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar);
 
             // Header: lat/long left, [X] right
             ImGui::Text("Lat, Long: %.5f, %.5f", p.click_lat, p.click_lon);
@@ -193,14 +198,19 @@ namespace osect
                 std::vector<ui_section> sections(FEATURE_SECTION_COUNT);
                 std::vector<std::vector<int>> section_feature_index(FEATURE_SECTION_COUNT);
                 for(std::size_t s = 0; s < FEATURE_SECTION_COUNT; ++s)
+                {
                     sections.at(s).header = FEATURE_SECTIONS.at(s).header;
+                }
 
                 for(int i = 0; i < static_cast<int>(p.features.size()); ++i)
                 {
                     const auto& f = p.features[i];
                     const auto& t = find_feature_type(feature_types, f);
                     auto s = feature_section_index(t.section_tag());
-                    if(s < 0) continue;
+                    if(s < 0)
+                    {
+                        continue;
+                    }
                     sections[s].items.push_back(t.summary(f));
                     section_feature_index[s].push_back(i);
                 }
@@ -209,23 +219,27 @@ namespace osect
                 if(picked)
                 {
                     auto fi = section_feature_index[picked->first][picked->second];
-                    out.pick_selected = popup_manager::pick_selection{
-                        p.features[fi], p.click_lon, p.click_lat};
+                    out.pick_selected = popup_manager::pick_selection{p.features[fi], p.click_lon, p.click_lat};
                     p.open = false;
                     p.features.clear();
                 }
             }
 
             auto need_more = p.warmup_frames > 0;
-            if(need_more) --p.warmup_frames;
+            if(need_more)
+            {
+                --p.warmup_frames;
+            }
             return need_more;
         }
 
-        bool draw_info(info_state& p, popup_manager::actions& out,
-                       const map_view& view,
+        bool draw_info(info_state& p, popup_manager::actions& out, const map_view& view,
                        const std::vector<std::unique_ptr<feature_type>>& feature_types)
         {
-            if(!p.open) return false;
+            if(!p.open)
+            {
+                return false;
+            }
 
             ImVec2 pos;
             ImVec2 pivot;
@@ -238,14 +252,10 @@ namespace osect
 
             ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
             ImGui::SetNextWindowBgAlpha(0.9F);
-            ImGui::SetNextWindowSizeConstraints(
-                ImVec2(220, 0),
-                ImVec2(FLT_MAX, view.viewport_height * 0.9F));
+            ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.9F));
             imgui::scoped_window window(p.window_id.c_str(),
-                ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoSavedSettings |
-                ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoTitleBar);
+                                        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+                                            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar);
 
             // Title row: feature summary left, [X] right.
             const auto& L = find_feature_type(feature_types, p.payload);
@@ -263,8 +273,7 @@ namespace osect
             // wrapped values. An ImGui table gives per-cell wrapping while
             // keeping the key column aligned.
             auto rows = L.info_kv(p.payload);
-            const ImGuiTableFlags flags =
-                ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX;
+            const ImGuiTableFlags flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX;
             if(imgui::scoped_table table("info_kv", 2, flags); table)
             {
                 ImGui::TableSetupColumn("k", ImGuiTableColumnFlags_WidthFixed);
@@ -273,38 +282,49 @@ namespace osect
                 auto line_h = ImGui::GetTextLineHeight();
                 for(const auto& [key, value] : rows)
                 {
-                    if(value.empty()) continue;
+                    if(value.empty())
+                    {
+                        continue;
+                    }
                     ImGui::TableNextRow();
 
-                    auto val_size = ImGui::CalcTextSize(
-                        value.c_str(), nullptr, false, INFO_VALUE_WRAP_PX);
+                    auto val_size = ImGui::CalcTextSize(value.c_str(), nullptr, false, INFO_VALUE_WRAP_PX);
                     auto row_h = val_size.y > line_h ? val_size.y : line_h;
 
                     ImGui::TableSetColumnIndex(0);
                     auto y_offset = (row_h - line_h) * 0.5F;
                     if(y_offset > 0.0F)
+                    {
                         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + y_offset);
+                    }
                     ImGui::TextUnformatted(key);
 
                     ImGui::TableSetColumnIndex(1);
                     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + INFO_VALUE_WRAP_PX);
                     auto val_w = val_size.x;
                     if(val_w < INFO_VALUE_WRAP_PX)
+                    {
                         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (INFO_VALUE_WRAP_PX - val_w));
+                    }
                     ImGui::TextUnformatted(value.c_str());
                     ImGui::PopTextWrapPos();
                 }
             }
 
             auto need_more = p.warmup_frames > 0;
-            if(need_more) --p.warmup_frames;
+            if(need_more)
+            {
+                --p.warmup_frames;
+            }
             return need_more;
         }
 
-        bool draw_route(route_state& p, popup_manager::actions& out,
-                        const map_view& view, const flight_route& route)
+        bool draw_route(route_state& p, popup_manager::actions& out, const map_view& view, const flight_route& route)
         {
-            if(!p.open) return false;
+            if(!p.open)
+            {
+                return false;
+            }
 
             ImVec2 pos;
             ImVec2 pivot;
@@ -317,14 +337,10 @@ namespace osect
 
             ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
             ImGui::SetNextWindowBgAlpha(0.9F);
-            ImGui::SetNextWindowSizeConstraints(
-                ImVec2(220, 0),
-                ImVec2(FLT_MAX, view.viewport_height * 0.9F));
+            ImGui::SetNextWindowSizeConstraints(ImVec2(220, 0), ImVec2(FLT_MAX, view.viewport_height * 0.9F));
             imgui::scoped_window window(p.window_id.c_str(),
-                ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoSavedSettings |
-                ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoTitleBar);
+                                        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+                                            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar);
 
             // Title row: "Flight route" left, [X] right.
             ImGui::TextUnformatted("Flight route");
@@ -337,8 +353,7 @@ namespace osect
             ImGui::Separator();
 
             auto legs = route.compute_legs();
-            const auto flags =
-                ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit;
+            const auto flags = ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit;
             if(imgui::scoped_table table("route_info_legs", 4, flags); table)
             {
                 ImGui::TableSetupColumn("From");
@@ -360,7 +375,10 @@ namespace osect
                 }
             }
             double total_nm = 0.0;
-            for(const auto& l : legs) total_nm += l.distance_nm;
+            for(const auto& l : legs)
+            {
+                total_nm += l.distance_nm;
+            }
             ImGui::Text("Total: %.1f nm", total_nm);
 
             if(ImGui::Button("Delete route"))
@@ -371,14 +389,15 @@ namespace osect
             }
 
             auto need_more = p.warmup_frames > 0;
-            if(need_more) --p.warmup_frames;
+            if(need_more)
+            {
+                --p.warmup_frames;
+            }
             return need_more;
         }
     } // namespace
 
-    void draw_route_drag_rubber_band(const map_view& view,
-                                     const flight_route& route,
-                                     bool is_segment_drag,
+    void draw_route_drag_rubber_band(const map_view& view, const flight_route& route, bool is_segment_drag,
                                      std::size_t index)
     {
         const auto& wps = route.waypoints;
@@ -388,10 +407,8 @@ namespace osect
 
         auto draw_from = [&](std::size_t idx)
         {
-            auto p = view.world_to_pixel(
-                waypoint_lon(wps[idx]), waypoint_lat(wps[idx]));
-            dl->AddLine(ImVec2(static_cast<float>(p.x), static_cast<float>(p.y)),
-                        cursor, col, 2.0F);
+            auto p = view.world_to_pixel(waypoint_lon(wps[idx]), waypoint_lat(wps[idx]));
+            dl->AddLine(ImVec2(static_cast<float>(p.x), static_cast<float>(p.y)), cursor, col, 2.0F);
         };
 
         if(is_segment_drag)
@@ -399,17 +416,22 @@ namespace osect
             draw_from(index);
             draw_from(index + 1);
         }
-        else  // waypoint: anchor to prev + next neighbors (if any)
+        else // waypoint: anchor to prev + next neighbors (if any)
         {
-            if(index > 0) draw_from(index - 1);
-            if(index + 1 < wps.size()) draw_from(index + 1);
+            if(index > 0)
+            {
+                draw_from(index - 1);
+            }
+            if(index + 1 < wps.size())
+            {
+                draw_from(index + 1);
+            }
         }
     }
 
-    popup_manager::actions popup_manager::draw(
-        const map_view& view,
-        const std::vector<std::unique_ptr<feature_type>>& feature_types,
-        const flight_route* route)
+    popup_manager::actions popup_manager::draw(const map_view& view,
+                                               const std::vector<std::unique_ptr<feature_type>>& feature_types,
+                                               const flight_route* route)
     {
         actions out{};
 

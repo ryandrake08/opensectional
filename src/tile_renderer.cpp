@@ -36,7 +36,7 @@ namespace osect
 
 namespace std
 {
-    template<>
+    template <>
     struct hash<std::shared_ptr<osect::tile_gpu>>
     {
         size_t operator()(const std::shared_ptr<osect::tile_gpu>& p) const
@@ -45,11 +45,10 @@ namespace std
         }
     };
 
-    template<>
+    template <>
     struct equal_to<std::shared_ptr<osect::tile_gpu>>
     {
-        bool operator()(const std::shared_ptr<osect::tile_gpu>& a,
-                        const std::shared_ptr<osect::tile_gpu>& b) const
+        bool operator()(const std::shared_ptr<osect::tile_gpu>& a, const std::shared_ptr<osect::tile_gpu>& b) const
         {
             return a->key == b->key;
         }
@@ -62,8 +61,7 @@ namespace osect
     // UV coordinates specify the sub-region of the texture to sample
     // (normally 0-1 for the full tile, smaller range when using a
     // parent tile as a fallback).
-    static void get_tile_vertices(const tile_key& key,
-                                  float u0, float v0, float u1, float v1,
+    static void get_tile_vertices(const tile_key& key, float u0, float v0, float u1, float v1,
                                   sdl::vertex_t2f_c4ub_v3f* verts)
     {
         auto [mx_min, my_min, mx_max, my_max] = tile_bounds_meters(key.x, key.y, key.z);
@@ -79,18 +77,18 @@ namespace osect
         uint8_t a = 255;
 
         // Two triangles forming a quad
-        verts[0] = { u0, v1, r, g, b, a, x0, y0, 0.0F };
-        verts[1] = { u1, v1, r, g, b, a, x1, y0, 0.0F };
-        verts[2] = { u0, v0, r, g, b, a, x0, y1, 0.0F };
-        verts[3] = { u0, v0, r, g, b, a, x0, y1, 0.0F };
-        verts[4] = { u1, v1, r, g, b, a, x1, y0, 0.0F };
-        verts[5] = { u1, v0, r, g, b, a, x1, y1, 0.0F };
+        verts[0] = {u0, v1, r, g, b, a, x0, y0, 0.0F};
+        verts[1] = {u1, v1, r, g, b, a, x1, y0, 0.0F};
+        verts[2] = {u0, v0, r, g, b, a, x0, y1, 0.0F};
+        verts[3] = {u0, v0, r, g, b, a, x0, y1, 0.0F};
+        verts[4] = {u1, v1, r, g, b, a, x1, y0, 0.0F};
+        verts[5] = {u1, v0, r, g, b, a, x1, y1, 0.0F};
     }
 
     // Compute the parent tile at a lower zoom and the UV sub-rect within it
     // that corresponds to the display tile.
-    static tile_key ancestor_uv(const tile_key& display_tile, int ancestor_zoom,
-                                float& u0, float& v0, float& u1, float& v1)
+    static tile_key ancestor_uv(const tile_key& display_tile, int ancestor_zoom, float& u0, float& v0, float& u1,
+                                float& v1)
     {
         auto dz = display_tile.z - ancestor_zoom;
         auto scale = 1 << dz;
@@ -154,11 +152,10 @@ namespace osect
         bool fallback_dirty = false;
 
         impl(sdl::device& dev, std::string tile_path)
-            : dev(dev)
-            , sampler(dev, sdl::filter::linear, sdl::filter::linear,
-                      sdl::sampler_address_mode::clamp_to_edge)
-            , tile_path(std::move(tile_path))
-            , cache(1024)
+            : dev(dev),
+              sampler(dev, sdl::filter::linear, sdl::filter::linear, sdl::sampler_address_mode::clamp_to_edge),
+              tile_path(std::move(tile_path)),
+              cache(1024)
         {
         }
 
@@ -167,8 +164,8 @@ namespace osect
             // Wrap x into [0, n-1] for file path (tiles repeat horizontally)
             auto n = 1 << key.z;
             auto wx = ((key.x % n) + n) % n;
-            return tile_path + "/" + std::to_string(key.z) + "/" +
-                   std::to_string(wx) + "/" + std::to_string(key.y) + ".png";
+            return tile_path + "/" + std::to_string(key.z) + "/" + std::to_string(wx) + "/" + std::to_string(key.y) +
+                   ".png";
         }
 
         // Request a tile for loading. If it previously failed, walk up
@@ -192,14 +189,14 @@ namespace osect
             {
                 auto n = 1 << key.z;
                 auto wx = ((key.x % n) + n) % n;
-                request_tile({ key.z - 1, wx / 2, key.y / 2 });
+                request_tile({key.z - 1, wx / 2, key.y / 2});
             }
         }
 
         // Find the best loaded ancestor for a tile. Returns true if found,
         // with the ancestor's GPU resources and UV sub-rect.
-        bool find_ancestor(const tile_key& key, std::shared_ptr<tile_gpu>& gpu,
-                           float& u0, float& v0, float& u1, float& v1)
+        bool find_ancestor(const tile_key& key, std::shared_ptr<tile_gpu>& gpu, float& u0, float& v0, float& u1,
+                           float& v1)
         {
             for(int az = key.z - 1; az >= 0; az--)
             {
@@ -225,10 +222,8 @@ namespace osect
 
     tile_renderer::~tile_renderer() = default;
 
-    void tile_renderer::update(double vx_min, double vy_min,
-                               double vx_max, double vy_max,
-                               double /*half_extent_y*/, int viewport_height,
-                               double /*aspect_ratio*/)
+    void tile_renderer::update(double vx_min, double vy_min, double vx_max, double vy_max, double /*half_extent_y*/,
+                               int viewport_height, double /*aspect_ratio*/)
     {
         // Compute ideal zoom level
         auto meters_per_pixel = (vy_max - vy_min) / viewport_height;
@@ -255,15 +250,13 @@ namespace osect
         {
             for(int tx = tx_min; tx <= tx_max; tx++)
             {
-                pimpl->visible_tiles.push_back({ zoom, tx, ty });
+                pimpl->visible_tiles.push_back({zoom, tx, ty});
             }
         }
 
         // Skip cancel+re-request if tile range hasn't changed
-        if(pimpl->has_cached_range &&
-           zoom == pimpl->cached_zoom &&
-           tx_min == pimpl->cached_tx_min && tx_max == pimpl->cached_tx_max &&
-           ty_min == pimpl->cached_ty_min && ty_max == pimpl->cached_ty_max)
+        if(pimpl->has_cached_range && zoom == pimpl->cached_zoom && tx_min == pimpl->cached_tx_min &&
+           tx_max == pimpl->cached_tx_max && ty_min == pimpl->cached_ty_min && ty_max == pimpl->cached_ty_max)
         {
             return;
         }
@@ -294,7 +287,7 @@ namespace osect
         {
             for(int tx = border_tx_min; tx <= border_tx_max; tx++)
             {
-                pimpl->request_tile({ zoom, tx, ty });
+                pimpl->request_tile({zoom, tx, ty});
             }
         }
 
@@ -312,7 +305,7 @@ namespace osect
             {
                 for(int tx = ztx_min; tx <= ztx_max; tx++)
                 {
-                    pimpl->request_tile({ zoom + 1, tx, ty });
+                    pimpl->request_tile({zoom + 1, tx, ty});
                 }
             }
         }
@@ -331,7 +324,7 @@ namespace osect
             {
                 for(int tx = ztx_min; tx <= ztx_max; tx++)
                 {
-                    pimpl->request_tile({ zoom - 1, tx, ty });
+                    pimpl->request_tile({zoom - 1, tx, ty});
                 }
             }
         }

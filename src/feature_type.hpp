@@ -8,7 +8,7 @@
 // build_selection(), info_kv(), summary(), and variant-visitor
 // helpers.
 
-#include "feature_builder.hpp"   // build_context, polyline_data, polygon_fill_data
+#include "feature_builder.hpp" // build_context, polyline_data, polygon_fill_data
 #include "geo_types.hpp"
 #include "nasr_database.hpp"
 #include "pick_result.hpp"
@@ -68,8 +68,7 @@ namespace osect
         // Push every feature hitting the click described by `ctx` onto
         // `out`. Stateless. Dispatcher has already confirmed this layer
         // is enabled.
-        virtual void pick(const pick_context& ctx,
-                          std::vector<feature>& out) const = 0;
+        virtual void pick(const pick_context& ctx, std::vector<feature>& out) const = 0;
 
         // One-line summary for the pick-selector popup and info title.
         // `f` is guaranteed to be of this layer's type (caller used
@@ -83,8 +82,7 @@ namespace osect
         // point on the map (airports, navaids, etc). Returns nullopt
         // for area/line features. Used by the exact-point pick
         // short-circuit and by the default anchor_lonlat().
-        virtual std::optional<std::pair<double, double>>
-        point_coord(const feature& f) const
+        virtual std::optional<std::pair<double, double>> point_coord(const feature& f) const
         {
             (void)f;
             return std::nullopt;
@@ -95,11 +93,12 @@ namespace osect
         // point (area/line features). Layers with their own anchor
         // logic — e.g. area features that should still anchor at a
         // center coord — override this directly.
-        virtual std::pair<double, double>
-        anchor_lonlat(const feature& f,
-                       double click_lon, double click_lat) const
+        virtual std::pair<double, double> anchor_lonlat(const feature& f, double click_lon, double click_lat) const
         {
-            if(auto c = point_coord(f)) return *c;
+            if(auto c = point_coord(f))
+            {
+                return *c;
+            }
             return {click_lon, click_lat};
         }
 
@@ -112,10 +111,8 @@ namespace osect
         // for the given feature. Called only when `f` was produced by
         // this feature_type's pick(). Subclasses with no highlight (e.g.
         // runway_type) override with an empty body.
-        virtual void build_selection(const build_context& ctx,
-                                      const feature& f,
-                                      polyline_data& out,
-                                      polygon_fill_data& fill_out) const = 0;
+        virtual void build_selection(const build_context& ctx, const feature& f, polyline_data& out,
+                                     polygon_fill_data& fill_out) const = 0;
     };
 
     // Build the canonical ordered list of feature_types. Order controls
@@ -125,7 +122,5 @@ namespace osect
     // Find the feature_type that owns `f`. Throws std::logic_error if no
     // feature_type claims this variant alternative — a programming error,
     // since make_feature_types() registers a type for every alternative.
-    const feature_type& find_feature_type(
-        const std::vector<std::unique_ptr<feature_type>>& types,
-        const feature& f);
+    const feature_type& find_feature_type(const std::vector<std::unique_ptr<feature_type>>& types, const feature& f);
 }

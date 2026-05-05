@@ -2,7 +2,6 @@
 
 #include "flight_route.hpp"
 #include "route_plan_options.hpp"
-
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -72,8 +71,7 @@ namespace osect
         //
         // Throws route_parse_error on invalid sigil placement or
         // when no path can be found.
-        std::string expand_sigils(const std::string& text,
-                                   const options& opts) const;
+        std::string expand_sigils(const std::string& text, const options& opts) const;
 
         // Convenience: expand sigils and parse the result into a
         // flight_route resolved against the planner's database.
@@ -81,8 +79,7 @@ namespace osect
         // but doesn't expose the database. Throws route_parse_error
         // on sigil-grammar errors, A* failure, or token-resolution
         // failure.
-        flight_route parse(const std::string& text,
-                           const options& opts) const;
+        flight_route parse(const std::string& text, const options& opts) const;
 
     private:
         // ---- Catalog and A* primitives ----
@@ -124,8 +121,7 @@ namespace osect
             double lat;
             double lon;
         };
-        static constexpr std::size_t synthetic =
-            static_cast<std::size_t>(-1);
+        static constexpr std::size_t synthetic = static_cast<std::size_t>(-1);
 
         std::size_t node_count() const;
         const node& get_node(std::size_t index) const;
@@ -138,9 +134,8 @@ namespace osect
         // are NOT included. Empty result means a direct leg
         // satisfies `max_leg_length_nm`. nullopt means no viable
         // path within that constraint.
-        std::optional<std::vector<std::size_t>> plan_segment(
-            const endpoint& origin, const endpoint& destination,
-            const options& opts) const;
+        std::optional<std::vector<std::size_t>> plan_segment(const endpoint& origin, const endpoint& destination,
+                                                             const options& opts) const;
 
         friend struct route_planner_test_access;
     };
@@ -165,20 +160,17 @@ namespace osect
         {
             return p.get_node(i);
         }
-        static std::optional<std::size_t>
-        node_index(const route_planner& p, const std::string& id)
+        static std::optional<std::size_t> node_index(const route_planner& p, const std::string& id)
         {
             return p.node_index(id);
         }
-        static const std::vector<airway_edge>&
-        airway_neighbors(const route_planner& p, std::size_t i)
+        static const std::vector<airway_edge>& airway_neighbors(const route_planner& p, std::size_t i)
         {
             return p.airway_neighbors(i);
         }
-        static std::optional<std::vector<std::size_t>>
-        plan_segment(const route_planner& p,
-                      const endpoint& origin, const endpoint& destination,
-                      const route_planner::options& opts)
+        static std::optional<std::vector<std::size_t>> plan_segment(const route_planner& p, const endpoint& origin,
+                                                                    const endpoint& destination,
+                                                                    const route_planner::options& opts)
         {
             return p.plan_segment(origin, destination, opts);
         }

@@ -39,10 +39,14 @@ namespace sdl
         {
             std::string candidate = base + name;
             if(path_exists(candidate))
+            {
                 return candidate;
+            }
         }
         if(path_exists(name))
+        {
             return name;
+        }
         return {};
     }
 
@@ -50,19 +54,27 @@ namespace sdl
     {
 #if defined(__APPLE__)
         auto home = getenv_or_empty("HOME");
-        if(home.empty()) return {};
-        auto candidate = home + "/Library/Application Support/"
-            + OSECT_BUNDLE_IDENTIFIER + "/" + name;
+        if(home.empty())
+        {
+            return {};
+        }
+        auto candidate = home + "/Library/Application Support/" + OSECT_BUNDLE_IDENTIFIER + "/" + name;
 #elif defined(_WIN32)
         auto appdata = getenv_or_empty("APPDATA");
-        if(appdata.empty()) return {};
+        if(appdata.empty())
+        {
+            return {};
+        }
         auto candidate = appdata + "\\osect\\" + name;
 #else
         auto xdg = getenv_or_empty("XDG_CONFIG_HOME");
         if(xdg.empty())
         {
             auto home = getenv_or_empty("HOME");
-            if(home.empty()) return {};
+            if(home.empty())
+            {
+                return {};
+            }
             xdg = home + "/.config";
         }
         auto candidate = xdg + "/osect/" + name;

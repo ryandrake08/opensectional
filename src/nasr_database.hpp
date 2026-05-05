@@ -11,32 +11,32 @@ namespace osect
     // Column order follows APT_BASE table (minus SITE_NO), with computed columns at end
     struct airport
     {
-        std::string site_type_code;    // "A"=airport, "H"=heliport, "C"=seaplane, "U"=ultralight, "G"=glider, "B"=balloon
+        std::string site_type_code; // "A"=airport, "H"=heliport, "C"=seaplane, "U"=ultralight, "G"=glider, "B"=balloon
         std::string state_code;
         std::string arpt_id;
         std::string city;
         std::string country_code;
         std::string arpt_name;
         std::string ownership_type_code; // "PU"=public, "PR"=private, "MA"/"MR"/"MN"=military
-        std::string facility_use_code; // "PU"=public use, "PR"=private use
+        std::string facility_use_code;   // "PU"=public use, "PR"=private use
         double lat;
         double lon;
         double elev;
         std::string mag_varn;
         std::string mag_hemis;
-        std::string tpa;               // traffic pattern altitude (feet AGL)
+        std::string tpa; // traffic pattern altitude (feet AGL)
         std::string resp_artcc_id;
         std::string fss_id;
         std::string notam_id;
         std::string activation_date;
-        std::string arpt_status;       // "O"=operational, "CI"=closed indef, "CP"=closed perm
+        std::string arpt_status; // "O"=operational, "CI"=closed indef, "CP"=closed perm
         std::string fuel_types;
         std::string lgt_sked;
         std::string bcn_lgt_sked;
-        std::string twr_type_code;     // "ATCT*"=towered, "NON-ATCT"=untowered
+        std::string twr_type_code; // "ATCT*"=towered, "NON-ATCT"=untowered
         std::string icao_id;
         bool hard_surface;
-        std::string airspace_class;    // "B", "C", "D", "E", or "" (computed from JOIN)
+        std::string airspace_class; // "B", "C", "D", "E", or "" (computed from JOIN)
     };
 
     // Column order follows NAV_BASE table
@@ -104,7 +104,7 @@ namespace osect
     struct mtr_segment
     {
         std::string mtr_id;
-        std::string route_type_code;  // "IR" or "VR"
+        std::string route_type_code; // "IR" or "VR"
         std::string from_point;
         std::string to_point;
         double from_lat;
@@ -123,16 +123,16 @@ namespace osect
     struct maa
     {
         std::string maa_id;
-        std::string type;   // "AEROBATIC PRACTICE", "GLIDER", etc.
+        std::string type; // "AEROBATIC PRACTICE", "GLIDER", etc.
         std::string name;
-        double lat;         // 0 if shape-defined
+        double lat; // 0 if shape-defined
         double lon;
-        double radius_nm;   // 0 if point-only or shape-defined
+        double radius_nm; // 0 if point-only or shape-defined
         int max_alt_ft;
-        std::string max_alt_ref;  // "MSL" or "AGL"
+        std::string max_alt_ref; // "MSL" or "AGL"
         int min_alt_ft;
         std::string min_alt_ref;
-        std::vector<airspace_point> shape;  // empty if point/radius
+        std::vector<airspace_point> shape; // empty if point/radius
     };
 
     // Column order follows RWY_SEG table
@@ -191,12 +191,12 @@ namespace osect
     // flags; older or unbound channels carry empty flag strings.
     struct sua_freq
     {
-        std::string mode;            // "VHF" / "UHF" / "OTHER"
-        std::string tx;              // raw MHz string ("122.95")
-        std::string rx;              // raw MHz string
-        std::string comm_allowed;    // "CIVIL" / "MIL" / ""
-        std::string charted;         // "YES" / "NO" / ""
-        std::string sectors;         // sector designator(s); free-form
+        std::string mode;         // "VHF" / "UHF" / "OTHER"
+        std::string tx;           // raw MHz string ("122.95")
+        std::string rx;           // raw MHz string
+        std::string comm_allowed; // "CIVIL" / "MIL" / ""
+        std::string charted;      // "YES" / "NO" / ""
+        std::string sectors;      // sector designator(s); free-form
     };
 
     // One Timesheet entry from the AIXM AirspaceUsage. A SUA may
@@ -215,8 +215,8 @@ namespace osect
         std::string end_event;
         std::string start_event_offset;
         std::string end_event_offset;
-        std::string time_ref;       // "UTC" / "LOCAL"
-        std::string time_offset;    // e.g. "-7.0" hours
+        std::string time_ref;    // "UTC" / "LOCAL"
+        std::string time_offset; // e.g. "-7.0" hours
         std::string dst_flag;
     };
 
@@ -225,7 +225,7 @@ namespace osect
         int sua_id;
         std::string designator;
         std::string name;
-        std::string sua_type;  // "MOA", "RA", "WA", "AA", "PA", "NSA"
+        std::string sua_type; // "MOA", "RA", "WA", "AA", "PA", "NSA"
         std::string upper_limit;
         std::string lower_limit;
         std::string min_alt_limit;
@@ -273,21 +273,21 @@ namespace osect
     // Subdivided polyline segments for rendering (tight R-tree bbox)
     struct boundary_segment
     {
-        std::string altitude;  // ARTCC only: "LOW", "HIGH", "UNLIMITED"
-        std::string type;      // ARTCC only: "ARTCC", "CTA", "FIR", "CTA/FIR", "UTA"
+        std::string altitude; // ARTCC only: "LOW", "HIGH", "UNLIMITED"
+        std::string type;     // ARTCC only: "ARTCC", "CTA", "FIR", "CTA/FIR", "UTA"
         std::vector<airspace_point> points;
     };
 
     struct airspace_segment
     {
-        std::string airspace_class;  // "B", "C", "D", "E"
-        std::string local_type;      // "CLASS_B", "CLASS_C", etc.
+        std::string airspace_class; // "B", "C", "D", "E"
+        std::string local_type;     // "CLASS_B", "CLASS_C", etc.
         std::vector<airspace_point> points;
     };
 
     struct sua_segment
     {
-        std::string sua_type;  // "MOA", "RA", "WA", etc.
+        std::string sua_type; // "MOA", "RA", "WA", etc.
         int upper_ft_val;
         std::string upper_ft_ref;
         int lower_ft_val;
@@ -323,7 +323,7 @@ namespace osect
         int quantity;
         int agl_ht;
         int amsl_ht;
-        std::string lighting;  // "R","D","H","M","S","F","C","W","L","N","U"
+        std::string lighting; // "R","D","H","M","S","F","C","W","L","N","U"
         std::string horiz_acc;
         std::string vert_acc;
         std::string marking;
@@ -354,7 +354,7 @@ namespace osect
     struct awos
     {
         std::string id;
-        std::string type;       // AWOS-1, AWOS-2, AWOS-3, ASOS, etc.
+        std::string type; // AWOS-1, AWOS-2, AWOS-3, ASOS, etc.
         std::string state_code;
         std::string city;
         std::string country_code;
@@ -365,7 +365,7 @@ namespace osect
         double elev;
         std::string phone_no;
         std::string second_phone_no;
-        std::string site_no;    // links to airport
+        std::string site_no; // links to airport
         std::string site_type_code;
         std::string remark;
     };
@@ -374,7 +374,7 @@ namespace osect
     struct comm_outlet
     {
         std::string comm_loc_id;
-        std::string comm_type;      // RCO, RCAG, RCO1
+        std::string comm_type; // RCO, RCAG, RCO1
         std::string nav_id;
         std::string nav_type;
         std::string city;
@@ -383,7 +383,7 @@ namespace osect
         std::string outlet_name;
         double lat;
         double lon;
-        std::string facility_id;    // operating FSS or ARTCC
+        std::string facility_id; // operating FSS or ARTCC
         std::string facility_name;
         std::string opr_hrs;
         std::string comm_status_code;
@@ -394,12 +394,12 @@ namespace osect
     struct artcc
     {
         int artcc_id;
-        std::string location_id;    // "ZLA", "ZNY", etc. (ARB_BASE natural key)
-        std::string name;           // LOCATION_NAME
-        std::string altitude;       // "LOW", "HIGH", "UNLIMITED"
-        std::string type;           // "ARTCC", "CTA", "FIR", "CTA/FIR", "UTA"
-        std::string icao_id;        // ICAO identifier when published
-        std::string location_type;  // "ARTCC" or "CERAP"
+        std::string location_id;   // "ZLA", "ZNY", etc. (ARB_BASE natural key)
+        std::string name;          // LOCATION_NAME
+        std::string altitude;      // "LOW", "HIGH", "UNLIMITED"
+        std::string type;          // "ARTCC", "CTA", "FIR", "CTA/FIR", "UTA"
+        std::string icao_id;       // ICAO identifier when published
+        std::string location_type; // "ARTCC" or "CERAP"
         std::string city;
         std::string state;
         std::string country_code;
@@ -412,14 +412,14 @@ namespace osect
     {
         int arsp_id;
         std::string name;
-        std::string airspace_class;  // "B", "C", "D", "E"
-        std::string local_type;      // "CLASS_B", "CLASS_C", "CLASS_D", "CLASS_E2", etc.
+        std::string airspace_class; // "B", "C", "D", "E"
+        std::string local_type;     // "CLASS_B", "CLASS_C", "CLASS_D", "CLASS_E2", etc.
         std::string ident;
         std::string sector;
         int upper_ft;
-        std::string upper_ref;       // "MSL", "AGL", or "" (undefined)
+        std::string upper_ref; // "MSL", "AGL", or "" (undefined)
         int lower_ft;
-        std::string lower_ref;       // "MSL", "AGL", "SFC", or ""
+        std::string lower_ref; // "MSL", "AGL", "SFC", or ""
         std::string wkhr_code;
         std::string wkhr_rmk;
         std::vector<polygon_ring> parts;
@@ -430,7 +430,7 @@ namespace osect
     // the caller resolves this to a full feature via a per-type lookup.
     struct search_hit
     {
-        std::string entity_type;  // "APT","NAV","FIX","AWY","SUA","CLS","ARTCC","FSS","AWOS","COM","MTR","PJA","ADIZ"
+        std::string entity_type; // "APT","NAV","FIX","AWY","SUA","CLS","ARTCC","FSS","AWOS","COM","MTR","PJA","ADIZ"
         int entity_rowid;
         std::string ids;
         std::string name;
@@ -495,8 +495,7 @@ namespace osect
         // relevant attribute is in the given value list (nullopt = no filter).
         using filter_list = std::optional<std::vector<std::string>>;
 
-        std::vector<airport> query_airports(const geo_bbox& bbox,
-                                             const filter_list& class_filter = std::nullopt) const;
+        std::vector<airport> query_airports(const geo_bbox& bbox, const filter_list& class_filter = std::nullopt) const;
         std::vector<navaid> query_navaids(const geo_bbox& bbox) const;
         std::vector<fix> query_fixes(const geo_bbox& bbox) const;
         std::vector<airway_segment> query_airways(const geo_bbox& bbox) const;
@@ -510,22 +509,19 @@ namespace osect
         // Return airway IDs for which `a` and `b` appear as adjacent
         // points on at least one segment (either direction). Used by
         // flight_route::airway_ize to detect sequential-fix runs.
-        std::vector<std::string> adjacent_airways(const std::string& a,
-                                                   const std::string& b) const;
+        std::vector<std::string> adjacent_airways(const std::string& a, const std::string& b) const;
 
         // Return airway IDs that contain `fix_name` as either endpoint
         // of any segment. Used by the coerce pass in airway_ize to
         // find candidate airways shared between two non-adjacent
         // waypoints.
-        std::vector<std::string> airways_containing(
-            const std::string& fix_name) const;
+        std::vector<std::string> airways_containing(const std::string& fix_name) const;
         std::vector<maa> query_maas(const geo_bbox& bbox) const;
         std::vector<class_airspace> query_class_airspace(const geo_bbox& bbox) const;
         std::vector<runway> query_runways(const geo_bbox& bbox) const;
-        std::vector<sua> query_sua(const geo_bbox& bbox,
-                                    const filter_list& type_filter = std::nullopt) const;
+        std::vector<sua> query_sua(const geo_bbox& bbox, const filter_list& type_filter = std::nullopt) const;
         std::vector<sua_circle> query_sua_circles(const geo_bbox& bbox,
-                                                   const filter_list& type_filter = std::nullopt) const;
+                                                  const filter_list& type_filter = std::nullopt) const;
         std::vector<obstacle> query_obstacles(const geo_bbox& bbox) const;
         std::vector<artcc> query_artcc(const geo_bbox& bbox) const;
         std::vector<pja> query_pjas(const geo_bbox& bbox) const;
@@ -538,9 +534,9 @@ namespace osect
         std::vector<boundary_segment> query_artcc_segments(const geo_bbox& bbox) const;
         std::vector<boundary_segment> query_adiz_segments(const geo_bbox& bbox) const;
         std::vector<airspace_segment> query_class_airspace_segments(
-        const geo_bbox& bbox, const filter_list& class_filter = std::nullopt) const;
-        std::vector<sua_segment> query_sua_segments(
-        const geo_bbox& bbox, const filter_list& type_filter = std::nullopt) const;
+            const geo_bbox& bbox, const filter_list& class_filter = std::nullopt) const;
+        std::vector<sua_segment> query_sua_segments(const geo_bbox& bbox,
+                                                    const filter_list& type_filter = std::nullopt) const;
 
         // Exact-match lookup by identifier. Used for route parsing.
         // May return multiple results — navaid and fix identifiers are not

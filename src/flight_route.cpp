@@ -13,8 +13,14 @@ namespace osect
     // Lat/lon parsing and formatting (file-local)
     // ---------------------------------------------------------------
 
-    static bool is_lat_hemi(char c) { return c == 'N' || c == 'S'; }
-    static bool is_lon_hemi(char c) { return c == 'E' || c == 'W'; }
+    static bool is_lat_hemi(char c)
+    {
+        return c == 'N' || c == 'S';
+    }
+    static bool is_lon_hemi(char c)
+    {
+        return c == 'E' || c == 'W';
+    }
 
     std::optional<latlon_ref> parse_latlon(const std::string& token)
     {
@@ -29,18 +35,32 @@ namespace osect
         // Y   = E or W
         // DDMMSSXDDDMMSSY: 2+2+2+1+3+2+2+1 = 15 chars
         if(token.size() != 15)
+        {
             return std::nullopt;
+        }
 
         for(int i = 0; i < 6; ++i)
+        {
             if(!std::isdigit(static_cast<unsigned char>(token[i])))
+            {
                 return std::nullopt;
+            }
+        }
         if(!is_lat_hemi(token[6]))
+        {
             return std::nullopt;
+        }
         for(int i = 7; i < 14; ++i)
+        {
             if(!std::isdigit(static_cast<unsigned char>(token[i])))
+            {
                 return std::nullopt;
+            }
+        }
         if(!is_lon_hemi(token[14]))
+        {
             return std::nullopt;
+        }
 
         auto lat_d = std::stoi(token.substr(0, 2));
         auto lat_m = std::stoi(token.substr(2, 2));
@@ -53,14 +73,24 @@ namespace osect
         auto lon_h = token[14];
 
         if(lat_m >= 60 || lat_s >= 60 || lon_m >= 60 || lon_s >= 60)
+        {
             return std::nullopt;
+        }
         if(lat_d > 90 || lon_d > 180)
+        {
             return std::nullopt;
+        }
 
         auto lat = lat_d + lat_m / 60.0 + lat_s / 3600.0;
         auto lon = lon_d + lon_m / 60.0 + lon_s / 3600.0;
-        if(lat_h == 'S') lat = -lat;
-        if(lon_h == 'W') lon = -lon;
+        if(lat_h == 'S')
+        {
+            lat = -lat;
+        }
+        if(lon_h == 'W')
+        {
+            lon = -lon;
+        }
 
         return latlon_ref{lat, lon};
     }
@@ -75,19 +105,34 @@ namespace osect
         auto lat_d = static_cast<int>(lat);
         auto lat_m = static_cast<int>((lat - lat_d) * 60.0);
         auto lat_s = static_cast<int>(std::round((lat - lat_d - lat_m / 60.0) * 3600.0));
-        if(lat_s == 60) { lat_m++; lat_s = 0; }
-        if(lat_m == 60) { lat_d++; lat_m = 0; }
+        if(lat_s == 60)
+        {
+            lat_m++;
+            lat_s = 0;
+        }
+        if(lat_m == 60)
+        {
+            lat_d++;
+            lat_m = 0;
+        }
 
         auto lon_d = static_cast<int>(lon);
         auto lon_m = static_cast<int>((lon - lon_d) * 60.0);
         auto lon_s = static_cast<int>(std::round((lon - lon_d - lon_m / 60.0) * 3600.0));
-        if(lon_s == 60) { lon_m++; lon_s = 0; }
-        if(lon_m == 60) { lon_d++; lon_m = 0; }
+        if(lon_s == 60)
+        {
+            lon_m++;
+            lon_s = 0;
+        }
+        if(lon_m == 60)
+        {
+            lon_d++;
+            lon_m = 0;
+        }
 
         std::array<char, 16> buf{};
-        std::snprintf(buf.data(), buf.size(), "%02d%02d%02d%c%03d%02d%02d%c",
-                      lat_d, lat_m, lat_s, lat_h,
-                      lon_d, lon_m, lon_s, lon_h);
+        std::snprintf(buf.data(), buf.size(), "%02d%02d%02d%c%03d%02d%02d%c", lat_d, lat_m, lat_s, lat_h, lon_d, lon_m,
+                      lon_s, lon_h);
         return buf.data();
     }
 
@@ -97,47 +142,77 @@ namespace osect
 
     double waypoint_lat(const route_waypoint& wp)
     {
-        return std::visit([](const auto& v) -> double
-        {
-            if constexpr(std::is_same_v<std::decay_t<decltype(v)>, airport_ref>)
-                return v.resolved.lat;
-            else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, navaid_ref>)
-                return v.resolved.lat;
-            else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, fix_ref>)
-                return v.resolved.lat;
-            else
-                return v.lat;
-        }, wp);
+        return std::visit(
+            [](const auto& v) -> double
+            {
+                if constexpr(std::is_same_v<std::decay_t<decltype(v)>, airport_ref>)
+                {
+                    return v.resolved.lat;
+                }
+                else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, navaid_ref>)
+                {
+                    return v.resolved.lat;
+                }
+                else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, fix_ref>)
+                {
+                    return v.resolved.lat;
+                }
+                else
+                {
+                    return v.lat;
+                }
+            },
+            wp);
     }
 
     double waypoint_lon(const route_waypoint& wp)
     {
-        return std::visit([](const auto& v) -> double
-        {
-            if constexpr(std::is_same_v<std::decay_t<decltype(v)>, airport_ref>)
-                return v.resolved.lon;
-            else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, navaid_ref>)
-                return v.resolved.lon;
-            else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, fix_ref>)
-                return v.resolved.lon;
-            else
-                return v.lon;
-        }, wp);
+        return std::visit(
+            [](const auto& v) -> double
+            {
+                if constexpr(std::is_same_v<std::decay_t<decltype(v)>, airport_ref>)
+                {
+                    return v.resolved.lon;
+                }
+                else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, navaid_ref>)
+                {
+                    return v.resolved.lon;
+                }
+                else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, fix_ref>)
+                {
+                    return v.resolved.lon;
+                }
+                else
+                {
+                    return v.lon;
+                }
+            },
+            wp);
     }
 
     std::string waypoint_id(const route_waypoint& wp)
     {
-        return std::visit([](const auto& v) -> std::string
-        {
-            if constexpr(std::is_same_v<std::decay_t<decltype(v)>, airport_ref>)
-                return v.id;
-            else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, navaid_ref>)
-                return v.id;
-            else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, fix_ref>)
-                return v.id;
-            else
-                return format_latlon(v.lat, v.lon);
-        }, wp);
+        return std::visit(
+            [](const auto& v) -> std::string
+            {
+                if constexpr(std::is_same_v<std::decay_t<decltype(v)>, airport_ref>)
+                {
+                    return v.id;
+                }
+                else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, navaid_ref>)
+                {
+                    return v.id;
+                }
+                else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, fix_ref>)
+                {
+                    return v.id;
+                }
+                else
+                {
+                    return format_latlon(v.lat, v.lon);
+                }
+            },
+            wp);
     }
 
     // ---------------------------------------------------------------
@@ -152,35 +227,32 @@ namespace osect
         auto dlat = (lat2 - lat1) * DEG2RAD;
         auto dlon = (lon2 - lon1) * DEG2RAD;
         auto a = std::sin(dlat / 2) * std::sin(dlat / 2) +
-                   std::cos(lat1 * DEG2RAD) * std::cos(lat2 * DEG2RAD) *
-                   std::sin(dlon / 2) * std::sin(dlon / 2);
+                 std::cos(lat1 * DEG2RAD) * std::cos(lat2 * DEG2RAD) * std::sin(dlon / 2) * std::sin(dlon / 2);
         return 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a)) * EARTH_RADIUS_NM;
     }
 
     // Signed cross-track distance in NM from point (lat_p, lon_p) to the
     // great circle through (lat1, lon1) and (lat2, lon2). Absolute value
     // is the perpendicular distance from the point to the great circle.
-    static double cross_track_nm(double lat1, double lon1,
-                                  double lat2, double lon2,
-                                  double lat_p, double lon_p)
+    static double cross_track_nm(double lat1, double lon1, double lat2, double lon2, double lat_p, double lon_p)
     {
         constexpr auto DEG2RAD = 3.14159265358979323846 / 180.0;
         constexpr auto EARTH_RADIUS_NM = 3440.065;
         auto d13 = haversine_nm(lat1, lon1, lat_p, lon_p);
-        if(d13 == 0.0) return 0.0;
+        if(d13 == 0.0)
+        {
+            return 0.0;
+        }
         auto rla1 = lat1 * DEG2RAD;
         auto rla2 = lat2 * DEG2RAD;
         auto rla3 = lat_p * DEG2RAD;
         auto dlon12 = (lon2 - lon1) * DEG2RAD;
         auto dlon13 = (lon_p - lon1) * DEG2RAD;
         auto b12 = std::atan2(std::sin(dlon12) * std::cos(rla2),
-                              std::cos(rla1) * std::sin(rla2) -
-                              std::sin(rla1) * std::cos(rla2) * std::cos(dlon12));
+                              std::cos(rla1) * std::sin(rla2) - std::sin(rla1) * std::cos(rla2) * std::cos(dlon12));
         auto b13 = std::atan2(std::sin(dlon13) * std::cos(rla3),
-                              std::cos(rla1) * std::sin(rla3) -
-                              std::sin(rla1) * std::cos(rla3) * std::cos(dlon13));
-        return std::asin(std::sin(d13 / EARTH_RADIUS_NM) *
-                         std::sin(b13 - b12)) * EARTH_RADIUS_NM;
+                              std::cos(rla1) * std::sin(rla3) - std::sin(rla1) * std::cos(rla3) * std::cos(dlon13));
+        return std::asin(std::sin(d13 / EARTH_RADIUS_NM) * std::sin(b13 - b12)) * EARTH_RADIUS_NM;
     }
 
     // One point on an airway — the fix name plus its coordinates as
@@ -202,25 +274,22 @@ namespace osect
     // Resolve an airway point's name to the closest navaid/fix, falling
     // back to a bare lat/lon if neither matches. Duplicate navaid/fix
     // names are disambiguated by proximity to the airway's coordinates.
-    static route_waypoint resolve_awy_point(const awy_point& p,
-                                             const nasr_database& db)
+    static route_waypoint resolve_awy_point(const awy_point& p, const nasr_database& db)
     {
         auto navs = db.lookup_navaids(p.name);
         if(!navs.empty())
         {
-            auto& best = *std::min_element(navs.begin(), navs.end(),
-                [&](const navaid& a, const navaid& b)
-                { return haversine_nm(p.lat, p.lon, a.lat, a.lon) <
-                         haversine_nm(p.lat, p.lon, b.lat, b.lon); });
+            auto& best = *std::min_element(
+                navs.begin(), navs.end(), [&](const navaid& a, const navaid& b)
+                { return haversine_nm(p.lat, p.lon, a.lat, a.lon) < haversine_nm(p.lat, p.lon, b.lat, b.lon); });
             return navaid_ref{p.name, std::move(best)};
         }
         auto fixes = db.lookup_fixes(p.name);
         if(!fixes.empty())
         {
-            auto& best = *std::min_element(fixes.begin(), fixes.end(),
-                [&](const fix& a, const fix& b)
-                { return haversine_nm(p.lat, p.lon, a.lat, a.lon) <
-                         haversine_nm(p.lat, p.lon, b.lat, b.lon); });
+            auto& best = *std::min_element(
+                fixes.begin(), fixes.end(), [&](const fix& a, const fix& b)
+                { return haversine_nm(p.lat, p.lon, a.lat, a.lon) < haversine_nm(p.lat, p.lon, b.lat, b.lon); });
             return fix_ref{p.name, std::move(best)};
         }
         return latlon_ref{p.lat, p.lon};
@@ -229,20 +298,22 @@ namespace osect
     // Build an ordered list of unique (name, lat, lon) points along an
     // airway, including the gap_after marker for published
     // discontinuities. Segments are sorted by point_seq.
-    static std::vector<awy_point>
-    airway_points(const std::string& airway_id, const nasr_database& db)
+    static std::vector<awy_point> airway_points(const std::string& airway_id, const nasr_database& db)
     {
         auto segments = db.query_airway_by_id(airway_id);
         std::sort(segments.begin(), segments.end(),
-                  [](const airway_segment& a, const airway_segment& b)
-                  { return a.point_seq < b.point_seq; });
+                  [](const airway_segment& a, const airway_segment& b) { return a.point_seq < b.point_seq; });
         std::vector<awy_point> points;
         for(const auto& seg : segments)
         {
             if(points.empty() || points.back().name != seg.from_point)
+            {
                 points.push_back({seg.from_point, seg.from_lat, seg.from_lon, false});
+            }
             if(seg.gap_flag == "Y")
+            {
                 points.back().gap_after = true;
+            }
             points.push_back({seg.to_point, seg.to_lat, seg.to_lon, false});
         }
         return points;
@@ -260,27 +331,33 @@ namespace osect
     //
     // Returns an empty vector on failure (unknown entry/exit, or
     // entry == exit).
-    static std::vector<route_element>
-    expand_airway(const std::string& airway_id,
-                  const std::string& entry_id,
-                  const std::string& exit_id,
-                  const nasr_database& db)
+    static std::vector<route_element> expand_airway(const std::string& airway_id, const std::string& entry_id,
+                                                    const std::string& exit_id, const nasr_database& db)
     {
         auto points = airway_points(airway_id, db);
-        if(points.empty()) return {};
+        if(points.empty())
+        {
+            return {};
+        }
 
         auto entry_idx = -1;
         auto exit_idx = -1;
         for(int i = 0; i < static_cast<int>(points.size()); ++i)
         {
             if(points[i].name == entry_id && entry_idx < 0)
+            {
                 entry_idx = i;
+            }
             if(points[i].name == exit_id)
+            {
                 exit_idx = i;
+            }
         }
 
         if(entry_idx < 0 || exit_idx < 0 || entry_idx == exit_idx)
+        {
             return {};
+        }
 
         auto step = (exit_idx > entry_idx) ? 1 : -1;
 
@@ -288,23 +365,18 @@ namespace osect
         auto crosses_gap = [&](int pos)
         {
             auto g = (step == 1) ? pos : pos + step;
-            return g >= 0 && g < static_cast<int>(points.size())
-                   && points[g].gap_after;
+            return g >= 0 && g < static_cast<int>(points.size()) && points[g].gap_after;
         };
 
         // Finalize a contiguous section of length `section.size()` as
         // either an airway_ref (>= 2 points) or a bare waypoint (1).
         // A 0-length section is skipped.
-        auto flush = [&](std::vector<route_waypoint>& section,
-                          std::vector<route_element>& out)
+        auto flush = [&](std::vector<route_waypoint>& section, std::vector<route_element>& out)
         {
             if(section.size() >= 2)
             {
-                out.push_back(airway_ref{
-                    airway_id,
-                    waypoint_id(section.front()),
-                    waypoint_id(section.back()),
-                    section});
+                out.push_back(
+                    airway_ref{airway_id, waypoint_id(section.front()), waypoint_id(section.back()), section});
             }
             else if(section.size() == 1)
             {
@@ -319,7 +391,10 @@ namespace osect
         while(true)
         {
             section.push_back(resolve_awy_point(points[i], db));
-            if(i == exit_idx) break;
+            if(i == exit_idx)
+            {
+                break;
+            }
             if(crosses_gap(i))
             {
                 flush(section, result);
@@ -330,7 +405,10 @@ namespace osect
                 auto bridge = resolve_awy_point(points[i], db);
                 result.push_back(bridge);
                 section.push_back(std::move(bridge));
-                if(i == exit_idx) break;
+                if(i == exit_idx)
+                {
+                    break;
+                }
             }
             i += step;
         }
@@ -339,15 +417,15 @@ namespace osect
         // `result`. Avoid re-emitting when the section collapsed to
         // just that bridge.
         if(section.size() >= 2)
+        {
             flush(section, result);
+        }
         return result;
     }
 
     // Find the closest fix on the airway to a given lat/lon
-    static std::string find_closest_airway_fix(
-        const std::string& airway_id,
-        double lat, double lon,
-        const nasr_database& db)
+    static std::string find_closest_airway_fix(const std::string& airway_id, double lat, double lon,
+                                               const nasr_database& db)
     {
         auto segments = db.query_airway_by_id(airway_id);
         std::string best;
@@ -355,22 +433,27 @@ namespace osect
         for(const auto& seg : segments)
         {
             auto d = haversine_nm(lat, lon, seg.from_lat, seg.from_lon);
-            if(d < best_dist) { best_dist = d; best = seg.from_point; }
+            if(d < best_dist)
+            {
+                best_dist = d;
+                best = seg.from_point;
+            }
             d = haversine_nm(lat, lon, seg.to_lat, seg.to_lon);
-            if(d < best_dist) { best_dist = d; best = seg.to_point; }
+            if(d < best_dist)
+            {
+                best_dist = d;
+                best = seg.to_point;
+            }
         }
         return best;
     }
 
     // Check if a fix name exists on an airway
-    static bool is_on_airway(const std::string& fix_name,
-                             const std::string& airway_id,
-                             const nasr_database& db)
+    static bool is_on_airway(const std::string& fix_name, const std::string& airway_id, const nasr_database& db)
     {
         auto segments = db.query_airway_by_id(airway_id);
         return std::any_of(segments.begin(), segments.end(),
-            [&](const auto& seg)
-            { return seg.from_point == fix_name || seg.to_point == fix_name; });
+                           [&](const auto& seg) { return seg.from_point == fix_name || seg.to_point == fix_name; });
     }
 
     // ---------------------------------------------------------------
@@ -381,19 +464,23 @@ namespace osect
     // When `hint` is empty or the candidate list has one entry, returns 0
     // (preserving the historical "first match wins" behavior).
     template <typename T>
-    static std::size_t nearest_index(
-        const std::vector<T>& candidates,
-        const std::optional<std::pair<double, double>>& hint)
+    static std::size_t nearest_index(const std::vector<T>& candidates,
+                                     const std::optional<std::pair<double, double>>& hint)
     {
-        if(!hint || candidates.size() <= 1) return 0;
+        if(!hint || candidates.size() <= 1)
+        {
+            return 0;
+        }
         std::size_t best = 0;
-        auto best_d = haversine_nm(hint->first, hint->second,
-                                    candidates[0].lat, candidates[0].lon);
+        auto best_d = haversine_nm(hint->first, hint->second, candidates[0].lat, candidates[0].lon);
         for(std::size_t i = 1; i < candidates.size(); ++i)
         {
-            auto d = haversine_nm(hint->first, hint->second,
-                                   candidates[i].lat, candidates[i].lon);
-            if(d < best_d) { best_d = d; best = i; }
+            auto d = haversine_nm(hint->first, hint->second, candidates[i].lat, candidates[i].lon);
+            if(d < best_d)
+            {
+                best_d = d;
+                best = i;
+            }
         }
         return best;
     }
@@ -403,19 +490,23 @@ namespace osect
     // contains multiple navaids or fixes sharing a name (e.g. several
     // "IL" fixes in different states). The candidate geographically
     // closest to the hint wins.
-    static std::optional<route_waypoint>
-    resolve_waypoint(const std::string& token, const nasr_database& db,
-                      const std::optional<std::pair<double, double>>& hint
-                          = std::nullopt)
+    static std::optional<route_waypoint> resolve_waypoint(
+        const std::string& token, const nasr_database& db,
+        const std::optional<std::pair<double, double>>& hint = std::nullopt)
     {
         // Try lat/lon first
         auto ll = parse_latlon(token);
-        if(ll) return route_waypoint{*ll};
+        if(ll)
+        {
+            return route_waypoint{*ll};
+        }
 
         // Try airport — IDs are unique in practice, no disambiguation needed.
         auto apts = db.lookup_airports(token);
         if(!apts.empty())
+        {
             return route_waypoint{airport_ref{token, std::move(apts.front())}};
+        }
 
         // Try navaid
         auto navs = db.lookup_navaids(token);
@@ -441,10 +532,12 @@ namespace osect
     // the last element is an airway_ref, returns the coords of its
     // last expanded waypoint; when `elements` is empty, returns
     // nullopt.
-    static std::optional<std::pair<double, double>>
-    hint_from_elements(const std::vector<route_element>& elements)
+    static std::optional<std::pair<double, double>> hint_from_elements(const std::vector<route_element>& elements)
     {
-        if(elements.empty()) return std::nullopt;
+        if(elements.empty())
+        {
+            return std::nullopt;
+        }
         const auto& last = elements.back();
         if(std::holds_alternative<route_waypoint>(last))
         {
@@ -452,7 +545,10 @@ namespace osect
             return std::pair{waypoint_lat(wp), waypoint_lon(wp)};
         }
         const auto& awy = std::get<airway_ref>(last);
-        if(awy.expanded.empty()) return std::nullopt;
+        if(awy.expanded.empty())
+        {
+            return std::nullopt;
+        }
         const auto& wp = awy.expanded.back();
         return std::pair{waypoint_lat(wp), waypoint_lon(wp)};
     }
@@ -468,8 +564,7 @@ namespace osect
     // Expand elements into flat waypoint list
     // ---------------------------------------------------------------
 
-    static void expand_elements(const std::vector<route_element>& elements,
-                                std::vector<route_waypoint>& out)
+    static void expand_elements(const std::vector<route_element>& elements, std::vector<route_waypoint>& out)
     {
         out.clear();
         for(const auto& elem : elements)
@@ -479,7 +574,9 @@ namespace osect
                 const auto& wp = std::get<route_waypoint>(elem);
                 // Skip if duplicate of last waypoint
                 if(!out.empty() && waypoint_id(wp) == waypoint_id(out.back()))
+                {
                     continue;
+                }
                 out.push_back(wp);
             }
             else
@@ -488,9 +585,10 @@ namespace osect
                 for(size_t i = 0; i < awy.expanded.size(); ++i)
                 {
                     // Skip first if it duplicates the last output waypoint
-                    if(i == 0 && !out.empty() &&
-                       waypoint_id(awy.expanded[i]) == waypoint_id(out.back()))
+                    if(i == 0 && !out.empty() && waypoint_id(awy.expanded[i]) == waypoint_id(out.back()))
+                    {
                         continue;
+                    }
                     out.push_back(awy.expanded[i]);
                 }
             }
@@ -510,12 +608,16 @@ namespace osect
         while(iss >> tok)
         {
             for(auto& c : tok)
+            {
                 c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            }
             tokens.push_back(std::move(tok));
         }
 
         if(tokens.empty())
+        {
             throw route_parse_error("empty route");
+        }
 
         for(size_t i = 0; i < tokens.size(); ++i)
         {
@@ -532,19 +634,23 @@ namespace osect
                 {
                     auto& prev = elements.back();
                     if(std::holds_alternative<route_waypoint>(prev))
+                    {
                         entry_id = waypoint_id(std::get<route_waypoint>(prev));
+                    }
                     else
                     {
                         auto& aref = std::get<airway_ref>(prev);
                         if(!aref.expanded.empty())
+                        {
                             entry_id = waypoint_id(aref.expanded.back());
+                        }
                     }
                 }
 
                 if(entry_id.empty())
-                    throw route_parse_error(
-                        "airway " + airway_id + " has no entry point",
-                        airway_id, ti);
+                {
+                    throw route_parse_error("airway " + airway_id + " has no entry point", airway_id, ti);
+                }
 
                 // Next token is the exit point
                 ++i;
@@ -577,70 +683,75 @@ namespace osect
                     }
                     actual_entry = find_closest_airway_fix(airway_id, lat, lon, db);
                     if(actual_entry.empty())
-                        throw route_parse_error(
-                            "cannot find entry point on " + airway_id,
-                            airway_id, ti);
+                    {
+                        throw route_parse_error("cannot find entry point on " + airway_id, airway_id, ti);
+                    }
                 }
 
                 // Auto-correct exit if not on airway
                 auto actual_exit = exit_id;
                 if(!is_on_airway(exit_id, airway_id, db))
                 {
-                    auto exit_wp = resolve_waypoint(exit_id, db,
-                                                     hint_from_elements(elements));
+                    auto exit_wp = resolve_waypoint(exit_id, db, hint_from_elements(elements));
                     if(!exit_wp)
-                        throw route_parse_error(
-                            "unknown waypoint: " + exit_id,
-                            exit_id, static_cast<int>(i));
-                    actual_exit = find_closest_airway_fix(
-                        airway_id, waypoint_lat(*exit_wp), waypoint_lon(*exit_wp), db);
+                    {
+                        throw route_parse_error("unknown waypoint: " + exit_id, exit_id, static_cast<int>(i));
+                    }
+                    actual_exit =
+                        find_closest_airway_fix(airway_id, waypoint_lat(*exit_wp), waypoint_lon(*exit_wp), db);
                     if(actual_exit.empty())
-                        throw route_parse_error(
-                            "cannot find exit point on " + airway_id,
-                            airway_id, ti);
+                    {
+                        throw route_parse_error("cannot find exit point on " + airway_id, airway_id, ti);
+                    }
                 }
 
                 auto expanded = expand_airway(airway_id, actual_entry, actual_exit, db);
                 if(expanded.empty())
-                    throw route_parse_error(
-                        std::string("cannot expand ").append(airway_id)
-                            .append(" from ").append(actual_entry)
-                            .append(" to ").append(actual_exit),
-                        airway_id, ti);
+                {
+                    throw route_parse_error(std::string("cannot expand ")
+                                                .append(airway_id)
+                                                .append(" from ")
+                                                .append(actual_entry)
+                                                .append(" to ")
+                                                .append(actual_exit),
+                                            airway_id, ti);
+                }
 
                 // expand_airway may have split at a discontinuity,
                 // producing multiple airway_refs interleaved with
                 // bridge waypoints.
                 for(auto& elem : expanded)
+                {
                     elements.push_back(std::move(elem));
+                }
 
                 // If exit was auto-corrected, add the original exit as a
                 // separate waypoint
                 if(actual_exit != exit_id)
                 {
-                    auto exit_wp = resolve_waypoint(exit_id, db,
-                                                     hint_from_elements(elements));
+                    auto exit_wp = resolve_waypoint(exit_id, db, hint_from_elements(elements));
                     if(!exit_wp)
-                        throw route_parse_error(
-                            "unknown waypoint: " + exit_id,
-                            exit_id, static_cast<int>(i));
+                    {
+                        throw route_parse_error("unknown waypoint: " + exit_id, exit_id, static_cast<int>(i));
+                    }
                     elements.push_back(*exit_wp);
                 }
             }
             else
             {
-                auto wp = resolve_waypoint(tokens[i], db,
-                                            hint_from_elements(elements));
+                auto wp = resolve_waypoint(tokens[i], db, hint_from_elements(elements));
                 if(!wp)
-                    throw route_parse_error(
-                        "unknown waypoint: " + tokens[i],
-                        tokens[i], ti);
+                {
+                    throw route_parse_error("unknown waypoint: " + tokens[i], tokens[i], ti);
+                }
                 elements.push_back(*wp);
             }
         }
 
         if(elements.size() < 2)
+        {
             throw route_parse_error("route must have at least two waypoints");
+        }
 
         expand_elements(elements, waypoints);
         airway_ize(db);
@@ -655,7 +766,10 @@ namespace osect
         std::string result;
         for(const auto& elem : elements)
         {
-            if(!result.empty()) result += ' ';
+            if(!result.empty())
+            {
+                result += ' ';
+            }
             if(std::holds_alternative<route_waypoint>(elem))
             {
                 result += waypoint_id(std::get<route_waypoint>(elem));
@@ -683,8 +797,7 @@ namespace osect
 
     // Initial great-circle bearing from (lat1, lon1) to (lat2, lon2), in
     // degrees, normalized to [0, 360).
-    static double true_course_deg(double lat1, double lon1,
-                                  double lat2, double lon2)
+    static double true_course_deg(double lat1, double lon1, double lat2, double lon2)
     {
         constexpr auto DEG2RAD = 3.14159265358979323846 / 180.0;
         constexpr auto RAD2DEG = 180.0 / 3.14159265358979323846;
@@ -692,10 +805,12 @@ namespace osect
         auto rlat2 = lat2 * DEG2RAD;
         auto dlon = (lon2 - lon1) * DEG2RAD;
         auto y = std::sin(dlon) * std::cos(rlat2);
-        auto x = std::cos(rlat1) * std::sin(rlat2) -
-                   std::sin(rlat1) * std::cos(rlat2) * std::cos(dlon);
+        auto x = std::cos(rlat1) * std::sin(rlat2) - std::sin(rlat1) * std::cos(rlat2) * std::cos(dlon);
         auto brg = std::atan2(y, x) * RAD2DEG;
-        if(brg < 0) brg += 360.0;
+        if(brg < 0)
+        {
+            brg += 360.0;
+        }
         return brg;
     }
 
@@ -711,11 +826,8 @@ namespace osect
             auto lo_a = waypoint_lon(a);
             auto lb = waypoint_lat(b);
             auto lo_b = waypoint_lon(b);
-            legs.push_back({
-                waypoint_id(a),
-                waypoint_id(b),
-                haversine_nm(la, lo_a, lb, lo_b),
-                true_course_deg(la, lo_a, lb, lo_b)});
+            legs.push_back({waypoint_id(a), waypoint_id(b), haversine_nm(la, lo_a, lb, lo_b),
+                            true_course_deg(la, lo_a, lb, lo_b)});
         }
         return legs;
     }
@@ -723,7 +835,10 @@ namespace osect
     double flight_route::total_distance_nm() const
     {
         auto t = 0.0;
-        for(const auto& l : compute_legs()) t += l.distance_nm;
+        for(const auto& l : compute_legs())
+        {
+            t += l.distance_nm;
+        }
         return t;
     }
 
@@ -731,8 +846,7 @@ namespace osect
     // insert_waypoint
     // ---------------------------------------------------------------
 
-    void flight_route::insert_waypoint_raw(std::size_t segment_index,
-                                            const route_waypoint& wp)
+    void flight_route::insert_waypoint_raw(std::size_t segment_index, const route_waypoint& wp)
     {
         auto& r = *this;
         // Find which element owns the segment endpoints
@@ -763,15 +877,15 @@ namespace osect
                     if(j == 0 && wp_idx > 0)
                     {
                         // First waypoint may have been deduped
-                        if(wp_idx > 0 && waypoint_id(awy.expanded[0]) ==
-                           waypoint_id(r.waypoints[wp_idx - 1]))
+                        if(wp_idx > 0 && waypoint_id(awy.expanded[0]) == waypoint_id(r.waypoints[wp_idx - 1]))
+                        {
                             continue;
+                        }
                     }
                     awy_count++;
                 }
 
-                if(segment_index >= awy_start &&
-                   segment_index < awy_start + awy_count)
+                if(segment_index >= awy_start && segment_index < awy_start + awy_count)
                 {
                     // Segment falls within this airway — split it.
                     // Replace the airway element with explicit waypoints
@@ -780,16 +894,18 @@ namespace osect
                     for(size_t j = 0; j < awy.expanded.size(); ++j)
                     {
                         replacement.push_back(awy.expanded[j]);
-                        auto global_idx = awy_start + j -
-                            (wp_idx > 0 && waypoint_id(awy.expanded[0]) ==
-                             waypoint_id(r.waypoints[wp_idx - 1])
-                                ? std::size_t{1} : std::size_t{0});
+                        auto global_idx =
+                            awy_start + j -
+                            (wp_idx > 0 && waypoint_id(awy.expanded[0]) == waypoint_id(r.waypoints[wp_idx - 1])
+                                 ? std::size_t{1}
+                                 : std::size_t{0});
                         if(global_idx == segment_index)
+                        {
                             replacement.push_back(wp);
+                        }
                     }
                     r.elements.erase(r.elements.begin() + ei);
-                    r.elements.insert(r.elements.begin() + ei,
-                                      replacement.begin(), replacement.end());
+                    r.elements.insert(r.elements.begin() + ei, replacement.begin(), replacement.end());
                     expand_elements(r.elements, r.waypoints);
                     return;
                 }
@@ -801,39 +917,40 @@ namespace osect
         r.waypoints.insert(r.waypoints.begin() + segment_index + 1, wp);
         r.elements.clear();
         for(const auto& w : r.waypoints)
+        {
             r.elements.push_back(w);
+        }
     }
 
-    void flight_route::insert_waypoint(std::size_t segment_index,
-                                        const route_waypoint& wp,
-                                        const nasr_database& db)
+    void flight_route::insert_waypoint(std::size_t segment_index, const route_waypoint& wp, const nasr_database& db)
     {
         assert(segment_index + 1 < waypoints.size());
         insert_waypoint_raw(segment_index, wp);
         airway_ize(db);
     }
 
-    void flight_route::replace_waypoint(std::size_t waypoint_index,
-                                         route_waypoint wp,
-                                         const nasr_database& db)
+    void flight_route::replace_waypoint(std::size_t waypoint_index, route_waypoint wp, const nasr_database& db)
     {
         assert(waypoint_index < waypoints.size());
         waypoints[waypoint_index] = std::move(wp);
         elements.clear();
         for(const auto& w : waypoints)
+        {
             elements.push_back(w);
+        }
         airway_ize(db);
     }
 
-    void flight_route::delete_waypoint(std::size_t waypoint_index,
-                                        const nasr_database& db)
+    void flight_route::delete_waypoint(std::size_t waypoint_index, const nasr_database& db)
     {
         assert(waypoint_index < waypoints.size());
         assert(waypoints.size() > 2);
         waypoints.erase(waypoints.begin() + waypoint_index);
         elements.clear();
         for(const auto& w : waypoints)
+        {
             elements.push_back(w);
+        }
         airway_ize(db);
     }
 
@@ -868,18 +985,22 @@ namespace osect
 
     void flight_route::airway_ize(const nasr_database& db)
     {
-        if(waypoints.size() < 2) return;
+        if(waypoints.size() < 2)
+        {
+            return;
+        }
 
         // Per-call cache of airway_id -> ordered list of points.
         std::unordered_map<std::string, std::vector<awy_point>> awy_cache;
 
-        auto get_airway_points = [&](const std::string& awy_id)
-            -> const std::vector<awy_point>&
+        auto get_airway_points = [&](const std::string& awy_id) -> const std::vector<awy_point>&
         {
             auto it = awy_cache.find(awy_id);
-            if(it != awy_cache.end()) return it->second;
-            return awy_cache.emplace(awy_id, airway_points(awy_id, db))
-                .first->second;
+            if(it != awy_cache.end())
+            {
+                return it->second;
+            }
+            return awy_cache.emplace(awy_id, airway_points(awy_id, db)).first->second;
         };
 
         // -----------------------------------------------------------
@@ -904,9 +1025,7 @@ namespace osect
                 std::sort(aa.begin(), aa.end());
                 std::sort(ab.begin(), ab.end());
                 std::vector<std::string> common;
-                std::set_intersection(aa.begin(), aa.end(),
-                                      ab.begin(), ab.end(),
-                                      std::back_inserter(common));
+                std::set_intersection(aa.begin(), aa.end(), ab.begin(), ab.end(), std::back_inserter(common));
 
                 // Pick the airway that yields the most accepted
                 // intermediates. Ties broken by lexicographic order
@@ -921,11 +1040,26 @@ namespace osect
                     // err on the side of coercing less rather than more.
                     auto idx_a = -1;
                     for(auto k = 0; k < static_cast<int>(points.size()); ++k)
-                        if(points[k].name == id_a) { idx_a = k; break; }
+                    {
+                        if(points[k].name == id_a)
+                        {
+                            idx_a = k;
+                            break;
+                        }
+                    }
                     auto idx_b = -1;
                     for(auto k = 0; k < static_cast<int>(points.size()); ++k)
-                        if(points[k].name == id_b) { idx_b = k; break; }
-                    if(idx_a < 0 || idx_b < 0 || idx_a == idx_b) continue;
+                    {
+                        if(points[k].name == id_b)
+                        {
+                            idx_b = k;
+                            break;
+                        }
+                    }
+                    if(idx_a < 0 || idx_b < 0 || idx_a == idx_b)
+                    {
+                        continue;
+                    }
 
                     // A published gap anywhere in the walk means the
                     // airway does not actually connect a and b. Skip.
@@ -933,8 +1067,17 @@ namespace osect
                     auto hi = std::max(idx_a, idx_b);
                     auto has_gap = false;
                     for(auto k = lo; k < hi; ++k)
-                        if(points[k].gap_after) { has_gap = true; break; }
-                    if(has_gap) continue;
+                    {
+                        if(points[k].gap_after)
+                        {
+                            has_gap = true;
+                            break;
+                        }
+                    }
+                    if(has_gap)
+                    {
+                        continue;
+                    }
 
                     auto step = (idx_b > idx_a) ? 1 : -1;
                     auto anchor_lat = waypoint_lat(a);
@@ -949,24 +1092,31 @@ namespace osect
                         // Guard against a name collision where an
                         // intermediate happens to have the same name
                         // as the endpoint.
-                        if(p.name == id_a || p.name == id_b) { ok = false; break; }
-                        auto xt = cross_track_nm(anchor_lat, anchor_lon,
-                                                  end_lat, end_lon,
-                                                  p.lat, p.lon);
-                        if(std::abs(xt) > COERCE_XTE_NM) { ok = false; break; }
+                        if(p.name == id_a || p.name == id_b)
+                        {
+                            ok = false;
+                            break;
+                        }
+                        auto xt = cross_track_nm(anchor_lat, anchor_lon, end_lat, end_lon, p.lat, p.lon);
+                        if(std::abs(xt) > COERCE_XTE_NM)
+                        {
+                            ok = false;
+                            break;
+                        }
                         accepted.push_back(resolve_awy_point(p, db));
                         anchor_lat = p.lat;
                         anchor_lon = p.lon;
                     }
                     if(ok && accepted.size() > best_inserts.size())
+                    {
                         best_inserts = std::move(accepted);
+                    }
                 }
 
                 if(!best_inserts.empty())
                 {
                     auto inserted = best_inserts.size();
-                    waypoints.insert(waypoints.begin() + i + 1,
-                                     std::make_move_iterator(best_inserts.begin()),
+                    waypoints.insert(waypoints.begin() + i + 1, std::make_move_iterator(best_inserts.begin()),
                                      std::make_move_iterator(best_inserts.end()));
                     i += inserted + 1;
                 }
@@ -986,7 +1136,10 @@ namespace osect
         // So size < 3 means coerce did nothing and elements still
         // matches waypoints — preserve any existing airway_ref the
         // user typed for an adjacent pair.
-        if(waypoints.size() < 3) return;
+        if(waypoints.size() < 3)
+        {
+            return;
+        }
 
         std::vector<route_element> new_elements;
         auto i = size_t{0};
@@ -1007,30 +1160,43 @@ namespace osect
 
                     for(size_t start = 0; start < points.size(); ++start)
                     {
-                        if(points[start].name != id_i) continue;
+                        if(points[start].name != id_i)
+                        {
+                            continue;
+                        }
                         for(auto dir : {1, -1})
                         {
                             auto next_pos = static_cast<int>(start) + dir;
-                            if(next_pos < 0 ||
-                               next_pos >= static_cast<int>(points.size()))
+                            if(next_pos < 0 || next_pos >= static_cast<int>(points.size()))
+                            {
                                 continue;
-                            if(points[next_pos].name != id_i1) continue;
+                            }
+                            if(points[next_pos].name != id_i1)
+                            {
+                                continue;
+                            }
 
                             auto k = i + 1;
                             auto pos = next_pos;
                             while(k + 1 < waypoints.size())
                             {
                                 auto nxt = pos + dir;
-                                if(nxt < 0 ||
-                                   nxt >= static_cast<int>(points.size()))
+                                if(nxt < 0 || nxt >= static_cast<int>(points.size()))
+                                {
                                     break;
+                                }
                                 // Stop at a published discontinuity:
                                 // even if the names line up, the airway
                                 // does not connect pos to nxt.
                                 auto gap_idx = std::min(pos, nxt);
-                                if(points[gap_idx].gap_after) break;
-                                if(points[nxt].name != waypoint_id(waypoints[k + 1]))
+                                if(points[gap_idx].gap_after)
+                                {
                                     break;
+                                }
+                                if(points[nxt].name != waypoint_id(waypoints[k + 1]))
+                                {
+                                    break;
+                                }
                                 ++k;
                                 pos = nxt;
                             }
@@ -1052,8 +1218,7 @@ namespace osect
                 aref.airway_id = best_awy;
                 aref.entry_id = waypoint_id(waypoints[i]);
                 aref.exit_id = waypoint_id(waypoints[best_end]);
-                aref.expanded.assign(waypoints.begin() + i,
-                                     waypoints.begin() + best_end + 1);
+                aref.expanded.assign(waypoints.begin() + i, waypoints.begin() + best_end + 1);
                 new_elements.push_back(std::move(aref));
                 i = best_end + 1;
             }

@@ -1,5 +1,4 @@
 #include "ephemeral_data.hpp"
-
 #include "ephemeral_cache.hpp"
 #include "http_client.hpp"
 #include "tfr_source.hpp"
@@ -15,15 +14,12 @@ namespace osect
         // Last-seen last_updated() per source, for poll_advance().
         std::optional<std::chrono::system_clock::time_point> tfrs_seen;
 
-        explicit impl(bool offline)
-            : http(offline)
-            , tfrs(http, cache)
+        explicit impl(bool offline) : http(offline), tfrs(http, cache)
         {
         }
     };
 
-    ephemeral_data::ephemeral_data(bool offline)
-        : pimpl(std::make_unique<impl>(offline))
+    ephemeral_data::ephemeral_data(bool offline) : pimpl(std::make_unique<impl>(offline))
     {
     }
 
@@ -36,7 +32,7 @@ namespace osect
 
     std::vector<data_source> ephemeral_data::as_data_sources() const
     {
-        return { pimpl->tfrs.as_data_source() };
+        return {pimpl->tfrs.as_data_source()};
     }
 
     bool ephemeral_data::poll_advance()

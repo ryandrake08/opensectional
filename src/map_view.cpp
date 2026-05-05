@@ -66,9 +66,7 @@ namespace osect
     }
 
     map_view::map_view()
-        : center_x(lon_to_mx(-98.0))
-        , center_y(lat_to_my(39.5))
-        , half_extent_y(lat_to_my(50.0) - lat_to_my(25.0))
+        : center_x(lon_to_mx(-98.0)), center_y(lat_to_my(39.5)), half_extent_y(lat_to_my(50.0) - lat_to_my(25.0))
     {
     }
 
@@ -77,10 +75,22 @@ namespace osect
         return static_cast<double>(viewport_width) / viewport_height;
     }
 
-    double map_view::view_y_min() const { return center_y - half_extent_y; }
-    double map_view::view_y_max() const { return center_y + half_extent_y; }
-    double map_view::view_x_min() const { return center_x - half_extent_y * aspect_ratio(); }
-    double map_view::view_x_max() const { return center_x + half_extent_y * aspect_ratio(); }
+    double map_view::view_y_min() const
+    {
+        return center_y - half_extent_y;
+    }
+    double map_view::view_y_max() const
+    {
+        return center_y + half_extent_y;
+    }
+    double map_view::view_x_min() const
+    {
+        return center_x - half_extent_y * aspect_ratio();
+    }
+    double map_view::view_x_max() const
+    {
+        return center_x + half_extent_y * aspect_ratio();
+    }
 
     void map_view::pan(double dx_frac, double dy_frac)
     {
@@ -128,24 +138,30 @@ namespace osect
     {
         auto world_x = lon_to_mx(lon);
         constexpr auto W = 2.0 * HALF_CIRCUMFERENCE;
-        while(world_x - center_x > HALF_CIRCUMFERENCE) world_x -= W;
-        while(center_x - world_x > HALF_CIRCUMFERENCE) world_x += W;
+        while(world_x - center_x > HALF_CIRCUMFERENCE)
+        {
+            world_x -= W;
+        }
+        while(center_x - world_x > HALF_CIRCUMFERENCE)
+        {
+            world_x += W;
+        }
         auto world_y = lat_to_my(lat);
 
         auto ndc_x = (world_x - center_x) / (2.0 * half_extent_y);
         auto ndc_y = (world_y - center_y) / (2.0 * half_extent_y);
 
-        return {
-            ndc_x * viewport_height + viewport_width * 0.5,
-            (0.5 - ndc_y) * viewport_height
-        };
+        return {ndc_x * viewport_height + viewport_width * 0.5, (0.5 - ndc_y) * viewport_height};
     }
 
     void map_view::clamp_center()
     {
         constexpr auto W = 2.0 * HALF_CIRCUMFERENCE;
         center_x = std::fmod(center_x + HALF_CIRCUMFERENCE, W);
-        if(center_x < 0) center_x += W;
+        if(center_x < 0)
+        {
+            center_x += W;
+        }
         center_x -= HALF_CIRCUMFERENCE;
 
         center_y = std::max(center_y, -HALF_CIRCUMFERENCE);

@@ -21,15 +21,15 @@ namespace sdl
             return SDL_CreateGPUBuffer(dev, &info);
         }
 
-        impl(SDL_GPUDevice* dev, SDL_GPUBufferUsageFlags usage, uint32_t num, uint32_t size) : device(dev), handle(create_buffer(dev, usage, num * size)), count(num)
+        impl(SDL_GPUDevice* dev, SDL_GPUBufferUsageFlags usage, uint32_t num, uint32_t size)
+            : device(dev), handle(create_buffer(dev, usage, num * size)), count(num)
         {
             if(!handle)
             {
                 throw error("Failed to create GPU buffer");
             }
 
-            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "GPU buffer created: %u bytes",
-                         num * size);
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "GPU buffer created: %u bytes", num * size);
         }
 
         ~impl() noexcept
@@ -43,10 +43,9 @@ namespace sdl
         impl& operator=(impl&&) = default;
     };
 
-    buffer::buffer(const device& dev, buffer_usage_t usage, uint32_t num, uint32_t size) : pimpl(new impl(dev.get(),
-                                                                                                          static_cast<SDL_GPUBufferUsageFlags>(usage.value),
-                                                                                                          static_cast<Uint32>(num),
-                                                                                                          static_cast<Uint32>(size)))
+    buffer::buffer(const device& dev, buffer_usage_t usage, uint32_t num, uint32_t size)
+        : pimpl(new impl(dev.get(), static_cast<SDL_GPUBufferUsageFlags>(usage.value), static_cast<Uint32>(num),
+                         static_cast<Uint32>(size)))
     {
     }
 

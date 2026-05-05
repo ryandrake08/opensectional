@@ -33,11 +33,9 @@ namespace osect
         popup_manager(const popup_manager&) = delete;
         popup_manager& operator=(const popup_manager&) = delete;
 
-        void open_pick(std::vector<feature> features,
-                       double click_lon, double click_lat);
+        void open_pick(std::vector<feature> features, double click_lon, double click_lat);
         void close_pick();
-        void open_info(const feature& f,
-                       double anchor_lon, double anchor_lat);
+        void open_info(const feature& f, double anchor_lon, double anchor_lat);
         void close_info();
         void open_route(double anchor_lon, double anchor_lat);
         void close_route();
@@ -68,8 +66,7 @@ namespace osect
 
         // Draw all open popups. `route` may be null when no route is
         // active; any open route popup auto-closes in that case.
-        actions draw(const map_view& view,
-                     const std::vector<std::unique_ptr<feature_type>>& feature_types,
+        actions draw(const map_view& view, const std::vector<std::unique_ptr<feature_type>>& feature_types,
                      const flight_route* route);
     };
 
@@ -78,9 +75,7 @@ namespace osect
     // route drag. `is_segment_drag` selects between segment-drag (lines
     // from waypoints `index` and `index+1`) and waypoint-drag (lines from
     // the neighbors of `index`, when they exist).
-    void draw_route_drag_rubber_band(const map_view& view,
-                                     const flight_route& route,
-                                     bool is_segment_drag,
+    void draw_route_drag_rubber_band(const map_view& view, const flight_route& route, bool is_segment_drag,
                                      std::size_t index);
 
 } // namespace osect

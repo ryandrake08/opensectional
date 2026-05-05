@@ -8,8 +8,7 @@ namespace sqlite
     {
         sqlite3_stmt* stmt;
 
-        explicit impl(sqlite3_stmt* s)
-            : stmt(s)
+        explicit impl(sqlite3_stmt* s) : stmt(s)
         {
         }
 
@@ -64,14 +63,14 @@ namespace sqlite
 
     void statement::bind(int index, const std::vector<int>& values)
     {
-        sqlite3_bind_blob(pimpl->stmt, index, values.data(),
-                          static_cast<int>(values.size() * sizeof(int)), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(pimpl->stmt, index, values.data(), static_cast<int>(values.size() * sizeof(int)),
+                          SQLITE_TRANSIENT);
     }
 
     void statement::bind(int index, const std::vector<double>& values)
     {
-        sqlite3_bind_blob(pimpl->stmt, index, values.data(),
-                          static_cast<int>(values.size() * sizeof(double)), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(pimpl->stmt, index, values.data(), static_cast<int>(values.size() * sizeof(double)),
+                          SQLITE_TRANSIENT);
     }
 
     bool statement::step()

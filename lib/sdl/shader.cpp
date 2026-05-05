@@ -10,15 +10,10 @@ namespace sdl
         SDL_GPUDevice* device; // Non-owning
         SDL_GPUShader* handle; // Owning
 
-        static SDL_GPUShader* create_shader(
-            const sdl::device& dev,
-            const void* code,
-            size_t code_size,
-            const std::string& entrypoint,
-            SDL_GPUShaderStage stage,
-            SDL_GPUShaderFormat format,
-            uint32_t num_samplers,
-            uint32_t num_storage_buffers)
+        static SDL_GPUShader* create_shader(const sdl::device& dev, const void* code, size_t code_size,
+                                            const std::string& entrypoint, SDL_GPUShaderStage stage,
+                                            SDL_GPUShaderFormat format, uint32_t num_samplers,
+                                            uint32_t num_storage_buffers)
         {
             // Auto-detect format if not specified
             if(format == SDL_GPU_SHADERFORMAT_INVALID)
@@ -41,15 +36,10 @@ namespace sdl
             return SDL_CreateGPUShader(dev.get(), &shader_info);
         }
 
-        impl(
-            const sdl::device& dev,
-            const void* code,
-            size_t code_size,
-            const std::string& entrypoint,
-            SDL_GPUShaderStage stage,
-            SDL_GPUShaderFormat format,
-            uint32_t num_samplers,
-            uint32_t num_storage_buffers) : device(dev.get()), handle(create_shader(dev, code, code_size, entrypoint, stage, format, num_samplers, num_storage_buffers))
+        impl(const sdl::device& dev, const void* code, size_t code_size, const std::string& entrypoint,
+             SDL_GPUShaderStage stage, SDL_GPUShaderFormat format, uint32_t num_samplers, uint32_t num_storage_buffers)
+            : device(dev.get()),
+              handle(create_shader(dev, code, code_size, entrypoint, stage, format, num_samplers, num_storage_buffers))
         {
             if(!handle)
             {
@@ -57,8 +47,7 @@ namespace sdl
             }
 
             SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Shader created: %s, %lu bytes",
-                         stage == SDL_GPU_SHADERSTAGE_VERTEX ? "vertex" : "fragment",
-                         (unsigned long)code_size);
+                         stage == SDL_GPU_SHADERSTAGE_VERTEX ? "vertex" : "fragment", (unsigned long)code_size);
         }
 
         ~impl() noexcept
@@ -72,22 +61,12 @@ namespace sdl
         impl& operator=(impl&&) = default;
     };
 
-    shader::shader(
-        const device& dev,
-        const unsigned char* code_array,
-        unsigned int code_len,
-        const std::string& entrypoint,
-        shader_stage_t stage,
-        shader_format_t format,
-        uint32_t num_samplers,
-        uint32_t num_storage_buffers) : pimpl(new impl(dev,
-                                                       static_cast<const void*>(code_array),
-                                                       code_len,
-                                                       entrypoint,
-                                                       static_cast<SDL_GPUShaderStage>(stage.value),
-                                                       static_cast<SDL_GPUShaderFormat>(format.value),
-                                                       num_samplers,
-                                                       num_storage_buffers))
+    shader::shader(const device& dev, const unsigned char* code_array, unsigned int code_len,
+                   const std::string& entrypoint, shader_stage_t stage, shader_format_t format, uint32_t num_samplers,
+                   uint32_t num_storage_buffers)
+        : pimpl(new impl(dev, static_cast<const void*>(code_array), code_len, entrypoint,
+                         static_cast<SDL_GPUShaderStage>(stage.value), static_cast<SDL_GPUShaderFormat>(format.value),
+                         num_samplers, num_storage_buffers))
     {
     }
 

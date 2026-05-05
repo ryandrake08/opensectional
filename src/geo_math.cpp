@@ -9,8 +9,7 @@ namespace osect
         constexpr auto EARTH_RADIUS_NM = 6378137.0 / 1852.0;
     }
 
-    std::vector<airspace_point> geodesic_circle(double center_lat, double center_lon,
-                                                double radius_nm, int n)
+    std::vector<airspace_point> geodesic_circle(double center_lat, double center_lon, double radius_nm, int n)
     {
         auto lat1 = center_lat * M_PI / 180.0;
         auto lon1 = center_lon * M_PI / 180.0;
@@ -33,8 +32,14 @@ namespace osect
             auto lon_deg = lon2 * 180.0 / M_PI;
 
             auto delta = lon_deg - prev_lon;
-            if(delta > 180.0) lon_deg -= 360.0;
-            else if(delta < -180.0) lon_deg += 360.0;
+            if(delta > 180.0)
+            {
+                lon_deg -= 360.0;
+            }
+            else if(delta < -180.0)
+            {
+                lon_deg += 360.0;
+            }
             prev_lon = lon_deg;
 
             pts.push_back({lat_deg, lon_deg});
@@ -49,14 +54,12 @@ namespace osect
         auto dlat = rlat2 - rlat1;
         auto dlon = (lon2 - lon1) * M_PI / 180.0;
         auto a = std::sin(dlat * 0.5) * std::sin(dlat * 0.5) +
-                 std::cos(rlat1) * std::cos(rlat2) *
-                 std::sin(dlon * 0.5) * std::sin(dlon * 0.5);
+                 std::cos(rlat1) * std::cos(rlat2) * std::sin(dlon * 0.5) * std::sin(dlon * 0.5);
         return 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a)) * EARTH_RADIUS_NM;
     }
 
-    double point_to_segment_distance_nm(double lat_a, double lon_a,
-                                         double lat_b, double lon_b,
-                                         double lat_p, double lon_p)
+    double point_to_segment_distance_nm(double lat_a, double lon_a, double lat_b, double lon_b, double lat_p,
+                                        double lon_p)
     {
         // Local equirectangular projection about the segment midpoint.
         // 1° latitude ≈ 60 nm everywhere; 1° longitude depends on
@@ -74,19 +77,26 @@ namespace osect
 
         auto ab_len_sq = bx * bx + by * by;
         if(ab_len_sq == 0.0)
+        {
             return std::sqrt(px * px + py * py);
+        }
 
         auto t = (px * bx + py * by) / ab_len_sq;
-        if(t < 0.0) t = 0.0;
-        else if(t > 1.0) t = 1.0;
+        if(t < 0.0)
+        {
+            t = 0.0;
+        }
+        else if(t > 1.0)
+        {
+            t = 1.0;
+        }
 
         auto fx = t * bx;
         auto fy = t * by;
         return std::sqrt((px - fx) * (px - fx) + (py - fy) * (py - fy));
     }
 
-    std::vector<airspace_point> geodesic_interpolate(double lat1, double lon1,
-                                                     double lat2, double lon2,
+    std::vector<airspace_point> geodesic_interpolate(double lat1, double lon1, double lat2, double lon2,
                                                      double max_segment_nm)
     {
         auto rlat1 = lat1 * M_PI / 180.0;
@@ -97,8 +107,7 @@ namespace osect
         auto dlat = rlat2 - rlat1;
         auto dlon = rlon2 - rlon1;
         auto a = std::sin(dlat * 0.5) * std::sin(dlat * 0.5) +
-                 std::cos(rlat1) * std::cos(rlat2) *
-                 std::sin(dlon * 0.5) * std::sin(dlon * 0.5);
+                 std::cos(rlat1) * std::cos(rlat2) * std::sin(dlon * 0.5) * std::sin(dlon * 0.5);
         auto d = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
         auto dist_nm = d * EARTH_RADIUS_NM;
 
@@ -125,8 +134,14 @@ namespace osect
 
             // Keep longitude continuous across the antimeridian
             auto delta = lon - prev_lon;
-            if(delta > 180.0) lon -= 360.0;
-            else if(delta < -180.0) lon += 360.0;
+            if(delta > 180.0)
+            {
+                lon -= 360.0;
+            }
+            else if(delta < -180.0)
+            {
+                lon += 360.0;
+            }
             prev_lon = lon;
 
             pts.push_back({lat, lon});

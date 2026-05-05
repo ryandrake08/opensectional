@@ -1,13 +1,12 @@
 #include "ui_overlay.hpp"
 #include "feature_type.hpp"
 #include "ui_sectioned_list.hpp"
-
+#include <imgui.h>
+#include <imgui/scoped.hpp>
 #include <algorithm>
 #include <array>
 #include <memory>
 #include <string>
-#include <imgui.h>
-#include <imgui/scoped.hpp>
 #include <misc/cpp/imgui_stdlib.h>
 
 namespace osect
@@ -34,7 +33,7 @@ namespace osect
         // the route panel.
         bool planning = false;
         // Planner knobs surfaced in the route panel.
-        float max_leg_nm = 80.0F;  // ImGui::InputFloat takes float
+        float max_leg_nm = 80.0F; // ImGui::InputFloat takes float
         bool use_airways = false;
 
         // Data-status panel state. Empty until set_data_sources is
@@ -42,7 +41,9 @@ namespace osect
         std::vector<data_source> sources;
     };
 
-    ui_overlay::ui_overlay() : pimpl(std::make_unique<impl>()) {}
+    ui_overlay::ui_overlay() : pimpl(std::make_unique<impl>())
+    {
+    }
     ui_overlay::~ui_overlay() = default;
 
     void ui_overlay::set_route_state(const flight_route& route)
@@ -65,8 +66,7 @@ namespace osect
         pimpl->planning = pending;
     }
 
-    void ui_overlay::set_route_planner_defaults(double max_leg_nm,
-                                                  bool use_airways)
+    void ui_overlay::set_route_planner_defaults(double max_leg_nm, bool use_airways)
     {
         pimpl->max_leg_nm = static_cast<float>(max_leg_nm);
         pimpl->use_airways = use_airways;
@@ -92,57 +92,48 @@ namespace osect
         return pimpl->vis;
     }
 
-    ui_overlay_result ui_overlay::draw(
-        float last_render_ms,
-        const std::vector<std::unique_ptr<feature_type>>& feature_types)
+    ui_overlay_result ui_overlay::draw(float last_render_ms,
+                                       const std::vector<std::unique_ptr<feature_type>>& feature_types)
     {
         auto& io = ImGui::GetIO();
         auto result = ui_overlay_result{};
         auto& d = *pimpl;
 
         // FPS overlay in the bottom-right corner
-        ImGui::SetNextWindowPos(
-            ImVec2(io.DisplaySize.x, io.DisplaySize.y),
-            ImGuiCond_Always,
-            ImVec2(1.0F, 1.0F));
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x, io.DisplaySize.y), ImGuiCond_Always, ImVec2(1.0F, 1.0F));
         ImGui::SetNextWindowBgAlpha(0.4F);
         {
-            imgui::scoped_window window("##fps",
-                ImGuiWindowFlags_NoDecoration |
-                ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoFocusOnAppearing |
-                ImGuiWindowFlags_NoNav |
-                ImGuiWindowFlags_NoMove |
-                ImGuiWindowFlags_NoSavedSettings |
-                ImGuiWindowFlags_NoInputs);
+            imgui::scoped_window window("##fps", ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                                     ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+                                                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                                     ImGuiWindowFlags_NoInputs);
             auto fps = (last_render_ms > 0.0F) ? 1000.0F / last_render_ms : 0.0F;
             ImGui::Text("%6.1f FPS (%5.2f ms)", fps, last_render_ms);
         }
 
         // Layer checkboxes in the top-right corner
-        ImGui::SetNextWindowPos(
-            ImVec2(io.DisplaySize.x, 0),
-            ImGuiCond_Always,
-            ImVec2(1.0F, 0.0F));
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x, 0), ImGuiCond_Always, ImVec2(1.0F, 0.0F));
         ImGui::SetNextWindowBgAlpha(0.6F);
         std::size_t row_count = 0;
         {
-            imgui::scoped_window window("##layers",
-                ImGuiWindowFlags_NoDecoration |
-                ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoFocusOnAppearing |
-                ImGuiWindowFlags_NoNav |
-                ImGuiWindowFlags_NoMove |
-                ImGuiWindowFlags_NoSavedSettings);
+            imgui::scoped_window window("##layers", ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                                        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+                                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 
             // Row = (label, layer_id). Basemap sits at the top, then each
             // feature_type in registration order.
-            struct row { const char* label; int id; };
+            struct row
+            {
+                const char* label;
+                int id;
+            };
             std::vector<row> rows;
             rows.reserve(feature_types.size() + 1);
             rows.push_back({"Basemap", layer_basemap});
             for(const auto& obj : feature_types)
+            {
                 rows.push_back({obj->label(), obj->layer_id()});
+            }
 
             auto max_label_w = 0.0F;
             for(const auto& r : rows)
@@ -164,7 +155,9 @@ namespace osect
 
                 ImGui::PushID(r.id);
                 if(ImGui::Checkbox("", &d.vis[r.id]))
+                {
                     changed = true;
+                }
                 ImGui::PopID();
             }
 
@@ -174,17 +167,13 @@ namespace osect
         // Altitude band filter beneath the layer checkboxes.
         ImGui::SetNextWindowPos(
             ImVec2(io.DisplaySize.x, ImGui::GetFrameHeightWithSpacing() * static_cast<float>(row_count + 1) + 16.0F),
-            ImGuiCond_Always,
-            ImVec2(1.0F, 0.0F));
+            ImGuiCond_Always, ImVec2(1.0F, 0.0F));
         ImGui::SetNextWindowBgAlpha(0.6F);
         {
-            imgui::scoped_window window("Altitude",
-                ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoFocusOnAppearing |
-                ImGuiWindowFlags_NoNav |
-                ImGuiWindowFlags_NoMove |
-                ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoSavedSettings);
+            imgui::scoped_window window("Altitude", ImGuiWindowFlags_AlwaysAutoResize |
+                                                        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+                                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                                                        ImGuiWindowFlags_NoSavedSettings);
 
             bool& changed = result.visibility_changed;
             if(ImGui::RadioButton("Below 18,000 ft", d.vis.altitude.show_low))
@@ -211,44 +200,50 @@ namespace osect
         }
 
         // Search box in the top-left corner.
-        ImGui::SetNextWindowPos(
-            ImVec2(0, 0), ImGuiCond_Always, ImVec2(0.0F, 0.0F));
+        ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always, ImVec2(0.0F, 0.0F));
         ImGui::SetNextWindowBgAlpha(0.85F);
         {
-            imgui::scoped_window window("##search",
-                ImGuiWindowFlags_NoDecoration |
-                ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoNav |
-                ImGuiWindowFlags_NoMove |
-                ImGuiWindowFlags_NoSavedSettings);
+            imgui::scoped_window window("##search", ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                                        ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove |
+                                                        ImGuiWindowFlags_NoSavedSettings);
 
             ImGui::SetNextItemWidth(static_cast<float>(SEARCH_INPUT_WIDTH_PX));
             ImGui::InputTextWithHint("##search_input", "Search", &d.search_buf);
             auto input_focused = ImGui::IsItemFocused();
             result.search_query = d.search_buf;
 
-            auto enter_pressed = input_focused &&
-                                 ImGui::IsKeyPressed(ImGuiKey_Enter, false);
+            auto enter_pressed = input_focused && ImGui::IsKeyPressed(ImGuiKey_Enter, false);
 
             // Group hits by entity_type into the shared feature section list.
             std::vector<ui_section> sections(FEATURE_SECTION_COUNT);
             std::vector<std::vector<int>> section_hit_index(FEATURE_SECTION_COUNT);
             for(std::size_t s = 0; s < FEATURE_SECTION_COUNT; ++s)
+            {
                 sections.at(s).header = FEATURE_SECTIONS.at(s).header;
+            }
 
             for(int i = 0; i < static_cast<int>(d.hits.size()); ++i)
             {
                 const auto& h = d.hits[i];
                 auto s = feature_section_index(h.entity_type.c_str());
-                if(s < 0) continue;
+                if(s < 0)
+                {
+                    continue;
+                }
 
                 std::string label;
                 if(!h.ids.empty() && !h.name.empty())
+                {
                     label = h.ids + "  " + h.name;
+                }
                 else if(!h.ids.empty())
+                {
                     label = h.ids;
+                }
                 else
+                {
                     label = h.name;
+                }
 
                 sections[s].items.push_back(std::move(label));
                 section_hit_index[s].push_back(i);
@@ -259,7 +254,9 @@ namespace osect
             // Enter accepts the first visible hit across all sections.
             auto selected_flat = std::optional<int>();
             if(picked)
+            {
                 selected_flat = section_hit_index[picked->first][picked->second];
+            }
             else if(enter_pressed && !d.hits.empty())
             {
                 for(std::size_t s = 0; s < FEATURE_SECTION_COUNT; ++s)
@@ -281,25 +278,20 @@ namespace osect
         }
 
         // Route panel, top-center.
-        ImGui::SetNextWindowPos(
-            ImVec2(io.DisplaySize.x * 0.5F, 0),
-            ImGuiCond_Always,
-            ImVec2(0.5F, 0.0F));
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5F, 0), ImGuiCond_Always, ImVec2(0.5F, 0.0F));
         ImGui::SetNextWindowBgAlpha(0.85F);
         {
-            imgui::scoped_window window("Route",
-                ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoMove |
-                ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoSavedSettings);
+            imgui::scoped_window window("Route", ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+                                                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
 
             ImGui::BeginDisabled(d.planning);
             ImGui::SetNextItemWidth(360.0F);
-            auto submit = ImGui::InputText("##route_input",
-                &d.route_buf,
-                ImGuiInputTextFlags_EnterReturnsTrue);
+            auto submit = ImGui::InputText("##route_input", &d.route_buf, ImGuiInputTextFlags_EnterReturnsTrue);
             ImGui::SameLine();
-            if(ImGui::Button("Set")) submit = true;
+            if(ImGui::Button("Set"))
+            {
+                submit = true;
+            }
 
             // Planner knobs. Always rendered so the user can change
             // them between submissions; disabled while a plan is
@@ -312,7 +304,9 @@ namespace osect
             d.max_leg_nm = std::max(d.max_leg_nm, 1.0F);
             ImGui::EndDisabled();
             if(submit && !d.planning)
+            {
                 result.submit_route_text = d.route_buf;
+            }
             result.route_max_leg_nm = d.max_leg_nm;
             result.route_use_airways = d.use_airways;
 
@@ -321,12 +315,9 @@ namespace osect
                 // Simple animated ellipsis: one, two, or three dots
                 // depending on which frame bucket we're in. Keeps the
                 // indicator active-looking without a custom widget.
-                static const std::array<const char*, 3> dots = {
-                    "Planning route.",
-                    "Planning route..",
-                    "Planning route..."};
-                auto bucket = static_cast<std::size_t>(
-                    ImGui::GetTime() * 3.0) % dots.size();
+                static const std::array<const char*, 3> dots = {"Planning route.", "Planning route..",
+                                                                "Planning route..."};
+                auto bucket = static_cast<std::size_t>(ImGui::GetTime() * 3.0) % dots.size();
                 ImGui::TextUnformatted(dots.at(bucket));
             }
             else if(!d.route_error.empty())
@@ -349,17 +340,11 @@ namespace osect
         // Data status panel, pinned to the bottom-left corner.
         if(!d.sources.empty())
         {
-            ImGui::SetNextWindowPos(
-                ImVec2(0, io.DisplaySize.y),
-                ImGuiCond_Always,
-                ImVec2(0.0F, 1.0F));
+            ImGui::SetNextWindowPos(ImVec2(0, io.DisplaySize.y), ImGuiCond_Always, ImVec2(0.0F, 1.0F));
             ImGui::SetNextWindowBgAlpha(0.6F);
-            imgui::scoped_window window("Data status",
-                ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoFocusOnAppearing |
-                ImGuiWindowFlags_NoNav |
-                ImGuiWindowFlags_NoMove |
-                ImGuiWindowFlags_NoSavedSettings);
+            imgui::scoped_window window(
+                "Data status", ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing |
+                                   ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 
             for(const auto& s : d.sources)
             {
@@ -369,9 +354,13 @@ namespace osect
                 switch(s.status())
                 {
                 case data_source_status::fresh:
-                    color = IM_COL32(80, 200, 80, 255);  tag = "OK";  break;
+                    color = IM_COL32(80, 200, 80, 255);
+                    tag = "OK";
+                    break;
                 case data_source_status::expired:
-                    color = IM_COL32(230, 90, 90, 255);  tag = "EXP"; break;
+                    color = IM_COL32(230, 90, 90, 255);
+                    tag = "EXP";
+                    break;
                 case data_source_status::unknown:
                     break;
                 }

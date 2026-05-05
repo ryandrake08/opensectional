@@ -7,11 +7,21 @@
 
 namespace sdl
 {
-    void event_listener::key_event(input_key_t /*key*/, input_action_t /*action*/, input_mod_t /*mods*/) {}
-    void event_listener::button_event(input_button_t /*button*/, input_action_t /*action*/, input_mod_t /*mods*/) {}
-    void event_listener::cursor_position_event(double /*x*/, double /*y*/) {}
-    void event_listener::scroll_event(double /*x*/, double /*y*/) {}
-    void event_listener::framebuffer_size_event(int /*width*/, int /*height*/) {}
+    void event_listener::key_event(input_key_t /*key*/, input_action_t /*action*/, input_mod_t /*mods*/)
+    {
+    }
+    void event_listener::button_event(input_button_t /*button*/, input_action_t /*action*/, input_mod_t /*mods*/)
+    {
+    }
+    void event_listener::cursor_position_event(double /*x*/, double /*y*/)
+    {
+    }
+    void event_listener::scroll_event(double /*x*/, double /*y*/)
+    {
+    }
+    void event_listener::framebuffer_size_event(int /*width*/, int /*height*/)
+    {
+    }
 
     struct event_manager::impl
     {
@@ -41,7 +51,8 @@ namespace sdl
             case SDL_EVENT_KEY_DOWN:
             case SDL_EVENT_KEY_UP:
             {
-                input_action_t action = (event.type == SDL_EVENT_KEY_DOWN) ? input_action::press : input_action::release;
+                input_action_t action =
+                    (event.type == SDL_EVENT_KEY_DOWN) ? input_action::press : input_action::release;
                 for(const auto& listener : listeners)
                 {
                     listener->key_event(input_key_t(event.key.key), action, input_mod_t(event.key.mod));
@@ -52,7 +63,8 @@ namespace sdl
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
             case SDL_EVENT_MOUSE_BUTTON_UP:
             {
-                input_action_t action = (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) ? input_action::press : input_action::release;
+                input_action_t action =
+                    (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) ? input_action::press : input_action::release;
                 for(const auto& listener : listeners)
                 {
                     listener->button_event(input_button_t(event.button.button), action, input_mod_t(0));

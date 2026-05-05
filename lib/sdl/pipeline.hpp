@@ -40,12 +40,8 @@ namespace sdl
          * @param depth_format Depth texture format (0 = no depth testing)
          * @param vertex_input Whether to use standard vertex input (default: true)
          */
-        pipeline(const device& dev,
-                 shader&& vertex_shader,
-                 shader&& fragment_shader,
-                 primitive_type_t topology,
-                 texture_format_t depth_format = texture_format_t(0),
-                 bool vertex_input = true);
+        pipeline(const device& dev, shader&& vertex_shader, shader&& fragment_shader, primitive_type_t topology,
+                 texture_format_t depth_format = texture_format_t(0), bool vertex_input = true);
 
         /**
          * Destroy pipeline.

@@ -14,7 +14,8 @@ namespace sdl
     {
         TTF_Text* handle; // Owning
 
-        impl(TTF_TextEngine* engine, TTF_Font* font, const char* str, size_t length) : handle(TTF_CreateText(engine, font, str, length))
+        impl(TTF_TextEngine* engine, TTF_Font* font, const char* str, size_t length)
+            : handle(TTF_CreateText(engine, font, str, length))
         {
             if(!handle)
             {
@@ -33,7 +34,8 @@ namespace sdl
         impl& operator=(impl&&) = default;
     };
 
-    text::text(const text_engine& engine, const font& f, const char* str, size_t length) : pimpl(new impl(engine.get(), f.get(), str, length))
+    text::text(const text_engine& engine, const font& f, const char* str, size_t length)
+        : pimpl(new impl(engine.get(), f.get(), str, length))
     {
     }
 
@@ -74,7 +76,7 @@ namespace sdl
 
     text_bounds text::get_bounds() const
     {
-        text_bounds bounds = { 0.0F, 0.0F, 0.0F, 0.0F };
+        text_bounds bounds = {0.0F, 0.0F, 0.0F, 0.0F};
 
         // Get draw data from SDL3_ttf
         TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(pimpl->handle);
@@ -111,26 +113,19 @@ namespace sdl
         return bounds;
     }
 
-    void text::append_geometry(
-        std::vector<vertex_t2f_c4ub_v3f>& vertices,
-        std::vector<int>& indices,
-        const glm::vec3& position,
-        unsigned char r, unsigned char g, unsigned char b, unsigned char a) const
+    void text::append_geometry(std::vector<vertex_t2f_c4ub_v3f>& vertices, std::vector<int>& indices,
+                               const glm::vec3& position, unsigned char r, unsigned char g, unsigned char b,
+                               unsigned char a) const
     {
         text_bounds bounds = get_bounds();
-        glm::vec3 center(
-            position.x + (bounds.min_x + bounds.max_x) * 0.5F,
-            position.y + (bounds.min_y + bounds.max_y) * 0.5F,
-            position.z);
+        glm::vec3 center(position.x + (bounds.min_x + bounds.max_x) * 0.5F,
+                         position.y + (bounds.min_y + bounds.max_y) * 0.5F, position.z);
         append_geometry(vertices, indices, center, 0.0F, r, g, b, a);
     }
 
-    void text::append_geometry(
-        std::vector<vertex_t2f_c4ub_v3f>& vertices,
-        std::vector<int>& indices,
-        const glm::vec3& center,
-        float angle,
-        unsigned char r, unsigned char g, unsigned char b, unsigned char a) const
+    void text::append_geometry(std::vector<vertex_t2f_c4ub_v3f>& vertices, std::vector<int>& indices,
+                               const glm::vec3& center, float angle, unsigned char r, unsigned char g, unsigned char b,
+                               unsigned char a) const
     {
         TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(pimpl->handle);
         if(!sequences)

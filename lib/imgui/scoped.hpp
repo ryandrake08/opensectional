@@ -36,8 +36,14 @@ namespace imgui
         scoped_table(const scoped_table&) = delete;
         scoped_table& operator=(const scoped_table&) = delete;
 
-        bool is_open() const { return opened; }
-        explicit operator bool() const { return opened; }
+        bool is_open() const
+        {
+            return opened;
+        }
+        explicit operator bool() const
+        {
+            return opened;
+        }
     };
 
     // Right-aligned small close button on the current line. Issues a

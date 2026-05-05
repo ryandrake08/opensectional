@@ -63,17 +63,14 @@ namespace osect
         std::string token;
         int token_index;
 
-        route_parse_error(const std::string& message,
-                          const std::string& token, int token_index)
-            : std::runtime_error(message)
-            , token(token)
-            , token_index(token_index)
-        {}
+        route_parse_error(const std::string& message, const std::string& token, int token_index)
+            : std::runtime_error(message), token(token), token_index(token_index)
+        {
+        }
 
-        route_parse_error(const std::string& message)
-            : std::runtime_error(message)
-            , token_index(-1)
-        {}
+        route_parse_error(const std::string& message) : std::runtime_error(message), token_index(-1)
+        {
+        }
     };
 
     // One leg of an expanded route, from one waypoint to the next.
@@ -82,7 +79,7 @@ namespace osect
         std::string from_id;
         std::string to_id;
         double distance_nm;
-        double true_course_deg;  // initial great-circle bearing, [0, 360)
+        double true_course_deg; // initial great-circle bearing, [0, 360)
     };
 
     // A parsed and resolved flight route. Always valid — construction
@@ -115,20 +112,16 @@ namespace osect
         // and `segment_index + 1`. Updates both elements and waypoints.
         // Re-runs airway_ize so any sequential runs of fixes collapse
         // back into shorthand form.
-        void insert_waypoint(std::size_t segment_index,
-                             const route_waypoint& wp,
-                             const nasr_database& db);
+        void insert_waypoint(std::size_t segment_index, const route_waypoint& wp, const nasr_database& db);
 
         // Replace the waypoint at `waypoint_index` with `wp`. Flattens the
         // route into explicit waypoints, then re-runs airway_ize.
-        void replace_waypoint(std::size_t waypoint_index, route_waypoint wp,
-                              const nasr_database& db);
+        void replace_waypoint(std::size_t waypoint_index, route_waypoint wp, const nasr_database& db);
 
         // Remove the waypoint at `waypoint_index`. Flattens the route,
         // then re-runs airway_ize. Callers must ensure the resulting
         // route still has >= 2 waypoints.
-        void delete_waypoint(std::size_t waypoint_index,
-                             const nasr_database& db);
+        void delete_waypoint(std::size_t waypoint_index, const nasr_database& db);
 
         // Per-leg distances and great-circle bearings between
         // consecutive waypoints. Empty for routes of fewer than two
@@ -155,8 +148,7 @@ namespace osect
         // The mutation work of `insert_waypoint`, separated so
         // that the public entry point only adds the assertions
         // and the airway_ize re-collapse.
-        void insert_waypoint_raw(std::size_t segment_index,
-                                  const route_waypoint& wp);
+        void insert_waypoint_raw(std::size_t segment_index, const route_waypoint& wp);
     };
 
 } // namespace osect

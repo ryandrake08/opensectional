@@ -24,9 +24,7 @@ namespace sdl
         }
 
         impl(SDL_GPUDevice* dev, uint32_t size)
-            : device(dev)
-            , handle(create_transfer_buffer(dev, size))
-            , buffer_capacity(size)
+            : device(dev), handle(create_transfer_buffer(dev, size)), buffer_capacity(size)
         {
             if(!handle)
             {
@@ -38,7 +36,8 @@ namespace sdl
         {
             if(current_offset != buffer_capacity)
             {
-                SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Transfer buffer not fully used: %u of %u bytes (%u unused)", current_offset, buffer_capacity, buffer_capacity - current_offset);
+                SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Transfer buffer not fully used: %u of %u bytes (%u unused)",
+                             current_offset, buffer_capacity, buffer_capacity - current_offset);
             }
             SDL_ReleaseGPUTransferBuffer(device, handle);
         }
@@ -72,7 +71,9 @@ namespace sdl
     {
         if(pimpl->current_offset + size > pimpl->buffer_capacity)
         {
-            throw error("Transfer buffer overflow: cannot append " + std::to_string(size) + " bytes at offset " + std::to_string(pimpl->current_offset) + " (capacity: " + std::to_string(pimpl->buffer_capacity) + ")");
+            throw error("Transfer buffer overflow: cannot append " + std::to_string(size) + " bytes at offset " +
+                        std::to_string(pimpl->current_offset) +
+                        " (capacity: " + std::to_string(pimpl->buffer_capacity) + ")");
         }
 
         // Map the buffer

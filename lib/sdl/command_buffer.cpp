@@ -65,10 +65,7 @@ namespace sdl
         SDL_GPUTexture* swapchain = nullptr;
         Uint32 swapchain_texture_width = 0;
         Uint32 swapchain_texture_height = 0;
-        if(!SDL_WaitAndAcquireGPUSwapchainTexture(pimpl->handle,
-                                                  win.get(),
-                                                  &swapchain,
-                                                  &swapchain_texture_width,
+        if(!SDL_WaitAndAcquireGPUSwapchainTexture(pimpl->handle, win.get(), &swapchain, &swapchain_texture_width,
                                                   &swapchain_texture_height))
         {
             throw error("Failed to acquire swapchain texture");

@@ -20,8 +20,14 @@ namespace sdl
     {
         float min_x, max_x, min_y, max_y;
 
-        float width() const { return max_x - min_x; }
-        float height() const { return max_y - min_y; }
+        float width() const
+        {
+            return max_x - min_x;
+        }
+        float height() const
+        {
+            return max_y - min_y;
+        }
     };
 
     /**
@@ -118,22 +124,17 @@ namespace sdl
          * @param b Blue component (0-255)
          * @param a Alpha component (0-255)
          */
-        void append_geometry(
-            std::vector<vertex_t2f_c4ub_v3f>& vertices,
-            std::vector<int>& indices,
-            const glm::vec3& position,
-            unsigned char r, unsigned char g, unsigned char b, unsigned char a) const;
+        void append_geometry(std::vector<vertex_t2f_c4ub_v3f>& vertices, std::vector<int>& indices,
+                             const glm::vec3& position, unsigned char r, unsigned char g, unsigned char b,
+                             unsigned char a) const;
 
         /**
          * Append rotated text geometry. Position is the center of the text.
          * Vertices are rotated by angle (radians) around the text center.
          */
-        void append_geometry(
-            std::vector<vertex_t2f_c4ub_v3f>& vertices,
-            std::vector<int>& indices,
-            const glm::vec3& center,
-            float angle,
-            unsigned char r, unsigned char g, unsigned char b, unsigned char a) const;
+        void append_geometry(std::vector<vertex_t2f_c4ub_v3f>& vertices, std::vector<int>& indices,
+                             const glm::vec3& center, float angle, unsigned char r, unsigned char g, unsigned char b,
+                             unsigned char a) const;
     };
 
 } // namespace sdl

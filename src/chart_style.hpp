@@ -66,10 +66,8 @@ namespace osect
         const feature_style& runway_style() const;
 
         // Class airspace visibility and style (keyed by class + local_type)
-        bool airspace_visible(const std::string& airspace_class,
-                              const std::string& local_type, double zoom) const;
-        const feature_style& airspace_style(const std::string& airspace_class,
-                                             const std::string& local_type) const;
+        bool airspace_visible(const std::string& airspace_class, const std::string& local_type, double zoom) const;
+        const feature_style& airspace_style(const std::string& airspace_class, const std::string& local_type) const;
 
         // SUA visibility and style (keyed by sua_type)
         bool sua_visible(const std::string& sua_type, double zoom) const;
@@ -78,16 +76,13 @@ namespace osect
         // ARTCC visibility and style (keyed by altitude + type).
         // A CTA/FIR polygon maps to two style keys; artcc_visible returns
         // true if either is visible, artcc_style returns the primary.
-        bool artcc_visible(const std::string& altitude,
-                           const std::string& type, double zoom) const;
-        const feature_style& artcc_style(const std::string& altitude,
-                                          const std::string& type) const;
+        bool artcc_visible(const std::string& altitude, const std::string& type, double zoom) const;
+        const feature_style& artcc_style(const std::string& altitude, const std::string& type) const;
         // Invoke `f` once per applicable style that is visible at this zoom.
         // Used by the renderer to draw CTA/FIR polygons twice (under CTA
         // and FIR styles) while drawing every other polygon once.
-        void for_each_visible_artcc_style(
-            const std::string& altitude, const std::string& type, double zoom,
-            const std::function<void(const feature_style&)>& f) const;
+        void for_each_visible_artcc_style(const std::string& altitude, const std::string& type, double zoom,
+                                          const std::function<void(const feature_style&)>& f) const;
 
         // ADIZ visibility and style
         bool adiz_visible(double zoom) const;
@@ -140,9 +135,9 @@ namespace osect
         // expected to guard with any_*_visible() first.
         using filter_list = std::optional<std::vector<std::string>>;
 
-        filter_list visible_airport_classes(double zoom) const;       // APT airspace_class: B,C,D,E
-        filter_list visible_airspace_values(double zoom) const;       // Union of CLASS and LOCAL_TYPE values
-        filter_list visible_sua_types(double zoom) const;             // SUA_TYPE: RA,PA,WA,AA,NSA
+        filter_list visible_airport_classes(double zoom) const; // APT airspace_class: B,C,D,E
+        filter_list visible_airspace_values(double zoom) const; // Union of CLASS and LOCAL_TYPE values
+        filter_list visible_sua_types(double zoom) const;       // SUA_TYPE: RA,PA,WA,AA,NSA
     };
 
 } // namespace osect

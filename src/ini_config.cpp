@@ -45,7 +45,8 @@ static std::vector<std::string> split(const std::string& string, const char deli
     return strings;
 }
 
-ini_config::cache_type ini_config::parse(std::istream&& stream) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+ini_config::cache_type ini_config::parse(
+    std::istream&& stream) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
 {
     // rewind stream
     stream.clear();
@@ -60,7 +61,10 @@ ini_config::cache_type ini_config::parse(std::istream&& stream) // NOLINT(cppcor
     {
         ++line_number;
         auto trimmed = trim(line);
-        if(trimmed.empty()) continue;
+        if(trimmed.empty())
+        {
+            continue;
+        }
 
         auto start(trimmed.find('['));
         if(start != std::string::npos)
@@ -82,8 +86,7 @@ ini_config::cache_type ini_config::parse(std::istream&& stream) // NOLINT(cppcor
             }
             else if(parts.size() > 2)
             {
-                throw std::runtime_error("ini line " + std::to_string(line_number)
-                    + ": multiple '=' in: " + line);
+                throw std::runtime_error("ini line " + std::to_string(line_number) + ": multiple '=' in: " + line);
             }
         }
     }
@@ -97,7 +100,8 @@ ini_config::cache_type::const_iterator ini_config::find(const std::string& secti
     auto key_it(this->cache.find(section_dot_key));
     if(key_it == this->cache.end())
     {
-        throw std::runtime_error("ini_config: configuration file: " + filename + " contains no key: " + section_dot_key);
+        throw std::runtime_error("ini_config: configuration file: " + filename +
+                                 " contains no key: " + section_dot_key);
     }
 
     return key_it;
@@ -109,7 +113,8 @@ ini_config::cache_type::iterator ini_config::find(const std::string& section_dot
     auto key_it(this->cache.find(section_dot_key));
     if(key_it == this->cache.end())
     {
-        throw std::runtime_error("ini_config: configuration file: " + filename + " contains no key: " + section_dot_key);
+        throw std::runtime_error("ini_config: configuration file: " + filename +
+                                 " contains no key: " + section_dot_key);
     }
 
     return key_it;
@@ -125,12 +130,15 @@ namespace
     {
         std::ifstream in(filename);
         if(!in.good())
+        {
             throw std::runtime_error("ini_config: cannot open " + filename);
+        }
         return in;
     }
 }
 
-ini_config::ini_config(const std::string& filename) : filename(filename), cache(ini_config::parse(open_or_throw(filename))), needs_sync(false)
+ini_config::ini_config(const std::string& filename)
+    : filename(filename), cache(ini_config::parse(open_or_throw(filename))), needs_sync(false)
 {
 }
 
@@ -143,70 +151,70 @@ void ini_config::merge(const ini_config& other)
 }
 
 // get value for section.key
-template<>
+template <>
 std::string ini_config::get(const std::string& section_dot_key) const
 {
     // return the value
     return this->find(section_dot_key)->second.value;
 }
 
-template<>
+template <>
 int ini_config::get(const std::string& section_dot_key) const
 {
     auto value(this->get<std::string>(section_dot_key));
     return std::stoi(value);
 }
 
-template<>
+template <>
 double ini_config::get(const std::string& section_dot_key) const
 {
     auto value(this->get<std::string>(section_dot_key));
     return std::stod(value);
 }
 
-template<>
+template <>
 float ini_config::get(const std::string& section_dot_key) const
 {
     auto value(this->get<std::string>(section_dot_key));
     return std::stof(value);
 }
 
-template<>
+template <>
 long ini_config::get(const std::string& section_dot_key) const
 {
     auto value(this->get<std::string>(section_dot_key));
     return std::stol(value);
 }
 
-template<>
+template <>
 long double ini_config::get(const std::string& section_dot_key) const
 {
     auto value(this->get<std::string>(section_dot_key));
     return std::stold(value);
 }
 
-template<>
+template <>
 long long ini_config::get(const std::string& section_dot_key) const
 {
     auto value(this->get<std::string>(section_dot_key));
     return std::stoll(value);
 }
 
-template<>
+template <>
 unsigned long ini_config::get(const std::string& section_dot_key) const
 {
     auto value(this->get<std::string>(section_dot_key));
     return std::stoul(value);
 }
 
-template<>
+template <>
 unsigned long long ini_config::get(const std::string& section_dot_key) const
 {
     auto value(this->get<std::string>(section_dot_key));
     return std::stoull(value);
 }
 
-template<>
+template <>
 void ini_config::set(const std::string& section_dot_key, const std::string& value)
 {
     // find key
@@ -231,63 +239,63 @@ void ini_config::set(const std::string& section_dot_key, const std::string& valu
     }
 }
 
-template<>
+template <>
 void ini_config::set(const std::string& section_dot_key, const int& value)
 {
     auto str(std::to_string(value));
     this->set<std::string>(section_dot_key, str);
 }
 
-template<>
+template <>
 void ini_config::set(const std::string& section_dot_key, const unsigned& value)
 {
     auto str(std::to_string(value));
     this->set<std::string>(section_dot_key, str);
 }
 
-template<>
+template <>
 void ini_config::set(const std::string& section_dot_key, const double& value)
 {
     auto str(std::to_string(value));
     this->set<std::string>(section_dot_key, str);
 }
 
-template<>
+template <>
 void ini_config::set(const std::string& section_dot_key, const float& value)
 {
     auto str(std::to_string(value));
     this->set<std::string>(section_dot_key, str);
 }
 
-template<>
+template <>
 void ini_config::set(const std::string& section_dot_key, const long& value)
 {
     auto str(std::to_string(value));
     this->set<std::string>(section_dot_key, str);
 }
 
-template<>
+template <>
 void ini_config::set(const std::string& section_dot_key, const long double& value)
 {
     auto str(std::to_string(value));
     this->set<std::string>(section_dot_key, str);
 }
 
-template<>
+template <>
 void ini_config::set(const std::string& section_dot_key, const long long& value)
 {
     auto str(std::to_string(value));
     this->set<std::string>(section_dot_key, str);
 }
 
-template<>
+template <>
 void ini_config::set(const std::string& section_dot_key, const unsigned long& value)
 {
     auto str(std::to_string(value));
     this->set<std::string>(section_dot_key, str);
 }
 
-template<>
+template <>
 void ini_config::set(const std::string& section_dot_key, const unsigned long long& value)
 {
     auto str(std::to_string(value));

@@ -463,6 +463,37 @@ elseif(CLANG_TIDY)
 endif()
 
 # =============================================================================
+# clang-format targets
+# =============================================================================
+# `clang-format`       — rewrite src/ and lib/ in place using .clang-format.
+# `clang-format-check` — dry-run; non-zero exit if any file would change.
+find_program(CLANG_FORMAT clang-format)
+if(CLANG_FORMAT)
+    file(GLOB _FORMAT_SOURCES
+        ${CMAKE_SOURCE_DIR}/src/*.cpp
+        ${CMAKE_SOURCE_DIR}/src/*.hpp
+        ${CMAKE_SOURCE_DIR}/src/*.h
+        ${CMAKE_SOURCE_DIR}/lib/imgui/*.cpp
+        ${CMAKE_SOURCE_DIR}/lib/imgui/*.hpp
+        ${CMAKE_SOURCE_DIR}/lib/sdl/*.cpp
+        ${CMAKE_SOURCE_DIR}/lib/sdl/*.hpp
+        ${CMAKE_SOURCE_DIR}/lib/sqlite/*.cpp
+        ${CMAKE_SOURCE_DIR}/lib/sqlite/*.hpp)
+    add_custom_target(clang-format
+        COMMAND ${CLANG_FORMAT} -i ${_FORMAT_SOURCES}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Applying clang-format to src/ and lib/"
+        VERBATIM
+    )
+    add_custom_target(clang-format-check
+        COMMAND ${CLANG_FORMAT} --dry-run --Werror ${_FORMAT_SOURCES}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Checking clang-format conformance for src/ and lib/"
+        VERBATIM
+    )
+endif()
+
+# =============================================================================
 # Installer / packaging
 # =============================================================================
 #
