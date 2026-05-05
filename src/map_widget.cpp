@@ -195,9 +195,12 @@ constexpr auto PICK_BOX_EXACT_SIZE_PIXELS = 4;
 // SDL left mouse button value
 constexpr uint8_t BUTTON_LEFT = 1;
 
+namespace osect
+{
+
 struct map_widget::impl : public sdl::event_listener
 {
-    osect::map_view view;
+    map_view view;
     sdl::device& dev;
     bool needs_update = true;
     bool show_tiles = true;
@@ -209,26 +212,26 @@ struct map_widget::impl : public sdl::event_listener
     sdl::pipeline line_sdf_pipeline;
 
     // Tile renderer for raster basemap (null if no basemap was provided)
-    std::unique_ptr<osect::tile_renderer> tiles;
+    std::unique_ptr<tile_renderer> tiles;
 
     // Vector feature renderer
-    osect::feature_renderer features;
+    feature_renderer features;
 
     // Grid line vertex buffer (rebuilt on viewport change)
     std::vector<sdl::vertex_t2f_c4ub_v3f> grid_vertices;
     std::unique_ptr<sdl::buffer> grid_buffer;
 
     // Label renderer
-    osect::label_renderer labels;
+    label_renderer labels;
 
     // Render context (projection, sampler, pass ID)
-    osect::render_context render_ctx;
+    render_context render_ctx;
 
     // NASR database for picks and search
-    osect::nasr_database pick_db;
-    osect::ephemeral_data& eph;
-    osect::chart_style styles;
-    osect::layer_visibility vis;
+    nasr_database pick_db;
+    ephemeral_data& eph;
+    chart_style styles;
+    layer_visibility vis;
     double cursor_ndc_x = 0.0;
     double cursor_ndc_y = 0.0;
     bool dragged = false;
@@ -241,11 +244,11 @@ struct map_widget::impl : public sdl::event_listener
     bool pan_drag_active = false;
     bool imgui_wants_keyboard = false;
 
-    osect::popup_manager popups;
+    popup_manager popups;
 
-    std::vector<std::unique_ptr<osect::feature_type>> feature_types;
+    std::vector<std::unique_ptr<feature_type>> feature_types;
 
-    std::optional<osect::flight_route> route;
+    std::optional<flight_route> route;
     bool route_dirty = false;
 
     // Route drag state. Waypoint hit takes priority over segment hit so
@@ -266,7 +269,7 @@ struct map_widget::impl : public sdl::event_listener
 
     impl(sdl::device& dev, const char* tile_path,
          const char* db_path, const ini_config& ini,
-         osect::ephemeral_data& eph,
+         ephemeral_data& eph,
          int viewport_width, int viewport_height)
         : dev(dev)
         , linelist_pipeline(dev,
@@ -287,15 +290,15 @@ struct map_widget::impl : public sdl::event_listener
             sdl::primitive_type::triangle_list,
             sdl::texture_format_t(0), false)
         , tiles(tile_path
-              ? std::make_unique<osect::tile_renderer>(dev, tile_path)
+              ? std::make_unique<tile_renderer>(dev, tile_path)
               : nullptr)
         , features(dev, db_path,
-              osect::chart_style(ini), eph)
+              chart_style(ini), eph)
         , labels(dev)
         , pick_db(db_path)
         , eph(eph)
         , styles(ini)
-        , feature_types(osect::make_feature_types())
+        , feature_types(make_feature_types())
     {
         set_viewport(viewport_width, viewport_height);
     }
@@ -339,14 +342,14 @@ struct map_widget::impl : public sdl::event_listener
         uint8_t a = 160;
 
         // Longitude lines (vertical)
-        auto lon_min = osect::mx_to_lon(vx_min);
-        auto lon_max = osect::mx_to_lon(vx_max);
+        auto lon_min = mx_to_lon(vx_min);
+        auto lon_max = mx_to_lon(vx_max);
         auto lon_start = std::floor(lon_min / lon_step) * lon_step;
         auto lon_count = static_cast<int>((lon_max - lon_start) / lon_step) + 1;
         for(int i = 0; i < lon_count; ++i)
         {
             auto lon = lon_start + i * lon_step;
-            auto mx = osect::lon_to_mx(lon);
+            auto mx = lon_to_mx(lon);
             auto nx = to_ndc_x(mx);
             auto ny0 = to_ndc_y(vy_min);
             auto ny1 = to_ndc_y(vy_max);
@@ -355,14 +358,14 @@ struct map_widget::impl : public sdl::event_listener
         }
 
         // Latitude lines (horizontal, non-uniform spacing in Mercator)
-        auto lat_min = osect::my_to_lat(vy_min);
-        auto lat_max = osect::my_to_lat(vy_max);
+        auto lat_min = my_to_lat(vy_min);
+        auto lat_max = my_to_lat(vy_max);
         auto lat_start = std::floor(lat_min / lat_step) * lat_step;
         auto lat_count = static_cast<int>((lat_max - lat_start) / lat_step) + 1;
         for(int i = 0; i < lat_count; ++i)
         {
             auto lat = lat_start + i * lat_step;
-            auto my = osect::lat_to_my(lat);
+            auto my = lat_to_my(lat);
             auto ny = to_ndc_y(my);
             auto nx0 = to_ndc_x(vx_min);
             auto nx1 = to_ndc_x(vx_max);
@@ -388,7 +391,7 @@ struct map_widget::impl : public sdl::event_listener
                         view.aspect_ratio());
     }
 
-    osect::pick_result pick_at(double ndc_x, double ndc_y)
+    pick_result pick_at(double ndc_x, double ndc_y)
     {
         using namespace osect;
 
@@ -412,7 +415,7 @@ struct map_widget::impl : public sdl::event_listener
             my_to_lat(world_y + box_world_half)};
         geo_bbox click_box{click_lon, click_lat, click_lon, click_lat};
 
-        osect::pick_context ctx{
+        pick_context ctx{
             pick_db, eph, styles, vis,
             view.zoom_level(),
             click_lon, click_lat,
@@ -434,8 +437,8 @@ struct map_widget::impl : public sdl::event_listener
     {
         auto world_x = ndc_x * 2.0 * view.half_extent_y + view.center_x;
         auto world_y = ndc_y * 2.0 * view.half_extent_y + view.center_y;
-        auto lon = osect::mx_to_lon(world_x);
-        auto lat = osect::my_to_lat(world_y);
+        auto lon = mx_to_lon(world_x);
+        auto lat = my_to_lat(world_y);
         lon = std::fmod(lon + 180.0, 360.0);
         if(lon < 0) lon += 360.0;
         lon -= 180.0;
@@ -443,9 +446,9 @@ struct map_widget::impl : public sdl::event_listener
     }
 
     // Distance from point p to the segment a-b (pixel space).
-    static double point_segment_distance_px(osect::pixel_pos p,
-                                             osect::pixel_pos a,
-                                             osect::pixel_pos b)
+    static double point_segment_distance_px(pixel_pos p,
+                                             pixel_pos a,
+                                             pixel_pos b)
     {
         auto dx = b.x - a.x;
         auto dy = b.y - a.y;
@@ -470,8 +473,8 @@ struct map_widget::impl : public sdl::event_listener
         for(std::size_t i = 0; i < wps.size(); ++i)
         {
             auto wp = view.world_to_pixel(
-                osect::waypoint_lon(wps[i]),
-                osect::waypoint_lat(wps[i]));
+                waypoint_lon(wps[i]),
+                waypoint_lat(wps[i]));
             auto dx = wp.x - cursor.x;
             auto dy = wp.y - cursor.y;
             if(dx * dx + dy * dy < threshold * threshold)
@@ -493,11 +496,11 @@ struct map_widget::impl : public sdl::event_listener
         const auto& wps = route->waypoints;
         for(std::size_t i = 1; i < wps.size(); ++i)
         {
-            auto arc = osect::geodesic_interpolate(
-                osect::waypoint_lat(wps[i - 1]),
-                osect::waypoint_lon(wps[i - 1]),
-                osect::waypoint_lat(wps[i]),
-                osect::waypoint_lon(wps[i]));
+            auto arc = geodesic_interpolate(
+                waypoint_lat(wps[i - 1]),
+                waypoint_lon(wps[i - 1]),
+                waypoint_lat(wps[i]),
+                waypoint_lon(wps[i]));
             for(std::size_t j = 1; j < arc.size(); ++j)
             {
                 auto a = view.world_to_pixel(arc[j - 1].lon, arc[j - 1].lat);
@@ -511,29 +514,29 @@ struct map_widget::impl : public sdl::event_listener
 
     // Resolve a release point to a route_waypoint: prefer the first
     // airport/navaid/fix under the cursor; otherwise lat/lon at the click.
-    osect::route_waypoint resolve_release_waypoint()
+    route_waypoint resolve_release_waypoint()
     {
         auto pick = pick_at(cursor_ndc_x, cursor_ndc_y);
         for(const auto& f : pick.features)
         {
-            if(std::holds_alternative<osect::airport>(f))
+            if(std::holds_alternative<airport>(f))
             {
-                const auto& a = std::get<osect::airport>(f);
-                return osect::airport_ref{a.arpt_id, a};
+                const auto& a = std::get<airport>(f);
+                return airport_ref{a.arpt_id, a};
             }
-            if(std::holds_alternative<osect::navaid>(f))
+            if(std::holds_alternative<navaid>(f))
             {
-                const auto& n = std::get<osect::navaid>(f);
-                return osect::navaid_ref{n.nav_id, n};
+                const auto& n = std::get<navaid>(f);
+                return navaid_ref{n.nav_id, n};
             }
-            if(std::holds_alternative<osect::fix>(f))
+            if(std::holds_alternative<fix>(f))
             {
-                const auto& x = std::get<osect::fix>(f);
-                return osect::fix_ref{x.fix_id, x};
+                const auto& x = std::get<fix>(f);
+                return fix_ref{x.fix_id, x};
             }
         }
-        return osect::route_waypoint{
-            osect::latlon_ref{pick.lat, pick.lon}};
+        return route_waypoint{
+            latlon_ref{pick.lat, pick.lon}};
     }
 
     void notify_route_changed()
@@ -602,8 +605,8 @@ struct map_widget::impl : public sdl::event_listener
         const auto& wps = route->waypoints;
         for(const auto& wp : wps)
         {
-            sum_lon += osect::waypoint_lon(wp);
-            sum_lat += osect::waypoint_lat(wp);
+            sum_lon += waypoint_lon(wp);
+            sum_lat += waypoint_lat(wp);
         }
         auto n = static_cast<double>(wps.size());
         return {sum_lon / n, sum_lat / n};
@@ -622,10 +625,10 @@ struct map_widget::impl : public sdl::event_listener
     }
 
     // Open (or replace) the info popup showing details for a selected feature.
-    void open_info_popup(const osect::feature& f,
+    void open_info_popup(const feature& f,
                           double click_lon, double click_lat)
     {
-        auto [alon, alat] = osect::find_feature_type(feature_types, f)
+        auto [alon, alat] = find_feature_type(feature_types, f)
                               .anchor_lonlat(f, click_lon, click_lat);
         popups.open_info(f, alon, alat);
         features.set_selection(f);
@@ -656,10 +659,10 @@ struct map_widget::impl : public sdl::event_listener
         // feature wins over the route, even if the feature lies on it.
         const double exact_threshold_px = PICK_BOX_EXACT_SIZE_PIXELS;
         auto exact_count = 0;
-        const osect::feature* exact_hit = nullptr;
+        const feature* exact_hit = nullptr;
         for(const auto& f : result.features)
         {
-            auto coord = osect::find_feature_type(feature_types, f).point_coord(f);
+            auto coord = find_feature_type(feature_types, f).point_coord(f);
             if(!coord) continue;
             auto fp = view.world_to_pixel(coord->first, coord->second);
             auto cp = view.world_to_pixel(result.lon, result.lat);
@@ -921,7 +924,7 @@ struct map_widget::impl : public sdl::event_listener
 
 map_widget::map_widget(sdl::device& dev, const char* tile_path,
                        const char* db_path, const ini_config& ini,
-                       osect::ephemeral_data& eph,
+                       ephemeral_data& eph,
                        int viewport_width, int viewport_height)
     : pimpl(std::make_shared<impl>(dev, tile_path, db_path, ini,
                                     eph, viewport_width, viewport_height))
@@ -930,9 +933,9 @@ map_widget::map_widget(sdl::device& dev, const char* tile_path,
 
 map_widget::~map_widget() = default;
 
-void map_widget::set_visibility(const osect::layer_visibility& vis)
+void map_widget::set_visibility(const layer_visibility& vis)
 {
-    pimpl->show_tiles = vis[osect::layer_basemap];
+    pimpl->show_tiles = vis[layer_basemap];
     pimpl->vis = vis;
     pimpl->features.set_visibility(vis);
     pimpl->needs_update = true;
@@ -941,7 +944,7 @@ void map_widget::set_visibility(const osect::layer_visibility& vis)
     pimpl->update_tiles();
 }
 
-void map_widget::focus_on_hit(const osect::search_hit& hit)
+void map_widget::focus_on_hit(const search_hit& hit)
 {
     auto bbox = pimpl->pick_db.get_hit_bbox(hit);
     if(!bbox) return;
@@ -949,8 +952,8 @@ void map_widget::focus_on_hit(const osect::search_hit& hit)
     auto& d = *pimpl;
     auto cx = (bbox->lon_min + bbox->lon_max) * 0.5;
     auto cy = (bbox->lat_min + bbox->lat_max) * 0.5;
-    d.view.center_x = osect::lon_to_mx(cx);
-    d.view.center_y = osect::lat_to_my(cy);
+    d.view.center_x = lon_to_mx(cx);
+    d.view.center_y = lat_to_my(cy);
 
     // Degenerate bbox (point entity) → use a fixed close-in zoom level so
     // the feature is guaranteed visible under chart_style's per-type
@@ -968,11 +971,11 @@ void map_widget::focus_on_hit(const osect::search_hit& hit)
         // Fit the bbox with 20% padding. Use the larger of the required
         // vertical / horizontal extents (the latter scaled by aspect ratio).
         auto half_height_m =
-            (osect::lat_to_my(bbox->lat_max) -
-             osect::lat_to_my(bbox->lat_min)) * 0.5;
+            (lat_to_my(bbox->lat_max) -
+             lat_to_my(bbox->lat_min)) * 0.5;
         auto half_width_m =
-            (osect::lon_to_mx(bbox->lon_max) -
-             osect::lon_to_mx(bbox->lon_min)) * 0.5;
+            (lon_to_mx(bbox->lon_max) -
+             lon_to_mx(bbox->lon_min)) * 0.5;
         auto needed = std::max(half_height_m,
                                   half_width_m / d.view.aspect_ratio());
         d.view.half_extent_y = needed * 1.2;
@@ -999,7 +1002,7 @@ double map_widget::zoom_level() const
     return pimpl->view.zoom_level();
 }
 
-const std::vector<std::unique_ptr<osect::feature_type>>&
+const std::vector<std::unique_ptr<feature_type>>&
 map_widget::feature_types() const
 {
     return pimpl->feature_types;
@@ -1012,7 +1015,7 @@ bool map_widget::draw_imgui()
     if(pimpl->route_drag.mode != impl::route_drag_mode::none && pimpl->route)
     {
         auto is_segment = pimpl->route_drag.mode == impl::route_drag_mode::segment;
-        osect::draw_route_drag_rubber_band(
+        draw_route_drag_rubber_band(
             pimpl->view, *pimpl->route, is_segment, pimpl->route_drag.index);
     }
 
@@ -1066,13 +1069,13 @@ bool map_widget::update()
     return result;
 }
 
-std::vector<osect::search_hit> map_widget::search(
+std::vector<search_hit> map_widget::search(
     const std::string& query, int limit)
 {
     return pimpl->pick_db.search(query, limit);
 }
 
-void map_widget::set_route(osect::flight_route route)
+void map_widget::set_route(flight_route route)
 {
     pimpl->route.emplace(std::move(route));
     pimpl->features.set_route(pimpl->route);
@@ -1085,14 +1088,14 @@ void map_widget::set_route(osect::flight_route route)
         auto [cx, cy] = pimpl->route_centroid();
         pimpl->set_route_selected(true, cx, cy);
 
-        auto lat_min = osect::waypoint_lat(wps[0]);
+        auto lat_min = waypoint_lat(wps[0]);
         auto lat_max = lat_min;
-        auto lon_min = osect::waypoint_lon(wps[0]);
+        auto lon_min = waypoint_lon(wps[0]);
         auto lon_max = lon_min;
         for(const auto& wp : wps)
         {
-            auto la = osect::waypoint_lat(wp);
-            auto lo = osect::waypoint_lon(wp);
+            auto la = waypoint_lat(wp);
+            auto lo = waypoint_lon(wp);
             lat_min = std::min(la, lat_min);
             lat_max = std::max(la, lat_max);
             lon_min = std::min(lo, lon_min);
@@ -1100,8 +1103,8 @@ void map_widget::set_route(osect::flight_route route)
         }
 
         auto& d = *pimpl;
-        d.view.center_x = osect::lon_to_mx((lon_min + lon_max) * 0.5);
-        d.view.center_y = osect::lat_to_my((lat_min + lat_max) * 0.5);
+        d.view.center_x = lon_to_mx((lon_min + lon_max) * 0.5);
+        d.view.center_y = lat_to_my((lat_min + lat_max) * 0.5);
 
         auto is_point = (lon_min == lon_max && lat_min == lat_max);
         if(is_point)
@@ -1112,11 +1115,11 @@ void map_widget::set_route(osect::flight_route route)
         else
         {
             auto half_height_m =
-                (osect::lat_to_my(lat_max) -
-                 osect::lat_to_my(lat_min)) * 0.5;
+                (lat_to_my(lat_max) -
+                 lat_to_my(lat_min)) * 0.5;
             auto half_width_m =
-                (osect::lon_to_mx(lon_max) -
-                 osect::lon_to_mx(lon_min)) * 0.5;
+                (lon_to_mx(lon_max) -
+                 lon_to_mx(lon_min)) * 0.5;
             auto needed = std::max(half_height_m,
                                       half_width_m / d.view.aspect_ratio());
             d.view.half_extent_y = needed * 1.2;
@@ -1136,7 +1139,7 @@ void map_widget::clear_route()
     pimpl->erase_route();
 }
 
-const std::optional<osect::flight_route>& map_widget::route() const
+const std::optional<flight_route>& map_widget::route() const
 {
     return pimpl->route;
 }
@@ -1180,18 +1183,18 @@ void map_widget::render_frame(sdl::command_buffer& cmd, sdl::texture& swapchain)
 
     // Textured triangles (tile basemap)
     pass.bind_pipeline(d.textured_pipeline);
-    ctx.current_pass = osect::render_pass_id::textured_trianglelist_0;
+    ctx.current_pass = render_pass_id::textured_trianglelist_0;
     if(d.show_tiles && d.tiles)
         d.tiles->render(pass, ctx, view_matrix);
 
     // Polygon fills (airspace/SUA selection highlights)
     pass.bind_pipeline(d.trianglelist_pipeline);
-    ctx.current_pass = osect::render_pass_id::polygon_fill_0;
+    ctx.current_pass = render_pass_id::polygon_fill_0;
     d.features.render(pass, ctx, view_matrix);
 
     // Lines (grid overlay)
     pass.bind_pipeline(d.linelist_pipeline);
-    ctx.current_pass = osect::render_pass_id::trianglelist_0;
+    ctx.current_pass = render_pass_id::trianglelist_0;
     if(d.grid_buffer && d.grid_buffer->count() > 0)
     {
         sdl::uniform_buffer uniforms;
@@ -1204,11 +1207,13 @@ void map_widget::render_frame(sdl::command_buffer& cmd, sdl::texture& swapchain)
 
     // SDF lines (feature polylines)
     pass.bind_pipeline(d.line_sdf_pipeline);
-    ctx.current_pass = osect::render_pass_id::line_sdf_0;
+    ctx.current_pass = render_pass_id::line_sdf_0;
     d.features.render(pass, ctx, view_matrix);
 
     // Text labels (reuse textured pipeline)
     pass.bind_pipeline(d.textured_pipeline);
-    ctx.current_pass = osect::render_pass_id::text_labels_0;
+    ctx.current_pass = render_pass_id::text_labels_0;
     d.labels.render(pass, ctx, d.view.viewport_width, d.view.viewport_height);
+}
+
 }

@@ -170,7 +170,7 @@ int main(int argc, char** argv)
         if(!user.empty()) ini.merge(ini_config(user));
         if(conf_path) ini.merge(ini_config(conf_path));
 
-        map_widget map(dev, tile_path, db_path, ini, eph, 1280, 1024);
+        osect::map_widget map(dev, tile_path, db_path, ini, eph, 1280, 1024);
         event_mgr.add_listener(map.event_listener());
 
         // Sigil expansion runs on its own database/planner instance
