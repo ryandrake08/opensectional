@@ -274,6 +274,25 @@ def normalize_date_column(conn, table, column):
             updates)
 
 
+def read_meta(conn, name):
+    """Return (effective, expires) ISO strings for a META row, or
+    (None, None) if the row is missing or the table doesn't exist yet.
+
+    Used by AIXM/SHP ingesters: those files are bundled with the
+    NASR cycle but carry stale internal timestamps that don't track
+    the cycle, so they inherit from the nasr row instead."""
+    try:
+        cur = conn.execute(
+            "SELECT effective, expires FROM META WHERE name = ?",
+            (name,))
+    except sqlite3.OperationalError:
+        return (None, None)
+    row = cur.fetchone()
+    if row is None:
+        return (None, None)
+    return (row[0], row[1])
+
+
 def write_meta(conn, name, *, kind="static",
                effective=None, expires=None, info=""):
     """Upsert a META row for one data source.

@@ -18,7 +18,7 @@ from collections import defaultdict
 
 from build_common import (
     ALT_UNLIMITED_FT, handle_antimeridian, open_output_db, parse_altitude,
-    simplify_ring, subdivide_ring, write_meta,
+    read_meta, simplify_ring, subdivide_ring, write_meta,
 )
 
 
@@ -1687,6 +1687,7 @@ def build_sua(conn, aixm_zf):
               f"({100 * total_after / total_before:.1f}%)")
 
     # R-tree on SUA-level bounding boxes (for listing all SUAs in view).
+    conn.execute("DROP TABLE IF EXISTS SUA_BASE_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE SUA_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -1702,6 +1703,7 @@ def build_sua(conn, aixm_zf):
     """)
 
     # R-tree on stratum-level bounding boxes (for per-stratum picking).
+    conn.execute("DROP TABLE IF EXISTS SUA_STRATUM_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE SUA_STRATUM_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -1804,6 +1806,7 @@ def build_sua(conn, aixm_zf):
         "INSERT INTO SUA_SEG VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", seg_data)
     print(f"  SUA_SEG: {seg_id} segments, {len(seg_data)} points")
 
+    conn.execute("DROP TABLE IF EXISTS SUA_SEG_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE SUA_SEG_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -1839,23 +1842,29 @@ def main():
 
 def write_aixm_meta(conn, aixm_zf):
     """The SUA AIXM bundle ships in the same FAA NASR subscription as
-    the CSV; treat it as 28-day-cycle data and use the inner ZIP's
-    build date as the effective date."""
-    eff_iso = None
-    inner = next((n for n in aixm_zf.namelist()
-                  if n.endswith('SaaSubscriberFile.zip')), None)
-    if inner is not None:
-        info = aixm_zf.getinfo(inner)
-        try:
-            eff_iso = datetime.date(*info.date_time[:3]).isoformat()
-        except ValueError:
-            eff_iso = None
+    the CSV. The FAA repackages it for each NASR cycle but doesn't bump
+    inner-file timestamps when the SUA data hasn't actually changed, so
+    those timestamps lag the cycle. Inherit effective/expires from the
+    nasr META row when present (build_all runs build_nasr first); fall
+    back to the inner ZIP's build date for standalone re-runs."""
+    eff_iso, expires_iso = read_meta(conn, "nasr")
 
-    expires_iso = None
+    if eff_iso is None:
+        inner = next((n for n in aixm_zf.namelist()
+                      if n.endswith('SaaSubscriberFile.zip')), None)
+        if inner is not None:
+            info = aixm_zf.getinfo(inner)
+            try:
+                eff_iso = datetime.date(*info.date_time[:3]).isoformat()
+            except ValueError:
+                eff_iso = None
+        if eff_iso is not None:
+            expires_iso = (datetime.date.fromisoformat(eff_iso)
+                           + datetime.timedelta(days=28)).isoformat()
+
     info_text = "SUA AIXM 5.0"
     if eff_iso is not None:
         eff = datetime.date.fromisoformat(eff_iso)
-        expires_iso = (eff + datetime.timedelta(days=28)).isoformat()
         info_text = f"SUA AIXM 5.0 {eff.strftime('%d %b %Y')}"
 
     write_meta(conn, "aixm",

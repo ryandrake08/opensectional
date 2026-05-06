@@ -23,6 +23,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.parse
 import urllib.request
@@ -99,18 +100,27 @@ def find_download_link(soup, base_url, section_text, filename_contains=None):
 
 
 def find_dof_link():
-    """Scrape the DOF page for the download ZIP link."""
+    """Scrape the DOF page for the most recent DOF_YYMMDD.zip link.
+
+    The FAA lists rows in chronological order (oldest first), so naive
+    'first match' picks an expired cycle. Pick the candidate with the
+    largest YYMMDD in its filename instead."""
     soup = fetch_html(_DOF_URL)
     article = soup.find("article", id="content")
     if article is None:
         raise ValueError("DOF page article content not found")
 
+    pattern = re.compile(r"DOF_(\d{6})\.zip$", re.IGNORECASE)
+    best = None  # (yymmdd_str, href)
     for a in article.find_all("a", href=True):
         href = str(a["href"])
-        if href.endswith(".zip") and "dof" in href.lower():
-            return urllib.parse.urljoin(_DOF_URL, href)
+        m = pattern.search(href)
+        if m and (best is None or m.group(1) > best[0]):
+            best = (m.group(1), href)
 
-    raise ValueError("Could not find DOF ZIP link on the DOF page")
+    if best is None:
+        raise ValueError("Could not find DOF ZIP link on the DOF page")
+    return urllib.parse.urljoin(_DOF_URL, best[1])
 
 
 def download_file(url, output_dir, filename=None):

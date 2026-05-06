@@ -137,6 +137,7 @@ def build_apt(conn, csv_zf):
     normalize_date_column(conn, "APT_BASE", "ACTIVATION_DATE")
 
     # R-tree index on lat/lon
+    conn.execute("DROP TABLE IF EXISTS APT_BASE_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE APT_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -189,6 +190,7 @@ def build_nav(conn, csv_zf):
                 ELSE 0 END
     """)
 
+    conn.execute("DROP TABLE IF EXISTS NAV_BASE_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE NAV_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -228,6 +230,7 @@ def build_fix(conn, csv_zf):
                 ELSE 1 END
     """)
 
+    conn.execute("DROP TABLE IF EXISTS FIX_BASE_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE FIX_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -267,6 +270,7 @@ def build_awy(conn, csv_zf):
     ])
 
     # Build a waypoint lookup table combining navaids and fixes
+    conn.execute("DROP TABLE IF EXISTS WP_LOOKUP")
     conn.execute("""
         CREATE TABLE WP_LOOKUP AS
         SELECT NAV_ID AS WP_ID, 'NAV' AS WP_SOURCE,
@@ -291,6 +295,7 @@ def build_awy(conn, csv_zf):
 
     # Build resolved airway segments with coordinates
     # Each segment is a FROM->TO pair with lat/lon for both endpoints
+    conn.execute("DROP TABLE IF EXISTS AWY_SEG")
     conn.execute("""
         CREATE TABLE AWY_SEG AS
         SELECT
@@ -357,6 +362,7 @@ def build_awy(conn, csv_zf):
     print(f"  AWY_SEG (resolved): {count} segments")
 
     # R-tree on segment bounding boxes
+    conn.execute("DROP TABLE IF EXISTS AWY_SEG_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE AWY_SEG_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -407,6 +413,7 @@ def build_pja(conn, csv_zf):
     count = conn.execute("SELECT COUNT(*) FROM PJA_BASE").fetchone()[0]
     print(f"  PJA_BASE: {count} parachute jump areas")
 
+    conn.execute("DROP TABLE IF EXISTS PJA_BASE_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE PJA_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -436,6 +443,7 @@ def build_mtr(conn, csv_zf):
     ])
 
     # Build segments by joining each point to the next point in sequence
+    conn.execute("DROP TABLE IF EXISTS MTR_SEG")
     conn.execute("""
         CREATE TABLE MTR_SEG AS
         SELECT
@@ -465,6 +473,7 @@ def build_mtr(conn, csv_zf):
     print(f"  MTR_SEG: {count} segments")
 
     # R-tree on segment bounding boxes
+    conn.execute("DROP TABLE IF EXISTS MTR_SEG_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE MTR_SEG_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -503,6 +512,7 @@ def build_maa(conn, csv_zf):
         "MAA_ID", "POINT_SEQ", "LATITUDE", "LONGITUDE",
     ])
 
+    conn.execute("DROP TABLE IF EXISTS MAA_SHP")
     conn.execute("""
         CREATE TABLE MAA_SHP (
             MAA_ID TEXT,
@@ -596,6 +606,7 @@ def build_maa(conn, csv_zf):
     # NULL for shape-defined MAAs (no center point); the C++ side detects
     # shape MAAs by joining to MAA_SHP rather than by checking a coord
     # sentinel.
+    conn.execute("DROP TABLE IF EXISTS MAA_BASE")
     conn.execute("""
         CREATE TABLE MAA_BASE AS
         SELECT
@@ -649,6 +660,7 @@ def build_maa(conn, csv_zf):
 
     # R-tree: point-based MAAs use their coordinates; shape-based MAAs
     # (LAT IS NULL) use the bounding box of their MAA_SHP polygon.
+    conn.execute("DROP TABLE IF EXISTS MAA_BASE_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE MAA_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -730,6 +742,7 @@ def build_apt_rwy(conn, csv_zf):
 
     # Pre-build runway segments with resolved endpoint coordinates
     # and their own R-tree for direct spatial queries
+    conn.execute("DROP TABLE IF EXISTS RWY_SEG")
     conn.execute("""
         CREATE TABLE RWY_SEG AS
         SELECT
@@ -750,6 +763,7 @@ def build_apt_rwy(conn, csv_zf):
     count = conn.execute("SELECT COUNT(*) FROM RWY_SEG").fetchone()[0]
     print(f"  RWY_SEG: {count} runway segments")
 
+    conn.execute("DROP TABLE IF EXISTS RWY_SEG_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE RWY_SEG_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -1018,6 +1032,7 @@ def build_wxl(conn, csv_zf):
     conn.execute("CREATE INDEX idx_wxl_base ON WXL_BASE(WEA_ID)")
 
     # R-tree for spatial queries
+    conn.execute("DROP TABLE IF EXISTS WXL_BASE_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE WXL_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -1066,6 +1081,7 @@ def build_com(conn, csv_zf):
     conn.execute("CREATE INDEX idx_com_type ON COM(COMM_TYPE)")
 
     # R-tree for spatial queries (rendering RCO/RCAG sites on map)
+    conn.execute("DROP TABLE IF EXISTS COM_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE COM_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -1094,6 +1110,7 @@ def build_fss(conn, csv_zf):
     conn.execute("CREATE INDEX idx_fss_base_id ON FSS_BASE(FSS_ID)")
 
     # R-tree spatial index for viewport queries
+    conn.execute("DROP TABLE IF EXISTS FSS_BASE_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE FSS_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -1130,6 +1147,7 @@ def build_awos(conn, csv_zf):
     conn.execute("CREATE INDEX idx_awos_site_no ON AWOS(SITE_NO)")
 
     # R-tree spatial index for viewport queries
+    conn.execute("DROP TABLE IF EXISTS AWOS_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE AWOS_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -1266,6 +1284,7 @@ def build_artcc(conn, csv_zf):
     print(f"  ARTCC_SHP: {len(shp_rows)} shape points")
 
     # R-tree on bounding boxes
+    conn.execute("DROP TABLE IF EXISTS ARTCC_BASE_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE ARTCC_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -1314,6 +1333,7 @@ def build_artcc(conn, csv_zf):
     conn.executemany("INSERT INTO ARTCC_SEG VALUES (?, ?, ?, ?, ?, ?, ?)", seg_data)
     print(f"  ARTCC_SEG: {seg_id} segments, {len(seg_data)} points")
 
+    conn.execute("DROP TABLE IF EXISTS ARTCC_SEG_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE ARTCC_SEG_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat

@@ -78,6 +78,7 @@ def build_adiz(conn, geojson_path):
     shp_count = conn.execute("SELECT COUNT(*) FROM ADIZ_SHP").fetchone()[0]
     print(f"  ADIZ_BASE: {count} zones, ADIZ_SHP: {shp_count} points")
 
+    conn.execute("DROP TABLE IF EXISTS ADIZ_BASE_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE ADIZ_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -124,6 +125,7 @@ def build_adiz(conn, geojson_path):
     conn.executemany("INSERT INTO ADIZ_SEG VALUES (?, ?, ?, ?, ?)", seg_data)
     print(f"  ADIZ_SEG: {seg_id} segments, {len(seg_data)} points")
 
+    conn.execute("DROP TABLE IF EXISTS ADIZ_SEG_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE ADIZ_SEG_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat

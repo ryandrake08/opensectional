@@ -12,8 +12,8 @@ import sys
 import zipfile
 
 from build_common import (
-    handle_antimeridian, open_output_db, simplify_ring, subdivide_ring,
-    write_meta,
+    handle_antimeridian, open_output_db, read_meta, simplify_ring,
+    subdivide_ring, write_meta,
 )
 
 
@@ -262,6 +262,7 @@ def build_cls_arsp(conn, shp_zf):
     print(f"  CLS_ARSP_SHP: {len(shp_rows)} shape points")
 
     # R-tree on polygon bounding boxes
+    conn.execute("DROP TABLE IF EXISTS CLS_ARSP_BASE_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE CLS_ARSP_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -318,6 +319,7 @@ def build_cls_arsp(conn, shp_zf):
     conn.executemany("INSERT INTO CLS_ARSP_SEG VALUES (?, ?, ?, ?, ?, ?, ?)", seg_data)
     print(f"  CLS_ARSP_SEG: {seg_id} segments, {len(seg_data)} points")
 
+    conn.execute("DROP TABLE IF EXISTS CLS_ARSP_SEG_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE CLS_ARSP_SEG_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
@@ -352,25 +354,31 @@ def main():
 
 
 def write_shp_meta(conn, shp_zf):
-    """The class airspace shapefile carries no EFF_DATE column, but the
-    FAA stamps the inner .dbf with its build date. Use that as the
-    effective date and the NASR 28-day cycle for expiration."""
-    eff_iso = None
-    dbf_name = next((n for n in shp_zf.namelist() if n.endswith('.dbf')), None)
-    if dbf_name is not None:
-        # ZipInfo.date_time is a 6-tuple (Y,M,D,h,m,s) in local time;
-        # treat as UTC date — close enough for cycle math.
-        info = shp_zf.getinfo(dbf_name)
-        try:
-            eff_iso = datetime.date(*info.date_time[:3]).isoformat()
-        except ValueError:
-            eff_iso = None
+    """The class airspace shapefile ships in the FAA NASR subscription
+    but carries no EFF_DATE column, and the FAA doesn't bump the inner
+    .dbf timestamp when the data hasn't changed — so that timestamp lags
+    the actual cycle. Inherit effective/expires from the nasr META row
+    when present (build_all runs build_nasr first); fall back to the
+    .dbf's build date for standalone re-runs."""
+    eff_iso, expires_iso = read_meta(conn, "nasr")
 
-    expires_iso = None
+    if eff_iso is None:
+        dbf_name = next((n for n in shp_zf.namelist() if n.endswith('.dbf')), None)
+        if dbf_name is not None:
+            # ZipInfo.date_time is a 6-tuple (Y,M,D,h,m,s) in local time;
+            # treat as UTC date — close enough for cycle math.
+            info = shp_zf.getinfo(dbf_name)
+            try:
+                eff_iso = datetime.date(*info.date_time[:3]).isoformat()
+            except ValueError:
+                eff_iso = None
+        if eff_iso is not None:
+            expires_iso = (datetime.date.fromisoformat(eff_iso)
+                           + datetime.timedelta(days=28)).isoformat()
+
     info_text = "Class airspace shapefile"
     if eff_iso is not None:
         eff = datetime.date.fromisoformat(eff_iso)
-        expires_iso = (eff + datetime.timedelta(days=28)).isoformat()
         info_text = f"Class airspace SHP {eff.strftime('%d %b %Y')}"
 
     write_meta(conn, "shp",
