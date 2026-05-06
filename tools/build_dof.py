@@ -125,6 +125,7 @@ def build_obstacles(conn, dof_zf):
     )
     print(f"  OBS_BASE: {len(rows)} obstacles")
 
+    conn.execute("DROP TABLE IF EXISTS OBS_BASE_RTREE")
     conn.execute("""
         CREATE VIRTUAL TABLE OBS_BASE_RTREE USING rtree(
             id, min_lon, max_lon, min_lat, max_lat
