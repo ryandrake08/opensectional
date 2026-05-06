@@ -165,9 +165,8 @@ namespace osect
         }
 
         // Altitude band filter beneath the layer checkboxes.
-        ImGui::SetNextWindowPos(
-            ImVec2(io.DisplaySize.x, ImGui::GetFrameHeightWithSpacing() * static_cast<float>(row_count + 1) + 16.0F),
-            ImGuiCond_Always, ImVec2(1.0F, 0.0F));
+        const auto altitude_y = ImGui::GetFrameHeightWithSpacing() * static_cast<float>(row_count + 1) + 16.0F;
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x, altitude_y), ImGuiCond_Always, ImVec2(1.0F, 0.0F));
         ImGui::SetNextWindowBgAlpha(0.6F);
         {
             imgui::scoped_window window("Altitude", ImGuiWindowFlags_AlwaysAutoResize |
@@ -195,6 +194,34 @@ namespace osect
                 d.vis.altitude.show_low = false;
                 d.vis.altitude.show_high = false;
                 d.vis.altitude.show_unlimited = true;
+                changed = true;
+            }
+        }
+
+        // Chart-type filter beneath the altitude window. Three radios + title bar.
+        const auto chart_y = altitude_y + ImGui::GetFrameHeightWithSpacing() * 4.0F + 16.0F;
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x, chart_y), ImGuiCond_Always, ImVec2(1.0F, 0.0F));
+        ImGui::SetNextWindowBgAlpha(0.6F);
+        {
+            imgui::scoped_window window("Chart", ImGuiWindowFlags_AlwaysAutoResize |
+                                                     ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+                                                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                                                     ImGuiWindowFlags_NoSavedSettings);
+
+            bool& changed = result.visibility_changed;
+            if(ImGui::RadioButton("Sectional", d.vis.chart == chart_type::sectional))
+            {
+                d.vis.chart = chart_type::sectional;
+                changed = true;
+            }
+            if(ImGui::RadioButton("IFR Low", d.vis.chart == chart_type::ifr_low))
+            {
+                d.vis.chart = chart_type::ifr_low;
+                changed = true;
+            }
+            if(ImGui::RadioButton("IFR High", d.vis.chart == chart_type::ifr_high))
+            {
+                d.vis.chart = chart_type::ifr_high;
                 changed = true;
             }
         }

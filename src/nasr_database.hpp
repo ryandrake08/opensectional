@@ -36,6 +36,8 @@ namespace osect
         std::string twr_type_code; // "ATCT*"=towered, "NON-ATCT"=untowered
         std::string icao_id;
         bool hard_surface;
+        int max_hard_rwy_len;       // longest hard-surface runway in feet, 0 if none
+        bool has_iap_indicator;     // proxy for "has published IAP" — any runway end with ILS or NPI/PIR markings
         std::string airspace_class; // "B", "C", "D", "E", or "" (computed from JOIN)
     };
 

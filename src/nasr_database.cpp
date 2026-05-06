@@ -102,6 +102,7 @@ namespace osect
                            a.ACTIVATION_DATE, a.ARPT_STATUS, a.FUEL_TYPES,
                            a.LGT_SKED, a.BCN_LGT_SKED,
                            a.TWR_TYPE_CODE, a.ICAO_ID, a.HARD_SURFACE,
+                           a.MAX_HARD_RWY_LEN, a.HAS_IAP_INDICATOR,
                            CASE
                                WHEN c.CLASS_B_AIRSPACE = 'Y' THEN 'B'
                                WHEN c.CLASS_C_AIRSPACE = 'Y' THEN 'C'
@@ -119,7 +120,7 @@ namespace osect
                 )
                 WHERE ?5 IS NULL OR airspace_class IN (SELECT value FROM json_each(?5))
             )",
-                                            26))
+                                            28))
 
               ,
               stmt_navaids(prepare_checked(db, R"(
@@ -575,6 +576,7 @@ namespace osect
                        a.ACTIVATION_DATE, a.ARPT_STATUS, a.FUEL_TYPES,
                        a.LGT_SKED, a.BCN_LGT_SKED,
                        a.TWR_TYPE_CODE, a.ICAO_ID, a.HARD_SURFACE,
+                       a.MAX_HARD_RWY_LEN, a.HAS_IAP_INDICATOR,
                        CASE
                            WHEN c.CLASS_B_AIRSPACE = 'Y' THEN 'B'
                            WHEN c.CLASS_C_AIRSPACE = 'Y' THEN 'C'
@@ -587,7 +589,7 @@ namespace osect
                 WHERE a.ICAO_ID = ?1
                    OR (a.ARPT_ID = ?1 AND a.ICAO_ID = '')
             )",
-                                                  26))
+                                                  28))
 
               ,
               stmt_lookup_navaid(prepare_checked(db, R"(
@@ -805,13 +807,13 @@ namespace osect
             d.stmt_airports, bbox, class_filter,
             [](sqlite::statement& s)
             {
-                return airport{s.column_text(0),      s.column_text(1),   s.column_text(2),    s.column_text(3),
-                               s.column_text(4),      s.column_text(5),   s.column_text(6),    s.column_text(7),
-                               s.column_double(8),    s.column_double(9), s.column_double(10), s.column_text(11),
-                               s.column_text(12),     s.column_text(13),  s.column_text(14),   s.column_text(15),
-                               s.column_text(16),     s.column_text(17),  s.column_text(18),   s.column_text(19),
-                               s.column_text(20),     s.column_text(21),  s.column_text(22),   s.column_text(23),
-                               s.column_int(24) != 0, s.column_text(25)};
+                return airport{s.column_text(0),      s.column_text(1),   s.column_text(2),      s.column_text(3),
+                               s.column_text(4),      s.column_text(5),   s.column_text(6),      s.column_text(7),
+                               s.column_double(8),    s.column_double(9), s.column_double(10),   s.column_text(11),
+                               s.column_text(12),     s.column_text(13),  s.column_text(14),     s.column_text(15),
+                               s.column_text(16),     s.column_text(17),  s.column_text(18),     s.column_text(19),
+                               s.column_text(20),     s.column_text(21),  s.column_text(22),     s.column_text(23),
+                               s.column_int(24) != 0, s.column_int(25),   s.column_int(26) != 0, s.column_text(27)};
             });
     }
 
@@ -819,17 +821,17 @@ namespace osect
     {
         auto& d = *pimpl;
         std::lock_guard<std::mutex> lock(d.mutex);
-        return d.query_bbox(
-            d.stmt_navaids, bbox,
-            [](sqlite::statement& s)
-            {
-                return navaid{s.column_text(0),    s.column_text(1),  s.column_text(2),    s.column_text(3),
-                              s.column_text(4),    s.column_text(5),  s.column_text(6),    s.column_text(7),
-                              s.column_text(8),    s.column_text(9),  s.column_double(10), s.column_double(11),
-                              s.column_double(12), s.column_text(13), s.column_text(14),   s.column_text(15),
-                              s.column_text(16),   s.column_text(17), s.column_text(18),   s.column_text(19),
-                              s.column_text(20),   s.column_text(21), s.column_text(22)};
-            });
+        return d.query_bbox(d.stmt_navaids, bbox,
+                            [](sqlite::statement& s)
+                            {
+                                return navaid{
+                                    s.column_text(0),    s.column_text(1),  s.column_text(2),    s.column_text(3),
+                                    s.column_text(4),    s.column_text(5),  s.column_text(6),    s.column_text(7),
+                                    s.column_text(8),    s.column_text(9),  s.column_double(10), s.column_double(11),
+                                    s.column_double(12), s.column_text(13), s.column_text(14),   s.column_text(15),
+                                    s.column_text(16),   s.column_text(17), s.column_text(18),   s.column_text(19),
+                                    s.column_text(20),   s.column_text(21), s.column_text(22)};
+                            });
     }
 
     std::vector<fix> nasr_database::query_fixes(const geo_bbox& bbox) const
@@ -1541,13 +1543,13 @@ namespace osect
         std::vector<airport> out;
         while(s.step())
         {
-            out.push_back(airport{s.column_text(0),      s.column_text(1),   s.column_text(2),    s.column_text(3),
-                                  s.column_text(4),      s.column_text(5),   s.column_text(6),    s.column_text(7),
-                                  s.column_double(8),    s.column_double(9), s.column_double(10), s.column_text(11),
-                                  s.column_text(12),     s.column_text(13),  s.column_text(14),   s.column_text(15),
-                                  s.column_text(16),     s.column_text(17),  s.column_text(18),   s.column_text(19),
-                                  s.column_text(20),     s.column_text(21),  s.column_text(22),   s.column_text(23),
-                                  s.column_int(24) != 0, s.column_text(25)});
+            out.push_back(airport{s.column_text(0),      s.column_text(1),   s.column_text(2),      s.column_text(3),
+                                  s.column_text(4),      s.column_text(5),   s.column_text(6),      s.column_text(7),
+                                  s.column_double(8),    s.column_double(9), s.column_double(10),   s.column_text(11),
+                                  s.column_text(12),     s.column_text(13),  s.column_text(14),     s.column_text(15),
+                                  s.column_text(16),     s.column_text(17),  s.column_text(18),     s.column_text(19),
+                                  s.column_text(20),     s.column_text(21),  s.column_text(22),     s.column_text(23),
+                                  s.column_int(24) != 0, s.column_int(25),   s.column_int(26) != 0, s.column_text(27)});
         }
         return out;
     }

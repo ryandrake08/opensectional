@@ -16,11 +16,13 @@ namespace osect
         ifr_high,  // IFR Enroute High
     };
 
+    struct airport;
     struct navaid;
     struct fix;
 
     // Per-feature chart-membership rules. Each predicate returns true iff
     // the feature would be drawn on the corresponding chart product.
+    bool airport_on_chart(const airport& a, chart_type ct);
     bool navaid_on_chart(const navaid& n, chart_type ct);
     bool fix_on_chart(const fix& f, chart_type ct);
     bool airway_on_chart(const std::string& awy_id, chart_type ct);
