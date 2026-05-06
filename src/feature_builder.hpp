@@ -1,5 +1,6 @@
 #pragma once
 
+#include "chart_type.hpp"
 #include "flight_route.hpp"
 #include "line_style.hpp"
 #include "pick_result.hpp"
@@ -57,6 +58,7 @@ namespace osect
         int viewport_height;
         double zoom;
         altitude_filter altitude;
+        chart_type chart = chart_type::sectional;
         std::optional<feature> selection;
         std::optional<flight_route> route;
         bool route_selected = true;

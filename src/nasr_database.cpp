@@ -130,7 +130,7 @@ namespace osect
                        MAG_VARN, MAG_VARN_HEMIS, FREQ,
                        CHAN, PWR_OUTPUT, SIMUL_VOICE_FLAG,
                        VOICE_CALL, RESTRICTION_FLAG,
-                       IS_LOW_NAV, IS_HIGH_NAV
+                       ALT_CODE, LOW_NAV_ON_HIGH_CHART_FLAG
                 FROM NAV_BASE
                 WHERE NAV_STATUS != 'SHUTDOWN'
                 AND rowid IN (
@@ -145,8 +145,7 @@ namespace osect
               stmt_fixes(prepare_checked(db, R"(
                 SELECT FIX_ID, STATE_CODE, COUNTRY_CODE, ICAO_REGION_CODE,
                        LAT_DECIMAL, LONG_DECIMAL, FIX_USE_CODE,
-                       ARTCC_ID_HIGH, ARTCC_ID_LOW,
-                       IS_LOW_FIX, IS_HIGH_FIX
+                       ARTCC_ID_HIGH, ARTCC_ID_LOW, CHARTS
                 FROM FIX_BASE
                 WHERE FIX_USE_CODE IN ('WP', 'RP', 'VFR', 'CN', 'MR', 'MW', 'NRS')
                 AND rowid IN (
@@ -155,7 +154,7 @@ namespace osect
                       AND max_lat >= ?2 AND min_lat <= ?4
                 )
             )",
-                                         11))
+                                         10))
 
               ,
               stmt_airways(prepare_checked(db, R"(
@@ -599,7 +598,7 @@ namespace osect
                        MAG_VARN, MAG_VARN_HEMIS, FREQ,
                        CHAN, PWR_OUTPUT, SIMUL_VOICE_FLAG,
                        VOICE_CALL, RESTRICTION_FLAG,
-                       IS_LOW_NAV, IS_HIGH_NAV
+                       ALT_CODE, LOW_NAV_ON_HIGH_CHART_FLAG
                 FROM NAV_BASE
                 WHERE NAV_STATUS != 'SHUTDOWN' AND NAV_ID = ?1
             )",
@@ -609,12 +608,11 @@ namespace osect
               stmt_lookup_fix(prepare_checked(db, R"(
                 SELECT FIX_ID, STATE_CODE, COUNTRY_CODE, ICAO_REGION_CODE,
                        LAT_DECIMAL, LONG_DECIMAL, FIX_USE_CODE,
-                       ARTCC_ID_HIGH, ARTCC_ID_LOW,
-                       IS_LOW_FIX, IS_HIGH_FIX
+                       ARTCC_ID_HIGH, ARTCC_ID_LOW, CHARTS
                 FROM FIX_BASE
                 WHERE FIX_ID = ?1
             )",
-                                              11))
+                                              10))
 
               ,
               stmt_load_routable_airports(prepare_checked(db, R"(
@@ -825,12 +823,12 @@ namespace osect
             d.stmt_navaids, bbox,
             [](sqlite::statement& s)
             {
-                return navaid{s.column_text(0),    s.column_text(1),      s.column_text(2),     s.column_text(3),
-                              s.column_text(4),    s.column_text(5),      s.column_text(6),     s.column_text(7),
-                              s.column_text(8),    s.column_text(9),      s.column_double(10),  s.column_double(11),
-                              s.column_double(12), s.column_text(13),     s.column_text(14),    s.column_text(15),
-                              s.column_text(16),   s.column_text(17),     s.column_text(18),    s.column_text(19),
-                              s.column_text(20),   s.column_int(21) != 0, s.column_int(22) != 0};
+                return navaid{s.column_text(0),    s.column_text(1),  s.column_text(2),    s.column_text(3),
+                              s.column_text(4),    s.column_text(5),  s.column_text(6),    s.column_text(7),
+                              s.column_text(8),    s.column_text(9),  s.column_double(10), s.column_double(11),
+                              s.column_double(12), s.column_text(13), s.column_text(14),   s.column_text(15),
+                              s.column_text(16),   s.column_text(17), s.column_text(18),   s.column_text(19),
+                              s.column_text(20),   s.column_text(21), s.column_text(22)};
             });
     }
 
@@ -841,10 +839,9 @@ namespace osect
         return d.query_bbox(d.stmt_fixes, bbox,
                             [](sqlite::statement& s)
                             {
-                                return fix{s.column_text(0),     s.column_text(1),     s.column_text(2),
-                                           s.column_text(3),     s.column_double(4),   s.column_double(5),
-                                           s.column_text(6),     s.column_text(7),     s.column_text(8),
-                                           s.column_int(9) != 0, s.column_int(10) != 0};
+                                return fix{s.column_text(0),   s.column_text(1),   s.column_text(2), s.column_text(3),
+                                           s.column_double(4), s.column_double(5), s.column_text(6), s.column_text(7),
+                                           s.column_text(8),   s.column_text(9)};
                             });
     }
 
@@ -1564,12 +1561,12 @@ namespace osect
         std::vector<navaid> out;
         while(s.step())
         {
-            out.push_back(navaid{s.column_text(0),    s.column_text(1),      s.column_text(2),     s.column_text(3),
-                                 s.column_text(4),    s.column_text(5),      s.column_text(6),     s.column_text(7),
-                                 s.column_text(8),    s.column_text(9),      s.column_double(10),  s.column_double(11),
-                                 s.column_double(12), s.column_text(13),     s.column_text(14),    s.column_text(15),
-                                 s.column_text(16),   s.column_text(17),     s.column_text(18),    s.column_text(19),
-                                 s.column_text(20),   s.column_int(21) != 0, s.column_int(22) != 0});
+            out.push_back(navaid{s.column_text(0),    s.column_text(1),  s.column_text(2),    s.column_text(3),
+                                 s.column_text(4),    s.column_text(5),  s.column_text(6),    s.column_text(7),
+                                 s.column_text(8),    s.column_text(9),  s.column_double(10), s.column_double(11),
+                                 s.column_double(12), s.column_text(13), s.column_text(14),   s.column_text(15),
+                                 s.column_text(16),   s.column_text(17), s.column_text(18),   s.column_text(19),
+                                 s.column_text(20),   s.column_text(21), s.column_text(22)});
         }
         return out;
     }
@@ -1585,7 +1582,7 @@ namespace osect
         {
             out.push_back(fix{s.column_text(0), s.column_text(1), s.column_text(2), s.column_text(3),
                               s.column_double(4), s.column_double(5), s.column_text(6), s.column_text(7),
-                              s.column_text(8), s.column_int(9) != 0, s.column_int(10) != 0});
+                              s.column_text(8), s.column_text(9)});
         }
         return out;
     }

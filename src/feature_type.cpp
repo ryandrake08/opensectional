@@ -1,6 +1,7 @@
 #include "feature_type.hpp"
 #include "altitude_filter.hpp"
 #include "chart_style.hpp"
+#include "chart_type.hpp"
 #include "ephemeral_data.hpp"
 #include "geo_math.hpp"
 #include "map_view.hpp"
@@ -510,47 +511,39 @@ namespace osect
 
         void navaid_type::pick(const pick_context& ctx, std::vector<feature>& out) const
         {
-            if(!ctx.vis.altitude.any())
-            {
-                return;
-            }
             for(const auto& nav : ctx.db.query_navaids(ctx.pick_box))
             {
+                if(!navaid_on_chart(nav, ctx.vis.chart))
+                {
+                    continue;
+                }
                 if(!ctx.styles.navaid_visible(nav.nav_type, ctx.zoom))
                 {
                     continue;
                 }
-                auto keep = (nav.is_low && ctx.vis.altitude.show_low) || (nav.is_high && ctx.vis.altitude.show_high);
-                if(keep)
-                {
-                    out.push_back(nav);
-                }
+                out.push_back(nav);
             }
         }
 
         void fix_type::pick(const pick_context& ctx, std::vector<feature>& out) const
         {
-            if(!ctx.vis.altitude.any())
-            {
-                return;
-            }
             if(!ctx.styles.fix_visible(true, ctx.zoom) && !ctx.styles.fix_visible(false, ctx.zoom))
             {
                 return;
             }
             for(const auto& f : ctx.db.query_fixes(ctx.pick_box))
             {
-                auto keep = (f.is_low && ctx.vis.altitude.show_low) || (f.is_high && ctx.vis.altitude.show_high);
-                if(keep)
+                if(!fix_on_chart(f, ctx.vis.chart))
                 {
-                    out.push_back(f);
+                    continue;
                 }
+                out.push_back(f);
             }
         }
 
         void obstacle_type::pick(const pick_context& ctx, std::vector<feature>& out) const
         {
-            if(!ctx.vis.altitude.low_enabled())
+            if(!obstacle_on_chart(ctx.vis.chart))
             {
                 return;
             }
@@ -799,17 +792,13 @@ namespace osect
 
         void airway_type::pick(const pick_context& ctx, std::vector<feature>& out) const
         {
-            if(!ctx.vis.altitude.any())
-            {
-                return;
-            }
             for(const auto& seg : ctx.db.query_airways(ctx.pick_box))
             {
                 if(!ctx.styles.airway_visible(seg.awy_id, ctx.zoom))
                 {
                     continue;
                 }
-                if(!altitude_filter_allows(ctx.vis.altitude, airway_bands(seg.awy_id)))
+                if(!airway_on_chart(seg.awy_id, ctx.vis.chart))
                 {
                     continue;
                 }
@@ -824,13 +813,13 @@ namespace osect
 
         void mtr_type::pick(const pick_context& ctx, std::vector<feature>& out) const
         {
-            if(!ctx.vis.altitude.any() || !ctx.styles.mtr_visible(ctx.zoom))
+            if(!ctx.styles.mtr_visible(ctx.zoom))
             {
                 return;
             }
             for(const auto& seg : ctx.db.query_mtrs(ctx.pick_box))
             {
-                if(!altitude_filter_allows(ctx.vis.altitude, mtr_bands(seg.route_type_code)))
+                if(!mtr_on_chart(seg.route_type_code, ctx.vis.chart))
                 {
                     continue;
                 }
@@ -1763,10 +1752,6 @@ namespace osect
             {
                 return;
             }
-            if(!ctx.req.altitude.any())
-            {
-                return;
-            }
             constexpr auto NAV_CLEARANCE = 2.0;
 
             const auto& navaids = ctx.db.query_navaids(request_bbox(ctx.req));
@@ -1777,17 +1762,11 @@ namespace osect
 
             for(const auto& nav : navaids)
             {
-                if(nav.nav_type == "VOT" || nav.nav_type == "FAN MARKER" || nav.nav_type == "MARINE NDB")
+                if(!navaid_on_chart(nav, ctx.req.chart))
                 {
                     continue;
                 }
                 if(!ctx.styles.navaid_visible(nav.nav_type, ctx.req.zoom))
-                {
-                    continue;
-                }
-
-                auto keep = (nav.is_low && ctx.req.altitude.show_low) || (nav.is_high && ctx.req.altitude.show_high);
-                if(!keep)
                 {
                     continue;
                 }
@@ -1854,7 +1833,7 @@ namespace osect
                 {
                     continue;
                 }
-                if(!altitude_filter_allows(ctx.req.altitude, airway_bands(seg.awy_id)))
+                if(!airway_on_chart(seg.awy_id, ctx.req.chart))
                 {
                     continue;
                 }
@@ -1992,21 +1971,16 @@ namespace osect
             {
                 return;
             }
-            if(!ctx.req.altitude.any())
-            {
-                return;
-            }
             const auto& fixes = ctx.db.query_fixes(request_bbox(ctx.req));
             auto radius = ctx.req.half_extent_y * SYMBOL_RADIUS_FIX;
 
             for(const auto& f : fixes)
             {
-                if(!ctx.styles.fix_visible(ctx.fix_on_airway(f.fix_id), ctx.req.zoom))
+                if(!fix_on_chart(f, ctx.req.chart))
                 {
                     continue;
                 }
-                auto keep = (f.is_low && ctx.req.altitude.show_low) || (f.is_high && ctx.req.altitude.show_high);
-                if(!keep)
+                if(!ctx.styles.fix_visible(ctx.fix_on_airway(f.fix_id), ctx.req.zoom))
                 {
                     continue;
                 }
@@ -2034,10 +2008,6 @@ namespace osect
             {
                 return;
             }
-            if(!ctx.req.altitude.any())
-            {
-                return;
-            }
 
             const auto& mtrs = ctx.db.query_mtrs(request_bbox(ctx.req));
             const auto& fs = ctx.styles.mtr_style();
@@ -2051,7 +2021,7 @@ namespace osect
 
             for(const auto& seg : mtrs)
             {
-                if(!altitude_filter_allows(ctx.req.altitude, mtr_bands(seg.route_type_code)))
+                if(!mtr_on_chart(seg.route_type_code, ctx.req.chart))
                 {
                     continue;
                 }
@@ -2604,7 +2574,7 @@ namespace osect
             {
                 return;
             }
-            if(!ctx.req.altitude.low_enabled())
+            if(!obstacle_on_chart(ctx.req.chart))
             {
                 return;
             }

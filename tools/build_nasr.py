@@ -176,19 +176,6 @@ def build_nav(conn, csv_zf):
         "ALT_CODE", "LOW_NAV_ON_HIGH_CHART_FLAG",
     ])
 
-    # Altitude-band classification for navaids.
-    # ALT_CODE: H=high-only, VH=both, VL/L/T/empty=low-only.
-    # LOW_NAV_ON_HIGH_CHART_FLAG=Y promotes a low navaid onto high charts.
-    conn.execute("ALTER TABLE NAV_BASE ADD COLUMN IS_LOW_NAV INTEGER")
-    conn.execute("ALTER TABLE NAV_BASE ADD COLUMN IS_HIGH_NAV INTEGER")
-    conn.execute("""
-        UPDATE NAV_BASE SET
-            IS_LOW_NAV = CASE WHEN ALT_CODE = 'H' THEN 0 ELSE 1 END,
-            IS_HIGH_NAV = CASE
-                WHEN ALT_CODE IN ('H', 'VH') THEN 1
-                WHEN LOW_NAV_ON_HIGH_CHART_FLAG = 'Y' THEN 1
-                ELSE 0 END
-    """)
 
     conn.execute("DROP TABLE IF EXISTS NAV_BASE_RTREE")
     conn.execute("""
@@ -214,21 +201,6 @@ def build_fix(conn, csv_zf):
         "ICAO_REGION_CODE", "LAT_DECIMAL", "LONG_DECIMAL",
         "FIX_USE_CODE", "ARTCC_ID_HIGH", "ARTCC_ID_LOW", "CHARTS",
     ])
-
-    # Altitude-band classification for fixes.
-    # CHARTS is a comma-separated list like "ENROUTE HIGH,ENROUTE LOW,IAP".
-    # A fix shown on any HIGH chart is high-relevant; anything not
-    # exclusively high (terminal/procedure fixes on IAP/STAR/SID) is low.
-    conn.execute("ALTER TABLE FIX_BASE ADD COLUMN IS_LOW_FIX INTEGER")
-    conn.execute("ALTER TABLE FIX_BASE ADD COLUMN IS_HIGH_FIX INTEGER")
-    conn.execute("""
-        UPDATE FIX_BASE SET
-            IS_HIGH_FIX = CASE WHEN CHARTS LIKE '%HIGH%' THEN 1 ELSE 0 END,
-            IS_LOW_FIX = CASE
-                WHEN CHARTS LIKE '%LOW%' THEN 1
-                WHEN CHARTS LIKE '%HIGH%' THEN 0
-                ELSE 1 END
-    """)
 
     conn.execute("DROP TABLE IF EXISTS FIX_BASE_RTREE")
     conn.execute("""

@@ -144,6 +144,7 @@ namespace osect
             req.viewport_height = viewport_height;
             req.zoom = pimpl->zoom_level();
             req.altitude = pimpl->vis.altitude;
+            req.chart = pimpl->vis.chart;
             req.selection = pimpl->selection;
             req.route = pimpl->route;
             req.route_selected = pimpl->route_selected;
@@ -292,14 +293,14 @@ namespace osect
                 line_vis_changed = true;
             }
         }
-        auto altitude_changed = pimpl->vis.altitude != vis.altitude;
+        auto requery = (pimpl->vis.altitude != vis.altitude) || (pimpl->vis.chart != vis.chart);
 
         pimpl->vis = vis;
 
-        if(altitude_changed)
+        if(requery)
         {
-            // Altitude filter affects which features are queried, not just
-            // which cached polylines are packed. Force a full requery.
+            // Altitude filter and chart_type affect which features are queried,
+            // not just which cached polylines are packed. Force a full requery.
             pimpl->has_cached_query = false;
         }
         if(line_vis_changed)

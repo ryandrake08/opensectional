@@ -111,60 +111,6 @@ namespace osect
         }
     };
 
-    // Airway prefix → altitude band bitmask (bit 0 = low, bit 1 = high).
-    // Derived from a scan of AWY_SEG_ALT source data; see
-    // .ignore/airway_colors.txt.
-    inline unsigned airway_bands(const std::string& awy_id)
-    {
-        if(awy_id.empty())
-        {
-            return 0b11;
-        }
-        if(awy_id.size() >= 2)
-        {
-            const char* p = awy_id.c_str();
-            if(p[0] == 'T' && p[1] == 'K')
-            {
-                return 0b01;
-            }
-            if(p[0] == 'B' && p[1] == 'R')
-            {
-                return 0b11;
-            }
-            if(p[0] == 'A' && p[1] == 'R')
-            {
-                return 0b11;
-            }
-            if(awy_id.compare(0, 3, "RTE") == 0)
-            {
-                return 0b11;
-            }
-        }
-        switch(awy_id[0])
-        {
-        case 'V':
-        case 'T':
-            return 0b01;
-        case 'J':
-        case 'Q':
-        case 'Y':
-        case 'H':
-            return 0b10;
-        case 'M':
-        case 'L':
-        case 'W':
-        case 'N':
-            return 0b11;
-        case 'R':
-        case 'A':
-        case 'G':
-        case 'B':
-            return 0b01;
-        default:
-            return 0b11;
-        }
-    }
-
     // ARTCC altitude string → altitude band bitmask. LOW → low, HIGH → high,
     // UNLIMITED (oceanic CTA/FIR/UTA) → unlimited.
     inline unsigned artcc_bands(const std::string& altitude)
@@ -178,13 +124,6 @@ namespace osect
             return 0b010;
         }
         return 0b100;
-    }
-
-    // MTR route type → altitude band bitmask. VR (VFR military) is low-only;
-    // IR (IFR military) spans both bands since CSV lacks per-segment altitudes.
-    inline unsigned mtr_bands(const std::string& route_type_code)
-    {
-        return route_type_code == "VR" ? 0b01 : 0b11;
     }
 
     inline bool altitude_filter_allows(const altitude_filter& af, unsigned bands)
