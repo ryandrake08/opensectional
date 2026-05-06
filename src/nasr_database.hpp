@@ -63,8 +63,8 @@ namespace osect
         std::string simul_voice_flag;
         std::string voice_call;
         std::string restriction_flag;
-        bool is_low;
-        bool is_high;
+        std::string alt_code;
+        std::string low_nav_on_high_chart_flag;
     };
 
     // Column order follows FIX_BASE table
@@ -79,8 +79,7 @@ namespace osect
         std::string use_code;
         std::string artcc_id_high;
         std::string artcc_id_low;
-        bool is_low;
-        bool is_high;
+        std::string charts;
     };
 
     // Column order follows AWY_SEG table

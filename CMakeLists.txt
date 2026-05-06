@@ -256,6 +256,7 @@ add_executable(osect
     src/route_submitter.cpp
     src/tile_loader.cpp
     src/chart_style.cpp
+    src/chart_type.cpp
     src/data_source.cpp
     src/ephemeral_cache.cpp
     src/ephemeral_data.cpp

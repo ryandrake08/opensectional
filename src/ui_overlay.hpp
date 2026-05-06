@@ -1,6 +1,7 @@
 #pragma once
 
 #include "altitude_filter.hpp"
+#include "chart_type.hpp"
 #include "data_source.hpp"
 #include "flight_route.hpp"
 #include "nasr_database.hpp" // for search_hit (POD struct, not the class)
@@ -47,6 +48,7 @@ namespace osect
     {
         std::array<bool, layer_count> visible;
         altitude_filter altitude;
+        chart_type chart = chart_type::sectional;
 
         layer_visibility()
         {

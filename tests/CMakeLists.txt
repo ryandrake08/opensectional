@@ -31,6 +31,9 @@ endfunction()
 add_osect_test(lru_set)
 add_osect_test(altitude_filter)
 
+# chart_type rules — pure functions of input fields, no DB needed.
+add_osect_test(chart_membership ${CMAKE_SOURCE_DIR}/src/chart_type.cpp)
+
 # Tests that compile one .cpp alongside the test
 add_osect_test(geo_math        ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
 add_osect_test(map_view        ${CMAKE_SOURCE_DIR}/src/map_view.cpp)

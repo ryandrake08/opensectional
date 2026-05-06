@@ -104,32 +104,11 @@ TEST_CASE("reference-aware overlaps: STD treated like MSL at divider")
     CHECK_FALSE(af.overlaps(10000, "MSL", 17999, "MSL"));
 }
 
-TEST_CASE("airway_bands: classification by prefix")
-{
-    CHECK(airway_bands("V123")   == 0b01);   // Victor (low)
-    CHECK(airway_bands("T270")   == 0b01);   // T (low) — single-letter T
-    CHECK(airway_bands("TK1")    == 0b01);   // TK prefix (low)
-    CHECK(airway_bands("J80")    == 0b10);   // Jet (high)
-    CHECK(airway_bands("Q100")   == 0b10);
-    CHECK(airway_bands("BR5")    == 0b11);   // BR prefix (both)
-    CHECK(airway_bands("AR1")    == 0b11);   // AR prefix (both)
-    CHECK(airway_bands("RTE1")   == 0b11);   // RTE prefix (both)
-    CHECK(airway_bands("M201")   == 0b11);   // M (both)
-    CHECK(airway_bands("")       == 0b11);   // empty → both
-    CHECK(airway_bands("Xfoo")   == 0b11);   // unknown prefix → both
-}
-
 TEST_CASE("artcc_bands: LOW / HIGH / UNLIMITED are three distinct bands")
 {
     CHECK(artcc_bands("LOW")       == 0b001);
     CHECK(artcc_bands("HIGH")      == 0b010);
     CHECK(artcc_bands("UNLIMITED") == 0b100);
-}
-
-TEST_CASE("mtr_bands: VR is low-only, IR is both")
-{
-    CHECK(mtr_bands("VR") == 0b01);
-    CHECK(mtr_bands("IR") == 0b11);
 }
 
 TEST_CASE("altitude_filter_allows: mask ∩ filter")
