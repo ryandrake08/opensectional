@@ -679,38 +679,62 @@ def build_apt_rwy(conn, csv_zf):
 
     # Add surface classification column to APT_BASE.
     # For each airport, take the hardest surface across all runways
-    # (HARD > SOFT > OTHER), plus the max runway length.
+    # (HARD > SOFT > OTHER), plus the max hard-surface runway length and
+    # an IAP-indicator flag (any runway end with an ILS or NPI/PIR
+    # markings — proxies "has published instrument approach" since NASR
+    # ships no IAP enumeration). Both feed chart_type::airport_on_chart.
     conn.execute("ALTER TABLE APT_BASE ADD COLUMN HARD_SURFACE INTEGER DEFAULT 0")
+    conn.execute("ALTER TABLE APT_BASE ADD COLUMN MAX_HARD_RWY_LEN INTEGER DEFAULT 0")
+    conn.execute("ALTER TABLE APT_BASE ADD COLUMN HAS_IAP_INDICATOR INTEGER DEFAULT 0")
 
-    # Build per-airport surface classification and max runway length
     cursor = conn.execute("""
         SELECT a.rowid, r.SURFACE_TYPE_CODE, r.RWY_LEN
         FROM APT_BASE a
         JOIN APT_RWY r ON r.SITE_NO = a.SITE_NO
     """)
 
-    # Accumulate hardest surface per airport rowid (HARD > SOFT > OTHER)
-    airport_data = {}
+    surface_class = {}
+    max_hard_len = {}
     rank = {"HARD": 2, "SOFT": 1, "OTHER": 0}
     for rowid, surface_code, rwy_len in cursor:
         classification = classify_surface(surface_code.strip() if surface_code else "")
-        if rowid not in airport_data:
-            airport_data[rowid] = classification
-        else:
-            prev = airport_data[rowid]
-            if rank[classification] > rank[prev]:
-                airport_data[rowid] = classification
+        prev = surface_class.get(rowid)
+        if prev is None or rank[classification] > rank[prev]:
+            surface_class[rowid] = classification
+        if classification == "HARD":
+            try:
+                length = int(rwy_len) if rwy_len else 0
+            except ValueError:
+                length = 0
+            if length > max_hard_len.get(rowid, 0):
+                max_hard_len[rowid] = length
 
-    updates = [(1 if cls == "HARD" else 0, rowid) for rowid, cls in airport_data.items()]
+    updates = [
+        (1 if surface_class[rowid] == "HARD" else 0, max_hard_len.get(rowid, 0), rowid)
+        for rowid in surface_class
+    ]
     conn.executemany(
-        "UPDATE APT_BASE SET HARD_SURFACE = ? WHERE rowid = ?",
+        "UPDATE APT_BASE SET HARD_SURFACE = ?, MAX_HARD_RWY_LEN = ? WHERE rowid = ?",
         updates,
     )
 
     counts = {}
-    for cls in airport_data.values():
+    for cls in surface_class.values():
         counts[cls] = counts.get(cls, 0) + 1
     print(f"  Surface classification: {counts}")
+
+    # IAP indicator: any runway end with an ILS or NPI/PIR markings.
+    conn.execute("""
+        UPDATE APT_BASE SET HAS_IAP_INDICATOR = 1
+        WHERE rowid IN (
+            SELECT a.rowid FROM APT_BASE a
+            JOIN APT_RWY_END e ON e.SITE_NO = a.SITE_NO
+            WHERE (e.ILS_TYPE IS NOT NULL AND e.ILS_TYPE != '')
+               OR e.RWY_MARKING_TYPE_CODE IN ('NPI', 'PIR')
+        )
+    """)
+    iap_count = conn.execute("SELECT COUNT(*) FROM APT_BASE WHERE HAS_IAP_INDICATOR=1").fetchone()[0]
+    print(f"  IAP-indicator airports: {iap_count}")
 
     # Pre-build runway segments with resolved endpoint coordinates
     # and their own R-tree for direct spatial queries

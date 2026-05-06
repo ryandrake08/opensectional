@@ -502,6 +502,10 @@ namespace osect
         {
             for(const auto& apt : ctx.db.query_airports(ctx.pick_box))
             {
+                if(!airport_on_chart(apt, ctx.vis.chart))
+                {
+                    continue;
+                }
                 if(ctx.styles.airport_visible(apt, ctx.zoom))
                 {
                     out.push_back(apt);
@@ -1696,6 +1700,10 @@ namespace osect
 
             for(const auto& apt : airports)
             {
+                if(!airport_on_chart(apt, ctx.req.chart))
+                {
+                    continue;
+                }
                 if(!ctx.styles.airport_visible(apt, ctx.req.zoom))
                 {
                     continue;
