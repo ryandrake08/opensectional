@@ -432,4 +432,9 @@ namespace osect
     {
         pimpl->run();
     }
+
+    void wake_main_thread()
+    {
+        sdl::event_manager::push_user_event();
+    }
 }

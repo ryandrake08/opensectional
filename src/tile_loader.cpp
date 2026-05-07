@@ -1,5 +1,5 @@
 #include "tile_loader.hpp"
-#include "wake_main.hpp"
+#include "program.hpp"
 #include <condition_variable>
 #include <deque>
 #include <iostream>
