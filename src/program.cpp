@@ -7,10 +7,13 @@
 #include "route_planner.hpp"
 #include "route_submitter.hpp"
 #include "ui_overlay.hpp"
+#include "feature_type.hpp"
+#include "flight_route.hpp"
 #include <imgui/context.hpp>
 #include <iostream>
 #include <optional>
 #include <sdl/command_buffer.hpp>
+#include <sdl/log.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
 #include <sdl/event.hpp>
@@ -154,6 +157,10 @@ namespace osect
         route_plan_options plan_options;
         ui_overlay ui;
         std::vector<data_source> static_sources;
+        // Snapshot of the last visibility state we saw, kept so
+        // handle_visibility can log the diff each time the user
+        // toggles a layer / altitude band / chart type.
+        layer_visibility prev_vis;
 
         static std::string resolve_db_path(const parsed_options& opts, const std::string& prog)
         {
@@ -187,15 +194,18 @@ namespace osect
             auto bundled = sdl::resolve_bundled_asset("osect.ini");
             if(!bundled.empty())
             {
+                sdl::log_info("ini merge: bundled " + bundled);
                 ini.merge(ini_config(bundled));
             }
             auto user = sdl::resolve_user_asset("osect.ini");
             if(!user.empty())
             {
+                sdl::log_info("ini merge: user " + user);
                 ini.merge(ini_config(user));
             }
             if(opts.conf_path)
             {
+                sdl::log_info("ini merge: --conf " + *opts.conf_path);
                 ini.merge(ini_config(*opts.conf_path));
             }
             return ini;
@@ -236,6 +246,11 @@ namespace osect
             event_mgr.add_listener(map.event_listener());
 
             ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
+            prev_vis = ui.visibility();
+
+            sdl::log_info(std::string("started: gpu=") + resolve_gpu_driver(opts) + " db=" + db_path
+                          + " basemap=" + (tile_path.empty() ? std::string("(none)") : tile_path)
+                          + " offline=" + (opts.offline ? "true" : "false"));
         }
 
         std::vector<data_source> build_data_sources()
@@ -260,13 +275,79 @@ namespace osect
             return merged;
         }
 
+        // Find the human label for a layer enum value: "Basemap" for
+        // layer_basemap, otherwise the feature_type's UI label.
+        std::string layer_label(int layer_id) const
+        {
+            if(layer_id == layer_basemap)
+            {
+                return "Basemap";
+            }
+            for(const auto& t : map.feature_types())
+            {
+                if(t->layer_id() == layer_id)
+                {
+                    return t->label();
+                }
+            }
+            return "layer#" + std::to_string(layer_id);
+        }
+
+        static const char* altitude_band_name(const altitude_filter& a)
+        {
+            if(a.show_low)
+            {
+                return "low";
+            }
+            if(a.show_high)
+            {
+                return "high";
+            }
+            if(a.show_unlimited)
+            {
+                return "unlimited";
+            }
+            return "(none)";
+        }
+
+        static const char* chart_name(chart_type c)
+        {
+            switch(c)
+            {
+            case chart_type::sectional:
+                return "sectional";
+            case chart_type::ifr_low:
+                return "ifr_low";
+            case chart_type::ifr_high:
+                return "ifr_high";
+            }
+            return "(unknown)";
+        }
+
         bool handle_visibility(const ui_overlay_result& r)
         {
             if(!r.visibility_changed)
             {
                 return false;
             }
-            map.set_visibility(ui.visibility());
+            const auto& now = ui.visibility();
+            for(int i = 0; i < layer_count; ++i)
+            {
+                if(prev_vis[i] != now[i])
+                {
+                    sdl::log_info("visibility: " + layer_label(i) + " = " + (now[i] ? "on" : "off"));
+                }
+            }
+            if(prev_vis.altitude != now.altitude)
+            {
+                sdl::log_info(std::string("altitude band: ") + altitude_band_name(now.altitude));
+            }
+            if(prev_vis.chart != now.chart)
+            {
+                sdl::log_info(std::string("chart: ") + chart_name(now.chart));
+            }
+            prev_vis = now;
+            map.set_visibility(now);
             return true;
         }
 
@@ -279,7 +360,9 @@ namespace osect
             auto idx = *r.selected_hit_index;
             if(idx >= 0 && idx < static_cast<int>(ui.search_results().size()))
             {
-                map.focus_on_hit(ui.search_results()[idx]);
+                const auto& hit = ui.search_results()[idx];
+                sdl::log_info("search selection: " + hit.entity_type + " \"" + hit.ids + "\" \"" + hit.name + "\"");
+                map.focus_on_hit(hit);
             }
             ui.set_search_results({});
             return true;
@@ -304,6 +387,7 @@ namespace osect
             }
             if(r.requested_route_text->empty())
             {
+                sdl::log_info("route cleared");
                 map.clear_route();
                 ui.clear_route_state();
             }
@@ -316,6 +400,9 @@ namespace osect
                 auto opts = plan_options;
                 opts.max_leg_length_nm = r.route_max_leg_nm;
                 opts.use_airways = r.route_use_airways;
+                sdl::log_info("route submit: \"" + *r.requested_route_text
+                              + "\" (max_leg=" + std::to_string(static_cast<int>(opts.max_leg_length_nm))
+                              + "nm airways=" + (opts.use_airways ? "true" : "false") + ")");
                 submitter.submit(*r.requested_route_text, opts);
             }
             return true;
@@ -337,11 +424,15 @@ namespace osect
             {
                 if(status.completion->route)
                 {
-                    ui.set_route_state(*status.completion->route);
+                    const auto& route = *status.completion->route;
+                    sdl::log_info("route planned: " + std::to_string(route.waypoints.size()) + " waypoints, "
+                                  + std::to_string(static_cast<int>(route.total_distance_nm())) + " nm");
+                    ui.set_route_state(route);
                     map.set_route(std::move(*status.completion->route));
                 }
                 else
                 {
+                    sdl::log_info("route plan failed: " + status.completion->error);
                     ui.clear_route_state(status.completion->error);
                 }
                 dirty = true;
@@ -377,6 +468,7 @@ namespace osect
 
                 if(event_mgr.dispatch_events())
                 {
+                    sdl::log_info("shutting down");
                     break;
                 }
 

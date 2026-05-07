@@ -2,10 +2,11 @@
 #include "program.hpp"
 #include <condition_variable>
 #include <deque>
-#include <iostream>
 #include <memory>
 #include <mutex>
+#include <sdl/log.hpp>
 #include <sdl/surface.hpp>
+#include <string>
 #include <thread>
 #include <unordered_set>
 
@@ -51,7 +52,10 @@ namespace osect
                 }
                 catch(const std::exception& e)
                 {
-                    std::cerr << "tile load failed: " << e.what() << "\n";
+                    // Expected at high zoom levels where the tile pyramid
+                    // has no data; demoted to debug to keep the warn
+                    // channel signal-only.
+                    sdl::log_debug(std::string("tile load failed: ") + e.what());
                     std::lock_guard<std::mutex> lock(mutex);
                     pending_set.erase(req.key);
                     failed_set.insert(req.key);

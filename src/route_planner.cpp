@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <limits>
 #include <queue>
+#include <sdl/log.hpp>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -957,6 +958,7 @@ namespace osect
             }
             joined += out[k];
         }
+        sdl::log_info("sigils expanded: \"" + text + "\" -> \"" + joined + "\"");
         return joined;
     }
 

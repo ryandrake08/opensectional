@@ -23,6 +23,7 @@
 #include <sdl/command_buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
+#include <sdl/log.hpp>
 #include <sdl/event.hpp>
 #include <sdl/pipeline.hpp>
 #include <sdl/render_pass.hpp>
@@ -593,7 +594,10 @@ namespace osect
             }
             if(mode == route_drag_mode::segment)
             {
-                route->insert_waypoint(route_drag.index, resolve_release_waypoint(), pick_db);
+                auto wp = resolve_release_waypoint();
+                sdl::log_info("route insert: index=" + std::to_string(route_drag.index) + " waypoint="
+                              + waypoint_id(wp));
+                route->insert_waypoint(route_drag.index, std::move(wp), pick_db);
                 notify_route_changed();
                 return;
             }
@@ -609,11 +613,14 @@ namespace osect
 
             if(adjacent && route->waypoints.size() > 2)
             {
+                sdl::log_info("route delete: index=" + std::to_string(i));
                 route->delete_waypoint(i, pick_db);
             }
             else
             {
-                route->replace_waypoint(i, resolve_release_waypoint(), pick_db);
+                auto wp = resolve_release_waypoint();
+                sdl::log_info("route replace: index=" + std::to_string(i) + " -> " + waypoint_id(wp));
+                route->replace_waypoint(i, std::move(wp), pick_db);
             }
             notify_route_changed();
         }
@@ -725,6 +732,7 @@ namespace osect
 
             if(exact_count == 1)
             {
+                sdl::log_info("pick: " + find_feature_type(feature_types, *exact_hit).summary(*exact_hit));
                 open_info_popup(*exact_hit, result.lon, result.lat);
                 return;
             }
@@ -735,6 +743,7 @@ namespace osect
             auto route_hit = route && hit_route_segment(result.lon, result.lat).has_value();
             if(route_hit)
             {
+                sdl::log_info("pick: route selected");
                 close_info_popup();
                 set_route_selected(true, result.lon, result.lat);
                 return;
@@ -747,6 +756,7 @@ namespace osect
 
             // Opening the selector supersedes any stale info popup or route
             // selection, matching the behavior of the info popup.
+            sdl::log_info("pick: selector with " + std::to_string(result.features.size()) + " candidates");
             close_info_popup();
             set_route_selected(false);
             popups.open_pick(std::move(result.features), result.lon, result.lat);
@@ -764,6 +774,9 @@ namespace osect
             if(out.pick_selected)
             {
                 // Pick selection → open info popup. Manager already closed pick.
+                sdl::log_info("selector chose: "
+                              + find_feature_type(feature_types, out.pick_selected->picked)
+                                    .summary(out.pick_selected->picked));
                 open_info_popup(out.pick_selected->picked, out.pick_selected->click_lon, out.pick_selected->click_lat);
             }
             if(out.info_dismissed)
