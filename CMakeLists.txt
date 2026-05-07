@@ -249,6 +249,7 @@ add_executable(osect
     src/label_renderer.cpp
     src/line_renderer.cpp
     src/main.cpp
+    src/program.cpp
     src/nasr_database.cpp
     src/ui_popup_manager.cpp
     src/route_plan_config.cpp
