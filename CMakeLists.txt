@@ -284,6 +284,7 @@ add_library(sdl_wrapper STATIC
     lib/sdl/filesystem.cpp
     lib/sdl/font.cpp
     lib/sdl/instance.cpp
+    lib/sdl/log.cpp
     lib/sdl/pipeline.cpp
     lib/sdl/render_pass.cpp
     lib/sdl/sampler.cpp

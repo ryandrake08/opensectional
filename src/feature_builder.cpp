@@ -12,6 +12,9 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sdl/log.hpp>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -251,21 +254,32 @@ namespace osect
                     pending_request.reset();
                 }
 
-                build_vertices(req);
-
-                feature_build_result result;
-                result.poly = std::move(poly);
-                if(req.selection)
+                // Catch here so a single corrupt request doesn't
+                // terminate the worker (and the process). Partial
+                // poly/labels state on throw is fine — build_vertices
+                // clears them at the start of the next iteration.
+                try
                 {
-                    build_selection_overlay(req, *req.selection, result.selection_overlay, result.selection_fill);
-                }
-                result.labels = std::move(labels);
+                    build_vertices(req);
 
-                {
-                    std::lock_guard<std::mutex> lock(mutex);
-                    completed_result = std::move(result);
+                    feature_build_result result;
+                    result.poly = std::move(poly);
+                    if(req.selection)
+                    {
+                        build_selection_overlay(req, *req.selection, result.selection_overlay, result.selection_fill);
+                    }
+                    result.labels = std::move(labels);
+
+                    {
+                        std::lock_guard<std::mutex> lock(mutex);
+                        completed_result = std::move(result);
+                    }
+                    wake_main_thread();
                 }
-                wake_main_thread();
+                catch(const std::exception& e)
+                {
+                    sdl::log_warn(std::string("feature build failed: ") + e.what());
+                }
             }
         }
     };

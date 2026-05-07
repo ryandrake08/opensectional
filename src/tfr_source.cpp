@@ -8,8 +8,8 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
-#include <iostream>
 #include <mutex>
+#include <sdl/log.hpp>
 #include <shared_mutex>
 #include <stdexcept>
 #include <string>
@@ -429,10 +429,14 @@ namespace osect
                             std::chrono::duration_cast<std::chrono::system_clock::duration>(ftime - fs_now);
                 }
 
-                std::unique_lock lock(pimpl->mtx);
-                pimpl->tfrs = std::move(loaded);
-                pimpl->segments = std::move(segs);
-                pimpl->last_ok = mtime;
+                auto loaded_count = loaded.size();
+                {
+                    std::unique_lock lock(pimpl->mtx);
+                    pimpl->tfrs = std::move(loaded);
+                    pimpl->segments = std::move(segs);
+                    pimpl->last_ok = mtime;
+                }
+                sdl::log_info("tfr cache loaded: " + std::to_string(loaded_count) + " TFRs");
             }
         }
 
@@ -471,6 +475,7 @@ namespace osect
     {
         try
         {
+            sdl::log_info("tfr refresh starting");
             // 1. Fetch the active TFR list.
             http_client::request list_req;
             list_req.url = "https://tfr.faa.gov/tfrapi/getTfrList";
@@ -505,11 +510,13 @@ namespace osect
                 }
                 catch(const std::exception& e)
                 {
-                    std::cerr << "tfr detail fetch failed for " << notam_id << ": " << e.what() << "\n";
+                    sdl::log_warn("tfr detail fetch failed for " + notam_id + ": " + e.what());
                     continue;
                 }
                 if(det_resp.status_code != 200)
                 {
+                    sdl::log_warn("tfr detail returned HTTP " + std::to_string(det_resp.status_code) + " for "
+                                  + notam_id);
                     continue;
                 }
                 try
@@ -517,6 +524,7 @@ namespace osect
                     auto parsed = parse_xnotam(det_resp.body);
                     if(!parsed)
                     {
+                        sdl::log_warn("tfr detail produced no NOTAM for " + notam_id);
                         continue;
                     }
                     parsed->tfr_id = static_cast<int>(new_tfrs.size() + 1);
@@ -529,7 +537,7 @@ namespace osect
                 }
                 catch(const std::exception& e)
                 {
-                    std::cerr << "tfr detail parse failed for " << notam_id << ": " << e.what() << "\n";
+                    sdl::log_warn("tfr detail parse failed for " + notam_id + ": " + e.what());
                     continue;
                 }
             }
@@ -542,12 +550,16 @@ namespace osect
             }
 
             // 4. Atomic swap into the in-memory store.
+            auto tfr_count = new_tfrs.size();
+            auto seg_count = new_segs.size();
             {
                 std::unique_lock lock(pimpl->mtx);
                 pimpl->tfrs = std::move(new_tfrs);
                 pimpl->segments = std::move(new_segs);
                 pimpl->last_ok = std::chrono::system_clock::now();
             }
+            sdl::log_info("tfr refresh complete: " + std::to_string(tfr_count) + " TFRs, "
+                          + std::to_string(seg_count) + " segments");
 
             // 5. Persist to disk for warm starts and --offline.
             try
@@ -556,7 +568,7 @@ namespace osect
             }
             catch(const std::exception& e)
             {
-                std::cerr << "tfr cache write failed: " << e.what() << "\n";
+                sdl::log_warn(std::string("tfr cache write failed: ") + e.what());
             }
 
             // 6. Wake the main loop so poll_advance() observes the swap
@@ -566,7 +578,7 @@ namespace osect
         catch(const std::exception& e)
         {
             // Whole refresh failed — preserve the in-memory store.
-            std::cerr << "tfr refresh failed: " << e.what() << "\n";
+            sdl::log_warn(std::string("tfr refresh failed: ") + e.what());
         }
     }
 

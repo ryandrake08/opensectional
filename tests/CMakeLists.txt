@@ -71,7 +71,7 @@ add_osect_test(flight_route
     ${CMAKE_SOURCE_DIR}/src/data_source.cpp
     ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
     ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
-target_link_libraries(test_flight_route PRIVATE sqlite_wrapper)
+target_link_libraries(test_flight_route PRIVATE sqlite_wrapper sdl_wrapper)
 
 add_osect_test(route_planner
     ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
@@ -81,4 +81,4 @@ add_osect_test(route_planner
     ${CMAKE_SOURCE_DIR}/src/data_source.cpp
     ${CMAKE_SOURCE_DIR}/src/geo_math.cpp
     ${CMAKE_SOURCE_DIR}/src/flight_route.cpp)
-target_link_libraries(test_route_planner PRIVATE sqlite_wrapper)
+target_link_libraries(test_route_planner PRIVATE sqlite_wrapper sdl_wrapper)
