@@ -78,11 +78,14 @@ namespace osect
         // Set for exactly one frame.
         std::optional<int> selected_hit_index;
 
-        // Route text submitted this frame (Enter or "Set" button).
-        // Caller parses it and feeds state back via set_route_state().
-        std::optional<std::string> submit_route_text;
-        // True for one frame when the user clicks "Clear".
-        bool clear_route = false;
+        // Route action this frame:
+        //   nullopt   — no action
+        //   ""        — clear the active route ("Clear" button or
+        //               Enter/Set on an empty input box)
+        //   non-empty — submit this text for planning
+        // Caller hands non-empty text to route_submitter and feeds
+        // state back via set_route_state() / clear_route_state().
+        std::optional<std::string> requested_route_text;
 
         // Current route-planner knobs. Read every frame; the caller
         // funnels these into route_planner::options on submission.

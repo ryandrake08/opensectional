@@ -344,7 +344,7 @@ namespace osect
             ImGui::EndDisabled();
             if(submit && !d.planning)
             {
-                result.submit_route_text = d.route_buf;
+                result.requested_route_text = d.route_buf;
             }
             result.route_max_leg_nm = d.max_leg_nm;
             result.route_use_airways = d.use_airways;
@@ -370,8 +370,8 @@ namespace osect
             {
                 if(ImGui::Button("Clear"))
                 {
-                    result.clear_route = true;
                     d.route_buf.clear();
+                    result.requested_route_text = std::string{};
                 }
             }
         }

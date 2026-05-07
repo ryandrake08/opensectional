@@ -308,19 +308,10 @@ namespace osect
                     needs_render = true;
                 }
 
-                if(ui_result.clear_route)
+                if(ui_result.requested_route_text)
                 {
-                    map.clear_route();
-                    ui.clear_route_state();
-                    needs_render = true;
-                }
-                else if(ui_result.submit_route_text)
-                {
-                    if(ui_result.submit_route_text->empty())
+                    if(ui_result.requested_route_text->empty())
                     {
-                        // Submitting blank input is just a clear; no
-                        // reason to round-trip through the worker only
-                        // for the parser to reject it.
                         map.clear_route();
                         ui.clear_route_state();
                     }
@@ -328,45 +319,38 @@ namespace osect
                     {
                         // Snapshot the GUI knobs into the planner
                         // options for this submission. ini-driven
-                        // preferences are already in `plan_options`; we
-                        // just overlay max_leg and use-airways from the
-                        // UI.
+                        // preferences are already in `plan_options`;
+                        // we just overlay max_leg and use-airways
+                        // from the UI.
                         auto opts = plan_options;
                         opts.max_leg_length_nm = ui_result.route_max_leg_nm;
                         opts.use_airways = ui_result.route_use_airways;
-                        submitter.submit(*ui_result.submit_route_text, opts);
+                        submitter.submit(*ui_result.requested_route_text, opts);
                     }
                     needs_render = true;
                 }
 
-                // Keep frames flowing while an async plan is in progress
-                // so the UI can animate its indicator.
-                auto plan_pending = submitter.pending();
-                ui.set_route_planning(plan_pending);
-                if(plan_pending)
+                // Single per-frame read of the submitter's state. poll()
+                // guarantees `pending` and `completion` are mutually
+                // exclusive, so a finished plan never arrives in the
+                // same frame that the spinner is shown.
+                auto status = submitter.poll();
+                ui.set_route_planning(status.pending);
+                if(status.pending)
                 {
                     needs_render = true;
                 }
-
-                try
+                if(status.completion)
                 {
-                    if(auto route = submitter.drain())
+                    if(status.completion->route)
                     {
-                        map.set_route(std::move(*route));
-                        if(map.route())
-                        {
-                            ui.set_route_state(*map.route());
-                        }
-                        else
-                        {
-                            ui.clear_route_state();
-                        }
-                        needs_render = true;
+                        ui.set_route_state(*status.completion->route);
+                        map.set_route(std::move(*status.completion->route));
                     }
-                }
-                catch(const route_parse_error& e)
-                {
-                    ui.clear_route_state(e.what());
+                    else
+                    {
+                        ui.clear_route_state(status.completion->error);
+                    }
                     needs_render = true;
                 }
 
