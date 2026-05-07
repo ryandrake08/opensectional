@@ -66,7 +66,7 @@ namespace osect
         parsed_options parse_cmdline(const std::vector<std::string>& cmdline)
         {
             parsed_options opts;
-            const auto& prog = cmdline.empty() ? std::string{ "osect" } : cmdline[0];
+            const auto& prog = cmdline.empty() ? std::string{"osect"} : cmdline[0];
 
             for(std::size_t i = 1; i < cmdline.size(); ++i)
             {
@@ -88,7 +88,7 @@ namespace osect
                 }
                 else if(arg.size() >= 2 && arg[0] == '-' && arg[1] == 'v')
                 {
-                    auto p = arg.c_str() + 1;
+                    const auto* p = arg.c_str() + 1;
                     while(*p == 'v')
                     {
                         opts.verbosity++;
@@ -214,23 +214,23 @@ namespace osect
             return opts.gpu_driver ? opts.gpu_driver->c_str() : "vulkan";
         }
 
-        impl(const std::vector<std::string>& cmdline) :
-            opts(parse_cmdline(cmdline)),
-            db_path(resolve_db_path(opts, cmdline.empty() ? std::string{ "osect" } : cmdline[0])),
-            tile_path(resolve_tile_path(opts)),
-            sdl_ctx(opts.verbosity),
-            win(sdl_ctx, "OpenSectional", 1280, 1024,
-                sdl::window_flags::resizable | sdl::window_flags::high_pixel_density),
-            dev(win, true, resolve_gpu_driver(opts)),
-            imgui_ctx(dev, win),
-            eph(opts.offline),
-            ini(build_ini(opts)),
-            map(dev, tile_path.empty() ? nullptr : tile_path.c_str(), db_path.c_str(), ini, eph, 1280, 1024),
-            planner_db(db_path.c_str()),
-            planner(planner_db),
-            submitter(planner),
-            plan_options(load_route_plan_options(ini)),
-            static_sources(planner_db.list_data_sources())
+        impl(const std::vector<std::string>& cmdline)
+            : opts(parse_cmdline(cmdline)),
+              db_path(resolve_db_path(opts, cmdline.empty() ? std::string{"osect"} : cmdline[0])),
+              tile_path(resolve_tile_path(opts)),
+              sdl_ctx(opts.verbosity),
+              win(sdl_ctx, "OpenSectional", 1280, 1024,
+                  sdl::window_flags::resizable | sdl::window_flags::high_pixel_density),
+              dev(win, true, resolve_gpu_driver(opts)),
+              imgui_ctx(dev, win),
+              eph(opts.offline),
+              ini(build_ini(opts)),
+              map(dev, tile_path.empty() ? nullptr : tile_path.c_str(), db_path.c_str(), ini, eph, 1280, 1024),
+              planner_db(db_path.c_str()),
+              planner(planner_db),
+              submitter(planner),
+              plan_options(load_route_plan_options(ini)),
+              static_sources(planner_db.list_data_sources())
         {
             event_mgr.set_raw_event_hook([this](const void* event) { imgui_ctx.process_event(event); });
             event_mgr.add_listener(map.event_listener());
@@ -262,7 +262,6 @@ namespace osect
 
         void run()
         {
-            std::string last_search_query;
             auto needs_render = true;
             auto last_render_ms = 0.0F;
             while(true)
@@ -290,6 +289,7 @@ namespace osect
                     map.set_visibility(ui.visibility());
                     needs_render = true;
                 }
+
                 if(ui_result.selected_hit_index)
                 {
                     auto idx = *ui_result.selected_hit_index;
@@ -298,14 +298,13 @@ namespace osect
                         map.focus_on_hit(ui.search_results()[idx]);
                     }
                     ui.set_search_results({});
-                    last_search_query.clear();
                     needs_render = true;
                 }
-                else if(ui_result.search_query != last_search_query)
+
+                if(ui_result.search_query)
                 {
-                    last_search_query = ui_result.search_query;
-                    ui.set_search_results(last_search_query.empty() ? std::vector<search_hit>{}
-                                                                    : map.search(last_search_query, SEARCH_RESULT_LIMIT));
+                    const auto& q = *ui_result.search_query;
+                    ui.set_search_results(q.empty() ? std::vector<search_hit>{} : map.search(q, SEARCH_RESULT_LIMIT));
                     needs_render = true;
                 }
 

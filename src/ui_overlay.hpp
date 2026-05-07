@@ -68,9 +68,12 @@ namespace osect
     struct ui_overlay_result
     {
         bool visibility_changed = false;
-        // Current query text in the search box. Caller runs the actual
-        // FTS query and feeds results back via set_search_results().
-        std::string search_query;
+        // Set for one frame whenever the search box text changes —
+        // the value is the new query (possibly empty if the user
+        // erased it). Caller runs the FTS query and feeds results
+        // back via set_search_results(). Unset when the box hasn't
+        // changed since the previous frame.
+        std::optional<std::string> search_query;
         // Copy of the hit that the user just selected (click or Enter).
         // Set for exactly one frame.
         std::optional<int> selected_hit_index;
