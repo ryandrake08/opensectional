@@ -25,6 +25,13 @@ namespace osect
     // single linkable function so tests can populate the cache
     // without dragging in the live-fetch path.
     std::string tfr_source_serialize_for_test(const std::vector<tfr>& v);
+
+    // Stub for wake_main_thread — the production impl lives in
+    // program.cpp, which transitively pulls in the whole app
+    // graph (sdl, imgui, map_widget, ...). Tests don't link
+    // program.cpp; the wake is a render-loop optimization, so a
+    // no-op is fine here.
+    void wake_main_thread() {}
 }
 
 namespace
