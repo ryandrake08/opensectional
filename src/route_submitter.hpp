@@ -8,6 +8,31 @@
 
 namespace osect
 {
+    // Outcome of a completed submission. Exactly one of `route` or
+    // `error` is populated when this is delivered via route_status.
+    struct route_completion
+    {
+        // Set on success.
+        std::optional<flight_route> route;
+        // Set on failure: the message from route_parse_error::what()
+        // (or any other std::exception thrown by the parser).
+        std::string error;
+    };
+
+    // Snapshot of the submitter's state, returned by poll(). `pending`
+    // and `completion` are mutually exclusive: a completed submission
+    // is delivered with `pending == false`, so callers never have to
+    // reason about an in-flight plan and a finished plan at the same
+    // time.
+    struct route_status
+    {
+        bool pending = false;
+        // Populated for exactly one poll() call — the one that
+        // observes the worker has finished. Subsequent polls return
+        // `pending == false, completion == nullopt` (idle).
+        std::optional<route_completion> completion;
+    };
+
     // Async wrapper around route_planner::expand_sigils + flight_route
     // construction. Both run on a background thread so the UI can show
     // a progress indicator during long plans, and the main thread
@@ -37,15 +62,11 @@ namespace osect
         // round-tripping through the worker.
         void submit(const std::string& text, const route_planner::options& opts);
 
-        // True while a background expansion is in progress.
-        bool pending() const;
-
-        // Returns the parsed route once the most recent submit()
-        // completes, then transitions back to idle. Returns nullopt
-        // while the expansion is pending or when no submission is
-        // active. Throws route_parse_error on expansion or parse
-        // failure.
-        std::optional<flight_route> drain();
+        // Single per-frame status read. Resolves the worker's state
+        // exactly once so callers can't observe `pending` and a
+        // completion in the same frame. Transitions ready→idle on
+        // the call that delivers the completion.
+        route_status poll();
     };
 
 } // namespace osect

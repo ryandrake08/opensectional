@@ -1,5 +1,5 @@
 #include "route_submitter.hpp"
-#include "flight_route.hpp" // route_parse_error
+#include "flight_route.hpp"
 #include "route_planner.hpp"
 #include "wake_main.hpp"
 #include <atomic>
@@ -58,25 +58,27 @@ namespace osect
             });
     }
 
-    bool route_submitter::pending() const
-    {
-        return pimpl->worker.joinable() && !pimpl->done;
-    }
-
-    std::optional<flight_route> route_submitter::drain()
+    route_status route_submitter::poll()
     {
         auto& d = *pimpl;
-        if(!d.worker.joinable() || !d.done)
+        if(!d.worker.joinable())
         {
-            return std::nullopt;
+            return {false, std::nullopt};
         }
+        if(!d.done)
+        {
+            return {true, std::nullopt};
+        }
+        // Worker has finished. Join, transition to idle, and hand
+        // the result/error to the caller in a single shot.
         d.worker.join();
         d.done = false;
-        if(!d.error.empty())
-        {
-            throw route_parse_error(d.error);
-        }
-        return std::move(d.result);
+        route_completion completion;
+        completion.route = std::move(d.result);
+        completion.error = std::move(d.error);
+        d.result.reset();
+        d.error.clear();
+        return {false, std::move(completion)};
     }
 
 } // namespace osect
