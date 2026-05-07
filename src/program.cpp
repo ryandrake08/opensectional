@@ -260,6 +260,112 @@ namespace osect
             return merged;
         }
 
+        bool handle_visibility(const ui_overlay_result& r)
+        {
+            if(!r.visibility_changed)
+            {
+                return false;
+            }
+            map.set_visibility(ui.visibility());
+            return true;
+        }
+
+        bool handle_search_selection(const ui_overlay_result& r)
+        {
+            if(!r.selected_hit_index)
+            {
+                return false;
+            }
+            auto idx = *r.selected_hit_index;
+            if(idx >= 0 && idx < static_cast<int>(ui.search_results().size()))
+            {
+                map.focus_on_hit(ui.search_results()[idx]);
+            }
+            ui.set_search_results({});
+            return true;
+        }
+
+        bool handle_search_query(const ui_overlay_result& r)
+        {
+            if(!r.search_query)
+            {
+                return false;
+            }
+            const auto& q = *r.search_query;
+            ui.set_search_results(q.empty() ? std::vector<search_hit>{} : map.search(q, SEARCH_RESULT_LIMIT));
+            return true;
+        }
+
+        bool handle_route_request(const ui_overlay_result& r)
+        {
+            if(!r.requested_route_text)
+            {
+                return false;
+            }
+            if(r.requested_route_text->empty())
+            {
+                map.clear_route();
+                ui.clear_route_state();
+            }
+            else
+            {
+                // Snapshot the GUI knobs into the planner options
+                // for this submission. ini-driven preferences are
+                // already in `plan_options`; we just overlay
+                // max_leg and use-airways from the UI.
+                auto opts = plan_options;
+                opts.max_leg_length_nm = r.route_max_leg_nm;
+                opts.use_airways = r.route_use_airways;
+                submitter.submit(*r.requested_route_text, opts);
+            }
+            return true;
+        }
+
+        // Single per-frame read of the submitter's state. poll()
+        // guarantees `pending` and `completion` are mutually
+        // exclusive, so a finished plan never arrives in the same
+        // frame that the spinner is shown. Must follow
+        // handle_route_request in the per-frame chain so a freshly
+        // submitted worker is observed as `pending` in the same
+        // frame, keeping the planning flag continuous.
+        bool handle_route_status()
+        {
+            auto status = submitter.poll();
+            ui.set_route_planning(status.pending);
+            auto dirty = status.pending;
+            if(status.completion)
+            {
+                if(status.completion->route)
+                {
+                    ui.set_route_state(*status.completion->route);
+                    map.set_route(std::move(*status.completion->route));
+                }
+                else
+                {
+                    ui.clear_route_state(status.completion->error);
+                }
+                dirty = true;
+            }
+            return dirty;
+        }
+
+        bool handle_route_dirty()
+        {
+            if(!map.drain_route_dirty())
+            {
+                return false;
+            }
+            if(map.route())
+            {
+                ui.set_route_state(*map.route());
+            }
+            else
+            {
+                ui.clear_route_state();
+            }
+            return true;
+        }
+
         void run()
         {
             auto needs_render = true;
@@ -284,101 +390,15 @@ namespace osect
                 ui.set_data_sources(build_data_sources());
 
                 auto ui_result = ui.draw(last_render_ms, map.feature_types());
-                if(ui_result.visibility_changed)
-                {
-                    map.set_visibility(ui.visibility());
-                    needs_render = true;
-                }
-
-                if(ui_result.selected_hit_index)
-                {
-                    auto idx = *ui_result.selected_hit_index;
-                    if(idx >= 0 && idx < static_cast<int>(ui.search_results().size()))
-                    {
-                        map.focus_on_hit(ui.search_results()[idx]);
-                    }
-                    ui.set_search_results({});
-                    needs_render = true;
-                }
-
-                if(ui_result.search_query)
-                {
-                    const auto& q = *ui_result.search_query;
-                    ui.set_search_results(q.empty() ? std::vector<search_hit>{} : map.search(q, SEARCH_RESULT_LIMIT));
-                    needs_render = true;
-                }
-
-                if(ui_result.requested_route_text)
-                {
-                    if(ui_result.requested_route_text->empty())
-                    {
-                        map.clear_route();
-                        ui.clear_route_state();
-                    }
-                    else
-                    {
-                        // Snapshot the GUI knobs into the planner
-                        // options for this submission. ini-driven
-                        // preferences are already in `plan_options`;
-                        // we just overlay max_leg and use-airways
-                        // from the UI.
-                        auto opts = plan_options;
-                        opts.max_leg_length_nm = ui_result.route_max_leg_nm;
-                        opts.use_airways = ui_result.route_use_airways;
-                        submitter.submit(*ui_result.requested_route_text, opts);
-                    }
-                    needs_render = true;
-                }
-
-                // Single per-frame read of the submitter's state. poll()
-                // guarantees `pending` and `completion` are mutually
-                // exclusive, so a finished plan never arrives in the
-                // same frame that the spinner is shown.
-                auto status = submitter.poll();
-                ui.set_route_planning(status.pending);
-                if(status.pending)
-                {
-                    needs_render = true;
-                }
-                if(status.completion)
-                {
-                    if(status.completion->route)
-                    {
-                        ui.set_route_state(*status.completion->route);
-                        map.set_route(std::move(*status.completion->route));
-                    }
-                    else
-                    {
-                        ui.clear_route_state(status.completion->error);
-                    }
-                    needs_render = true;
-                }
-
-                if(map.drain_route_dirty())
-                {
-                    if(map.route())
-                    {
-                        ui.set_route_state(*map.route());
-                    }
-                    else
-                    {
-                        ui.clear_route_state();
-                    }
-                    needs_render = true;
-                }
-
-                if(map.draw_imgui())
-                {
-                    needs_render = true;
-                }
-                if(imgui_ctx.wants_mouse())
-                {
-                    needs_render = true;
-                }
-                if(imgui_ctx.warming_up())
-                {
-                    needs_render = true;
-                }
+                needs_render |= handle_visibility(ui_result);
+                needs_render |= handle_search_selection(ui_result);
+                needs_render |= handle_search_query(ui_result);
+                needs_render |= handle_route_request(ui_result);
+                needs_render |= handle_route_status();
+                needs_render |= handle_route_dirty();
+                needs_render |= map.draw_imgui();
+                needs_render |= imgui_ctx.wants_mouse();
+                needs_render |= imgui_ctx.warming_up();
 
                 imgui_ctx.end_frame();
 
