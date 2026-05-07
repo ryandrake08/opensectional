@@ -21,6 +21,10 @@ namespace osect
     {
         layer_visibility vis;
         std::string search_buf;
+        // Last search_buf value emitted via ui_overlay_result::search_query.
+        // Used to suppress redundant per-frame emissions while the box text
+        // is unchanged, so callers don't re-run the FTS query at frame rate.
+        std::string last_search_query;
         std::vector<search_hit> hits;
 
         // Route panel state: input buffer + whether a route is active.
@@ -237,7 +241,6 @@ namespace osect
             ImGui::SetNextItemWidth(static_cast<float>(SEARCH_INPUT_WIDTH_PX));
             ImGui::InputTextWithHint("##search_input", "Search", &d.search_buf);
             auto input_focused = ImGui::IsItemFocused();
-            result.search_query = d.search_buf;
 
             auto enter_pressed = input_focused && ImGui::IsKeyPressed(ImGuiKey_Enter, false);
 
@@ -300,7 +303,16 @@ namespace osect
             {
                 result.selected_hit_index = *selected_flat;
                 d.search_buf.clear();
-                result.search_query.clear();
+                // Selection clears the box; sync last_search_query to "" so
+                // the now-empty buffer doesn't fire a redundant search-query
+                // emission on this frame or the next. The caller's selection
+                // handler is responsible for clearing displayed results.
+                d.last_search_query.clear();
+            }
+            else if(d.search_buf != d.last_search_query)
+            {
+                d.last_search_query = d.search_buf;
+                result.search_query = d.search_buf;
             }
         }
 
