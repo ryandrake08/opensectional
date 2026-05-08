@@ -400,6 +400,12 @@ namespace osect
                 auto opts = plan_options;
                 opts.max_leg_length_nm = r.route_max_leg_nm;
                 opts.use_airways = r.route_use_airways;
+                if(auto err = validate_route_plan_options(opts); !err.empty())
+                {
+                    sdl::log_warn("route submit rejected: " + err);
+                    ui.clear_route_state(err);
+                    return true;
+                }
                 sdl::log_info("route submit: \"" + *r.requested_route_text
                               + "\" (max_leg=" + std::to_string(static_cast<int>(opts.max_leg_length_nm))
                               + "nm airways=" + (opts.use_airways ? "true" : "false") + ")");

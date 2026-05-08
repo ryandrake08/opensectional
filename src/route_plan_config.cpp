@@ -115,7 +115,22 @@ namespace osect
         // by default so a freshly-loaded ini reproduces the
         // previous (uniform) behavior.
         o.use_airways = false;
+
+        if(auto err = validate_route_plan_options(o); !err.empty())
+        {
+            throw std::runtime_error("route_plan: " + err);
+        }
         return o;
+    }
+
+    std::string validate_route_plan_options(const route_plan_options& opts)
+    {
+        // `!(x > 0)` rejects zero, negatives, and NaN in one check.
+        if(!(opts.max_leg_length_nm > 0))
+        {
+            return "max_leg_length_nm must be > 0 (got " + std::to_string(opts.max_leg_length_nm) + ")";
+        }
+        return {};
     }
 
 } // namespace osect

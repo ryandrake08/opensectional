@@ -291,6 +291,31 @@ namespace osect
         read_into(ini, prefix + "gap_length", s.gap_length);
     }
 
+    // Reject obviously bad values (negatives, NaN) in a resolved
+    // style. `!(x >= 0)` rejects negatives and NaN in one check;
+    // zero is permitted across the board (runway uses border_width=0
+    // explicitly, and zero-length dash/gap means "solid"). Throws
+    // std::runtime_error on the first offending field, naming the
+    // section.field path for the user.
+    static void validate_style(const feature_style& s, const std::string& key)
+    {
+        auto reject = [&](const char* field, double value, const char* constraint)
+        {
+            throw std::runtime_error("chart_style: " + key + "." + field + " " + constraint + " (got "
+                                     + std::to_string(value) + ")");
+        };
+        if(!(s.min_zoom >= 0)) reject("min_zoom", s.min_zoom, "must be >= 0");
+        if(!(s.max_zoom >= 0)) reject("max_zoom", s.max_zoom, "must be >= 0");
+        if(!(s.r >= 0)) reject("r", s.r, "must be >= 0");
+        if(!(s.g >= 0)) reject("g", s.g, "must be >= 0");
+        if(!(s.b >= 0)) reject("b", s.b, "must be >= 0");
+        if(!(s.a >= 0)) reject("a", s.a, "must be >= 0");
+        if(!(s.line_width >= 0)) reject("line_width", s.line_width, "must be >= 0");
+        if(!(s.border_width >= 0)) reject("border_width", s.border_width, "must be >= 0");
+        if(!(s.dash_length >= 0)) reject("dash_length", s.dash_length, "must be >= 0");
+        if(!(s.gap_length >= 0)) reject("gap_length", s.gap_length, "must be >= 0");
+    }
+
     // Per-key defaults. Mirrors osect.ini row-for-row. Color is a CSS
     // name (or hex) parsed at construction time; an empty color string
     // leaves r/g/b/a at feature_style{}'s white default — used by zoom-only
@@ -432,6 +457,7 @@ namespace osect
         {
             auto s = resolve_default(d);
             apply_overrides(s, ini, std::string(d.key) + ".");
+            validate_style(s, d.key);
             styles[d.key] = s;
         }
     }

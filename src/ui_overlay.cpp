@@ -340,7 +340,6 @@ namespace osect
             ImGui::SameLine();
             ImGui::SetNextItemWidth(90.0F);
             ImGui::InputFloat("Max leg (nm)", &d.max_leg_nm, 0.0F, 0.0F, "%.0f");
-            d.max_leg_nm = std::max(d.max_leg_nm, 1.0F);
             ImGui::EndDisabled();
             if(submit && !d.planning)
             {
