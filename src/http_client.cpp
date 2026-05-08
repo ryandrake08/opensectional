@@ -1,5 +1,6 @@
 #include "http_client.hpp"
 #include <curl/curl.h>
+#include <atomic>
 #include <cctype>
 #include <mutex>
 #include <stdexcept>
@@ -77,6 +78,7 @@ namespace osect
     {
         CURL* curl = nullptr;
         bool offline = false;
+        std::atomic<bool> cancelled{false};
 
         explicit impl(bool offline_) : curl(make_curl_handle()), offline(offline_)
         {
@@ -94,16 +96,38 @@ namespace osect
         impl& operator=(impl&&) = delete;
     };
 
+    namespace
+    {
+        // libcurl invokes this every ~100-200ms during DNS / connect /
+        // TLS / transfer. Returning non-zero aborts curl_easy_perform()
+        // with CURLE_ABORTED_BY_CALLBACK so a shutdown can interrupt
+        // an otherwise-blocking syscall.
+        int xferinfo_cb(void* userdata, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
+        {
+            const auto* flag = static_cast<const std::atomic<bool>*>(userdata);
+            return flag->load(std::memory_order_relaxed) ? 1 : 0;
+        }
+    }
+
     http_client::http_client(bool offline) : pimpl(std::make_unique<impl>(offline))
     {
     }
     http_client::~http_client() = default;
+
+    void http_client::cancel()
+    {
+        pimpl->cancelled.store(true, std::memory_order_relaxed);
+    }
 
     http_client::response http_client::get(const request& req)
     {
         if(pimpl->offline)
         {
             throw std::runtime_error("HTTP request failed: offline mode (" + req.url + ")");
+        }
+        if(pimpl->cancelled.load(std::memory_order_relaxed))
+        {
+            throw std::runtime_error("HTTP request failed: cancelled (" + req.url + ")");
         }
 
         auto* curl = pimpl->curl;
@@ -134,6 +158,10 @@ namespace osect
         // We're embedding curl into a GUI app where SIGPIPE handling is
         // already centralized; keep curl from installing its own.
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+        // Progress callback drives shutdown cancellation — see cancel().
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, xferinfo_cb);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &pimpl->cancelled);
         if(headers)
         {
             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);

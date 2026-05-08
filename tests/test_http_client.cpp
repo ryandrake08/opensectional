@@ -36,3 +36,12 @@ TEST_CASE("http_client: offline mode short-circuits before any network call")
     r.url = "https://example.com/";
     CHECK_THROWS_AS(client.get(r), std::runtime_error);
 }
+
+TEST_CASE("http_client: cancel() makes subsequent get() throw immediately")
+{
+    http_client client;
+    client.cancel();
+    http_client::request r;
+    r.url = "https://example.com/";
+    CHECK_THROWS_AS(client.get(r), std::runtime_error);
+}

@@ -33,6 +33,13 @@ namespace osect
         http_client(const http_client&) = delete;
         http_client& operator=(const http_client&) = delete;
 
+        // Abort any in-flight get() and cause every subsequent get()
+        // to fail immediately. Sticky — there is no un-cancel. Intended
+        // for shutdown so a worker thread blocked inside libcurl can
+        // be joined promptly. Thread-safe against the worker calling
+        // get() concurrently.
+        void cancel();
+
         struct request
         {
             std::string url;
