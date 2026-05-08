@@ -460,6 +460,9 @@ namespace osect
 
     tfr_source::~tfr_source()
     {
+        // Abort any in-flight curl call first so the worker isn't
+        // stuck inside curl_easy_perform() when we go to join().
+        pimpl->http.cancel();
         {
             std::lock_guard lk(pimpl->worker_mtx);
             pimpl->shutdown = true;
