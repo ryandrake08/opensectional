@@ -354,6 +354,33 @@ TEST_CASE("load_route_plan_options rejects unknown preference values")
     std::remove(path.c_str());
 }
 
+TEST_CASE("validate_route_plan_options accepts default options")
+{
+    CHECK(validate_route_plan_options(route_planner::options{}).empty());
+}
+
+TEST_CASE("validate_route_plan_options rejects non-positive max_leg_length_nm")
+{
+    route_planner::options o;
+    o.max_leg_length_nm = 0.0;
+    CHECK_FALSE(validate_route_plan_options(o).empty());
+    o.max_leg_length_nm = -1.0;
+    CHECK_FALSE(validate_route_plan_options(o).empty());
+}
+
+TEST_CASE("load_route_plan_options rejects non-positive max_leg_length_nm")
+{
+    auto path = (std::filesystem::temp_directory_path() /
+                 "osect_route_plan_test_max_leg.ini").string();
+    {
+        std::ofstream out(path);
+        out << "[route_plan]\nmax_leg_length_nm = 0\n";
+    }
+    ini_config ini(path);
+    CHECK_THROWS_AS(load_route_plan_options(ini), std::runtime_error);
+    std::remove(path.c_str());
+}
+
 TEST_CASE("use_airways toggle changes path via fix-rejecting options")
 {
     // Build options that reject every routable subtype except

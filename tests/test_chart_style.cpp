@@ -100,6 +100,31 @@ TEST_CASE("ini override layers on top of defaults")
     CHECK(rw.border_width == 0.0F);
 }
 
+TEST_CASE("chart_style rejects negative numeric overrides")
+{
+    {
+        tmp_ini f("[runway]\nline_width = -1\n");
+        ini_config ini(f.path);
+        CHECK_THROWS_AS(osect::chart_style{ini}, std::runtime_error);
+    }
+    {
+        tmp_ini f("[tfr]\nmin_zoom = -3\n");
+        ini_config ini(f.path);
+        CHECK_THROWS_AS(osect::chart_style{ini}, std::runtime_error);
+    }
+    {
+        tmp_ini f("[airport_towered]\na = -0.5\n");
+        ini_config ini(f.path);
+        CHECK_THROWS_AS(osect::chart_style{ini}, std::runtime_error);
+    }
+    {
+        // border_width = 0 is legitimate (runway ships with this).
+        tmp_ini f("[tfr]\nborder_width = 0\n");
+        ini_config ini(f.path);
+        CHECK_NOTHROW(osect::chart_style{ini});
+    }
+}
+
 TEST_CASE("repo osect.ini reproduces the defaults-only style")
 {
     // ctest sets WORKING_DIRECTORY to the repo root, so osect.ini
