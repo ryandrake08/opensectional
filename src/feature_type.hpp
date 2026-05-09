@@ -9,6 +9,7 @@
 // helpers.
 
 #include "feature_builder.hpp" // build_context, polyline_data, polygon_fill_data
+#include "flight_route.hpp"
 #include "geo_types.hpp"
 #include "nasr_database.hpp"
 #include "pick_result.hpp"
@@ -41,6 +42,9 @@ namespace osect
         geo_bbox pick_box;     // padded around click for point features
         geo_bbox click_box;    // degenerate — click point only
         double pick_radius_nm; // half-diagonal of pick_box, for line hits
+        // Runtime route state available to route_type::pick. Empty
+        // for picks where no routes are loaded.
+        const std::vector<flight_route>& routes;
     };
 
     // Info-popup key/value rows produced by feature_type::info_kv().

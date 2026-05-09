@@ -518,8 +518,8 @@ namespace osect
                 }
                 if(det_resp.status_code != 200)
                 {
-                    sdl::log_warn("tfr detail returned HTTP " + std::to_string(det_resp.status_code) + " for "
-                                  + notam_id);
+                    sdl::log_warn("tfr detail returned HTTP " + std::to_string(det_resp.status_code) + " for " +
+                                  notam_id);
                     continue;
                 }
                 try
@@ -561,8 +561,8 @@ namespace osect
                 pimpl->segments = std::move(new_segs);
                 pimpl->last_ok = std::chrono::system_clock::now();
             }
-            sdl::log_info("tfr refresh complete: " + std::to_string(tfr_count) + " TFRs, "
-                          + std::to_string(seg_count) + " segments");
+            sdl::log_info("tfr refresh complete: " + std::to_string(tfr_count) + " TFRs, " + std::to_string(seg_count) +
+                          " segments");
 
             // 5. Persist to disk for warm starts and --offline.
             try

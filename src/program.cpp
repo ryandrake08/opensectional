@@ -1,5 +1,7 @@
 #include "program.hpp"
 #include "ephemeral_data.hpp"
+#include "feature_type.hpp"
+#include "flight_route.hpp"
 #include "ini_config.hpp"
 #include "map_widget.hpp"
 #include "nasr_database.hpp"
@@ -7,25 +9,23 @@
 #include "route_planner.hpp"
 #include "route_submitter.hpp"
 #include "ui_overlay.hpp"
-#include "feature_type.hpp"
-#include "flight_route.hpp"
 #include <imgui/context.hpp>
 #include <cstdint>
 #include <iostream>
 #include <optional>
-#include <unordered_map>
 #include <sdl/command_buffer.hpp>
-#include <sdl/log.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
 #include <sdl/event.hpp>
 #include <sdl/filesystem.hpp>
 #include <sdl/instance.hpp>
+#include <sdl/log.hpp>
 #include <sdl/render_pass.hpp>
 #include <sdl/texture.hpp>
 #include <sdl/timer.hpp>
 #include <sdl/window.hpp>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace osect
 {
@@ -260,9 +260,9 @@ namespace osect
 
             ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
 
-            sdl::log_info(std::string("started: gpu=") + resolve_gpu_driver(opts) + " db=" + db_path
-                          + " basemap=" + (tile_path.empty() ? std::string("(none)") : tile_path)
-                          + " offline=" + (opts.offline ? "true" : "false"));
+            sdl::log_info(std::string("started: gpu=") + resolve_gpu_driver(opts) + " db=" + db_path +
+                          " basemap=" + (tile_path.empty() ? std::string("(none)") : tile_path) +
+                          " offline=" + (opts.offline ? "true" : "false"));
         }
 
         std::vector<data_source> build_data_sources()
@@ -458,9 +458,9 @@ namespace osect
                 ui.clear_route_state(req.tab_id, err);
                 return true;
             }
-            sdl::log_info("route submit: tab=" + std::to_string(req.tab_id) + " \"" + req.text
-                          + "\" (max_leg=" + std::to_string(static_cast<int>(opts.max_leg_length_nm))
-                          + "nm airways=" + (opts.use_airways ? "true" : "false") + ")");
+            sdl::log_info("route submit: tab=" + std::to_string(req.tab_id) + " \"" + req.text +
+                          "\" (max_leg=" + std::to_string(static_cast<int>(opts.max_leg_length_nm)) +
+                          "nm airways=" + (opts.use_airways ? "true" : "false") + ")");
             submitter.submit(req.text, opts, req.tab_id);
             ui.set_route_planning(req.tab_id, true);
             return true;
@@ -489,9 +489,9 @@ namespace osect
             if(status.completion->route)
             {
                 auto& route = *status.completion->route;
-                sdl::log_info("route planned: tab=" + std::to_string(tag) + " "
-                              + std::to_string(route.waypoints.size()) + " waypoints, "
-                              + std::to_string(static_cast<int>(route.total_distance_nm())) + " nm");
+                sdl::log_info("route planned: tab=" + std::to_string(tag) + " " +
+                              std::to_string(route.waypoints.size()) + " waypoints, " +
+                              std::to_string(static_cast<int>(route.total_distance_nm())) + " nm");
                 ui.set_route_state(tag, route);
 
                 auto it = tab_to_route.find(tag);
@@ -557,8 +557,7 @@ namespace osect
             }
             active_tab_id = *r.active_tab_changed;
             auto it = tab_to_route.find(active_tab_id);
-            auto idx =
-                it != tab_to_route.end() ? std::optional<std::size_t>(it->second) : std::optional<std::size_t>{};
+            auto idx = it != tab_to_route.end() ? std::optional<std::size_t>(it->second) : std::optional<std::size_t>{};
             map.set_active_route(idx);
             // Tab switch is the user's intentional focus gesture, so
             // align selection with the new tab's route. They can
@@ -595,8 +594,8 @@ namespace osect
             auto tab = tab_for_route_index(*idx);
             if(tab)
             {
-                sdl::log_info("route deleted via popup: tab=" + std::to_string(*tab)
-                              + " index=" + std::to_string(*idx));
+                sdl::log_info("route deleted via popup: tab=" + std::to_string(*tab) +
+                              " index=" + std::to_string(*idx));
                 ui.close_tab(*tab);
                 tab_to_route.erase(*tab);
             }
@@ -617,8 +616,8 @@ namespace osect
             {
                 return false;
             }
-            sdl::log_info("activate route via map click: tab=" + std::to_string(*tab)
-                          + " index=" + std::to_string(*idx));
+            sdl::log_info("activate route via map click: tab=" + std::to_string(*tab) +
+                          " index=" + std::to_string(*idx));
             ui.set_active_tab(*tab);
             active_tab_id = *tab;
             map.set_active_route(*idx);

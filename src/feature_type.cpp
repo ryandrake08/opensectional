@@ -3086,6 +3086,50 @@ namespace osect
 
         // MAA anchors to its center when the MAA is point/circle-defined;
         // shape-only MAAs fall back to the click point.
+        // Render the user's flight routes. pick(), build(), and
+        // build_selection() all read req.routes / req.active_route_index
+        // / req.selection from the build/pick context — there is no
+        // database query, since routes are runtime user state.
+        class route_type : public feature_type
+        {
+        public:
+            const char* label() const override
+            {
+                return "Routes";
+            }
+            int layer_id() const override
+            {
+                return layer_route;
+            }
+            const char* section_tag() const override
+            {
+                return "ROUTE";
+            }
+            bool owns(const feature& f) const override
+            {
+                return std::holds_alternative<route_pick>(f);
+            }
+            void pick(const pick_context& ctx, std::vector<feature>& out) const override;
+            std::string summary(const feature& f) const override
+            {
+                return std::get<route_pick>(f).label;
+            }
+            kv_list info_kv(const feature& /*f*/) const override
+            {
+                // Routes use a custom popup body (legs table + Delete);
+                // the standard kv table doesn't apply.
+                return {};
+            }
+            void build(const build_context& ctx) const override;
+            void build_selection(const build_context& /*ctx*/, const feature& /*f*/, polyline_data& /*out*/,
+                                 polygon_fill_data& /*fill_out*/) const override
+            {
+                // No selection overlay: route_type::build emits the
+                // selected route in white + halos directly into the
+                // route layers based on req.selection.
+            }
+        };
+
         class maa_type_anchored : public maa_type
         {
         public:
@@ -3099,13 +3143,199 @@ namespace osect
                 return {click_lon, click_lat};
             }
         };
+
+        // -- route_type implementation ----------------------------------
+
+        std::string route_pick_label(std::size_t route_index, route_pick::part_kind part, std::size_t inner_index,
+                                     const flight_route& route)
+        {
+            auto route_num = std::to_string(route_index + 1);
+            const auto& wps = route.waypoints;
+            if(part == route_pick::part_kind::waypoint)
+            {
+                return "Route " + route_num + ": " + waypoint_id(wps.at(inner_index)) + " (waypoint)";
+            }
+            return "Route " + route_num + ": " + waypoint_id(wps.at(inner_index)) + " - " +
+                   waypoint_id(wps.at(inner_index + 1)) + " (leg)";
+        }
+
+        void route_type::pick(const pick_context& ctx, std::vector<feature>& out) const
+        {
+            for(std::size_t r = 0; r < ctx.routes.size(); ++r)
+            {
+                const auto& wps = ctx.routes[r].waypoints;
+                bool found = false;
+                for(std::size_t i = 0; i < wps.size(); ++i)
+                {
+                    if(point_in_circle_nm(ctx.click_lon, ctx.click_lat, waypoint_lon(wps[i]), waypoint_lat(wps[i]),
+                                          ctx.pick_radius_nm))
+                    {
+                        out.push_back(
+                            route_pick{r, route_pick::part_kind::waypoint, i,
+                                       route_pick_label(r, route_pick::part_kind::waypoint, i, ctx.routes[r])});
+                        found = true;
+                        break;
+                    }
+                }
+                if(found || wps.size() < 2)
+                {
+                    continue;
+                }
+                for(std::size_t i = 1; i < wps.size() && !found; ++i)
+                {
+                    auto arc = geodesic_interpolate(waypoint_lat(wps[i - 1]), waypoint_lon(wps[i - 1]),
+                                                    waypoint_lat(wps[i]), waypoint_lon(wps[i]));
+                    for(std::size_t j = 1; j < arc.size(); ++j)
+                    {
+                        auto d = point_to_segment_nm(ctx.click_lon, ctx.click_lat, arc[j - 1].lon, arc[j - 1].lat,
+                                                     arc[j].lon, arc[j].lat);
+                        if(d <= ctx.pick_radius_nm)
+                        {
+                            out.push_back(
+                                route_pick{r, route_pick::part_kind::leg, i - 1,
+                                           route_pick_label(r, route_pick::part_kind::leg, i - 1, ctx.routes[r])});
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        void route_type::build(const build_context& ctx) const
+        {
+            const auto& req = ctx.req;
+            // The selected route (if any) is whichever one req.selection
+            // identifies via a route_pick variant. Render unselected
+            // routes first so the selected route's white line and halos
+            // draw on top of any overlap.
+            std::optional<std::size_t> selected;
+            if(req.selection && std::holds_alternative<route_pick>(*req.selection))
+            {
+                selected = std::get<route_pick>(*req.selection).route_index;
+            }
+            const auto& act = req.active_route_index;
+
+            auto draw_one = [&](const flight_route& route, bool is_active, bool is_highlighted)
+            {
+                const auto& wps = route.waypoints;
+                auto& pd = ctx.poly[layer_route];
+                const auto& rs = ctx.styles.route_style();
+
+                line_style ls{};
+                ls.line_width = rs.line_width;
+                ls.border_width = rs.border_width;
+                ls.dash_length = rs.dash_length;
+                ls.gap_length = rs.gap_length;
+                ls.r = rs.r;
+                ls.g = rs.g;
+                ls.b = rs.b;
+                ls.a = rs.a;
+
+                if(is_highlighted)
+                {
+                    ls.line_width = ls.line_width + 2.0F * ls.border_width + 2.0F;
+                    ls.border_width = 0;
+                    ls.dash_length = 0;
+                    ls.gap_length = 0;
+                    ls.r = ls.g = ls.b = 1.0F;
+                    ls.a = 1.0F;
+                }
+                else if(!is_active)
+                {
+                    constexpr auto INACTIVE_ALPHA = 0.4F;
+                    ls.a *= INACTIVE_ALPHA;
+                }
+
+                for(std::size_t i = 1; i < wps.size(); ++i)
+                {
+                    auto arc = geodesic_interpolate(waypoint_lat(wps[i - 1]), waypoint_lon(wps[i - 1]),
+                                                    waypoint_lat(wps[i]), waypoint_lon(wps[i]));
+                    std::vector<glm::vec2> polyline;
+                    polyline.reserve(arc.size());
+                    for(const auto& p : arc)
+                    {
+                        polyline.emplace_back(static_cast<float>(lon_to_mx(p.lon) + ctx.mx_offset),
+                                              static_cast<float>(lat_to_my(p.lat)));
+                    }
+                    pd.polylines.push_back(std::move(polyline));
+                    pd.styles.push_back(ls);
+                }
+
+                for(const auto& wp : wps)
+                {
+                    label_candidate lbl;
+                    lbl.text = waypoint_id(wp);
+                    lbl.mx = lon_to_mx(waypoint_lon(wp)) + ctx.mx_offset;
+                    lbl.my = lat_to_my(waypoint_lat(wp));
+                    lbl.priority = 100;
+                    lbl.layer = layer_route;
+                    ctx.labels.push_back(std::move(lbl));
+                }
+
+                if(!is_highlighted)
+                {
+                    return;
+                }
+
+                constexpr auto SYMBOL_RADIUS = 0.012;
+                constexpr auto HALO_SCALE = 1.8;
+                auto r_base = req.half_extent_y * SYMBOL_RADIUS;
+                auto ppw = req.viewport_height / (2.0 * req.half_extent_y);
+                auto halo_r = r_base * HALO_SCALE;
+                auto fill_px = halo_r * ppw;
+
+                line_style halo_ls{};
+                halo_ls.line_width = static_cast<float>(fill_px);
+                halo_ls.r = 1.0F;
+                halo_ls.g = 1.0F;
+                halo_ls.b = 1.0F;
+                halo_ls.a = 1.0F;
+                halo_ls.fill_width = static_cast<float>(fill_px);
+
+                auto& halo_pd = ctx.poly[layer_route_halo];
+                for(const auto& wp : wps)
+                {
+                    auto cx = lon_to_mx(waypoint_lon(wp)) + ctx.mx_offset;
+                    auto cy = lat_to_my(waypoint_lat(wp));
+
+                    constexpr auto HALO_SEGMENTS = 24;
+                    std::vector<glm::vec2> pts;
+                    pts.reserve(HALO_SEGMENTS);
+                    for(int s = 0; s < HALO_SEGMENTS; ++s)
+                    {
+                        auto angle = 2.0 * M_PI * s / HALO_SEGMENTS;
+                        auto hr = halo_r * 0.5;
+                        pts.emplace_back(static_cast<float>(cx + hr * std::cos(angle)),
+                                         static_cast<float>(cy + hr * std::sin(angle)));
+                    }
+                    halo_pd.polylines.push_back(std::move(pts));
+                    halo_pd.styles.push_back(halo_ls);
+                }
+            };
+
+            for(std::size_t i = 0; i < req.routes.size(); ++i)
+            {
+                if(selected && *selected == i)
+                {
+                    continue;
+                }
+                bool is_active = act && *act == i;
+                draw_one(req.routes[i], is_active, /*is_highlighted=*/false);
+            }
+            if(selected && *selected < req.routes.size())
+            {
+                bool is_active = act && *act == *selected;
+                draw_one(req.routes[*selected], is_active, /*is_highlighted=*/true);
+            }
+        }
     }
 
     std::vector<std::unique_ptr<feature_type>> make_feature_types()
     {
         // Order controls z-priority of pick results and checkbox order.
         std::vector<std::unique_ptr<feature_type>> v;
-        v.reserve(16);
+        v.reserve(17);
         // Order also determines build dependency order: navaid populates
         // navaid_positions (used by airway clearance), airway populates
         // airway_waypoints (used by fix on-airway test). So: navaid ->
@@ -3126,6 +3356,10 @@ namespace osect
         v.push_back(std::make_unique<obstacle_type>());
         v.push_back(std::make_unique<comm_outlet_type>());
         v.push_back(std::make_unique<awos_type>());
+        // Routes are user-created runtime data; route_type reads
+        // them from the build / pick context rather than from the
+        // database.
+        v.push_back(std::make_unique<route_type>());
         return v;
     }
 

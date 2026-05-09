@@ -25,7 +25,7 @@ namespace osect
         const char* header;
     };
 
-    constexpr std::size_t FEATURE_SECTION_COUNT = 17;
+    constexpr std::size_t FEATURE_SECTION_COUNT = 18;
     extern const std::array<feature_section_def, FEATURE_SECTION_COUNT> FEATURE_SECTIONS;
 
     // Returns the index into FEATURE_SECTIONS whose tag matches `tag`, or

@@ -474,7 +474,8 @@ namespace osect
                         ImGui::BeginDisabled(p.planning);
                         ImGui::SetNextItemWidth(360.0F);
                         ImGui::PushID(static_cast<int>(p.id));
-                        auto submit = ImGui::InputText("##route_input", &p.text_buf, ImGuiInputTextFlags_EnterReturnsTrue);
+                        auto submit =
+                            ImGui::InputText("##route_input", &p.text_buf, ImGuiInputTextFlags_EnterReturnsTrue);
                         ImGui::SameLine();
                         if(ImGui::Button("Set"))
                         {
