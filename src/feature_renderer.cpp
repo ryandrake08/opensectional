@@ -8,6 +8,7 @@
 #include "tfr_source.hpp"
 #include "ui_overlay.hpp"
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <memory>
 #include <sdl/buffer.hpp>
@@ -56,8 +57,9 @@ namespace osect
 
         layer_visibility vis;
         std::optional<feature> selection;
-        std::optional<flight_route> route;
-        bool route_selected = true;
+        std::vector<flight_route> routes;
+        std::optional<std::size_t> active_route_index;
+        std::optional<std::size_t> selected_route_index;
 
         impl(sdl::device& dev, const char* db_path, const chart_style& styles, const ephemeral_data& eph)
             : dev(dev), eph(eph), builder(db_path, styles), half_extent_y(HALF_CIRCUMFERENCE), query_bbox{0, 0, 0, 0}
@@ -146,8 +148,9 @@ namespace osect
             req.altitude = pimpl->vis.altitude;
             req.chart = pimpl->vis.chart;
             req.selection = pimpl->selection;
-            req.route = pimpl->route;
-            req.route_selected = pimpl->route_selected;
+            req.routes = pimpl->routes;
+            req.active_route_index = pimpl->active_route_index;
+            req.selected_route_index = pimpl->selected_route_index;
             // Snapshot ephemeral state into the request so the worker
             // thread reads from frozen vectors without further locking.
             req.tfrs = pimpl->eph.tfrs().snapshot();
@@ -260,21 +263,14 @@ namespace osect
         pimpl->has_cached_query = false;
     }
 
-    void feature_renderer::set_route(std::optional<flight_route> route)
+    void feature_renderer::set_routes(std::vector<flight_route> routes, std::optional<std::size_t> active_index,
+                                      std::optional<std::size_t> selected_index)
     {
-        pimpl->route = std::move(route);
-        // A freshly-set route starts selected.
-        pimpl->route_selected = true;
-        pimpl->has_cached_query = false;
-    }
-
-    void feature_renderer::set_route_selected(bool selected)
-    {
-        if(pimpl->route_selected == selected)
-        {
-            return;
-        }
-        pimpl->route_selected = selected;
+        assert(!active_index || *active_index < routes.size());
+        assert(!selected_index || *selected_index < routes.size());
+        pimpl->routes = std::move(routes);
+        pimpl->active_route_index = active_index;
+        pimpl->selected_route_index = selected_index;
         pimpl->has_cached_query = false;
     }
 

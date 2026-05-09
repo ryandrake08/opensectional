@@ -102,7 +102,8 @@ namespace osect
         // TLS / transfer. Returning non-zero aborts curl_easy_perform()
         // with CURLE_ABORTED_BY_CALLBACK so a shutdown can interrupt
         // an otherwise-blocking syscall.
-        int xferinfo_cb(void* userdata, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
+        int xferinfo_cb(void* userdata, curl_off_t /*dltotal*/, curl_off_t /*dlnow*/, curl_off_t /*ultotal*/,
+                        curl_off_t /*ulnow*/)
         {
             const auto* flag = static_cast<const std::atomic<bool>*>(userdata);
             return flag->load(std::memory_order_relaxed) ? 1 : 0;

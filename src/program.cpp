@@ -10,8 +10,10 @@
 #include "feature_type.hpp"
 #include "flight_route.hpp"
 #include <imgui/context.hpp>
+#include <cstdint>
 #include <iostream>
 #include <optional>
+#include <unordered_map>
 #include <sdl/command_buffer.hpp>
 #include <sdl/log.hpp>
 #include <sdl/copy_pass.hpp>
@@ -161,6 +163,16 @@ namespace osect
         // handle_visibility can log the diff each time the user
         // toggles a layer / altitude band / chart type.
         layer_visibility prev_vis;
+        // Maps each route-panel tab id to its route's index in
+        // map.routes(). Tabs without a planned route are absent.
+        // Updated on submission completion, panel close, popup
+        // delete, and any other operation that shifts route indexes.
+        std::unordered_map<std::uint64_t, std::size_t> tab_to_route;
+        // Last active panel tab id observed via active_tab_changed.
+        // Used to decide whether a freshly-planned route should pull
+        // the view (only when the user is still focused on the
+        // submitting tab when the result arrives).
+        std::uint64_t active_tab_id = 0;
 
         static std::string resolve_db_path(const parsed_options& opts, const std::string& prog)
         {
@@ -240,13 +252,13 @@ namespace osect
               planner(planner_db),
               submitter(planner),
               plan_options(load_route_plan_options(ini)),
-              static_sources(planner_db.list_data_sources())
+              static_sources(planner_db.list_data_sources()),
+              prev_vis(ui.visibility())
         {
             event_mgr.set_raw_event_hook([this](const void* event) { imgui_ctx.process_event(event); });
             event_mgr.add_listener(map.event_listener());
 
             ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
-            prev_vis = ui.visibility();
 
             sdl::log_info(std::string("started: gpu=") + resolve_gpu_driver(opts) + " db=" + db_path
                           + " basemap=" + (tile_path.empty() ? std::string("(none)") : tile_path)
@@ -379,71 +391,139 @@ namespace osect
             return true;
         }
 
+        // Reverse lookup: which tab id (if any) owns the route at
+        // `route_index`. O(n) over tab_to_route; n is the number of
+        // tabs with planned routes (typically <10).
+        std::optional<std::uint64_t> tab_for_route_index(std::size_t route_index) const
+        {
+            for(const auto& [tab_id, idx] : tab_to_route)
+            {
+                if(idx == route_index)
+                {
+                    return tab_id;
+                }
+            }
+            return std::nullopt;
+        }
+
+        // After remove_route(removed_idx), every entry in tab_to_route
+        // whose index was > removed_idx must shift down by one to
+        // stay aligned with map.routes().
+        void shift_tab_to_route_after_remove(std::size_t removed_idx)
+        {
+            for(auto& [tab_id, idx] : tab_to_route)
+            {
+                if(idx > removed_idx)
+                {
+                    --idx;
+                }
+            }
+        }
+
         bool handle_route_request(const ui_overlay_result& r)
         {
-            if(!r.requested_route_text)
+            if(!r.route_submit)
             {
                 return false;
             }
-            if(r.requested_route_text->empty())
+            const auto& req = *r.route_submit;
+
+            // Empty text is the Clear-button signal: drop the tab's
+            // route (if it had one) but keep the tab itself.
+            if(req.text.empty())
             {
-                sdl::log_info("route cleared");
-                map.clear_route();
-                ui.clear_route_state();
-            }
-            else
-            {
-                // Snapshot the GUI knobs into the planner options
-                // for this submission. ini-driven preferences are
-                // already in `plan_options`; we just overlay
-                // max_leg and use-airways from the UI.
-                auto opts = plan_options;
-                opts.max_leg_length_nm = r.route_max_leg_nm;
-                opts.use_airways = r.route_use_airways;
-                if(auto err = validate_route_plan_options(opts); !err.empty())
+                auto it = tab_to_route.find(req.tab_id);
+                if(it != tab_to_route.end())
                 {
-                    sdl::log_warn("route submit rejected: " + err);
-                    ui.clear_route_state(err);
-                    return true;
+                    auto idx = it->second;
+                    sdl::log_info("route cleared: tab=" + std::to_string(req.tab_id));
+                    map.remove_route(idx);
+                    tab_to_route.erase(it);
+                    shift_tab_to_route_after_remove(idx);
                 }
-                sdl::log_info("route submit: \"" + *r.requested_route_text
-                              + "\" (max_leg=" + std::to_string(static_cast<int>(opts.max_leg_length_nm))
-                              + "nm airways=" + (opts.use_airways ? "true" : "false") + ")");
-                submitter.submit(*r.requested_route_text, opts);
+                ui.clear_route_state(req.tab_id);
+                return true;
             }
+
+            // Snapshot the GUI knobs into the planner options for
+            // this submission. ini-driven preferences are already in
+            // plan_options; we just overlay max_leg and use-airways
+            // from the panel that submitted.
+            auto opts = plan_options;
+            opts.max_leg_length_nm = req.max_leg_nm;
+            opts.use_airways = req.use_airways;
+            if(auto err = validate_route_plan_options(opts); !err.empty())
+            {
+                sdl::log_warn("route submit rejected: " + err);
+                ui.clear_route_state(req.tab_id, err);
+                return true;
+            }
+            sdl::log_info("route submit: tab=" + std::to_string(req.tab_id) + " \"" + req.text
+                          + "\" (max_leg=" + std::to_string(static_cast<int>(opts.max_leg_length_nm))
+                          + "nm airways=" + (opts.use_airways ? "true" : "false") + ")");
+            submitter.submit(req.text, opts, req.tab_id);
+            ui.set_route_planning(req.tab_id, true);
             return true;
         }
 
         // Single per-frame read of the submitter's state. poll()
         // guarantees `pending` and `completion` are mutually
         // exclusive, so a finished plan never arrives in the same
-        // frame that the spinner is shown. Must follow
-        // handle_route_request in the per-frame chain so a freshly
-        // submitted worker is observed as `pending` in the same
-        // frame, keeping the planning flag continuous.
+        // frame that the spinner is shown.
         bool handle_route_status()
         {
             auto status = submitter.poll();
-            ui.set_route_planning(status.pending);
-            auto dirty = status.pending;
-            if(status.completion)
+            if(!status.completion)
             {
-                if(status.completion->route)
+                return status.pending;
+            }
+            auto tag = status.completion->tag;
+            ui.set_route_planning(tag, false);
+            if(!ui.has_tab(tag))
+            {
+                // Originating tab was closed before the plan
+                // completed. Drop the result.
+                sdl::log_info("route plan dropped: tab=" + std::to_string(tag) + " no longer present");
+                return true;
+            }
+            if(status.completion->route)
+            {
+                auto& route = *status.completion->route;
+                sdl::log_info("route planned: tab=" + std::to_string(tag) + " "
+                              + std::to_string(route.waypoints.size()) + " waypoints, "
+                              + std::to_string(static_cast<int>(route.total_distance_nm())) + " nm");
+                ui.set_route_state(tag, route);
+
+                auto it = tab_to_route.find(tag);
+                std::size_t idx = 0;
+                if(it != tab_to_route.end())
                 {
-                    const auto& route = *status.completion->route;
-                    sdl::log_info("route planned: " + std::to_string(route.waypoints.size()) + " waypoints, "
-                                  + std::to_string(static_cast<int>(route.total_distance_nm())) + " nm");
-                    ui.set_route_state(route);
-                    map.set_route(std::move(*status.completion->route));
+                    idx = it->second;
+                    map.replace_route(idx, std::move(route));
                 }
                 else
                 {
-                    sdl::log_info("route plan failed: " + status.completion->error);
-                    ui.clear_route_state(status.completion->error);
+                    map.add_route(std::move(route));
+                    idx = map.routes().size() - 1;
+                    tab_to_route.emplace(tag, idx);
                 }
-                dirty = true;
+
+                // Only pull the view, activate, and highlight if the
+                // submitting tab is still the user's focused tab —
+                // otherwise the map stays where the user has it.
+                if(tag == active_tab_id)
+                {
+                    map.set_active_route(idx);
+                    map.select_route(idx);
+                    map.fit_view_to_route(idx);
+                }
             }
-            return dirty;
+            else
+            {
+                sdl::log_info("route plan failed: tab=" + std::to_string(tag) + " " + status.completion->error);
+                ui.clear_route_state(tag, status.completion->error);
+            }
+            return true;
         }
 
         bool handle_route_dirty()
@@ -452,20 +532,102 @@ namespace osect
             {
                 return false;
             }
-            if(map.route())
+            // The mutated route is whichever one the user was
+            // dragging — i.e. the active route. Push its new text
+            // back to the corresponding tab.
+            auto active = map.active_route_index();
+            if(!active)
             {
-                ui.set_route_state(*map.route());
+                return true;
             }
-            else
+            auto tab = tab_for_route_index(*active);
+            if(!tab)
             {
-                ui.clear_route_state();
+                return true;
             }
+            ui.set_route_state(*tab, map.routes().at(*active));
+            return true;
+        }
+
+        bool handle_active_tab_changed(const ui_overlay_result& r)
+        {
+            if(!r.active_tab_changed)
+            {
+                return false;
+            }
+            active_tab_id = *r.active_tab_changed;
+            auto it = tab_to_route.find(active_tab_id);
+            auto idx =
+                it != tab_to_route.end() ? std::optional<std::size_t>(it->second) : std::optional<std::size_t>{};
+            map.set_active_route(idx);
+            // Tab switch is the user's intentional focus gesture, so
+            // align selection with the new tab's route. They can
+            // diverge again by clicking a different route on the map.
+            map.select_route(idx);
+            return true;
+        }
+
+        bool handle_tab_closed(const ui_overlay_result& r)
+        {
+            if(!r.tab_closed)
+            {
+                return false;
+            }
+            auto it = tab_to_route.find(*r.tab_closed);
+            if(it != tab_to_route.end())
+            {
+                auto idx = it->second;
+                sdl::log_info("route removed: tab=" + std::to_string(*r.tab_closed) + " index=" + std::to_string(idx));
+                map.remove_route(idx);
+                tab_to_route.erase(it);
+                shift_tab_to_route_after_remove(idx);
+            }
+            return true;
+        }
+
+        bool handle_route_delete_request()
+        {
+            auto idx = map.drain_route_delete_request();
+            if(!idx)
+            {
+                return false;
+            }
+            auto tab = tab_for_route_index(*idx);
+            if(tab)
+            {
+                sdl::log_info("route deleted via popup: tab=" + std::to_string(*tab)
+                              + " index=" + std::to_string(*idx));
+                ui.close_tab(*tab);
+                tab_to_route.erase(*tab);
+            }
+            map.remove_route(*idx);
+            shift_tab_to_route_after_remove(*idx);
+            return true;
+        }
+
+        bool handle_route_activate_request()
+        {
+            auto idx = map.drain_route_activate_request();
+            if(!idx)
+            {
+                return false;
+            }
+            auto tab = tab_for_route_index(*idx);
+            if(!tab)
+            {
+                return false;
+            }
+            sdl::log_info("activate route via map click: tab=" + std::to_string(*tab)
+                          + " index=" + std::to_string(*idx));
+            ui.set_active_tab(*tab);
+            active_tab_id = *tab;
+            map.set_active_route(*idx);
+            map.select_route(*idx);
             return true;
         }
 
         void run()
         {
-            auto needs_render = true;
             auto last_render_ms = 0.0F;
             while(true)
             {
@@ -478,27 +640,35 @@ namespace osect
                     break;
                 }
 
-                needs_render = map.update();
-
-                imgui_ctx.new_frame();
-
                 // Refresh data-status state for the panel each frame so
                 // ephemeral sources' freshness flips appear without an
                 // extra signal path.
                 ui.set_data_sources(build_data_sources());
 
+                // Draw all UI
+                imgui_ctx.new_frame();
                 auto ui_result = ui.draw(last_render_ms, map.feature_types());
+                auto needs_render = map.draw_imgui();
+                imgui_ctx.end_frame();
+
+                // Call all state handlers
                 needs_render |= handle_visibility(ui_result);
                 needs_render |= handle_search_selection(ui_result);
                 needs_render |= handle_search_query(ui_result);
+                needs_render |= handle_tab_closed(ui_result);
+                needs_render |= handle_active_tab_changed(ui_result);
                 needs_render |= handle_route_request(ui_result);
                 needs_render |= handle_route_status();
                 needs_render |= handle_route_dirty();
-                needs_render |= map.draw_imgui();
+                needs_render |= handle_route_delete_request();
+                needs_render |= handle_route_activate_request();
+
+                // Drain async results that arrived during the wait,
+                // and submit any new build requests this frame's
+                // mutations triggered. Single per-frame sync point.
+                needs_render |= map.update();
                 needs_render |= imgui_ctx.wants_mouse();
                 needs_render |= imgui_ctx.warming_up();
-
-                imgui_ctx.end_frame();
 
                 if(needs_render)
                 {

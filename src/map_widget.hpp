@@ -54,22 +54,67 @@ namespace osect
         // Run a full-text search against the NASR database.
         std::vector<search_hit> search(const std::string& query, int limit);
 
-        // Activate a parsed route. Caller is expected to do the parse
-        // off the main thread (route_submitter does this) — set_route
-        // itself only fits the view, kicks the feature builder, and
-        // takes ownership.
-        void set_route(flight_route route);
+        // Append a parsed route. Pure append: does not change the
+        // active or selected indexes, and does not move the view.
+        // Caller decides which of those side effects to apply (see
+        // fit_view_to_route, set_active_route, select_route).
+        void add_route(flight_route route);
 
-        // Clear the active route, if any.
-        void clear_route();
+        // Center and zoom the view to fit the bounding box of the
+        // route at `index`. No effect on active/selected. Asserts
+        // on out-of-range.
+        void fit_view_to_route(std::size_t index);
 
-        // Currently active route (nullopt if none).
-        const std::optional<flight_route>& route() const;
+        // Make `index` the selected route — opens the route info
+        // popup anchored at the route's centroid and renders that
+        // route in white + halos. nullopt closes the popup and
+        // un-highlights. Independent of the active route. Asserts
+        // on out-of-range.
+        void select_route(std::optional<std::size_t> index);
 
-        // Returns true once if the route was mutated internally (e.g. via
+        // Replace the route at `index` with a freshly-planned one.
+        // Used when re-submitting a panel that already has a route
+        // so the route's position in the routes vector (and any
+        // tab-id ↔ index mapping the caller maintains) doesn't shift.
+        void replace_route(std::size_t index, flight_route route);
+
+        // Remove the route at `index`. Adjusts active and selected
+        // indexes so each still points to a valid route or becomes
+        // nullopt. Asserts on out-of-range index.
+        void remove_route(std::size_t index);
+
+        // Remove every route and clear the active/selected indexes.
+        void clear_routes();
+
+        // Make `index` the active route. nullopt clears active. The
+        // active route is the panel/drag target. Independent of the
+        // selected (highlighted) route. Asserts on out-of-range.
+        void set_active_route(std::optional<std::size_t> index);
+
+        // The full route list (read-only).
+        const std::vector<flight_route>& routes() const;
+
+        // Index of the active route, or nullopt if none.
+        std::optional<std::size_t> active_route_index() const;
+
+        // Returns true once if a route was mutated internally (e.g. via
         // segment drag-insert) since the last call; used by main() to re-push
         // the route state into the UI overlay.
         bool drain_route_dirty();
+
+        // If the user clicked Delete on the route info popup since
+        // the last call, return the route index that was selected at
+        // the time. The route is NOT removed by map_widget — caller
+        // owns the lifecycle (so the corresponding panel tab can be
+        // closed in the same operation). Returns nullopt otherwise.
+        std::optional<std::size_t> drain_route_delete_request();
+
+        // If the user clicked a non-active route's leg or waypoint
+        // since the last call, return that route's index. The
+        // caller switches the panel tab to the corresponding tab
+        // and updates active/selection accordingly. Returns nullopt
+        // otherwise.
+        std::optional<std::size_t> drain_route_activate_request();
 
         // Tell the map whether ImGui is consuming the mouse this frame
         // (suppresses pick on click when true).
@@ -93,7 +138,14 @@ namespace osect
         // manager keeps a reference even if the map_widget is destroyed.
         std::shared_ptr<sdl::event_listener> event_listener();
 
-        // Drain async results and check if rendering is needed.
+        // Per-frame sync. Called once at the end of each iteration
+        // of the main loop after all state-mutating code (input
+        // handlers, popup actions). Drains any async tile / feature
+        // build results that arrived since the last call, then
+        // submits new tile and feature build requests so the next
+        // frame can reflect the latest state. Returns true if the
+        // frame needs to be rendered (new geometry uploaded, an
+        // ephemeral source advanced, labels reprojected, etc.).
         bool update();
 
         // Execute one full render frame: copy (GPU upload) + all render

@@ -79,13 +79,10 @@ namespace osect
             }
         }
 
-        void build_route(const feature_build_request& req, double mx_offset)
+        void build_one_route(const feature_build_request& req, const flight_route& route, bool is_active,
+                             bool is_highlighted, double mx_offset)
         {
-            if(!req.route)
-            {
-                return;
-            }
-            const auto& wps = req.route->waypoints;
+            const auto& wps = route.waypoints;
 
             auto& pd = poly[layer_route];
             const auto& rs = styles.route_style();
@@ -100,9 +97,11 @@ namespace osect
             ls.b = rs.b;
             ls.a = rs.a;
 
-            // Selected route: white, slightly wider, no border/dash — same
-            // transform airway selection uses.
-            if(req.route_selected)
+            // Highlighted route: white, slightly wider, no border/dash —
+            // same transform airway selection uses. Active-but-not-
+            // highlighted: configured style, full alpha. Non-active:
+            // configured style, reduced alpha.
+            if(is_highlighted)
             {
                 ls.line_width = ls.line_width + 2.0F * ls.border_width + 2.0F;
                 ls.border_width = 0;
@@ -110,6 +109,11 @@ namespace osect
                 ls.gap_length = 0;
                 ls.r = ls.g = ls.b = 1.0F;
                 ls.a = 1.0F;
+            }
+            else if(!is_active)
+            {
+                constexpr auto INACTIVE_ALPHA = 0.4F;
+                ls.a *= INACTIVE_ALPHA;
             }
 
             // Route lines between consecutive waypoints
@@ -133,20 +137,21 @@ namespace osect
                 pd.styles.push_back(ls);
             }
 
-            // Waypoint halos — only when the route is selected.
-            if(!req.route_selected)
+            // Waypoint labels
+            for(const auto& wp : wps)
             {
-                // Still emit labels for unselected routes.
-                for(const auto& wp : wps)
-                {
-                    label_candidate lbl;
-                    lbl.text = waypoint_id(wp);
-                    lbl.mx = lon_to_mx(waypoint_lon(wp)) + mx_offset;
-                    lbl.my = lat_to_my(waypoint_lat(wp));
-                    lbl.priority = 100;
-                    lbl.layer = layer_route;
-                    labels.push_back(std::move(lbl));
-                }
+                label_candidate lbl;
+                lbl.text = waypoint_id(wp);
+                lbl.mx = lon_to_mx(waypoint_lon(wp)) + mx_offset;
+                lbl.my = lat_to_my(waypoint_lat(wp));
+                lbl.priority = 100;
+                lbl.layer = layer_route;
+                labels.push_back(std::move(lbl));
+            }
+
+            // Halos: only on the highlighted route.
+            if(!is_highlighted)
+            {
                 return;
             }
 
@@ -186,17 +191,28 @@ namespace osect
                 halo_pd.polylines.push_back(std::move(pts));
                 halo_pd.styles.push_back(halo_ls);
             }
+        }
 
-            // Waypoint labels
-            for(const auto& wp : wps)
+        void build_routes(const feature_build_request& req, double mx_offset)
+        {
+            auto sel = req.selected_route_index;
+            auto act = req.active_route_index;
+
+            // Render unselected routes first so the selected route's
+            // white line and halos draw on top of any overlap.
+            for(std::size_t i = 0; i < req.routes.size(); ++i)
             {
-                label_candidate lbl;
-                lbl.text = waypoint_id(wp);
-                lbl.mx = lon_to_mx(waypoint_lon(wp)) + mx_offset;
-                lbl.my = lat_to_my(waypoint_lat(wp));
-                lbl.priority = 100;
-                lbl.layer = layer_route;
-                labels.push_back(std::move(lbl));
+                if(sel && *sel == i)
+                {
+                    continue;
+                }
+                bool is_active = act && *act == i;
+                build_one_route(req, req.routes[i], is_active, /*is_highlighted=*/false, mx_offset);
+            }
+            if(sel && *sel < req.routes.size())
+            {
+                bool is_active = act && *act == *sel;
+                build_one_route(req, req.routes[*sel], is_active, /*is_highlighted=*/true, mx_offset);
             }
         }
 
@@ -213,19 +229,19 @@ namespace osect
             labels.clear();
 
             build_all_features(qbox, req, 0.0);
-            build_route(req, 0.0);
+            build_routes(req, 0.0);
 
             if(qbox.lon_max > 180.0)
             {
                 geo_bbox shifted{qbox.lon_min - 360.0, qbox.lat_min, qbox.lon_max - 360.0, qbox.lat_max};
                 build_all_features(shifted, req, WORLD_SIZE);
-                build_route(req, WORLD_SIZE);
+                build_routes(req, WORLD_SIZE);
             }
             if(qbox.lon_min < -180.0)
             {
                 geo_bbox shifted{qbox.lon_min + 360.0, qbox.lat_min, qbox.lon_max + 360.0, qbox.lat_max};
                 build_all_features(shifted, req, -WORLD_SIZE);
-                build_route(req, -WORLD_SIZE);
+                build_routes(req, -WORLD_SIZE);
             }
         }
 

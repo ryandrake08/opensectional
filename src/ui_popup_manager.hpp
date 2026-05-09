@@ -33,7 +33,7 @@ namespace osect
         popup_manager(const popup_manager&) = delete;
         popup_manager& operator=(const popup_manager&) = delete;
 
-        void open_pick(std::vector<feature> features, double click_lon, double click_lat);
+        void open_pick(std::vector<pick_item> items, double click_lon, double click_lat);
         void close_pick();
         void open_info(const feature& f, double anchor_lon, double anchor_lat);
         void close_info();
@@ -46,7 +46,7 @@ namespace osect
 
         struct pick_selection
         {
-            feature picked;
+            pick_item picked;
             double click_lon;
             double click_lat;
         };
@@ -64,10 +64,14 @@ namespace osect
             bool route_delete = false;
         };
 
-        // Draw all open popups. `route` may be null when no route is
-        // active; any open route popup auto-closes in that case.
+        // Draw all open popups. `routes` and `selected_route_index`
+        // describe the route list and which route's info popup is
+        // open (when any). The route popup auto-closes if the
+        // selected index is unset or out of range. `routes` is also
+        // used to label any route entries appearing in the pick
+        // selector.
         actions draw(const map_view& view, const std::vector<std::unique_ptr<feature_type>>& feature_types,
-                     const flight_route* route);
+                     const std::vector<flight_route>& routes, std::optional<std::size_t> selected_route_index);
     };
 
     // Draw rubber-band lines from the dragged route waypoint(s) to the
