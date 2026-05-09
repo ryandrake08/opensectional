@@ -62,13 +62,16 @@ namespace osect
         // and emits a highlight overlay rendered on top of everything.
         void set_selection(std::optional<feature> sel);
 
-        // Set (or clear) the active flight route. Triggers a rebuild.
-        // A newly-set route starts in the selected state.
-        void set_route(std::optional<flight_route> route);
-
-        // Toggle the route's selected visualization (white line + halos
-        // when selected; configured color + no halos when not).
-        void set_route_selected(bool selected);
+        // Set the full route list, the active route index (panel/drag
+        // target), and the selected route index (highlighted with
+        // white + halos). The two indexes are independent — either,
+        // both, or neither may be set. Pass an empty vector to clear.
+        // Triggers a rebuild.
+        //
+        // Precondition: each non-empty index must be < routes.size().
+        // Asserts on violation.
+        void set_routes(std::vector<flight_route> routes, std::optional<std::size_t> active_index,
+                        std::optional<std::size_t> selected_index);
     };
 
 } // namespace osect

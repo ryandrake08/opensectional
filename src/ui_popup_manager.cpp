@@ -27,7 +27,7 @@ namespace osect
             int warmup_frames = 0;
             double click_lon = 0.0;
             double click_lat = 0.0;
-            std::vector<feature> features;
+            std::vector<pick_item> items;
         };
 
         struct info_state
@@ -84,7 +84,7 @@ namespace osect
     }
     popup_manager::~popup_manager() = default;
 
-    void popup_manager::open_pick(std::vector<feature> features, double click_lon, double click_lat)
+    void popup_manager::open_pick(std::vector<pick_item> items, double click_lon, double click_lat)
     {
         auto& p = pimpl->pick;
         p.open = true;
@@ -93,13 +93,13 @@ namespace osect
         p.warmup_frames = 2;
         p.click_lon = click_lon;
         p.click_lat = click_lat;
-        p.features = std::move(features);
+        p.items = std::move(items);
     }
 
     void popup_manager::close_pick()
     {
         pimpl->pick.open = false;
-        pimpl->pick.features.clear();
+        pimpl->pick.items.clear();
     }
 
     void popup_manager::open_info(const feature& f, double anchor_lon, double anchor_lat)
@@ -153,10 +153,38 @@ namespace osect
 
     namespace
     {
+        // Build the display label for a route_pick_item using the
+        // route's current waypoint list.
+        std::string route_pick_label(const route_pick_item& r, const std::vector<flight_route>& routes)
+        {
+            auto route_num = std::to_string(r.route_index + 1);
+            if(r.route_index >= routes.size())
+            {
+                return "Route " + route_num + " (gone)";
+            }
+            const auto& wps = routes[r.route_index].waypoints;
+            if(r.k == route_pick_item::kind::waypoint)
+            {
+                if(r.inner_index >= wps.size())
+                {
+                    return "Route " + route_num + " (gone)";
+                }
+                return "Route " + route_num + ": " + waypoint_id(wps[r.inner_index]) + " (waypoint)";
+            }
+            // Leg
+            if(r.inner_index + 1 >= wps.size())
+            {
+                return "Route " + route_num + " (gone)";
+            }
+            return "Route " + route_num + ": " + waypoint_id(wps[r.inner_index]) + " - "
+                   + waypoint_id(wps[r.inner_index + 1]) + " (leg)";
+        }
+
         // Draw the pick selector. Returns the warmup-still-running flag.
         // Dismissal/selection are reported through `out`.
         bool draw_pick(pick_state& p, popup_manager::actions& out, const map_view& view,
-                       const std::vector<std::unique_ptr<feature_type>>& feature_types)
+                       const std::vector<std::unique_ptr<feature_type>>& feature_types,
+                       const std::vector<flight_route>& routes)
         {
             if(!p.open)
             {
@@ -168,7 +196,7 @@ namespace osect
             if(!compute_anchor(view, p.click_lon, p.click_lat, pos, pivot))
             {
                 p.open = false;
-                p.features.clear();
+                p.items.clear();
                 out.pick_dismissed = true;
                 return false;
             }
@@ -185,43 +213,55 @@ namespace osect
             if(imgui::right_aligned_close_button("X##pick_close"))
             {
                 p.open = false;
-                p.features.clear();
+                p.items.clear();
                 out.pick_dismissed = true;
                 return false;
             }
 
-            if(!p.features.empty())
+            if(!p.items.empty())
             {
                 ImGui::Separator();
 
-                // Group pick features by canonical feature-section tag.
-                std::vector<ui_section> sections(FEATURE_SECTION_COUNT);
-                std::vector<std::vector<int>> section_feature_index(FEATURE_SECTION_COUNT);
+                // Section 0 is the synthetic "Routes" section for any
+                // route_pick_items at the click; the rest follow the
+                // canonical FEATURE_SECTIONS order.
+                constexpr std::size_t ROUTES_SECTION = 0;
+                std::vector<ui_section> sections(FEATURE_SECTION_COUNT + 1);
+                std::vector<std::vector<int>> section_item_index(FEATURE_SECTION_COUNT + 1);
+                sections[ROUTES_SECTION].header = "Routes";
                 for(std::size_t s = 0; s < FEATURE_SECTION_COUNT; ++s)
                 {
-                    sections.at(s).header = FEATURE_SECTIONS.at(s).header;
+                    sections.at(s + 1).header = FEATURE_SECTIONS.at(s).header;
                 }
 
-                for(int i = 0; i < static_cast<int>(p.features.size()); ++i)
+                for(int i = 0; i < static_cast<int>(p.items.size()); ++i)
                 {
-                    const auto& f = p.features[i];
+                    if(std::holds_alternative<route_pick_item>(p.items[i]))
+                    {
+                        const auto& r = std::get<route_pick_item>(p.items[i]);
+                        sections[ROUTES_SECTION].items.push_back(route_pick_label(r, routes));
+                        section_item_index[ROUTES_SECTION].push_back(i);
+                        continue;
+                    }
+                    const auto& f = std::get<feature>(p.items[i]);
                     const auto& t = find_feature_type(feature_types, f);
                     auto s = feature_section_index(t.section_tag());
                     if(s < 0)
                     {
                         continue;
                     }
-                    sections[s].items.push_back(t.summary(f));
-                    section_feature_index[s].push_back(i);
+                    auto sec = static_cast<std::size_t>(s) + 1;
+                    sections[sec].items.push_back(t.summary(f));
+                    section_item_index[sec].push_back(i);
                 }
 
                 auto picked = draw_sectioned_selectable_list(sections);
                 if(picked)
                 {
-                    auto fi = section_feature_index[picked->first][picked->second];
-                    out.pick_selected = popup_manager::pick_selection{p.features[fi], p.click_lon, p.click_lat};
+                    auto fi = section_item_index[picked->first][picked->second];
+                    out.pick_selected = popup_manager::pick_selection{p.items[fi], p.click_lon, p.click_lat};
                     p.open = false;
-                    p.features.clear();
+                    p.items.clear();
                 }
             }
 
@@ -431,19 +471,23 @@ namespace osect
 
     popup_manager::actions popup_manager::draw(const map_view& view,
                                                const std::vector<std::unique_ptr<feature_type>>& feature_types,
-                                               const flight_route* route)
+                                               const std::vector<flight_route>& routes,
+                                               std::optional<std::size_t> selected_route_index)
     {
         actions out{};
 
-        // Auto-close the route popup when the route disappears.
-        if(!route && pimpl->route.open)
+        auto a = draw_pick(pimpl->pick, out, view, feature_types, routes);
+        auto b = draw_info(pimpl->info, out, view, feature_types);
+        bool c = false;
+        if(!selected_route_index || *selected_route_index >= routes.size())
         {
+            // Selected route is gone — close the popup if it was open.
             pimpl->route.open = false;
         }
-
-        auto a = draw_pick(pimpl->pick, out, view, feature_types);
-        auto b = draw_info(pimpl->info, out, view, feature_types);
-        auto c = route ? draw_route(pimpl->route, out, view, *route) : false;
+        else
+        {
+            c = draw_route(pimpl->route, out, view, routes[*selected_route_index]);
+        }
 
         out.needs_more_frames = a || b || c;
         return out;

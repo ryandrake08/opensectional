@@ -2,6 +2,7 @@
 
 #include "flight_route.hpp"
 #include "route_planner.hpp"
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -10,6 +11,9 @@ namespace osect
 {
     // Outcome of a completed submission. Exactly one of `route` or
     // `error` is populated when this is delivered via route_status.
+    // `tag` echoes back the value passed to submit(), letting the
+    // caller route the result to the originating logical owner (e.g.
+    // a route panel tab) even if the user has shifted focus since.
     struct route_completion
     {
         // Set on success.
@@ -17,6 +21,7 @@ namespace osect
         // Set on failure: the message from route_parse_error::what()
         // (or any other std::exception thrown by the parser).
         std::string error;
+        std::uint64_t tag = 0;
     };
 
     // Snapshot of the submitter's state, returned by poll(). `pending`
@@ -59,8 +64,9 @@ namespace osect
         // `opts` is captured by value so the caller can mutate or
         // destroy its copy immediately. `text` must be non-empty;
         // callers handle the "clear route" case directly without
-        // round-tripping through the worker.
-        void submit(const std::string& text, const route_planner::options& opts);
+        // round-tripping through the worker. `tag` is echoed back
+        // verbatim in the resulting route_completion.
+        void submit(const std::string& text, const route_planner::options& opts, std::uint64_t tag);
 
         // Single per-frame status read. Resolves the worker's state
         // exactly once so callers can't observe `pending` and a

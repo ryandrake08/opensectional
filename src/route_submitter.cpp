@@ -14,6 +14,7 @@ namespace osect
         std::atomic<bool> done{false};
         std::optional<flight_route> result;
         std::string error;
+        std::uint64_t tag = 0;
 
         explicit impl(const route_planner& p) : planner(p)
         {
@@ -32,7 +33,7 @@ namespace osect
         }
     }
 
-    void route_submitter::submit(const std::string& text, const route_planner::options& opts)
+    void route_submitter::submit(const std::string& text, const route_planner::options& opts, std::uint64_t tag)
     {
         auto& d = *pimpl;
         if(d.worker.joinable())
@@ -41,6 +42,7 @@ namespace osect
         }
         d.result.reset();
         d.error.clear();
+        d.tag = tag;
         d.done = false;
         d.worker = std::thread(
             [&d, text, opts]
@@ -76,6 +78,7 @@ namespace osect
         route_completion completion;
         completion.route = std::move(d.result);
         completion.error = std::move(d.error);
+        completion.tag = d.tag;
         d.result.reset();
         d.error.clear();
         return {false, std::move(completion)};

@@ -6,6 +6,7 @@
 #include "flight_route.hpp"
 #include "nasr_database.hpp" // for search_hit (POD struct, not the class)
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -78,19 +79,30 @@ namespace osect
         // Set for exactly one frame.
         std::optional<int> selected_hit_index;
 
-        // Route action this frame:
-        //   nullopt   — no action
-        //   ""        — clear the active route ("Clear" button or
-        //               Enter/Set on an empty input box)
-        //   non-empty — submit this text for planning
-        // Caller hands non-empty text to route_submitter and feeds
-        // state back via set_route_state() / clear_route_state().
-        std::optional<std::string> requested_route_text;
+        // Submission requested by a route panel tab this frame.
+        // `text` is empty for the Clear button (the tab stays open;
+        // the caller drops the route). Non-empty text is handed to
+        // route_submitter; the caller feeds state back via
+        // set_route_state() / set_route_error() addressed by tab_id.
+        struct route_submit_request
+        {
+            std::uint64_t tab_id;
+            std::string text;
+            double max_leg_nm;
+            bool use_airways;
+        };
+        std::optional<route_submit_request> route_submit;
 
-        // Current route-planner knobs. Read every frame; the caller
-        // funnels these into route_planner::options on submission.
-        double route_max_leg_nm = 80.0;
-        bool route_use_airways = false;
+        // The id of a tab the user just closed via its X button.
+        // ui_overlay has already removed the panel; the caller is
+        // responsible for removing the tab's route from map_widget
+        // (if it had one) and clearing its tab_id ↔ route_index
+        // mapping.
+        std::optional<std::uint64_t> tab_closed;
+
+        // The active tab changed this frame. The caller propagates
+        // the new tab's route_index to map_widget::set_active_route.
+        std::optional<std::uint64_t> active_tab_changed;
     };
 
     class ui_overlay
@@ -110,25 +122,47 @@ namespace osect
         // index from ui_overlay_result to retrieve the chosen hit).
         const std::vector<search_hit>& search_results() const;
 
-        // Update the route panel's displayed state after the caller parses
-        // a submitted route text successfully.
-        void set_route_state(const flight_route& route);
+        // Mark the panel for `tab_id` as holding a planned route.
+        // Snaps the input buffer to the canonical shorthand (so any
+        // entry/exit auto-corrections appear) and clears any error.
+        void set_route_state(std::uint64_t tab_id, const flight_route& route);
 
-        // Clear the route panel (no active route). `error` is shown in red
-        // if non-empty — typically the message from a failed parse.
-        void clear_route_state(const std::string& error = "");
+        // Mark the panel for `tab_id` as having no planned route.
+        // `error` is shown in red beneath the input when non-empty —
+        // typically the message from a failed parse.
+        void clear_route_state(std::uint64_t tab_id, const std::string& error = "");
 
-        // Toggle an async-planning indicator shown beneath the route
-        // input. Caller sets this to true when a sigil-bearing route
+        // Toggle the async-planning indicator on the panel for
+        // `tab_id`. Caller sets this true when a sigil-bearing route
         // is being expanded on a background thread, and back to
-        // false when the plan completes.
-        void set_route_planning(bool pending);
+        // false when the plan completes. The spinner stays anchored
+        // to its tab even if the user switches to a different one.
+        void set_route_planning(std::uint64_t tab_id, bool pending);
 
-        // Seed the planner-knob state shown in the route panel.
-        // Typically called once at startup with values loaded from
-        // ini. The current values are echoed back through
-        // ui_overlay_result::route_max_leg_nm / route_use_airways
-        // every frame so the caller doesn't need to mirror state.
+        // Programmatically close the panel for `tab_id` (e.g. in
+        // response to the route-info popup's Delete button). The
+        // tab_closed event is NOT emitted, since the caller already
+        // knows it asked for the close. If the tab doesn't exist,
+        // no-op.
+        void close_tab(std::uint64_t tab_id);
+
+        // Programmatically switch the active panel to `tab_id`
+        // (e.g. when the user clicked a non-active route on the
+        // map). The active_tab_changed event is NOT emitted, since
+        // the caller already knows the new active and is expected
+        // to update map state inline. If the tab doesn't exist,
+        // no-op.
+        void set_active_tab(std::uint64_t tab_id);
+
+        // True if a panel with this id currently exists. Used by the
+        // caller to drop async route-plan results addressed at a tab
+        // that has since been closed.
+        bool has_tab(std::uint64_t tab_id) const;
+
+        // Seed the per-tab planner-knob defaults applied to newly
+        // created panels. Typically called once at startup with
+        // values loaded from ini. Existing panels keep whatever
+        // values their user already set.
         void set_route_planner_defaults(double max_leg_nm, bool use_airways);
 
         // Seed the data-status panel with the per-source freshness
