@@ -5,6 +5,7 @@
 namespace osect
 {
     const std::array<feature_section_def, FEATURE_SECTION_COUNT> FEATURE_SECTIONS = {{
+        {"ROUTE", "ROUTES"},
         {"APT", "AIRPORTS"},
         {"RWY", "RUNWAYS"},
         {"NAV", "NAVAIDS"},

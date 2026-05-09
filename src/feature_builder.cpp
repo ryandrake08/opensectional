@@ -1,8 +1,6 @@
 #include "feature_builder.hpp"
 #include "chart_style.hpp"
 #include "feature_type.hpp"
-#include "flight_route.hpp"
-#include "geo_math.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
 #include "program.hpp"
@@ -79,143 +77,6 @@ namespace osect
             }
         }
 
-        void build_one_route(const feature_build_request& req, const flight_route& route, bool is_active,
-                             bool is_highlighted, double mx_offset)
-        {
-            const auto& wps = route.waypoints;
-
-            auto& pd = poly[layer_route];
-            const auto& rs = styles.route_style();
-
-            line_style ls{};
-            ls.line_width = rs.line_width;
-            ls.border_width = rs.border_width;
-            ls.dash_length = rs.dash_length;
-            ls.gap_length = rs.gap_length;
-            ls.r = rs.r;
-            ls.g = rs.g;
-            ls.b = rs.b;
-            ls.a = rs.a;
-
-            // Highlighted route: white, slightly wider, no border/dash —
-            // same transform airway selection uses. Active-but-not-
-            // highlighted: configured style, full alpha. Non-active:
-            // configured style, reduced alpha.
-            if(is_highlighted)
-            {
-                ls.line_width = ls.line_width + 2.0F * ls.border_width + 2.0F;
-                ls.border_width = 0;
-                ls.dash_length = 0;
-                ls.gap_length = 0;
-                ls.r = ls.g = ls.b = 1.0F;
-                ls.a = 1.0F;
-            }
-            else if(!is_active)
-            {
-                constexpr auto INACTIVE_ALPHA = 0.4F;
-                ls.a *= INACTIVE_ALPHA;
-            }
-
-            // Route lines between consecutive waypoints
-            for(size_t i = 1; i < wps.size(); ++i)
-            {
-                auto lat1 = waypoint_lat(wps[i - 1]);
-                auto lon1 = waypoint_lon(wps[i - 1]);
-                auto lat2 = waypoint_lat(wps[i]);
-                auto lon2 = waypoint_lon(wps[i]);
-
-                auto arc = geodesic_interpolate(lat1, lon1, lat2, lon2);
-                std::vector<glm::vec2> polyline;
-                polyline.reserve(arc.size());
-                for(const auto& p : arc)
-                {
-                    polyline.emplace_back(static_cast<float>(lon_to_mx(p.lon) + mx_offset),
-                                          static_cast<float>(lat_to_my(p.lat)));
-                }
-
-                pd.polylines.push_back(std::move(polyline));
-                pd.styles.push_back(ls);
-            }
-
-            // Waypoint labels
-            for(const auto& wp : wps)
-            {
-                label_candidate lbl;
-                lbl.text = waypoint_id(wp);
-                lbl.mx = lon_to_mx(waypoint_lon(wp)) + mx_offset;
-                lbl.my = lat_to_my(waypoint_lat(wp));
-                lbl.priority = 100;
-                lbl.layer = layer_route;
-                labels.push_back(std::move(lbl));
-            }
-
-            // Halos: only on the highlighted route.
-            if(!is_highlighted)
-            {
-                return;
-            }
-
-            constexpr auto SYMBOL_RADIUS = 0.012;
-            constexpr auto HALO_SCALE = 1.8;
-            auto r_base = req.half_extent_y * SYMBOL_RADIUS;
-            auto ppw = req.viewport_height / (2.0 * req.half_extent_y);
-            auto halo_r = r_base * HALO_SCALE;
-            auto fill_px = halo_r * ppw;
-
-            // White opaque halo matching the point-feature selection halo.
-            line_style halo_ls{};
-            halo_ls.line_width = static_cast<float>(fill_px);
-            halo_ls.r = 1.0F;
-            halo_ls.g = 1.0F;
-            halo_ls.b = 1.0F;
-            halo_ls.a = 1.0F;
-            halo_ls.fill_width = static_cast<float>(fill_px);
-
-            auto& halo_pd = poly[layer_route_halo];
-            for(const auto& wp : wps)
-            {
-                auto cx = lon_to_mx(waypoint_lon(wp)) + mx_offset;
-                auto cy = lat_to_my(waypoint_lat(wp));
-
-                // Halo circle
-                constexpr auto HALO_SEGMENTS = 24;
-                std::vector<glm::vec2> pts;
-                pts.reserve(HALO_SEGMENTS);
-                for(int s = 0; s < HALO_SEGMENTS; ++s)
-                {
-                    auto angle = 2.0 * M_PI * s / HALO_SEGMENTS;
-                    auto hr = halo_r * 0.5;
-                    pts.emplace_back(static_cast<float>(cx + hr * std::cos(angle)),
-                                     static_cast<float>(cy + hr * std::sin(angle)));
-                }
-                halo_pd.polylines.push_back(std::move(pts));
-                halo_pd.styles.push_back(halo_ls);
-            }
-        }
-
-        void build_routes(const feature_build_request& req, double mx_offset)
-        {
-            auto sel = req.selected_route_index;
-            auto act = req.active_route_index;
-
-            // Render unselected routes first so the selected route's
-            // white line and halos draw on top of any overlap.
-            for(std::size_t i = 0; i < req.routes.size(); ++i)
-            {
-                if(sel && *sel == i)
-                {
-                    continue;
-                }
-                bool is_active = act && *act == i;
-                build_one_route(req, req.routes[i], is_active, /*is_highlighted=*/false, mx_offset);
-            }
-            if(sel && *sel < req.routes.size())
-            {
-                bool is_active = act && *act == *sel;
-                build_one_route(req, req.routes[*sel], is_active, /*is_highlighted=*/true, mx_offset);
-            }
-        }
-
         void build_vertices(const feature_build_request& req)
         {
             constexpr auto WORLD_SIZE = 2.0 * HALF_CIRCUMFERENCE;
@@ -229,19 +90,16 @@ namespace osect
             labels.clear();
 
             build_all_features(qbox, req, 0.0);
-            build_routes(req, 0.0);
 
             if(qbox.lon_max > 180.0)
             {
                 geo_bbox shifted{qbox.lon_min - 360.0, qbox.lat_min, qbox.lon_max - 360.0, qbox.lat_max};
                 build_all_features(shifted, req, WORLD_SIZE);
-                build_routes(req, WORLD_SIZE);
             }
             if(qbox.lon_min < -180.0)
             {
                 geo_bbox shifted{qbox.lon_min + 360.0, qbox.lat_min, qbox.lon_max + 360.0, qbox.lat_max};
                 build_all_features(shifted, req, -WORLD_SIZE);
-                build_routes(req, -WORLD_SIZE);
             }
         }
 

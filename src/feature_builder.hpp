@@ -61,20 +61,15 @@ namespace osect
         chart_type chart = chart_type::sectional;
         std::optional<feature> selection;
 
-        // All flight routes. Two independent indexes pick out two
-        // distinct UI roles:
-        //   * `active_route_index` — the panel / drag target (driven
-        //     by which tab is focused). Renders in the configured
-        //     color with full alpha.
-        //   * `selected_route_index` — the route whose info popup is
-        //     open (driven by clicks on the map). Renders white +
-        //     halos.
-        // The two can point at the same route, different routes, or
-        // either can be unset. Routes that are neither render in the
-        // configured color with reduced alpha.
+        // All flight routes. The route at `active_route_index`
+        // (when set) is the panel / drag target — renders in the
+        // configured color with full alpha. Routes that are not
+        // active render with reduced alpha. The selected route
+        // (white + halos + popup) is whichever route is identified
+        // by `selection` if it holds a `route_pick`; that lookup
+        // happens inside route_type::build, not here.
         std::vector<flight_route> routes;
         std::optional<std::size_t> active_route_index;
-        std::optional<std::size_t> selected_route_index;
 
         // Frozen snapshots of every ephemeral source the build path
         // reads. Captured by the caller (feature_renderer::update)

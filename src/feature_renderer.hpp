@@ -62,16 +62,20 @@ namespace osect
         // and emits a highlight overlay rendered on top of everything.
         void set_selection(std::optional<feature> sel);
 
-        // Set the full route list, the active route index (panel/drag
-        // target), and the selected route index (highlighted with
-        // white + halos). The two indexes are independent — either,
-        // both, or neither may be set. Pass an empty vector to clear.
-        // Triggers a rebuild.
+        // The current selection — a chart feature or a route_pick.
+        // nullopt when nothing is selected.
+        const std::optional<feature>& selection() const;
+
+        // Set the full route list and the active route index (the
+        // panel / drag target — renders full alpha vs the dim
+        // non-active alpha). The "selected" route (highlighted in
+        // white + halos) is identified through `set_selection` with
+        // a `route_pick` feature, so it doesn't appear separately
+        // here. Pass an empty vector to clear.
         //
-        // Precondition: each non-empty index must be < routes.size().
-        // Asserts on violation.
-        void set_routes(std::vector<flight_route> routes, std::optional<std::size_t> active_index,
-                        std::optional<std::size_t> selected_index);
+        // Precondition: active_index, when set, must be <
+        // routes.size(). Asserts on violation.
+        void set_routes(std::vector<flight_route> routes, std::optional<std::size_t> active_index);
     };
 
 } // namespace osect

@@ -26,15 +26,13 @@ namespace osect
     struct route_store
     {
         std::vector<flight_route> routes;
-        // Two independent indexes:
-        //   * active_route_index — panel/drag target, driven by
-        //     which tab is focused.
-        //   * selected_route_index — route whose info popup is open
-        //     and which renders white + halos, driven by map clicks.
-        // Either, both, or neither may be set. Routes that are
-        // neither render dim.
+        // Index of the active route — the panel/drag target, driven
+        // by which tab is focused. The "selected" route (highlighted
+        // with white + halos and shown in the route info popup) is
+        // tracked through feature_renderer::selection() as a
+        // route_pick variant; map_widget queries that when it needs
+        // to know which route the popup belongs to.
         std::optional<std::size_t> active_route_index;
-        std::optional<std::size_t> selected_route_index;
         // True once a route has been mutated internally (e.g. drag
         // insert / replace / delete) since the last drain. Caller
         // re-pushes panel state.
