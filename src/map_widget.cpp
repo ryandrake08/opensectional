@@ -10,6 +10,7 @@
 #include "nasr_database.hpp"
 #include "pick_result.hpp"
 #include "render_context.hpp"
+#include "route_store.hpp"
 #include "tile_renderer.hpp"
 #include "ui_overlay.hpp"
 #include "ui_popup_manager.hpp"
@@ -282,55 +283,9 @@ namespace osect
 
         std::vector<std::unique_ptr<feature_type>> feature_types;
 
-        std::vector<flight_route> routes;
-        // Two independent route-role indexes:
-        //   * active_route_index — the panel / drag target, driven by
-        //     which tab is focused in the route panel.
-        //   * selected_route_index — the route whose info popup is
-        //     open and which renders in white + halos, driven by
-        //     clicks on the map. Either, both, or neither may be set.
-        std::optional<std::size_t> active_route_index;
-        std::optional<std::size_t> selected_route_index;
-        bool route_dirty = false;
-        // The route the user requested be deleted via the info
-        // popup's Delete button, since the last drain. Caller owns
-        // the lifecycle so it can close the corresponding panel tab
-        // in the same operation.
-        std::optional<std::size_t> route_delete_request;
-        // The non-active route the user clicked since the last
-        // drain. Caller switches the panel tab to the matching tab.
-        std::optional<std::size_t> route_activate_request;
-
-        flight_route* active_route()
-        {
-            if(!active_route_index || *active_route_index >= routes.size())
-            {
-                return nullptr;
-            }
-            return &routes[*active_route_index];
-        }
-        const flight_route* active_route() const
-        {
-            if(!active_route_index || *active_route_index >= routes.size())
-            {
-                return nullptr;
-            }
-            return &routes[*active_route_index];
-        }
-
-        // Route drag state. Waypoint hit takes priority over segment hit so
-        // dragging an existing waypoint doesn't get mistaken for an insert.
-        enum class route_drag_mode
-        {
-            none,
-            segment,
-            waypoint
-        };
-        struct
-        {
-            route_drag_mode mode = route_drag_mode::none;
-            std::size_t index = 0; // segment index (segment mode) or wp index (waypoint mode)
-        } route_drag;
+        // Route list, role indexes, drag state, and pending-event
+        // flags drained by the caller. See route_store.hpp.
+        route_store rs;
 
         // Event dispatch state
         glm::mat4 projection_matrix{1.0F};
@@ -538,13 +493,13 @@ namespace osect
         // active route is not under the cursor.
         std::optional<route_pick_item> active_route_pick(double click_lon, double click_lat) const
         {
-            if(!active_route_index)
+            if(!rs.active_route_index)
             {
                 return std::nullopt;
             }
             for(const auto& p : collect_route_picks(click_lon, click_lat))
             {
-                if(p.route_index == *active_route_index)
+                if(p.route_index == *rs.active_route_index)
                 {
                     return p;
                 }
@@ -564,9 +519,9 @@ namespace osect
             auto cursor = view.world_to_pixel(click_lon, click_lat);
             const auto threshold = PICK_BOX_SIZE_PIXELS * 0.5F;
 
-            for(std::size_t r = 0; r < routes.size(); ++r)
+            for(std::size_t r = 0; r < rs.routes.size(); ++r)
             {
-                const auto& wps = routes[r].waypoints;
+                const auto& wps = rs.routes[r].waypoints;
 
                 bool found_waypoint = false;
                 for(std::size_t i = 0; i < wps.size(); ++i)
@@ -639,14 +594,14 @@ namespace osect
 
         void notify_route_changed()
         {
-            features.set_routes(routes, active_route_index, selected_route_index);
-            route_dirty = true;
+            features.set_routes(rs.routes, rs.active_route_index, rs.selected_route_index);
+            rs.dirty = true;
             needs_update = true;
         }
 
         void handle_route_drag_release(route_drag_mode mode)
         {
-            auto* r = active_route();
+            auto* r = rs.active();
             if(!r)
             {
                 return;
@@ -654,9 +609,9 @@ namespace osect
             if(mode == route_drag_mode::segment)
             {
                 auto wp = resolve_release_waypoint();
-                sdl::log_info("route insert: index=" + std::to_string(route_drag.index) + " waypoint="
+                sdl::log_info("route insert: index=" + std::to_string(rs.drag.index) + " waypoint="
                               + waypoint_id(wp));
-                r->insert_waypoint(route_drag.index, wp, pick_db);
+                r->insert_waypoint(rs.drag.index, wp, pick_db);
                 notify_route_changed();
                 return;
             }
@@ -665,7 +620,7 @@ namespace osect
             // the dragged waypoint (but only if the route keeps >= 2
             // waypoints afterward). Otherwise replace it with whatever's
             // under the cursor.
-            auto i = route_drag.index;
+            auto i = rs.drag.index;
             auto [lon, lat] = ndc_to_lonlat(cursor_ndc_x, cursor_ndc_y);
             auto pick = active_route_pick(lon, lat);
             std::optional<std::size_t> hit;
@@ -689,23 +644,6 @@ namespace osect
             notify_route_changed();
         }
 
-        // Compute the centroid of a route's waypoints. Used as the
-        // popup anchor when no click coords are available.
-        std::pair<double, double> route_centroid(std::size_t index) const
-        {
-            assert(index < routes.size());
-            auto sum_lon = 0.0;
-            auto sum_lat = 0.0;
-            const auto& wps = routes[index].waypoints;
-            for(const auto& wp : wps)
-            {
-                sum_lon += waypoint_lon(wp);
-                sum_lat += waypoint_lat(wp);
-            }
-            auto n = static_cast<double>(wps.size());
-            return {sum_lon / n, sum_lat / n};
-        }
-
         // Set the selected route, opening or closing the route info
         // popup to match. nullopt closes the popup and clears the
         // highlight. `anchor`, when set, places the popup at those
@@ -714,14 +652,14 @@ namespace osect
         void select_route(std::optional<std::size_t> index,
                           std::optional<std::pair<double, double>> anchor = std::nullopt)
         {
-            assert(!index || *index < routes.size());
+            assert(!index || *index < rs.routes.size());
 
             bool target_open = index.has_value();
-            bool unchanged = popups.route_open() == target_open && selected_route_index == index;
+            bool unchanged = popups.route_open() == target_open && rs.selected_route_index == index;
 
             if(target_open)
             {
-                auto [alon, alat] = anchor ? *anchor : route_centroid(*index);
+                auto [alon, alat] = anchor ? *anchor : rs.centroid(*index);
                 popups.open_route(alon, alat);
             }
             else if(!unchanged)
@@ -734,38 +672,20 @@ namespace osect
                 return;
             }
 
-            selected_route_index = index;
-            features.set_routes(routes, active_route_index, selected_route_index);
+            rs.selected_route_index = index;
+            features.set_routes(rs.routes, rs.active_route_index, rs.selected_route_index);
             needs_update = true;
         }
 
-        // Geographic centroid of the active route's waypoints. Used as
-        // the popup anchor when the route popup is opened programmatically
-        // (no click point).
-        std::pair<double, double> active_route_centroid() const
-        {
-            const auto* r = active_route();
-            auto sum_lon = 0.0;
-            auto sum_lat = 0.0;
-            const auto& wps = r->waypoints;
-            for(const auto& wp : wps)
-            {
-                sum_lon += waypoint_lon(wp);
-                sum_lat += waypoint_lat(wp);
-            }
-            auto n = static_cast<double>(wps.size());
-            return {sum_lon / n, sum_lat / n};
-        }
-
-        // Drop a single route. Adjusts active_route_index and
-        // selected_route_index so each still points to a valid route
+        // Drop a single route. Adjusts rs.active_route_index and
+        // rs.selected_route_index so each still points to a valid route
         // (or becomes nullopt). The selected popup is closed if the
-        // selected route was the one removed. Flags route_dirty so
+        // selected route was the one removed. Flags rs.dirty so
         // the main loop re-pushes UI state.
         void erase_route_at(std::size_t index)
         {
-            assert(index < routes.size());
-            routes.erase(routes.begin() + static_cast<std::ptrdiff_t>(index));
+            assert(index < rs.routes.size());
+            rs.routes.erase(rs.routes.begin() + static_cast<std::ptrdiff_t>(index));
 
             auto adjust = [&](std::optional<std::size_t>& idx)
             {
@@ -773,7 +693,7 @@ namespace osect
                 {
                     return;
                 }
-                if(routes.empty() || *idx == index)
+                if(rs.routes.empty() || *idx == index)
                 {
                     idx.reset();
                 }
@@ -782,15 +702,15 @@ namespace osect
                     --*idx;
                 }
             };
-            auto selected_was_removed = selected_route_index && *selected_route_index == index;
-            adjust(active_route_index);
-            adjust(selected_route_index);
-            if(selected_was_removed || routes.empty())
+            auto selected_was_removed = rs.selected_route_index && *rs.selected_route_index == index;
+            adjust(rs.active_route_index);
+            adjust(rs.selected_route_index);
+            if(selected_was_removed || rs.routes.empty())
             {
                 popups.close_route();
             }
-            features.set_routes(routes, active_route_index, selected_route_index);
-            route_dirty = true;
+            features.set_routes(rs.routes, rs.active_route_index, rs.selected_route_index);
+            rs.dirty = true;
             needs_update = true;
         }
 
@@ -820,15 +740,15 @@ namespace osect
             {
                 const auto& r = std::get<route_pick_item>(item);
                 close_info_popup();
-                if(active_route_index && *active_route_index == r.route_index)
+                if(rs.active_route_index && *rs.active_route_index == r.route_index)
                 {
                     sdl::log_info("pick: active route selected");
-                    select_route(active_route_index, std::pair{click_lon, click_lat});
+                    select_route(rs.active_route_index, std::pair{click_lon, click_lat});
                 }
                 else
                 {
                     sdl::log_info("pick: activate route index=" + std::to_string(r.route_index));
-                    route_activate_request = r.route_index;
+                    rs.activate_request = r.route_index;
                     needs_update = true;
                 }
                 return;
@@ -918,7 +838,7 @@ namespace osect
         // render frame is needed for warmup.
         bool draw_popups()
         {
-            auto out = popups.draw(view, feature_types, routes, selected_route_index);
+            auto out = popups.draw(view, feature_types, rs.routes, rs.selected_route_index);
 
             // Apply side effects of user actions.
             if(out.pick_selected)
@@ -937,11 +857,11 @@ namespace osect
             {
                 // Manager already closed the popup; clear selection so
                 // the route loses its highlight too.
-                selected_route_index.reset();
-                features.set_routes(routes, active_route_index, selected_route_index);
+                rs.selected_route_index.reset();
+                features.set_routes(rs.routes, rs.active_route_index, rs.selected_route_index);
                 needs_update = true;
             }
-            if(out.route_delete && selected_route_index)
+            if(out.route_delete && rs.selected_route_index)
             {
                 // Manager already closed the popup. Surface the
                 // index for the caller to handle (so it can close
@@ -949,9 +869,9 @@ namespace osect
                 // and immediately un-highlight the route, otherwise
                 // the user sees a one-frame flash of white + halos
                 // with no popup.
-                route_delete_request = selected_route_index;
-                selected_route_index.reset();
-                features.set_routes(routes, active_route_index, selected_route_index);
+                rs.delete_request = rs.selected_route_index;
+                rs.selected_route_index.reset();
+                features.set_routes(rs.routes, rs.active_route_index, rs.selected_route_index);
                 needs_update = true;
             }
 
@@ -993,18 +913,18 @@ namespace osect
                     auto [lon, lat] = ndc_to_lonlat(cursor_ndc_x, cursor_ndc_y);
                     if(auto pick = active_route_pick(lon, lat))
                     {
-                        route_drag.mode = pick->k == route_pick_item::kind::waypoint
+                        rs.drag.mode = pick->k == route_pick_item::kind::waypoint
                                               ? route_drag_mode::waypoint
                                               : route_drag_mode::segment;
-                        route_drag.index = pick->inner_index;
-                        select_route(active_route_index, std::pair{lon, lat});
+                        rs.drag.index = pick->inner_index;
+                        select_route(rs.active_route_index, std::pair{lon, lat});
                     }
                 }
             }
             else // release
             {
-                auto mode = route_drag.mode;
-                route_drag.mode = route_drag_mode::none;
+                auto mode = rs.drag.mode;
+                rs.drag.mode = route_drag_mode::none;
                 pan_drag_active = false;
                 if(mode != route_drag_mode::none && dragged)
                 {
@@ -1031,7 +951,7 @@ namespace osect
             if(!buttons_down.empty())
             {
                 dragged = true;
-                if(route_drag.mode != route_drag_mode::none)
+                if(rs.drag.mode != route_drag_mode::none)
                 {
                     // Rubber-band follows cursor; force a redraw.
                     needs_update = true;
@@ -1217,10 +1137,10 @@ namespace osect
     {
         auto need_more = pimpl->draw_popups();
 
-        if(const auto* r = pimpl->active_route(); r && pimpl->route_drag.mode != impl::route_drag_mode::none)
+        if(const auto* r = pimpl->rs.active(); r && pimpl->rs.drag.mode != route_drag_mode::none)
         {
-            auto is_segment = pimpl->route_drag.mode == impl::route_drag_mode::segment;
-            draw_route_drag_rubber_band(pimpl->view, *r, is_segment, pimpl->route_drag.index);
+            auto is_segment = pimpl->rs.drag.mode == route_drag_mode::segment;
+            draw_route_drag_rubber_band(pimpl->view, *r, is_segment, pimpl->rs.drag.index);
         }
 
         return need_more;
@@ -1286,15 +1206,15 @@ namespace osect
 
     void map_widget::add_route(flight_route route)
     {
-        pimpl->routes.push_back(std::move(route));
-        pimpl->features.set_routes(pimpl->routes, pimpl->active_route_index, pimpl->selected_route_index);
+        pimpl->rs.routes.push_back(std::move(route));
+        pimpl->features.set_routes(pimpl->rs.routes, pimpl->rs.active_route_index, pimpl->rs.selected_route_index);
         pimpl->needs_update = true;
     }
 
     void map_widget::fit_view_to_route(std::size_t index)
     {
-        assert(index < pimpl->routes.size());
-        const auto& wps = pimpl->routes[index].waypoints;
+        assert(index < pimpl->rs.routes.size());
+        const auto& wps = pimpl->rs.routes[index].waypoints;
         if(wps.empty())
         {
             return;
@@ -1343,9 +1263,9 @@ namespace osect
 
     void map_widget::replace_route(std::size_t index, flight_route route)
     {
-        assert(index < pimpl->routes.size());
-        pimpl->routes[index] = std::move(route);
-        pimpl->features.set_routes(pimpl->routes, pimpl->active_route_index, pimpl->selected_route_index);
+        assert(index < pimpl->rs.routes.size());
+        pimpl->rs.routes[index] = std::move(route);
+        pimpl->features.set_routes(pimpl->rs.routes, pimpl->rs.active_route_index, pimpl->rs.selected_route_index);
         pimpl->needs_update = true;
     }
 
@@ -1356,59 +1276,59 @@ namespace osect
 
     void map_widget::clear_routes()
     {
-        if(pimpl->routes.empty())
+        if(pimpl->rs.routes.empty())
         {
             return;
         }
         pimpl->popups.close_route();
-        pimpl->routes.clear();
-        pimpl->active_route_index.reset();
-        pimpl->selected_route_index.reset();
-        pimpl->features.set_routes(pimpl->routes, pimpl->active_route_index, pimpl->selected_route_index);
-        pimpl->route_dirty = true;
+        pimpl->rs.routes.clear();
+        pimpl->rs.active_route_index.reset();
+        pimpl->rs.selected_route_index.reset();
+        pimpl->features.set_routes(pimpl->rs.routes, pimpl->rs.active_route_index, pimpl->rs.selected_route_index);
+        pimpl->rs.dirty = true;
         pimpl->needs_update = true;
     }
 
     void map_widget::set_active_route(std::optional<std::size_t> index)
     {
-        assert(!index || *index < pimpl->routes.size());
-        if(pimpl->active_route_index == index)
+        assert(!index || *index < pimpl->rs.routes.size());
+        if(pimpl->rs.active_route_index == index)
         {
             return;
         }
-        pimpl->active_route_index = index;
-        pimpl->features.set_routes(pimpl->routes, pimpl->active_route_index, pimpl->selected_route_index);
+        pimpl->rs.active_route_index = index;
+        pimpl->features.set_routes(pimpl->rs.routes, pimpl->rs.active_route_index, pimpl->rs.selected_route_index);
         pimpl->needs_update = true;
     }
 
     const std::vector<flight_route>& map_widget::routes() const
     {
-        return pimpl->routes;
+        return pimpl->rs.routes;
     }
 
     std::optional<std::size_t> map_widget::active_route_index() const
     {
-        return pimpl->active_route_index;
+        return pimpl->rs.active_route_index;
     }
 
     bool map_widget::drain_route_dirty()
     {
-        auto r = pimpl->route_dirty;
-        pimpl->route_dirty = false;
+        auto r = pimpl->rs.dirty;
+        pimpl->rs.dirty = false;
         return r;
     }
 
     std::optional<std::size_t> map_widget::drain_route_delete_request()
     {
-        auto r = pimpl->route_delete_request;
-        pimpl->route_delete_request.reset();
+        auto r = pimpl->rs.delete_request;
+        pimpl->rs.delete_request.reset();
         return r;
     }
 
     std::optional<std::size_t> map_widget::drain_route_activate_request()
     {
-        auto r = pimpl->route_activate_request;
-        pimpl->route_activate_request.reset();
+        auto r = pimpl->rs.activate_request;
+        pimpl->rs.activate_request.reset();
         return r;
     }
 
