@@ -23,6 +23,11 @@ namespace osect
         std::string name; // "nasr", "shp", "aixm", "dof", "adiz", "tfr"
         std::string info; // human description ("NASR cycle 16 Apr 2026")
         std::optional<std::chrono::system_clock::time_point> expires;
+        // True while an ephemeral source is actively refreshing. The
+        // data-status panel shows this as a UPD tag taking priority
+        // over the fresh/expired/unknown status. Always false for
+        // static sources that don't refresh at runtime.
+        bool updating = false;
 
         data_source_status status() const;
         data_source_status status_at(std::chrono::system_clock::time_point now) const;
