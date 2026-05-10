@@ -38,11 +38,16 @@ namespace osect
             out << "Usage: " << prog << " [options]\n"
                 << "  -h, --help                 Show this help and exit\n"
                 << "  -v, -vv, -vvv              Increase verbosity\n"
-#ifdef OSECT_HAVE_DXIL
-                << "  -g, --gpu <driver>         GPU driver: vulkan, metal, direct3d12\n"
-#else
-                << "  -g, --gpu <driver>         GPU driver: vulkan, metal\n"
+                << "  -g, --gpu <driver>         GPU driver: vulkan"
+#ifdef __APPLE__
+                << ", metal"
 #endif
+#ifdef OSECT_HAVE_DXIL
+                << ", direct3d12"
+#endif
+                << "\n"
+                << "  --vsync                    Enable vsync (default: off, lowest latency)\n"
+                << "  --gpu_debug                Enable GPU debug/validation (Vulkan: requires LunarG SDK)\n"
                 << "  -b, --basemap <path>       Basemap tile directory\n"
                 << "  -d, --database <osect.db>   NASR SQLite database\n"
                 << "  -c, --conf <osect.ini>     Override INI (optional; layered over defaults)\n"
@@ -62,6 +67,8 @@ namespace osect
             std::optional<std::string> db_path;
             std::optional<std::string> conf_path;
             bool offline = false;
+            bool vsync = false;
+            bool gpu_debug = false;
         };
 
         // Parse already-tokenized command-line arguments. argv[0] is
@@ -108,6 +115,14 @@ namespace osect
                 else if(arg == "-g" || arg == "--gpu")
                 {
                     opts.gpu_driver = need_value("--gpu");
+                }
+                else if(arg == "--vsync")
+                {
+                    opts.vsync = true;
+                }
+                else if(arg == "--gpu_debug")
+                {
+                    opts.gpu_debug = true;
                 }
                 else if(arg == "-b" || arg == "--basemap")
                 {
@@ -225,15 +240,39 @@ namespace osect
 
         static const char* resolve_gpu_driver(const parsed_options& opts)
         {
-#ifndef OSECT_HAVE_DXIL
-            if(opts.gpu_driver && *opts.gpu_driver == "direct3d12")
+            // Default to Vulkan for cross-platform parity. Returning nullptr
+            // here would let SDL auto-pick (Metal on macOS, D3D12 on Windows
+            // when DXIL is built, Vulkan on Linux)
+            if(!opts.gpu_driver)
             {
+                return "vulkan";
+            }
+            const std::string& d = *opts.gpu_driver;
+            if(d == "vulkan")
+            {
+                return d.c_str();
+            }
+            if(d == "metal")
+            {
+#ifdef __APPLE__
+                return d.c_str();
+#else
+                throw std::runtime_error("--gpu metal not available: Metal is supported on macOS only.");
+#endif
+            }
+            if(d == "direct3d12")
+            {
+#ifdef OSECT_HAVE_DXIL
+                return d.c_str();
+#elif defined(_WIN32)
                 throw std::runtime_error(
                     "--gpu direct3d12 not available: this build was configured without D3D12 support."
                     " Rebuild with -DOSECT_ENABLE_D3D12=ON and dxc on PATH (or in $VULKAN_SDK/bin).");
-            }
+#else
+                throw std::runtime_error("--gpu direct3d12 not available: D3D12 is supported on Windows only.");
 #endif
-            return opts.gpu_driver ? opts.gpu_driver->c_str() : "vulkan";
+            }
+            throw std::runtime_error("--gpu " + d + " not recognized. Valid drivers: vulkan, metal, direct3d12.");
         }
 
         impl(const std::vector<std::string>& cmdline)
@@ -243,7 +282,7 @@ namespace osect
               sdl_ctx(opts.verbosity),
               win(sdl_ctx, "OpenSectional", 1280, 1024,
                   sdl::window_flags::resizable | sdl::window_flags::high_pixel_density),
-              dev(win, true, resolve_gpu_driver(opts)),
+              dev(win, resolve_gpu_driver(opts), opts.vsync, opts.gpu_debug),
               imgui_ctx(dev, win),
               eph(opts.offline),
               ini(build_ini(opts)),
@@ -260,7 +299,8 @@ namespace osect
 
             ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
 
-            sdl::log_info(std::string("started: gpu=") + resolve_gpu_driver(opts) + " db=" + db_path +
+            const char* gpu = resolve_gpu_driver(opts);
+            sdl::log_info(std::string("started: gpu=") + (gpu ? gpu : "auto") + " db=" + db_path +
                           " basemap=" + (tile_path.empty() ? std::string("(none)") : tile_path) +
                           " offline=" + (opts.offline ? "true" : "false"));
         }

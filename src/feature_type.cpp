@@ -390,10 +390,7 @@ namespace osect
             for(std::size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++)
             {
                 auto d = point_to_segment_nm(px, py, ring[j].lon, ring[j].lat, ring[i].lon, ring[i].lat);
-                if(d < best)
-                {
-                    best = d;
-                }
+                best = std::min(d, best);
             }
             return best;
         }
@@ -404,10 +401,7 @@ namespace osect
             for(const auto& ring : rings)
             {
                 auto d = distance_to_ring_nm(px, py, ring.points);
-                if(d < best)
-                {
-                    best = d;
-                }
+                best = std::min(d, best);
             }
             return best;
         }
@@ -936,10 +930,7 @@ namespace osect
                 for(const auto& ring : stratum.parts)
                 {
                     auto d = distance_to_ring_nm(click_lon, click_lat, ring.points);
-                    if(d < best)
-                    {
-                        best = d;
-                    }
+                    best = std::min(d, best);
                 }
             }
             return best;
@@ -958,10 +949,7 @@ namespace osect
             for(const auto& area : std::get<tfr>(f).areas)
             {
                 auto d = distance_to_ring_nm(click_lon, click_lat, area.points);
-                if(d < best)
-                {
-                    best = d;
-                }
+                best = std::min(d, best);
             }
             return best;
         }
@@ -972,10 +960,7 @@ namespace osect
             for(const auto& part : std::get<adiz>(f).parts)
             {
                 auto d = distance_to_ring_nm(click_lon, click_lat, part);
-                if(d < best)
-                {
-                    best = d;
-                }
+                best = std::min(d, best);
             }
             return best;
         }
@@ -3326,12 +3311,13 @@ namespace osect
                 bool found = false;
                 for(std::size_t i = 0; i < wps.size(); ++i)
                 {
-                    auto d = point_distance_nm(ctx.click_lon, ctx.click_lat, waypoint_lon(wps[i]), waypoint_lat(wps[i]));
+                    auto d =
+                        point_distance_nm(ctx.click_lon, ctx.click_lat, waypoint_lon(wps[i]), waypoint_lat(wps[i]));
                     if(d <= ctx.pick_radius_nm)
                     {
-                        out.push_back(
-                            route_pick{r, route_pick::part_kind::waypoint, i,
-                                       route_pick_label(r, route_pick::part_kind::waypoint, i, ctx.routes[r]), d});
+                        out.push_back(route_pick{r, route_pick::part_kind::waypoint, i,
+                                                 route_pick_label(r, route_pick::part_kind::waypoint, i, ctx.routes[r]),
+                                                 d});
                         found = true;
                         break;
                     }
@@ -3349,16 +3335,13 @@ namespace osect
                     {
                         auto d = point_to_segment_nm(ctx.click_lon, ctx.click_lat, arc[j - 1].lon, arc[j - 1].lat,
                                                      arc[j].lon, arc[j].lat);
-                        if(d < best)
-                        {
-                            best = d;
-                        }
+                        best = std::min(d, best);
                     }
                     if(best <= ctx.pick_radius_nm)
                     {
-                        out.push_back(
-                            route_pick{r, route_pick::part_kind::leg, i - 1,
-                                       route_pick_label(r, route_pick::part_kind::leg, i - 1, ctx.routes[r]), best});
+                        out.push_back(route_pick{r, route_pick::part_kind::leg, i - 1,
+                                                 route_pick_label(r, route_pick::part_kind::leg, i - 1, ctx.routes[r]),
+                                                 best});
                         found = true;
                     }
                 }
