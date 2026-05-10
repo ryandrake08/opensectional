@@ -13,6 +13,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <mapbox/earcut.hpp>
 #include <sstream>
 #include <stdexcept>
@@ -374,6 +375,52 @@ namespace osect
             return std::sqrt(cx * cx + cy * cy);
         }
 
+        // Distance, in nautical miles, from (px, py) to the nearest
+        // edge of a closed ring. Returns the perpendicular distance
+        // regardless of whether the point is inside or outside the
+        // ring — used by the exact-pick short-circuit, where "exact"
+        // means the click is on the boundary, not somewhere inside.
+        double distance_to_ring_nm(double px, double py, const std::vector<airspace_point>& ring)
+        {
+            if(ring.size() < 2)
+            {
+                return std::numeric_limits<double>::infinity();
+            }
+            auto best = std::numeric_limits<double>::infinity();
+            for(std::size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++)
+            {
+                auto d = point_to_segment_nm(px, py, ring[j].lon, ring[j].lat, ring[i].lon, ring[i].lat);
+                if(d < best)
+                {
+                    best = d;
+                }
+            }
+            return best;
+        }
+
+        double distance_to_multi_ring_nm(double px, double py, const std::vector<polygon_ring>& rings)
+        {
+            auto best = std::numeric_limits<double>::infinity();
+            for(const auto& ring : rings)
+            {
+                auto d = distance_to_ring_nm(px, py, ring.points);
+                if(d < best)
+                {
+                    best = d;
+                }
+            }
+            return best;
+        }
+
+        // Equirectangular distance to a point in nautical miles, matching
+        // the cos-latitude approximation used by point_in_circle_nm.
+        double point_distance_nm(double px, double py, double cx, double cy)
+        {
+            auto dlat = (py - cy) * 60.0;
+            auto dlon = (px - cx) * 60.0 * std::cos(cy * M_PI / 180.0);
+            return std::sqrt(dlat * dlat + dlon * dlon);
+        }
+
         line_style to_line_style(const feature_style& fs)
         {
             return {fs.line_width, fs.border_width, fs.dash_length, fs.gap_length, fs.r, fs.g, fs.b, fs.a, 0};
@@ -462,6 +509,7 @@ namespace osect
     {                                                                                                                  \
     public:                                                                                                            \
         FEATURE_TYPE_BODY(LBL, ID, TAG, FType)                                                                         \
+        double pick_distance_nm(const feature& f, double click_lon, double click_lat) const override;                  \
     };
 
 #define DECLARE_POINT_FEATURE_TYPE(Class, LBL, ID, TAG, FType)                                                         \
@@ -851,6 +899,110 @@ namespace osect
                     out.push_back(rwy);
                 }
             }
+        }
+
+        // -- pick_distance_nm() bodies ---------------------------------------
+
+        double airway_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
+        {
+            const auto& s = std::get<airway_segment>(f);
+            return point_to_segment_nm(click_lon, click_lat, s.from_lon, s.from_lat, s.to_lon, s.to_lat);
+        }
+
+        double mtr_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
+        {
+            const auto& s = std::get<mtr_segment>(f);
+            return point_to_segment_nm(click_lon, click_lat, s.from_lon, s.from_lat, s.to_lon, s.to_lat);
+        }
+
+        double runway_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
+        {
+            const auto& r = std::get<runway>(f);
+            return point_to_segment_nm(click_lon, click_lat, r.end1_lon, r.end1_lat, r.end2_lon, r.end2_lat);
+        }
+
+        double airspace_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
+        {
+            return distance_to_multi_ring_nm(click_lon, click_lat, std::get<class_airspace>(f).parts);
+        }
+
+        double sua_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
+        {
+            // sua_type::pick emits one stratum per result; iterate
+            // anyway in case the convention ever changes.
+            auto best = std::numeric_limits<double>::infinity();
+            for(const auto& stratum : std::get<sua>(f).strata)
+            {
+                for(const auto& ring : stratum.parts)
+                {
+                    auto d = distance_to_ring_nm(click_lon, click_lat, ring.points);
+                    if(d < best)
+                    {
+                        best = d;
+                    }
+                }
+            }
+            return best;
+        }
+
+        double artcc_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
+        {
+            return distance_to_ring_nm(click_lon, click_lat, std::get<artcc>(f).points);
+        }
+
+        double tfr_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
+        {
+            // tfr_type::pick emits one area per result; iterate anyway
+            // for symmetry with sua.
+            auto best = std::numeric_limits<double>::infinity();
+            for(const auto& area : std::get<tfr>(f).areas)
+            {
+                auto d = distance_to_ring_nm(click_lon, click_lat, area.points);
+                if(d < best)
+                {
+                    best = d;
+                }
+            }
+            return best;
+        }
+
+        double adiz_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
+        {
+            auto best = std::numeric_limits<double>::infinity();
+            for(const auto& part : std::get<adiz>(f).parts)
+            {
+                auto d = distance_to_ring_nm(click_lon, click_lat, part);
+                if(d < best)
+                {
+                    best = d;
+                }
+            }
+            return best;
+        }
+
+        double pja_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
+        {
+            const auto& p = std::get<pja>(f);
+            if(p.radius_nm <= 0)
+            {
+                return point_distance_nm(click_lon, click_lat, p.lon, p.lat);
+            }
+            // Distance to circle boundary: |radial - radius|.
+            return std::abs(point_distance_nm(click_lon, click_lat, p.lon, p.lat) - p.radius_nm);
+        }
+
+        double maa_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
+        {
+            const auto& m = std::get<maa>(f);
+            if(!m.shape.empty())
+            {
+                return distance_to_ring_nm(click_lon, click_lat, m.shape);
+            }
+            if(m.radius_nm > 0)
+            {
+                return std::abs(point_distance_nm(click_lon, click_lat, m.lon, m.lat) - m.radius_nm);
+            }
+            return point_distance_nm(click_lon, click_lat, m.lon, m.lat);
         }
 
         // -- summary() bodies ------------------------------------------------
@@ -3110,6 +3262,13 @@ namespace osect
                 return std::holds_alternative<route_pick>(f);
             }
             void pick(const pick_context& ctx, std::vector<feature>& out) const override;
+            double pick_distance_nm(const feature& f, double /*click_lon*/, double /*click_lat*/) const override
+            {
+                // route_type::pick records the click distance on the
+                // route_pick at hit time (it has access to the full
+                // leg arc, which we don't recompute here).
+                return std::get<route_pick>(f).click_distance_nm;
+            }
             std::string summary(const feature& f) const override
             {
                 return std::get<route_pick>(f).label;
@@ -3167,12 +3326,12 @@ namespace osect
                 bool found = false;
                 for(std::size_t i = 0; i < wps.size(); ++i)
                 {
-                    if(point_in_circle_nm(ctx.click_lon, ctx.click_lat, waypoint_lon(wps[i]), waypoint_lat(wps[i]),
-                                          ctx.pick_radius_nm))
+                    auto d = point_distance_nm(ctx.click_lon, ctx.click_lat, waypoint_lon(wps[i]), waypoint_lat(wps[i]));
+                    if(d <= ctx.pick_radius_nm)
                     {
                         out.push_back(
                             route_pick{r, route_pick::part_kind::waypoint, i,
-                                       route_pick_label(r, route_pick::part_kind::waypoint, i, ctx.routes[r])});
+                                       route_pick_label(r, route_pick::part_kind::waypoint, i, ctx.routes[r]), d});
                         found = true;
                         break;
                     }
@@ -3185,18 +3344,22 @@ namespace osect
                 {
                     auto arc = geodesic_interpolate(waypoint_lat(wps[i - 1]), waypoint_lon(wps[i - 1]),
                                                     waypoint_lat(wps[i]), waypoint_lon(wps[i]));
+                    auto best = std::numeric_limits<double>::infinity();
                     for(std::size_t j = 1; j < arc.size(); ++j)
                     {
                         auto d = point_to_segment_nm(ctx.click_lon, ctx.click_lat, arc[j - 1].lon, arc[j - 1].lat,
                                                      arc[j].lon, arc[j].lat);
-                        if(d <= ctx.pick_radius_nm)
+                        if(d < best)
                         {
-                            out.push_back(
-                                route_pick{r, route_pick::part_kind::leg, i - 1,
-                                           route_pick_label(r, route_pick::part_kind::leg, i - 1, ctx.routes[r])});
-                            found = true;
-                            break;
+                            best = d;
                         }
+                    }
+                    if(best <= ctx.pick_radius_nm)
+                    {
+                        out.push_back(
+                            route_pick{r, route_pick::part_kind::leg, i - 1,
+                                       route_pick_label(r, route_pick::part_kind::leg, i - 1, ctx.routes[r]), best});
+                        found = true;
                     }
                 }
             }
@@ -3361,6 +3524,17 @@ namespace osect
         // database.
         v.push_back(std::make_unique<route_type>());
         return v;
+    }
+
+    double feature_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
+    {
+        if(auto c = point_coord(f))
+        {
+            auto dlat = (click_lat - c->second) * 60.0;
+            auto dlon = (click_lon - c->first) * 60.0 * std::cos(c->second * M_PI / 180.0);
+            return std::sqrt(dlat * dlat + dlon * dlon);
+        }
+        return std::numeric_limits<double>::infinity();
     }
 
     const feature_type& find_feature_type(const std::vector<std::unique_ptr<feature_type>>& feature_types,

@@ -444,6 +444,7 @@ namespace osect
             pick_result result;
             result.lon = click_lon;
             result.lat = click_lat;
+            result.pick_radius_nm = ctx.pick_radius_nm;
             for(const auto& obj : feature_types)
             {
                 if(vis[obj->layer_id()])
@@ -726,7 +727,6 @@ namespace osect
             if(std::holds_alternative<route_pick>(f))
             {
                 const auto& r = std::get<route_pick>(f);
-                popups.close_info();
                 if(rs.active_route_index && *rs.active_route_index == r.route_index)
                 {
                     sdl::log_info("pick: active route selected");
@@ -734,6 +734,12 @@ namespace osect
                 }
                 else
                 {
+                    // The route popup is opened (replacing whatever
+                    // info popup was open before, if any) by the
+                    // select_route call inside
+                    // handle_route_activate_request — leaving the
+                    // existing popup in place until that runs avoids
+                    // a one-frame flash to "no popup".
                     sdl::log_info("pick: activate route index=" + std::to_string(r.route_index));
                     rs.activate_request = r.route_index;
                     needs_update = true;
@@ -754,36 +760,28 @@ namespace osect
 
             auto result = pick_at(cursor_ndc_x, cursor_ndc_y);
 
-            // route_type::pick emits route_pick variants into
-            // result.features. Detect their presence so the
-            // exact-point short-circuit (feature-only fast path)
-            // skips when a route is also at the click.
-            bool any_route_pick = std::any_of(result.features.begin(), result.features.end(),
-                                              [](const feature& f) { return std::holds_alternative<route_pick>(f); });
-
-            // Exact-point short-circuit for feature-only clicks: a
-            // precise click on a single point feature opens its info
-            // popup directly even when looser features are also
-            // nearby. Disabled when routes are at the click — the
-            // selector should appear so the user can choose between
-            // routes and the underlying feature.
-            if(!any_route_pick)
+            // Exact-pick short-circuit: a precise click on a single
+            // feature short-circuits the picker. For points, "exact"
+            // is distance to the point; for lines, perpendicular
+            // distance to the segment; for polygons, distance to the
+            // nearest boundary edge — so a click well inside an ARTCC
+            // doesn't fast-path the ARTCC, but a click on its
+            // boundary (or on an airway / route crossing it) does.
+            // Routes participate the same way: a precise click on a
+            // route line activates/selects the route; clicking where
+            // the route overlaps another exact-eligible feature opens
+            // the picker so the user can choose.
             {
-                const double exact_threshold_px = PICK_BOX_EXACT_SIZE_PIXELS;
+                // pick_radius_nm corresponds to PICK_BOX_SIZE_PIXELS/2;
+                // scale down to PICK_BOX_EXACT_SIZE_PIXELS.
+                const double exact_threshold_nm =
+                    result.pick_radius_nm * (2.0 * PICK_BOX_EXACT_SIZE_PIXELS / PICK_BOX_SIZE_PIXELS);
                 auto exact_count = 0;
                 const feature* exact_hit = nullptr;
                 for(const auto& f : result.features)
                 {
-                    auto coord = find_feature_type(feature_types, f).point_coord(f);
-                    if(!coord)
-                    {
-                        continue;
-                    }
-                    auto fp = view.world_to_pixel(coord->first, coord->second);
-                    auto cp = view.world_to_pixel(result.lon, result.lat);
-                    auto dx = fp.x - cp.x;
-                    auto dy = fp.y - cp.y;
-                    if(std::sqrt(dx * dx + dy * dy) <= exact_threshold_px)
+                    auto d = find_feature_type(feature_types, f).pick_distance_nm(f, result.lon, result.lat);
+                    if(d <= exact_threshold_nm)
                     {
                         ++exact_count;
                         exact_hit = &f;
@@ -791,7 +789,7 @@ namespace osect
                 }
                 if(exact_count == 1)
                 {
-                    open_info_popup(*exact_hit, result.lon, result.lat);
+                    act_on_pick(*exact_hit, result.lon, result.lat);
                     return;
                 }
             }

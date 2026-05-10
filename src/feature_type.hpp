@@ -92,6 +92,21 @@ namespace osect
             return std::nullopt;
         }
 
+        // Perpendicular distance, in nautical miles, from
+        // (click_lon, click_lat) to feature `f`. Used by the exact-
+        // pick short-circuit in map_widget::handle_pick: a click
+        // closer than the exact threshold to exactly one feature
+        // bypasses the multi-pick selector. For point features the
+        // default uses point_coord. Line types override with
+        // perpendicular distance to the segment. Polygon types
+        // override with distance to the nearest boundary edge,
+        // regardless of inside/outside — so a click well inside an
+        // ARTCC doesn't fast-path the ARTCC, but a click on its
+        // boundary does. Returns infinity for features without a
+        // meaningful spatial distance (e.g. route picks, which are
+        // handled separately).
+        virtual double pick_distance_nm(const feature& f, double click_lon, double click_lat) const;
+
         // Anchor for the info popup. Default: snap to the feature's
         // point coord when available, otherwise fall back to the click
         // point (area/line features). Layers with their own anchor
