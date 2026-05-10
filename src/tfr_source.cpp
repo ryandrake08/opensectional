@@ -4,13 +4,18 @@
 #include "program.hpp"
 #include "xnotam_parser.hpp"
 #include <array>
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
+#include <iomanip>
+#include <locale>
 #include <mutex>
 #include <sdl/log.hpp>
 #include <shared_mutex>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -372,8 +377,8 @@ namespace osect
 
     // ----------------- impl -----------------
 
-    constexpr auto REFRESH_INTERVAL = std::chrono::minutes(15);
-    constexpr auto STALENESS_HORIZON = std::chrono::hours(24);
+    constexpr auto TFR_REFRESH_PERIOD = std::chrono::minutes(15);
+    constexpr auto TFR_EXPIRE_PERIOD = std::chrono::hours(24);
 
     struct tfr_source::impl
     {
@@ -384,6 +389,10 @@ namespace osect
         std::vector<tfr> tfrs;
         std::vector<tfr_segment> segments;
         std::optional<std::chrono::system_clock::time_point> last_ok;
+
+        // True while refresh() is executing. Read by as_data_source()
+        // to surface the UPD tag in the data-status panel.
+        std::atomic<bool> refresh_in_progress{false};
 
         // Background-refresh plumbing. The worker thread sleeps on
         // `cv` until either the 15-min interval expires or shutdown
@@ -440,17 +449,31 @@ namespace osect
             }
         }
 
-        // Spin up the refresh worker. Refresh once immediately so a
-        // freshly-launched app with no cache pulls data right away,
-        // then loop on the 15-min interval until shutdown.
+        // Spin up the refresh worker. Each iteration refreshes if the
+        // in-memory data is older than TFR_REFRESH_PERIOD (or absent),
+        // then sleeps for TFR_REFRESH_PERIOD or until shutdown. The age
+        // check skips a redundant network fetch on a warm start whose
+        // cache was written within the last interval.
         pimpl->worker = std::thread(
             [p = pimpl.get(), this]()
             {
                 while(true)
                 {
-                    refresh();
+                    bool fresh = false;
+                    {
+                        std::shared_lock lock(p->mtx);
+                        if(p->last_ok &&
+                           std::chrono::system_clock::now() - *p->last_ok < TFR_REFRESH_PERIOD)
+                        {
+                            fresh = true;
+                        }
+                    }
+                    if(!fresh)
+                    {
+                        refresh();
+                    }
                     std::unique_lock lk(p->worker_mtx);
-                    if(p->cv.wait_for(lk, REFRESH_INTERVAL, [p] { return p->shutdown; }))
+                    if(p->cv.wait_for(lk, TFR_REFRESH_PERIOD, [p] { return p->shutdown; }))
                     {
                         return;
                     }
@@ -476,6 +499,8 @@ namespace osect
 
     void tfr_source::refresh()
     {
+        pimpl->refresh_in_progress.store(true);
+        wake_main_thread();
         try
         {
             sdl::log_info("tfr refresh starting");
@@ -527,7 +552,9 @@ namespace osect
                     auto parsed = parse_xnotam(det_resp.body);
                     if(!parsed)
                     {
-                        sdl::log_warn("tfr detail produced no NOTAM for " + notam_id);
+                        // Expected for cancellation entries that carry
+                        // no polygon geometry
+                        sdl::log_info("tfr detail produced no NOTAM for " + notam_id);
                         continue;
                     }
                     parsed->tfr_id = static_cast<int>(new_tfrs.size() + 1);
@@ -574,15 +601,17 @@ namespace osect
                 sdl::log_warn(std::string("tfr cache write failed: ") + e.what());
             }
 
-            // 6. Wake the main loop so poll_advance() observes the swap
-            //    promptly instead of waiting for the next input event.
-            wake_main_thread();
         }
         catch(const std::exception& e)
         {
             // Whole refresh failed — preserve the in-memory store.
             sdl::log_warn(std::string("tfr refresh failed: ") + e.what());
         }
+        // Clear the in-progress flag and wake the main loop so the
+        // status panel flips back from UPD and poll_advance() observes
+        // any swap promptly. Runs on both the success and failure paths.
+        pimpl->refresh_in_progress.store(false);
+        wake_main_thread();
     }
 
     std::vector<tfr> tfr_source::snapshot() const
@@ -610,9 +639,27 @@ namespace osect
         const auto last = last_updated();
         if(last)
         {
-            ds.expires = *last + STALENESS_HORIZON;
+            ds.expires = *last + TFR_EXPIRE_PERIOD;
+            const auto t = std::chrono::system_clock::to_time_t(*last);
+            std::tm tm{};
+#if defined(_WIN32)
+            gmtime_s(&tm, &t);
+#else
+            gmtime_r(&t, &tm);
+#endif
+            // Pin to the "C" locale so month abbreviations are always
+            // English ("Apr", not "avr." / "4月" / etc.), matching the
+            // other data sources' info strings.
+            std::ostringstream oss;
+            oss.imbue(std::locale::classic());
+            oss << "TFR " << std::put_time(&tm, "%d %b %Y");
+            ds.info = oss.str();
         }
-        ds.info = last ? "TFR (in-memory)" : "TFR (no data yet)";
+        else
+        {
+            ds.info = "TFR (no data yet)";
+        }
+        ds.updating = pimpl->refresh_in_progress.load();
         return ds;
     }
 }

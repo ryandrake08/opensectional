@@ -588,24 +588,35 @@ namespace osect
 
             for(const auto& s : d.sources)
             {
-                // Status colors: green=fresh, red=expired, gray=unknown.
+                // Status colors: yellow=updating, green=fresh,
+                // red=expired, gray=unknown. UPD takes priority over
+                // status() so an in-flight refresh is visible no matter
+                // what the underlying data state is.
                 ImU32 color = IM_COL32(180, 180, 180, 255);
-                const char* tag = "?";
-                switch(s.status())
+                const char* tag = "UNK";
+                if(s.updating)
                 {
-                case data_source_status::fresh:
-                    color = IM_COL32(80, 200, 80, 255);
-                    tag = "OK";
-                    break;
-                case data_source_status::expired:
-                    color = IM_COL32(230, 90, 90, 255);
-                    tag = "EXP";
-                    break;
-                case data_source_status::unknown:
-                    break;
+                    color = IM_COL32(220, 200, 70, 255);
+                    tag = "UPD";
+                }
+                else
+                {
+                    switch(s.status())
+                    {
+                    case data_source_status::fresh:
+                        color = IM_COL32(80, 200, 80, 255);
+                        tag = "CUR";
+                        break;
+                    case data_source_status::expired:
+                        color = IM_COL32(230, 90, 90, 255);
+                        tag = "EXP";
+                        break;
+                    case data_source_status::unknown:
+                        break;
+                    }
                 }
                 ImGui::PushStyleColor(ImGuiCol_Text, color);
-                ImGui::Text("[%-5s]", tag);
+                ImGui::Text("[%s]", tag);
                 ImGui::PopStyleColor();
                 ImGui::SameLine();
                 ImGui::Text("%-6s %s", s.name.c_str(), s.info.c_str());
