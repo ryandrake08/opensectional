@@ -27,12 +27,17 @@ namespace sdl
          * Create GPU device and claim window for rendering.
          *
          * @param win SDL window wrapper (enforces creation order)
-         * @param vsync Enable vsync (default: false for lowest latency)
          * @param preferred_driver Force a specific backend (e.g. "vulkan",
          *                         "direct3d12"), or nullptr for auto-selection
+         * @param vsync Enable vsync (default: false for lowest latency)
+         * @param debug_mode Request backend debug/validation features
+         *                   (default: false; on Vulkan, requires the LunarG
+         *                   loader and validation layer to be reachable
+         *                   at runtime)
          * @throws std::runtime_error if device creation or window claim fails
          */
-        explicit device(const sdl::window& win, bool vsync = false, const char* preferred_driver = nullptr);
+        explicit device(const sdl::window& win, const char* preferred_driver, bool vsync = false,
+                        bool debug_mode = false);
 
         /**
          * Destroy device and release window.

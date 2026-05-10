@@ -11,12 +11,8 @@ namespace sdl
         SDL_Window* window;
         SDL_GPUDevice* handle;
 
-        static SDL_GPUDevice* create_device(SDL_Window* win, bool vsync, const char* preferred_driver)
+        static SDL_GPUDevice* create_device(SDL_Window* win, const char* preferred_driver, bool vsync, bool debug_mode)
         {
-            if(preferred_driver)
-            {
-                SDL_SetHint(SDL_HINT_GPU_DRIVER, preferred_driver);
-            }
             SDL_GPUShaderFormat formats_mask = SDL_GPU_SHADERFORMAT_SPIRV;
 #ifdef __APPLE__
             formats_mask |= SDL_GPU_SHADERFORMAT_MSL;
@@ -27,7 +23,7 @@ namespace sdl
 #ifdef OSECT_HAVE_DXIL
             formats_mask |= SDL_GPU_SHADERFORMAT_DXIL;
 #endif
-            SDL_GPUDevice* dev = SDL_CreateGPUDevice(formats_mask, false, nullptr);
+            SDL_GPUDevice* dev = SDL_CreateGPUDevice(formats_mask, debug_mode, preferred_driver);
             if(!dev)
             {
                 throw error("Failed to create GPU device");
@@ -105,8 +101,8 @@ namespace sdl
             return dev;
         }
 
-        impl(SDL_Window* win, bool vsync, const char* preferred_driver)
-            : window(win), handle(create_device(win, vsync, preferred_driver))
+        impl(SDL_Window* win, const char* preferred_driver, bool vsync, bool debug_mode)
+            : window(win), handle(create_device(win, preferred_driver, vsync, debug_mode))
         {
         }
 
@@ -122,8 +118,8 @@ namespace sdl
         impl& operator=(impl&&) = default;
     };
 
-    device::device(const sdl::window& win, bool vsync, const char* preferred_driver)
-        : pimpl(new impl(win.get(), vsync, preferred_driver))
+    device::device(const sdl::window& win, const char* preferred_driver, bool vsync, bool debug_mode)
+        : pimpl(new impl(win.get(), preferred_driver, vsync, debug_mode))
     {
     }
 
