@@ -1,17 +1,18 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
 
-#include "ephemeral_cache.hpp"
+#include "ephemeral_database.hpp"
 #include "http_client.hpp"
 #include "tfr_source.hpp"
 
+#include <chrono>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 using osect::airspace_point;
-using osect::ephemeral_cache;
+using osect::ephemeral_database;
 using osect::http_client;
 using osect::tfr;
 using osect::tfr_area;
@@ -19,13 +20,6 @@ using osect::tfr_source;
 
 namespace osect
 {
-    // Test-only handle into the file-private serializer; mirrors the
-    // shape tfr_source uses to write its cache. Declared in
-    // tfr_source.cpp's anonymous namespace and surfaced via this
-    // single linkable function so tests can populate the cache
-    // without dragging in the live-fetch path.
-    std::string tfr_source_serialize_for_test(const std::vector<tfr>& v);
-
     // Stub for wake_main_thread — the production impl lives in
     // program.cpp, which transitively pulls in the whole app
     // graph (sdl, imgui, map_widget, ...). Tests don't link
@@ -42,13 +36,14 @@ namespace
         explicit tmp_dir(const char* tag)
         {
             const auto base = std::filesystem::temp_directory_path() /
-                ("osect_tfr_source_test_" + std::string(tag) + "_XXXXXX");
+                ("osect_tfr_source_test_" + std::string(tag) + "_");
             for(int i = 0; i < 1000; ++i)
             {
                 const auto candidate = base.string() + std::to_string(i);
                 if(!std::filesystem::exists(candidate))
                 {
                     path = candidate;
+                    std::filesystem::create_directories(path);
                     return;
                 }
             }
@@ -61,6 +56,8 @@ namespace
         }
         tmp_dir(const tmp_dir&) = delete;
         tmp_dir& operator=(const tmp_dir&) = delete;
+
+        std::filesystem::path db_file() const { return path / "ephemeral.db"; }
     };
 
     tfr make_test_tfr()
@@ -88,31 +85,31 @@ namespace
     }
 }
 
-TEST_CASE("tfr_source: empty cache yields empty store")
+TEST_CASE("tfr_source: empty database yields empty store")
 {
     tmp_dir dir("empty");
-    ephemeral_cache cache(dir.path);
+    ephemeral_database db(dir.db_file());
     http_client http(/*offline=*/true);
 
-    tfr_source src(http, cache);
+    tfr_source src(http, db);
     CHECK(src.snapshot().empty());
     CHECK(src.snapshot_segments().empty());
     CHECK(!src.last_updated().has_value());
 }
 
-TEST_CASE("tfr_source: populated cache loads on construction")
+TEST_CASE("tfr_source: populated database loads on construction")
 {
     tmp_dir dir("loaded");
-    ephemeral_cache cache(dir.path);
+    ephemeral_database db(dir.db_file());
     http_client http(/*offline=*/true);
 
-    // Pre-populate the cache with a serialized state via the
-    // test-only helper, mirroring what tfr_source itself would write.
+    // Pre-populate the database, mirroring what tfr_source itself
+    // would write at the end of refresh().
     const auto fixture = make_test_tfr();
-    cache.store("tfr",
-        osect::tfr_source_serialize_for_test({fixture}), "");
+    db.replace_tfrs({fixture});
+    db.set_source_meta("tfr", std::chrono::system_clock::now(), "");
 
-    tfr_source src(http, cache);
+    tfr_source src(http, db);
     auto snap = src.snapshot();
     REQUIRE(snap.size() == 1);
     CHECK(snap[0].notam_id == "9/9999");
@@ -131,14 +128,14 @@ TEST_CASE("tfr_source: populated cache loads on construction")
 TEST_CASE("tfr_source: refresh in offline mode is a safe no-op")
 {
     tmp_dir dir("offline");
-    ephemeral_cache cache(dir.path);
+    ephemeral_database db(dir.db_file());
     http_client http(/*offline=*/true);
 
     const auto fixture = make_test_tfr();
-    cache.store("tfr",
-        osect::tfr_source_serialize_for_test({fixture}), "");
+    db.replace_tfrs({fixture});
+    db.set_source_meta("tfr", std::chrono::system_clock::now(), "");
 
-    tfr_source src(http, cache);
+    tfr_source src(http, db);
     REQUIRE(src.snapshot().size() == 1);
 
     // Offline refresh should swallow the http error and leave the
@@ -146,15 +143,4 @@ TEST_CASE("tfr_source: refresh in offline mode is a safe no-op")
     src.refresh();
     CHECK(src.snapshot().size() == 1);
     CHECK(src.snapshot()[0].notam_id == "9/9999");
-}
-
-TEST_CASE("tfr_source: corrupt cache loads as empty, no crash")
-{
-    tmp_dir dir("corrupt");
-    ephemeral_cache cache(dir.path);
-    http_client http(/*offline=*/true);
-
-    cache.store("tfr", "definitely not a TFRC blob", "");
-    tfr_source src(http, cache);
-    CHECK(src.snapshot().empty());
 }

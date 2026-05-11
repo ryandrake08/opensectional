@@ -1,5 +1,6 @@
 #include "statement.hpp"
 #include <sqlite3.h>
+#include <stdexcept>
 #include <string>
 
 namespace sqlite
@@ -75,7 +76,18 @@ namespace sqlite
 
     bool statement::step()
     {
-        return sqlite3_step(pimpl->stmt) == SQLITE_ROW;
+        int rc = sqlite3_step(pimpl->stmt);
+        if(rc == SQLITE_ROW)
+        {
+            return true;
+        }
+        if(rc == SQLITE_DONE)
+        {
+            return false;
+        }
+        std::string msg = "sqlite3_step failed: ";
+        msg += sqlite3_errmsg(sqlite3_db_handle(pimpl->stmt));
+        throw std::runtime_error(msg);
     }
 
     int statement::column_count() const

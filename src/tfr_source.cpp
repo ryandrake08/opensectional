@@ -1,15 +1,11 @@
 #include "tfr_source.hpp"
-#include "ephemeral_cache.hpp"
+#include "ephemeral_database.hpp"
 #include "http_client.hpp"
 #include "program.hpp"
 #include "xnotam_parser.hpp"
-#include <array>
 #include <atomic>
 #include <condition_variable>
-#include <cstdint>
-#include <cstring>
 #include <ctime>
-#include <filesystem>
 #include <iomanip>
 #include <locale>
 #include <mutex>
@@ -159,220 +155,6 @@ namespace osect
             }
             return out;
         }
-
-        // ---- cache serialization ----
-        //
-        // tfr_source stores the parsed in-memory state (vector<tfr>)
-        // as a single binary blob under cache key "tfr". This is a
-        // post-parse cache: the unparsed transport state for TFR is
-        // ~100 separate XML responses, which doesn't fit
-        // ephemeral_cache's one-blob-per-key contract without an
-        // envelope. Storing the parsed form keeps the cache layer
-        // generic and lets warm starts skip both the network and the
-        // re-parse.
-        constexpr std::array<char, 4> CACHE_MAGIC = {'T', 'F', 'R', 'C'};
-        constexpr std::uint32_t CACHE_VERSION = 1;
-
-        template <typename T>
-        void put_pod(std::string& out, T value)
-        {
-            out.append(reinterpret_cast<const char*>(&value), sizeof(T));
-        }
-
-        template <typename T>
-        bool get_pod(std::string_view& cur, T& value)
-        {
-            if(cur.size() < sizeof(T))
-            {
-                return false;
-            }
-            std::memcpy(&value, cur.data(), sizeof(T));
-            cur.remove_prefix(sizeof(T));
-            return true;
-        }
-
-        void put_string(std::string& out, const std::string& s)
-        {
-            put_pod(out, static_cast<std::uint32_t>(s.size()));
-            out.append(s);
-        }
-
-        bool get_string(std::string_view& cur, std::string& out)
-        {
-            std::uint32_t len = 0;
-            if(!get_pod(cur, len))
-            {
-                return false;
-            }
-            if(cur.size() < len)
-            {
-                return false;
-            }
-            out.assign(cur.data(), len);
-            cur.remove_prefix(len);
-            return true;
-        }
-
-        std::string serialize(const std::vector<tfr>& tfrs)
-        {
-            std::string out;
-            out.append(CACHE_MAGIC.data(), CACHE_MAGIC.size());
-            put_pod(out, CACHE_VERSION);
-            put_pod(out, static_cast<std::uint32_t>(tfrs.size()));
-            for(const auto& t : tfrs)
-            {
-                put_pod(out, static_cast<std::uint32_t>(t.tfr_id));
-                put_string(out, t.notam_id);
-                put_string(out, t.tfr_type);
-                put_string(out, t.facility);
-                put_string(out, t.date_effective);
-                put_string(out, t.date_expire);
-                put_string(out, t.description);
-                put_pod(out, static_cast<std::uint32_t>(t.areas.size()));
-                for(const auto& a : t.areas)
-                {
-                    put_pod(out, static_cast<std::uint32_t>(a.area_id));
-                    put_string(out, a.area_name);
-                    put_pod(out, static_cast<std::int32_t>(a.upper_ft_val));
-                    put_string(out, a.upper_ft_ref);
-                    put_pod(out, static_cast<std::int32_t>(a.lower_ft_val));
-                    put_string(out, a.lower_ft_ref);
-                    put_string(out, a.date_effective);
-                    put_string(out, a.date_expire);
-                    put_pod(out, static_cast<std::uint32_t>(a.points.size()));
-                    for(const auto& p : a.points)
-                    {
-                        put_pod(out, p.lat);
-                        put_pod(out, p.lon);
-                    }
-                }
-            }
-            return out;
-        }
-
-        bool deserialize(const std::string& body, std::vector<tfr>& out)
-        {
-            std::string_view cur(body);
-            if(cur.size() < CACHE_MAGIC.size())
-            {
-                return false;
-            }
-            if(std::memcmp(cur.data(), CACHE_MAGIC.data(), CACHE_MAGIC.size()) != 0)
-            {
-                return false;
-            }
-            cur.remove_prefix(CACHE_MAGIC.size());
-
-            std::uint32_t version = 0;
-            if(!get_pod(cur, version) || version != CACHE_VERSION)
-            {
-                return false;
-            }
-
-            std::uint32_t tfr_count = 0;
-            if(!get_pod(cur, tfr_count))
-            {
-                return false;
-            }
-            if(tfr_count > 100000)
-            {
-                return false; // sanity cap
-            }
-
-            out.reserve(tfr_count);
-            for(std::uint32_t i = 0; i < tfr_count; ++i)
-            {
-                tfr t{};
-                std::uint32_t id = 0;
-                if(!get_pod(cur, id))
-                {
-                    return false;
-                }
-                t.tfr_id = static_cast<int>(id);
-                if(!get_string(cur, t.notam_id) || !get_string(cur, t.tfr_type) || !get_string(cur, t.facility) ||
-                   !get_string(cur, t.date_effective) || !get_string(cur, t.date_expire) ||
-                   !get_string(cur, t.description))
-                {
-                    return false;
-                }
-                std::uint32_t area_count = 0;
-                if(!get_pod(cur, area_count))
-                {
-                    return false;
-                }
-                if(area_count > 10000)
-                {
-                    return false;
-                }
-                t.areas.reserve(area_count);
-                for(std::uint32_t j = 0; j < area_count; ++j)
-                {
-                    tfr_area a{};
-                    std::uint32_t aid = 0;
-                    if(!get_pod(cur, aid))
-                    {
-                        return false;
-                    }
-                    a.area_id = static_cast<int>(aid);
-                    if(!get_string(cur, a.area_name))
-                    {
-                        return false;
-                    }
-                    std::int32_t up = 0;
-                    if(!get_pod(cur, up))
-                    {
-                        return false;
-                    }
-                    a.upper_ft_val = up;
-                    if(!get_string(cur, a.upper_ft_ref))
-                    {
-                        return false;
-                    }
-                    std::int32_t lo = 0;
-                    if(!get_pod(cur, lo))
-                    {
-                        return false;
-                    }
-                    a.lower_ft_val = lo;
-                    if(!get_string(cur, a.lower_ft_ref) || !get_string(cur, a.date_effective) ||
-                       !get_string(cur, a.date_expire))
-                    {
-                        return false;
-                    }
-                    std::uint32_t pt_count = 0;
-                    if(!get_pod(cur, pt_count))
-                    {
-                        return false;
-                    }
-                    if(pt_count > 1000000)
-                    {
-                        return false;
-                    }
-                    a.points.reserve(pt_count);
-                    for(std::uint32_t k = 0; k < pt_count; ++k)
-                    {
-                        airspace_point p{};
-                        if(!get_pod(cur, p.lat) || !get_pod(cur, p.lon))
-                        {
-                            return false;
-                        }
-                        a.points.push_back(p);
-                    }
-                    t.areas.push_back(std::move(a));
-                }
-                out.push_back(std::move(t));
-            }
-            return true;
-        }
-    }
-
-    // Free function so tfr_source's tests can build a cache body
-    // without depending on the full live-fetch path. Kept in the
-    // anonymous namespace for non-test users; exposed via this
-    // alias so the test TU can link against it.
-    std::string tfr_source_serialize_for_test(const std::vector<tfr>& v)
-    {
-        return serialize(v);
     }
 
     // ----------------- impl -----------------
@@ -383,7 +165,7 @@ namespace osect
     struct tfr_source::impl
     {
         http_client& http;
-        ephemeral_cache& cache;
+        ephemeral_database& db;
 
         mutable std::shared_mutex mtx;
         std::vector<tfr> tfrs;
@@ -402,51 +184,35 @@ namespace osect
         bool shutdown = false;
         std::thread worker;
 
-        impl(http_client& h, ephemeral_cache& c) : http(h), cache(c)
+        impl(http_client& h, ephemeral_database& d) : http(h), db(d)
         {
         }
     };
 
-    tfr_source::tfr_source(http_client& http, ephemeral_cache& cache) : pimpl(std::make_unique<impl>(http, cache))
+    tfr_source::tfr_source(http_client& http, ephemeral_database& db) : pimpl(std::make_unique<impl>(http, db))
     {
-        // Load whatever's in the cache so warm starts (and
-        // --offline runs) have data without network. Cache misses
-        // and corrupt files leave the in-memory store empty.
-        if(const auto entry = cache.load("tfr"))
+        // Load whatever's in the ephemeral database so warm starts
+        // (and --offline runs) have data without network. An empty
+        // database leaves the in-memory store empty.
+        auto loaded = db.load_tfrs();
+        auto last_ok = db.last_refreshed("tfr");
+
+        std::vector<tfr_segment> segs;
+        for(const auto& t : loaded)
         {
-            std::vector<tfr> loaded;
-            if(deserialize(entry->body, loaded))
-            {
-                std::vector<tfr_segment> segs;
-                for(const auto& t : loaded)
-                {
-                    append_segments_for(t, segs);
-                }
+            append_segments_for(t, segs);
+        }
 
-                // Best-effort wall-clock time for the cached blob —
-                // file_time_type and system_clock are different
-                // clocks before C++20, so we approximate via the
-                // current delta. Off by at most a few seconds.
-                std::optional<std::chrono::system_clock::time_point> mtime;
-                std::error_code ec;
-                const auto path = cache.dir() / "tfr.bin";
-                const auto ftime = std::filesystem::last_write_time(path, ec);
-                if(!ec)
-                {
-                    const auto fs_now = std::filesystem::file_time_type::clock::now();
-                    mtime = std::chrono::system_clock::now() +
-                            std::chrono::duration_cast<std::chrono::system_clock::duration>(ftime - fs_now);
-                }
-
-                auto loaded_count = loaded.size();
-                {
-                    std::unique_lock lock(pimpl->mtx);
-                    pimpl->tfrs = std::move(loaded);
-                    pimpl->segments = std::move(segs);
-                    pimpl->last_ok = mtime;
-                }
-                sdl::log_info("tfr cache loaded: " + std::to_string(loaded_count) + " TFRs");
-            }
+        const auto loaded_count = loaded.size();
+        {
+            std::unique_lock lock(pimpl->mtx);
+            pimpl->tfrs = std::move(loaded);
+            pimpl->segments = std::move(segs);
+            pimpl->last_ok = last_ok;
+        }
+        if(loaded_count > 0)
+        {
+            sdl::log_info("tfr cache loaded: " + std::to_string(loaded_count) + " TFRs");
         }
 
         // Spin up the refresh worker. Each iteration refreshes if the
@@ -580,21 +346,24 @@ namespace osect
             }
 
             // 4. Atomic swap into the in-memory store.
+            const auto now = std::chrono::system_clock::now();
             auto tfr_count = new_tfrs.size();
             auto seg_count = new_segs.size();
             {
                 std::unique_lock lock(pimpl->mtx);
                 pimpl->tfrs = std::move(new_tfrs);
                 pimpl->segments = std::move(new_segs);
-                pimpl->last_ok = std::chrono::system_clock::now();
+                pimpl->last_ok = now;
             }
             sdl::log_info("tfr refresh complete: " + std::to_string(tfr_count) + " TFRs, " + std::to_string(seg_count) +
                           " segments");
 
-            // 5. Persist to disk for warm starts and --offline.
+            // 5. Persist to the ephemeral database for warm starts
+            //    and --offline.
             try
             {
-                pimpl->cache.store("tfr", serialize(pimpl->tfrs), "");
+                pimpl->db.replace_tfrs(pimpl->tfrs);
+                pimpl->db.set_source_meta("tfr", now, "");
             }
             catch(const std::exception& e)
             {
