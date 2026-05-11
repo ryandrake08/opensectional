@@ -1,5 +1,8 @@
 #include "ephemeral_database.hpp"
+#include <array>
 #include <chrono>
+#include <cstdint>
+#include <cstdio>
 #include <ctime>
 #include <iomanip>
 #include <locale>
@@ -10,6 +13,7 @@
 #include <sqlite/statement.hpp>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -18,13 +22,21 @@ namespace osect
     namespace
     {
         // Bootstrap tables — exist regardless of which source groups are
-        // present. SCHEMA_VERSIONS tracks each group's on-disk version so
-        // a stale TFR schema can be rebuilt without touching unrelated
-        // groups (NOTAMs, weather, ...) that will eventually live here.
+        // present. SCHEMA_VERSIONS tracks each group's on-disk schema
+        // identity (a hash of the canonical CREATE SQL) so a stale TFR
+        // schema can be rebuilt without touching unrelated groups
+        // (NOTAMs, weather, ...) that will eventually live here.
+        //
+        // The `version` column stores text — the hex hash from
+        // `schema_hash()` below, prefixed with 'h' to keep SQLite's
+        // numeric-affinity conversion from re-typing all-digit hashes
+        // to INTEGER. Existing installs predating this change have an
+        // integer-affinity column declaration; SQLite stores TEXT in
+        // it just fine via dynamic typing.
         constexpr const char* BOOTSTRAP_SQL = R"(
             CREATE TABLE IF NOT EXISTS SCHEMA_VERSIONS (
                 group_name TEXT PRIMARY KEY,
-                version    INTEGER NOT NULL
+                version    TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS SOURCE_META (
                 name           TEXT PRIMARY KEY,
@@ -33,8 +45,68 @@ namespace osect
             );
         )";
 
-        // TFR group schema. `mod_abs_time` is reserved for the future
-        // conditional-refresh work in tfr_source — stays '' until then.
+        // Whitespace-collapsing normalizer for the canonical CREATE
+        // SQL. Multiple runs of any ASCII whitespace become a single
+        // space; leading and trailing whitespace are trimmed. SQL
+        // comments are not stripped — adding one to TFR_GROUP_CREATE_SQL
+        // changes the hash and triggers a rebuild on next open, which
+        // is fine for ephemeral data.
+        std::string normalize_sql(std::string_view s)
+        {
+            std::string out;
+            out.reserve(s.size());
+            bool prev_ws = true; // trim leading
+            for(char c : s)
+            {
+                const bool is_ws = (c == ' ' || c == '\t' || c == '\n' || c == '\r');
+                if(is_ws)
+                {
+                    if(!prev_ws)
+                    {
+                        out.push_back(' ');
+                        prev_ws = true;
+                    }
+                }
+                else
+                {
+                    out.push_back(c);
+                    prev_ws = false;
+                }
+            }
+            if(!out.empty() && out.back() == ' ')
+            {
+                out.pop_back();
+            }
+            return out;
+        }
+
+        // FNV-1a 64-bit — deterministic across platforms and runs.
+        // Sufficient for change-detection on a small canonical string;
+        // we don't need cryptographic strength.
+        std::uint64_t fnv1a_64(std::string_view s)
+        {
+            std::uint64_t h = 14695981039346656037ULL;
+            for(unsigned char c : s)
+            {
+                h ^= c;
+                h *= 1099511628211ULL;
+            }
+            return h;
+        }
+
+        // Identity hash of a schema group's canonical CREATE SQL,
+        // formatted as 'h' + 16 lowercase hex chars (17 total). The
+        // 'h' prefix is load-bearing — without it an all-digit hex
+        // hash would get stored as INTEGER by SQLite's type affinity.
+        std::string schema_hash(std::string_view sql)
+        {
+            const auto h = fnv1a_64(normalize_sql(sql));
+            std::array<char, 18> buf{};
+            std::snprintf(buf.data(), buf.size(), "h%016llx", static_cast<unsigned long long>(h));
+            return buf.data();
+        }
+
+        // TFR group schema.
         //
         // TFR_AREA's primary key is composite (tfr_id, area_id) because
         // the parser numbers areas per-TFR (1, 2, 3 within each TFR),
@@ -42,28 +114,46 @@ namespace osect
         // area_id=1. TFR_AREA_POINT references the same composite.
         constexpr const char* TFR_GROUP_CREATE_SQL = R"(
             CREATE TABLE TFR (
-                tfr_id         INTEGER PRIMARY KEY,
-                notam_id       TEXT NOT NULL,
-                mod_abs_time   TEXT NOT NULL DEFAULT '',
-                tfr_type       TEXT NOT NULL,
-                facility       TEXT NOT NULL DEFAULT '',
-                date_effective TEXT NOT NULL DEFAULT '',
-                date_expire    TEXT NOT NULL DEFAULT '',
-                description    TEXT NOT NULL DEFAULT ''
+                tfr_id              INTEGER PRIMARY KEY,
+                notam_id            TEXT NOT NULL,
+                tfr_type            TEXT NOT NULL,
+                facility            TEXT NOT NULL DEFAULT '',
+                date_effective      TEXT NOT NULL DEFAULT '',
+                date_expire         TEXT NOT NULL DEFAULT '',
+                description         TEXT NOT NULL DEFAULT '',
+                date_issued         TEXT NOT NULL DEFAULT '',
+                city                TEXT NOT NULL DEFAULT '',
+                state               TEXT NOT NULL DEFAULT '',
+                coord_facility      TEXT NOT NULL DEFAULT '',
+                coord_facility_name TEXT NOT NULL DEFAULT '',
+                coord_facility_type TEXT NOT NULL DEFAULT '',
+                coord_phone         TEXT NOT NULL DEFAULT '',
+                coord_freq          TEXT NOT NULL DEFAULT '',
+                poc_name            TEXT NOT NULL DEFAULT '',
+                poc_org             TEXT NOT NULL DEFAULT '',
+                poc_phone           TEXT NOT NULL DEFAULT '',
+                poc_freq            TEXT NOT NULL DEFAULT '',
+                time_zone           TEXT NOT NULL DEFAULT '',
+                expire_time_zone    TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IDX_TFR_NOTAM_ID ON TFR(notam_id);
 
             CREATE TABLE TFR_AREA (
-                tfr_id         INTEGER NOT NULL REFERENCES TFR(tfr_id) ON DELETE CASCADE,
-                area_id        INTEGER NOT NULL,
-                area_seq       INTEGER NOT NULL,
-                area_name      TEXT NOT NULL DEFAULT '',
-                upper_ft_val   INTEGER NOT NULL DEFAULT 0,
-                upper_ft_ref   TEXT NOT NULL DEFAULT '',
-                lower_ft_val   INTEGER NOT NULL DEFAULT 0,
-                lower_ft_ref   TEXT NOT NULL DEFAULT '',
-                date_effective TEXT NOT NULL DEFAULT '',
-                date_expire    TEXT NOT NULL DEFAULT '',
+                tfr_id           INTEGER NOT NULL REFERENCES TFR(tfr_id) ON DELETE CASCADE,
+                area_id          INTEGER NOT NULL,
+                area_seq         INTEGER NOT NULL,
+                area_name        TEXT NOT NULL DEFAULT '',
+                upper_ft_val     INTEGER NOT NULL DEFAULT 0,
+                upper_ft_ref     TEXT NOT NULL DEFAULT '',
+                lower_ft_val     INTEGER NOT NULL DEFAULT 0,
+                lower_ft_ref     TEXT NOT NULL DEFAULT '',
+                date_effective   TEXT NOT NULL DEFAULT '',
+                date_expire      TEXT NOT NULL DEFAULT '',
+                start_time       TEXT NOT NULL DEFAULT '',
+                end_time         TEXT NOT NULL DEFAULT '',
+                is_time_separate TEXT NOT NULL DEFAULT '',
+                day_code         TEXT NOT NULL DEFAULT '',
+                instructions     TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (tfr_id, area_id)
             ) WITHOUT ROWID;
 
@@ -83,8 +173,13 @@ namespace osect
             "DROP TABLE IF EXISTS TFR_AREA;"
             "DROP TABLE IF EXISTS TFR;";
 
-        constexpr int TFR_GROUP_VERSION = 2;
         constexpr const char* TFR_GROUP_NAME = "tfr";
+
+        // Computed once at program startup. Any edit to
+        // TFR_GROUP_CREATE_SQL (other than pure whitespace) changes
+        // this value; ensure_groups() then sees a mismatch on next
+        // open and drops/recreates the TFR tables.
+        const std::string TFR_GROUP_SCHEMA_HASH = schema_hash(TFR_GROUP_CREATE_SQL);
 
         // Strict 20-char UTC ISO 8601: YYYY-MM-DDTHH:MM:SSZ. The
         // ephemeral.db is host-private so we control both writer and
@@ -107,7 +202,12 @@ namespace osect
 
         std::chrono::system_clock::time_point parse_iso8601(const std::string& s)
         {
-            int Y = 0, M = 0, D = 0, h = 0, m = 0, sec = 0;
+            int Y = 0;
+            int M = 0;
+            int D = 0;
+            int h = 0;
+            int m = 0;
+            int sec = 0;
             if(s.size() != 20 ||
                std::sscanf(s.c_str(), "%4d-%2d-%2dT%2d:%2d:%2dZ", &Y, &M, &D, &h, &m, &sec) != 6)
             {
@@ -131,7 +231,7 @@ namespace osect
         // Drop the TFR group's tables and its SOURCE_META row, then
         // recreate the schema and stamp the version. Used both when the
         // group is missing entirely (fresh file) and when the on-disk
-        // version doesn't match TFR_GROUP_VERSION.
+        // schema doesn't match.
         void rebuild_tfr_group(sqlite::database& db)
         {
             db.exec("BEGIN");
@@ -151,7 +251,7 @@ namespace osect
 
                 auto ins_ver = db.prepare("INSERT INTO SCHEMA_VERSIONS (group_name, version) VALUES (?, ?)");
                 ins_ver.bind(1, TFR_GROUP_NAME);
-                ins_ver.bind(2, TFR_GROUP_VERSION);
+                ins_ver.bind(2, TFR_GROUP_SCHEMA_HASH);
                 ins_ver.step();
 
                 db.exec("COMMIT");
@@ -178,17 +278,16 @@ namespace osect
                 check.bind(1, TFR_GROUP_NAME);
                 if(check.step())
                 {
-                    const auto on_disk = check.column_int(0);
-                    if(on_disk == TFR_GROUP_VERSION)
+                    const auto on_disk = check.column_text(0);
+                    if(on_disk == TFR_GROUP_SCHEMA_HASH)
                     {
                         needs_rebuild = false;
                     }
                     else
                     {
                         sdl::log_warn(std::string("ephemeral.db: ") + TFR_GROUP_NAME +
-                                      " schema version " + std::to_string(on_disk) +
-                                      " != " + std::to_string(TFR_GROUP_VERSION) +
-                                      "; dropping and rebuilding");
+                                      " schema hash " + on_disk + " != " +
+                                      TFR_GROUP_SCHEMA_HASH + "; dropping and rebuilding");
                     }
                 }
             }
@@ -246,8 +345,13 @@ namespace osect
 
               ,
               stmt_load_tfrs(db.prepare(R"(
-                SELECT tfr_id, notam_id, mod_abs_time, tfr_type, facility,
-                       date_effective, date_expire, description
+                SELECT tfr_id, notam_id, tfr_type, facility,
+                       date_effective, date_expire, description,
+                       date_issued, city, state,
+                       coord_facility, coord_facility_name, coord_facility_type,
+                       coord_phone, coord_freq,
+                       poc_name, poc_org, poc_phone, poc_freq,
+                       time_zone, expire_time_zone
                 FROM TFR
                 ORDER BY tfr_id
             )"))
@@ -256,7 +360,9 @@ namespace osect
               stmt_load_areas(db.prepare(R"(
                 SELECT tfr_id, area_id, area_name,
                        upper_ft_val, upper_ft_ref, lower_ft_val, lower_ft_ref,
-                       date_effective, date_expire
+                       date_effective, date_expire,
+                       start_time, end_time, is_time_separate, day_code,
+                       instructions
                 FROM TFR_AREA
                 ORDER BY tfr_id, area_seq
             )"))
@@ -270,17 +376,24 @@ namespace osect
 
               ,
               stmt_insert_tfr(db.prepare(R"(
-                INSERT INTO TFR (tfr_id, notam_id, mod_abs_time, tfr_type, facility,
-                                 date_effective, date_expire, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO TFR (tfr_id, notam_id, tfr_type, facility,
+                                 date_effective, date_expire, description,
+                                 date_issued, city, state,
+                                 coord_facility, coord_facility_name, coord_facility_type,
+                                 coord_phone, coord_freq,
+                                 poc_name, poc_org, poc_phone, poc_freq,
+                                 time_zone, expire_time_zone)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             )"))
 
               ,
               stmt_insert_area(db.prepare(R"(
                 INSERT INTO TFR_AREA (tfr_id, area_id, area_seq, area_name,
                                       upper_ft_val, upper_ft_ref, lower_ft_val, lower_ft_ref,
-                                      date_effective, date_expire)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                      date_effective, date_expire,
+                                      start_time, end_time, is_time_separate, day_code,
+                                      instructions)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             )"))
 
               ,
@@ -320,7 +433,7 @@ namespace osect
         stmt.bind(1, source_name);
         if(!stmt.step())
         {
-            return std::string();
+            return {};
         }
         return stmt.column_text(1);
     }
@@ -349,15 +462,27 @@ namespace osect
         while(st.step())
         {
             tfr t{};
-            t.tfr_id         = st.column_int(0);
-            t.notam_id       = st.column_text(1);
-            // column 2 (mod_abs_time) is reserved for a future caller;
-            // not surfaced through `struct tfr` yet, so skip.
-            t.tfr_type       = st.column_text(3);
-            t.facility       = st.column_text(4);
-            t.date_effective = st.column_text(5);
-            t.date_expire    = st.column_text(6);
-            t.description    = st.column_text(7);
+            t.tfr_id              = st.column_int(0);
+            t.notam_id            = st.column_text(1);
+            t.tfr_type            = st.column_text(2);
+            t.facility            = st.column_text(3);
+            t.date_effective      = st.column_text(4);
+            t.date_expire         = st.column_text(5);
+            t.description         = st.column_text(6);
+            t.date_issued         = st.column_text(7);
+            t.city                = st.column_text(8);
+            t.state               = st.column_text(9);
+            t.coord_facility      = st.column_text(10);
+            t.coord_facility_name = st.column_text(11);
+            t.coord_facility_type = st.column_text(12);
+            t.coord_phone         = st.column_text(13);
+            t.coord_freq          = st.column_text(14);
+            t.poc_name            = st.column_text(15);
+            t.poc_org             = st.column_text(16);
+            t.poc_phone           = st.column_text(17);
+            t.poc_freq            = st.column_text(18);
+            t.time_zone           = st.column_text(19);
+            t.expire_time_zone    = st.column_text(20);
             tfr_idx.emplace(t.tfr_id, tfrs.size());
             tfrs.push_back(std::move(t));
         }
@@ -372,14 +497,19 @@ namespace osect
         {
             const int tfr_id = sa.column_int(0);
             tfr_area a{};
-            a.area_id        = sa.column_int(1);
-            a.area_name      = sa.column_text(2);
-            a.upper_ft_val   = sa.column_int(3);
-            a.upper_ft_ref   = sa.column_text(4);
-            a.lower_ft_val   = sa.column_int(5);
-            a.lower_ft_ref   = sa.column_text(6);
-            a.date_effective = sa.column_text(7);
-            a.date_expire    = sa.column_text(8);
+            a.area_id          = sa.column_int(1);
+            a.area_name        = sa.column_text(2);
+            a.upper_ft_val     = sa.column_int(3);
+            a.upper_ft_ref     = sa.column_text(4);
+            a.lower_ft_val     = sa.column_int(5);
+            a.lower_ft_ref     = sa.column_text(6);
+            a.date_effective   = sa.column_text(7);
+            a.date_expire      = sa.column_text(8);
+            a.start_time       = sa.column_text(9);
+            a.end_time         = sa.column_text(10);
+            a.is_time_separate = sa.column_text(11);
+            a.day_code         = sa.column_text(12);
+            a.instructions     = sa.column_text(13);
 
             // FK CASCADE prevents orphan rows.
             const auto parent_pos = tfr_idx.at(tfr_id);
@@ -418,14 +548,27 @@ namespace osect
             {
                 auto& s = pimpl->stmt_insert_tfr;
                 s.reset();
-                s.bind(1, t.tfr_id);
-                s.bind(2, t.notam_id);
-                s.bind(3, std::string{}); // mod_abs_time — reserved
-                s.bind(4, t.tfr_type);
-                s.bind(5, t.facility);
-                s.bind(6, t.date_effective);
-                s.bind(7, t.date_expire);
-                s.bind(8, t.description);
+                s.bind(1,  t.tfr_id);
+                s.bind(2,  t.notam_id);
+                s.bind(3,  t.tfr_type);
+                s.bind(4,  t.facility);
+                s.bind(5,  t.date_effective);
+                s.bind(6,  t.date_expire);
+                s.bind(7,  t.description);
+                s.bind(8,  t.date_issued);
+                s.bind(9,  t.city);
+                s.bind(10, t.state);
+                s.bind(11, t.coord_facility);
+                s.bind(12, t.coord_facility_name);
+                s.bind(13, t.coord_facility_type);
+                s.bind(14, t.coord_phone);
+                s.bind(15, t.coord_freq);
+                s.bind(16, t.poc_name);
+                s.bind(17, t.poc_org);
+                s.bind(18, t.poc_phone);
+                s.bind(19, t.poc_freq);
+                s.bind(20, t.time_zone);
+                s.bind(21, t.expire_time_zone);
                 s.step();
 
                 int area_seq = 0;
@@ -443,6 +586,11 @@ namespace osect
                     sa.bind(8, a.lower_ft_ref);
                     sa.bind(9, a.date_effective);
                     sa.bind(10, a.date_expire);
+                    sa.bind(11, a.start_time);
+                    sa.bind(12, a.end_time);
+                    sa.bind(13, a.is_time_separate);
+                    sa.bind(14, a.day_code);
+                    sa.bind(15, a.instructions);
                     sa.step();
 
                     int point_seq = 0;

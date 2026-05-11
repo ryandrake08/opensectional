@@ -46,6 +46,17 @@ TEST_CASE("parse_xnotam: Ann Arbor test TFR populates expected fields")
     CHECK(t.facility == "ZOB");
     CHECK(t.date_expire == "2026-04-18T09:00:00");
     CHECK(!t.description.empty());
+    CHECK(t.date_issued == "2026-04-18T02:08:00");
+    CHECK(t.city == "TEST TEST TEST Ann Arbor");
+    CHECK(t.state == "MICHIGAN");
+    CHECK(t.coord_facility_type == "ARTCC");
+    CHECK(t.coord_facility.empty());
+    CHECK(t.coord_facility_name.empty());
+    CHECK(t.coord_phone.empty());
+    CHECK(t.coord_freq.empty());
+    CHECK(t.poc_name.empty());
+    CHECK(t.time_zone == "EDT");
+    CHECK(t.expire_time_zone == "EDT");
 
     REQUIRE(t.areas.size() == 1);
     const auto& a = t.areas[0];
@@ -53,8 +64,14 @@ TEST_CASE("parse_xnotam: Ann Arbor test TFR populates expected fields")
     CHECK(a.upper_ft_ref == "SFC");
     CHECK(a.lower_ft_val == 0);
     CHECK(a.lower_ft_ref == "SFC");
-    // Per-area schedule mirrors the NOTAM-level dateExpire.
     CHECK(a.date_expire == "2026-04-18T09:00:00");
+    CHECK(a.is_time_separate == "FALSE");
+    CHECK(a.start_time.empty());
+    CHECK(a.end_time.empty());
+    CHECK(a.day_code.empty());
+    REQUIRE(!a.instructions.empty());
+    CHECK(a.instructions.find("THIS IS A TEST TFR") == 0);
+    CHECK(a.instructions.find('\n') != std::string::npos);
 
     // 38 Avx points in the merged polygon (one repeats to close).
     REQUIRE(a.points.size() >= 3);

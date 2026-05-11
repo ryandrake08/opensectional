@@ -1303,6 +1303,47 @@ namespace osect
                 {"NOTAM ID", v.notam_id},        {"Type", v.tfr_type},       {"Facility", v.facility},
                 {"Effective", v.date_effective}, {"Expires", v.date_expire},
             };
+            if(!v.date_issued.empty()) { rows.push_back({"Issued", v.date_issued}); }
+            // Affected location (city / state) — single combined row
+            // when both present, otherwise whichever is non-empty.
+            if(!v.city.empty() && !v.state.empty())
+            {
+                rows.push_back({"Location", v.city + ", " + v.state});
+            }
+            else if(!v.city.empty())
+            {
+                rows.push_back({"Location", v.city});
+            }
+            else if(!v.state.empty())
+            {
+                rows.push_back({"Location", v.state});
+            }
+            // Coordinating ATC facility. Show the named form when
+            // present; otherwise fall back to the code. Type
+            // (ARTCC/CERAP) is appended when known.
+            if(!v.coord_facility_name.empty() || !v.coord_facility.empty())
+            {
+                std::string val = v.coord_facility_name.empty() ? v.coord_facility : v.coord_facility_name;
+                if(!v.coord_facility_type.empty())
+                {
+                    val += " (" + v.coord_facility_type + ")";
+                }
+                rows.push_back({"Coord facility", val});
+            }
+            if(!v.coord_phone.empty()) { rows.push_back({"Coord phone", v.coord_phone}); }
+            if(!v.coord_freq.empty())  { rows.push_back({"Coord freq",  v.coord_freq}); }
+            // Point of contact (security/VIP TFRs only).
+            if(!v.poc_name.empty())  { rows.push_back({"POC name",  v.poc_name}); }
+            if(!v.poc_org.empty())   { rows.push_back({"POC org",   v.poc_org}); }
+            if(!v.poc_phone.empty()) { rows.push_back({"POC phone", v.poc_phone}); }
+            if(!v.poc_freq.empty())  { rows.push_back({"POC freq",  v.poc_freq}); }
+            if(!v.time_zone.empty()) { rows.push_back({"Time zone", v.time_zone}); }
+            // Show the expiry TZ only when it differs — many TFRs
+            // repeat the same code in both fields, which is noise.
+            if(!v.expire_time_zone.empty() && v.expire_time_zone != v.time_zone)
+            {
+                rows.push_back({"Expire TZ", v.expire_time_zone});
+            }
             for(const auto& area : v.areas)
             {
                 if(!area.area_name.empty())
@@ -1319,6 +1360,31 @@ namespace osect
                 if(!area.date_expire.empty())
                 {
                     rows.push_back({"Area expires", area.date_expire});
+                }
+                // Daily window from ScheduleGroup. Combine start+end
+                // into one row when both present, otherwise show
+                // whichever is set. is_time_separate is captured in
+                // the data model but not displayed — it's a structural
+                // hint, not pilot-actionable on its own.
+                if(!area.start_time.empty() && !area.end_time.empty())
+                {
+                    rows.push_back({"Daily window", area.start_time + "-" + area.end_time});
+                }
+                else if(!area.start_time.empty())
+                {
+                    rows.push_back({"Start time", area.start_time});
+                }
+                else if(!area.end_time.empty())
+                {
+                    rows.push_back({"End time", area.end_time});
+                }
+                if(!area.day_code.empty())
+                {
+                    rows.push_back({"Days", area.day_code});
+                }
+                if(!area.instructions.empty())
+                {
+                    rows.push_back({"Instructions", area.instructions});
                 }
             }
             rows.push_back({"Description", v.description});

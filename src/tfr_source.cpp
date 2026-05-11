@@ -95,12 +95,13 @@ namespace osect
         // ---- minimal JSON-array string extractor ----
         //
         // The tfr.faa.gov list endpoint returns a top-level array of
-        // objects. We only consume one field per record (`notam_id`),
-        // so a full JSON parser is overkill — when a future ephemeral
-        // source needs richer parsing, this is the spot to switch to
-        // a vendored JSON library. Walk the document once and pull
-        // every quoted "notam_id" value's string. Skips escaped
-        // quotes inside strings so the scanner doesn't get confused.
+        // flat objects. We only consume one field per record
+        // (`notam_id`), so a full JSON parser is overkill — when a
+        // future ephemeral source needs richer parsing, this is the
+        // spot to switch to a vendored JSON library. Walk the document
+        // once and pull every quoted "notam_id" value's string. Skips
+        // escaped quotes inside strings so the scanner doesn't get
+        // confused.
         std::vector<std::string> extract_string_field(std::string_view json, std::string_view field)
         {
             std::vector<std::string> out;
@@ -155,6 +156,7 @@ namespace osect
             }
             return out;
         }
+
     }
 
     // ----------------- impl -----------------
