@@ -50,7 +50,7 @@ target_link_libraries(test_ephemeral_database PRIVATE sqlite_wrapper sdl_wrapper
 # fixture XMLs from nasr_data/tfr_data/ at the repo root via the
 # ctest WORKING_DIRECTORY.
 add_osect_test(xnotam_parser   ${CMAKE_SOURCE_DIR}/src/xnotam_parser.cpp)
-target_link_libraries(test_xnotam_parser PRIVATE pugixml)
+target_link_libraries(test_xnotam_parser PRIVATE pugixml sdl_wrapper)
 
 # tfr_source pulls in http_client, ephemeral_database, and the xnotam
 # parser (which links pugixml). Tests run against an offline
