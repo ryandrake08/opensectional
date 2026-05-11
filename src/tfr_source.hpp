@@ -10,7 +10,7 @@
 namespace osect
 {
     class http_client;
-    class ephemeral_cache;
+    class ephemeral_database;
 
     // In-memory store of currently-active TFRs, with a network refresh
     // path that tolerates being offline. Replaces the old SQLite-backed
@@ -27,11 +27,11 @@ namespace osect
 
     public:
         // On construction the source loads any prior state from the
-        // cache so warm starts and `--offline` runs see whatever was
-        // last successfully fetched. Construction never throws on a
-        // missing or malformed cache — it just leaves the in-memory
-        // store empty.
-        tfr_source(http_client& http, ephemeral_cache& cache);
+        // ephemeral database so warm starts and `--offline` runs see
+        // whatever was last successfully fetched. Construction does
+        // not throw on an empty database — it just leaves the
+        // in-memory store empty.
+        tfr_source(http_client& http, ephemeral_database& db);
         ~tfr_source();
 
         tfr_source(const tfr_source&) = delete;

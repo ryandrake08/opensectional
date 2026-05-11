@@ -42,7 +42,9 @@ add_osect_test(chart_style
     ${CMAKE_SOURCE_DIR}/src/chart_style.cpp
     ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
 add_osect_test(data_source     ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
-add_osect_test(ephemeral_cache ${CMAKE_SOURCE_DIR}/src/ephemeral_cache.cpp)
+# ephemeral_database links the sqlite wrapper and sdl_wrapper (for log_warn).
+add_osect_test(ephemeral_database ${CMAKE_SOURCE_DIR}/src/ephemeral_database.cpp)
+target_link_libraries(test_ephemeral_database PRIVATE sqlite_wrapper sdl_wrapper)
 
 # xnotam_parser links the vendored pugixml lib; the test reads
 # fixture XMLs from nasr_data/tfr_data/ at the repo root via the
@@ -50,15 +52,15 @@ add_osect_test(ephemeral_cache ${CMAKE_SOURCE_DIR}/src/ephemeral_cache.cpp)
 add_osect_test(xnotam_parser   ${CMAKE_SOURCE_DIR}/src/xnotam_parser.cpp)
 target_link_libraries(test_xnotam_parser PRIVATE pugixml)
 
-# tfr_source pulls in http_client, ephemeral_cache, and the xnotam
+# tfr_source pulls in http_client, ephemeral_database, and the xnotam
 # parser (which links pugixml). Tests run against an offline
 # http_client so no real network is touched.
 add_osect_test(tfr_source
     ${CMAKE_SOURCE_DIR}/src/tfr_source.cpp
     ${CMAKE_SOURCE_DIR}/src/http_client.cpp
-    ${CMAKE_SOURCE_DIR}/src/ephemeral_cache.cpp
+    ${CMAKE_SOURCE_DIR}/src/ephemeral_database.cpp
     ${CMAKE_SOURCE_DIR}/src/xnotam_parser.cpp)
-target_link_libraries(test_tfr_source PRIVATE pugixml CURL::libcurl sdl_wrapper Threads::Threads)
+target_link_libraries(test_tfr_source PRIVATE pugixml CURL::libcurl sqlite_wrapper sdl_wrapper Threads::Threads)
 
 # http_client confirms that transport failures throw
 add_osect_test(http_client  ${CMAKE_SOURCE_DIR}/src/http_client.cpp)

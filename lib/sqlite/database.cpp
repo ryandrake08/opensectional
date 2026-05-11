@@ -61,6 +61,19 @@ namespace sqlite
         return statement(stmt);
     }
 
+    void database::exec(const char* sql)
+    {
+        char* err = nullptr;
+        int rc = sqlite3_exec(pimpl->db, sql, nullptr, nullptr, &err);
+        if(rc != SQLITE_OK)
+        {
+            std::string msg = "Failed to exec SQL: ";
+            msg += err ? err : sqlite3_errmsg(pimpl->db);
+            sqlite3_free(err);
+            throw std::runtime_error(msg);
+        }
+    }
+
     std::string database::error_message() const
     {
         return sqlite3_errmsg(pimpl->db);

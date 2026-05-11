@@ -16,10 +16,10 @@ namespace osect
     // new member, one accessor, one row in as_data_sources(), and one
     // tracker.add() in the constructor — none of the call sites change.
     //
-    // Owns the shared http_client, the on-disk ephemeral_cache, and
-    // every *_source that consumes them. The facade is closed: the
-    // raw http/cache handles are not exposed, so consumers can't
-    // reach around it for ad-hoc fetches.
+    // Owns the shared http_client, the on-disk ephemeral_database,
+    // and every *_source that consumes them. The facade is closed:
+    // the raw http / database handles are not exposed, so consumers
+    // can't reach around it for ad-hoc fetches.
     class ephemeral_data
     {
         struct impl;
@@ -27,8 +27,8 @@ namespace osect
 
     public:
         // `offline=true` skips all network fetches and serves whatever
-        // was last persisted in the cache. Construction is non-blocking;
-        // background refreshes start on their own threads.
+        // was last persisted in the database. Construction is
+        // non-blocking; background refreshes start on their own threads.
         explicit ephemeral_data(bool offline);
         ~ephemeral_data();
 

@@ -259,8 +259,8 @@ add_executable(osect
     src/chart_style.cpp
     src/chart_type.cpp
     src/data_source.cpp
-    src/ephemeral_cache.cpp
     src/ephemeral_data.cpp
+    src/ephemeral_database.cpp
     src/http_client.cpp
     src/tfr_source.cpp
     src/tile_renderer.cpp

@@ -28,6 +28,13 @@ namespace sqlite
         // Prepare a statement against this database
         statement prepare(const char* sql);
 
+        // Execute one or more SQL statements with no result rows. Wraps
+        // sqlite3_exec — accepts multi-statement scripts (CREATE / DROP /
+        // BEGIN / COMMIT). Throws std::runtime_error on any SQLite error.
+        // For repeated parameterized work (INSERT loops, parameterized
+        // SELECT), use prepare() instead.
+        void exec(const char* sql);
+
         // Get the last error message
         std::string error_message() const;
     };
