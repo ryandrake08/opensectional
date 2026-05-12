@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -34,6 +35,11 @@ namespace sqlite
         // For repeated parameterized work (INSERT loops, parameterized
         // SELECT), use prepare() instead.
         void exec(const char* sql);
+
+        // rowid of the row inserted by the most recent INSERT on this
+        // connection. Wraps sqlite3_last_insert_rowid; intended use is
+        // capturing INTEGER PRIMARY KEY AUTOINCREMENT ids right after step().
+        std::int64_t last_insert_rowid() const;
 
         // Get the last error message
         std::string error_message() const;
