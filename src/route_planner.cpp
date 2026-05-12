@@ -338,9 +338,9 @@ namespace osect
         // the dirty list between runs.
         mutable astar_scratch scratch;
 
-        const nasr_database& db;
+        nasr_database db;
 
-        explicit impl(const nasr_database& db) : db(db)
+        explicit impl(const char* db_path) : db(db_path)
         {
         }
 
@@ -368,7 +368,7 @@ namespace osect
         }
     };
 
-    route_planner::route_planner(const nasr_database& db) : pimpl(std::make_unique<impl>(db))
+    route_planner::route_planner(const char* db_path) : pimpl(std::make_unique<impl>(db_path))
     {
         auto add_node = [&](std::string id, node_kind kind, wp_subtype sub, double lat, double lon)
         {
@@ -379,15 +379,15 @@ namespace osect
             pimpl->indices_by_id[nid].push_back(idx);
         };
 
-        for(auto& r : db.load_routable_airports())
+        for(auto& r : pimpl->db.load_routable_airports())
         {
             add_node(std::move(r.id), node_kind::airport, classify_airport_subtype(r.type_code), r.lat, r.lon);
         }
-        for(auto& r : db.load_routable_navaids())
+        for(auto& r : pimpl->db.load_routable_navaids())
         {
             add_node(std::move(r.id), node_kind::navaid, classify_navaid_subtype(r.type_code), r.lat, r.lon);
         }
-        for(auto& r : db.load_routable_fixes())
+        for(auto& r : pimpl->db.load_routable_fixes())
         {
             add_node(std::move(r.id), node_kind::fix, classify_fix_subtype(r.type_code), r.lat, r.lon);
         }
@@ -400,7 +400,7 @@ namespace osect
         }
 
         pimpl->neighbors.assign(pimpl->nodes.size(), {});
-        for(auto& e : db.load_airway_edges())
+        for(auto& e : pimpl->db.load_airway_edges())
         {
             auto from_idx = pimpl->resolve_nearest(e.from_id, e.from_lat, e.from_lon);
             auto to_idx = pimpl->resolve_nearest(e.to_id, e.to_lat, e.to_lon);
