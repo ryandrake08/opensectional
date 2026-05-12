@@ -24,7 +24,7 @@ namespace osect
     // recreates the current schema. Other groups are untouched.
     //
     // Threading: an internal std::mutex serializes all access, mirroring
-    // nasr_database. tfr_source owns its own in-memory snapshot (under a
+    // nasr_database. tfr_refresher owns its own in-memory snapshot (under a
     // separate shared_mutex) and queries this database only at warm-start
     // load and at the end of each refresh — the render loop never touches
     // SQLite directly.
@@ -34,6 +34,18 @@ namespace osect
         std::unique_ptr<impl> pimpl;
 
     public:
+        // The per-platform default cache path for ephemeral.db. Used
+        // by every consumer (refresher writing, feature_builder /
+        // map_widget reading) to open their own connection to the
+        // same file. Resolution rules:
+        //   macOS:   $HOME/Library/Caches/<bundle_id>/ephemeral.db
+        //   Linux:   ${XDG_CACHE_HOME:-$HOME/.cache}/osect/ephemeral.db
+        //   Windows: %LOCALAPPDATA%/osect/ephemeral.db
+        // Creates the parent directory if missing; throws if the
+        // platform env var isn't set or the directory can't be
+        // created.
+        static std::filesystem::path default_path();
+
         // Opens db_path read-write, creating the file if missing. Runs
         // schema version checks for every known source group and rebuilds
         // any that are missing or stale.
@@ -56,13 +68,18 @@ namespace osect
                              const std::string& etag);
 
         // ----- TFR -----
-        // Read every TFR back into memory. Used by tfr_source on warm
-        // start; returns owning copies. Empty vector on a fresh database.
-        std::vector<tfr> load_tfrs() const;
+        // Read every TFR currently persisted. The canonical read API
+        // for TFR data — every consumer that needs TFRs goes through
+        // this (warm-start population, render-path build, pick-path
+        // hit test) rather than caching a snapshot elsewhere. Empty
+        // vector on a fresh database. Each call hits SQLite (under
+        // WAL, concurrent with the refresher's writes); the cost is
+        // small (< 100 TFRs nationwide).
+        std::vector<tfr> query_tfrs() const;
 
         // Atomically replace the TFR table contents inside one transaction.
         // tfr_id / tfr_area::area_id values from the input are written
-        // as given — tfr_source assigns sequential ids before calling.
+        // as given — the refresher assigns sequential ids before calling.
         void replace_tfrs(const std::vector<tfr>& tfrs);
     };
 }

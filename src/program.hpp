@@ -40,7 +40,7 @@ namespace osect
     };
 
     // Wake the main-loop event wait. Background producers
-    // (tile_loader, feature_builder, tfr_source, route_submitter)
+    // (tile_loader, feature_builder, tfr_refresher, route_submitter)
     // call this from their worker thread after publishing a result so
     // dispatch_events() returns promptly without spinning on a short
     // timeout. Pushes a payload-less event of a dedicated wake type

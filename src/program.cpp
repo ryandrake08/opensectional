@@ -1,5 +1,5 @@
 #include "program.hpp"
-#include "ephemeral_data.hpp"
+#include "ephemeral_database.hpp"
 #include "ephemeral_source.hpp"
 #include "feature_type.hpp"
 #include "flight_route.hpp"
@@ -9,6 +9,7 @@
 #include "route_plan_config.hpp"
 #include "route_planner.hpp"
 #include "route_submitter.hpp"
+#include "tfr_refresher.hpp"
 #include "ui_overlay.hpp"
 #include <imgui/context.hpp>
 #include <cstdint>
@@ -178,7 +179,7 @@ namespace osect
         sdl::device dev;
         imgui::context imgui_ctx;
         sdl::event_manager event_mgr;
-        ephemeral_data eph;
+        tfr_refresher tfrs;
         ini_config ini;
         map_widget map;
         route_planner planner;
@@ -296,9 +297,9 @@ namespace osect
                   sdl::window_flags::resizable | sdl::window_flags::high_pixel_density),
               dev(win, resolve_gpu_driver(opts), opts.vsync, opts.gpu_debug),
               imgui_ctx(dev, win),
-              eph(opts.offline),
+              tfrs(opts.offline, ephemeral_database::default_path()),
               ini(build_ini(opts)),
-              map(dev, tile_path.empty() ? nullptr : tile_path.c_str(), db_path.c_str(), ini, eph, 1280, 1024),
+              map(dev, tile_path.empty() ? nullptr : tile_path.c_str(), db_path.c_str(), ini, 1280, 1024),
               planner(db_path.c_str()),
               submitter(planner),
               plan_options(load_route_plan_options(ini)),
@@ -321,23 +322,19 @@ namespace osect
 
         std::vector<data_source> build_data_sources()
         {
-            auto eph_sources = eph.as_data_sources();
             std::vector<data_source> merged;
-            merged.reserve(static_sources.size() + eph_sources.size());
+            merged.reserve(static_sources.size() + 1);
             for(const auto& s : static_sources)
             {
                 // The legacy static "tfr" META row is replaced by the
-                // ephemeral source.
+                // refresher's freshness reporting below.
                 if(s.name == "tfr")
                 {
                     continue;
                 }
                 merged.push_back(s);
             }
-            for(auto& s : eph_sources)
-            {
-                merged.push_back(std::move(s));
-            }
+            merged.push_back(tfrs.as_data_source());
             return merged;
         }
 

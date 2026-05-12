@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <iomanip>
 #include <locale>
@@ -13,14 +14,59 @@
 #include <sqlite/statement.hpp>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+
+#ifndef OSECT_BUNDLE_IDENTIFIER
+#define OSECT_BUNDLE_IDENTIFIER "org.existens.opensectional"
+#endif
 
 namespace osect
 {
     namespace
     {
+        std::string getenv_or_throw(const char* var)
+        {
+            const char* v = std::getenv(var);
+            if(!v || !*v)
+            {
+                throw std::runtime_error(std::string("environment variable not set: ") + var);
+            }
+            return v;
+        }
+
+        // Per-platform app cache directory. `ephemeral.db` sits at
+        // the root of this directory — no further subdirectory,
+        // since the database is the only file the app caches there.
+        //   macOS:   $HOME/Library/Caches/<bundle_id>/
+        //   Linux:   ${XDG_CACHE_HOME:-$HOME/.cache}/osect/
+        //   Windows: %LOCALAPPDATA%/osect/
+        // Created if missing; throws if the platform env var isn't
+        // set or the directory can't be created.
+        std::filesystem::path app_cache_dir()
+        {
+#if defined(__APPLE__)
+            const auto dir = std::filesystem::path(getenv_or_throw("HOME")) / "Library/Caches" /
+                             OSECT_BUNDLE_IDENTIFIER;
+#elif defined(_WIN32)
+            const auto dir = std::filesystem::path(getenv_or_throw("LOCALAPPDATA")) / "osect";
+#else
+            const char* xdg = std::getenv("XDG_CACHE_HOME");
+            const auto dir = ((xdg && *xdg) ? std::filesystem::path(xdg)
+                                            : std::filesystem::path(getenv_or_throw("HOME")) / ".cache") /
+                             "osect";
+#endif
+            std::error_code ec;
+            std::filesystem::create_directories(dir, ec);
+            if(ec)
+            {
+                throw std::runtime_error("failed to create app cache dir '" + dir.string() + "': " + ec.message());
+            }
+            return dir;
+        }
+
         // Bootstrap tables — exist regardless of which source groups are
         // present. SCHEMA_VERSIONS tracks each group's on-disk schema
         // identity (a hash of the canonical CREATE SQL) so a stale TFR
@@ -322,7 +368,7 @@ namespace osect
         sqlite::statement stmt_select_source_meta;
         sqlite::statement stmt_upsert_source_meta;
 
-        sqlite::statement stmt_load_tfrs;
+        sqlite::statement stmt_query_tfrs;
         sqlite::statement stmt_load_areas;
         sqlite::statement stmt_load_points;
 
@@ -346,7 +392,7 @@ namespace osect
             )"))
 
               ,
-              stmt_load_tfrs(db.prepare(R"(
+              stmt_query_tfrs(db.prepare(R"(
                 SELECT tfr_id, notam_id, tfr_type, facility,
                        date_effective, date_expire, description,
                        date_issued, city, state,
@@ -406,6 +452,11 @@ namespace osect
         }
     };
 
+    std::filesystem::path ephemeral_database::default_path()
+    {
+        return app_cache_dir() / "ephemeral.db";
+    }
+
     ephemeral_database::ephemeral_database(const std::filesystem::path& db_path)
         : pimpl(std::make_unique<impl>(db_path))
     {
@@ -453,13 +504,13 @@ namespace osect
         stmt.step();
     }
 
-    std::vector<tfr> ephemeral_database::load_tfrs() const
+    std::vector<tfr> ephemeral_database::query_tfrs() const
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);
         std::vector<tfr> tfrs;
         std::unordered_map<int, std::size_t> tfr_idx;
 
-        auto& st = pimpl->stmt_load_tfrs;
+        auto& st = pimpl->stmt_query_tfrs;
         st.reset();
         while(st.step())
         {

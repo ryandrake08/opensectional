@@ -1,9 +1,8 @@
 #include "map_widget.hpp"
 #include "chart_style.hpp"
-#include "ephemeral_data.hpp"
+#include "ephemeral_database.hpp"
 #include "feature_renderer.hpp"
 #include "feature_type.hpp"
-#include "geo_math.hpp"
 #include "ini_config.hpp"
 #include "label_renderer.hpp"
 #include "map_view.hpp"
@@ -264,7 +263,10 @@ namespace osect
 
         // NASR database for picks and search
         nasr_database pick_db;
-        ephemeral_data& eph;
+        // Read connection to the same ephemeral.db the refresher
+        // writes; used by the pick path (tfr_type::pick queries
+        // through pick_context::eph_db).
+        ephemeral_database pick_eph_db;
         chart_style styles;
         layer_visibility vis;
         double cursor_ndc_x = 0.0;
@@ -295,7 +297,7 @@ namespace osect
         double cursor_last_x = 0;
         double cursor_last_y = 0;
 
-        impl(sdl::device& dev, const char* tile_path, const char* db_path, const ini_config& ini, ephemeral_data& eph,
+        impl(sdl::device& dev, const char* tile_path, const char* db_path, const ini_config& ini,
              int viewport_width, int viewport_height)
             : dev(dev),
               linelist_pipeline(dev, load_shader(dev, shader_id::DEFAULT, sdl::shader_stage::vertex),
@@ -311,10 +313,9 @@ namespace osect
                                 load_shader(dev, shader_id::LINE, sdl::shader_stage::fragment, 0, 2),
                                 sdl::primitive_type::triangle_list, sdl::texture_format_t(0), false),
               tiles(tile_path ? std::make_unique<tile_renderer>(dev, tile_path) : nullptr),
-              features(dev, db_path, chart_style(ini), eph),
+              features(dev, db_path, chart_style(ini)),
               labels(dev),
-              pick_db(db_path),
-              eph(eph),
+              pick_db(db_path), pick_eph_db(ephemeral_database::default_path()),
               styles(ini),
               feature_types(make_feature_types())
         {
@@ -437,8 +438,8 @@ namespace osect
             geo_bbox click_box{click_lon, click_lat, click_lon, click_lat};
 
             pick_context ctx{
-                pick_db,   eph,       styles,   vis,       view.zoom_level(),
-                click_lon, click_lat, pick_box, click_box, (pick_box.lat_max - pick_box.lat_min) * 0.5 * 60.0,
+                pick_db,   pick_eph_db, styles,   vis,       view.zoom_level(),
+                click_lon, click_lat,   pick_box, click_box, (pick_box.lat_max - pick_box.lat_min) * 0.5 * 60.0,
                 rs.routes};
 
             pick_result result;
@@ -1030,8 +1031,8 @@ namespace osect
     };
 
     map_widget::map_widget(sdl::device& dev, const char* tile_path, const char* db_path, const ini_config& ini,
-                           ephemeral_data& eph, int viewport_width, int viewport_height)
-        : pimpl(std::make_shared<impl>(dev, tile_path, db_path, ini, eph, viewport_width, viewport_height))
+                           int viewport_width, int viewport_height)
+        : pimpl(std::make_shared<impl>(dev, tile_path, db_path, ini, viewport_width, viewport_height))
     {
     }
 

@@ -10,7 +10,7 @@ namespace osect
     // Thrown by parse_xnotam on malformed XML or a structural mismatch
     // (e.g. the document is well-formed but doesn't carry the
     // XNOTAM-Update / Group / Add / Not envelope we expect). The
-    // tfr_source layer catches this so a single corrupt detail XML
+    // tfr_refresher layer catches this so a single corrupt detail XML
     // doesn't abort the whole batch.
     struct xnotam_parse_error : std::runtime_error
     {

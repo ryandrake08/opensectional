@@ -1,11 +1,9 @@
 #include "feature_renderer.hpp"
-#include "ephemeral_data.hpp"
 #include "feature_builder.hpp"
 #include "geo_types.hpp"
 #include "line_renderer.hpp"
 #include "map_view.hpp"
 #include "render_context.hpp"
-#include "tfr_source.hpp"
 #include "ui_overlay.hpp"
 #include <algorithm>
 #include <cassert>
@@ -26,7 +24,6 @@ namespace osect
     struct feature_renderer::impl
     {
         sdl::device& dev;
-        const ephemeral_data& eph;
 
         // Background builder (owns worker thread + database connection)
         feature_builder builder;
@@ -60,8 +57,8 @@ namespace osect
         std::vector<flight_route> routes;
         std::optional<std::size_t> active_route_index;
 
-        impl(sdl::device& dev, const char* db_path, const chart_style& styles, const ephemeral_data& eph)
-            : dev(dev), eph(eph), builder(db_path, styles), half_extent_y(HALF_CIRCUMFERENCE), query_bbox{0, 0, 0, 0}
+        impl(sdl::device& dev, const char* db_path, const chart_style& styles)
+            : dev(dev), builder(db_path, styles), half_extent_y(HALF_CIRCUMFERENCE), query_bbox{0, 0, 0, 0}
         {
         }
 
@@ -114,9 +111,8 @@ namespace osect
         }
     };
 
-    feature_renderer::feature_renderer(sdl::device& dev, const char* db_path, const chart_style& cs,
-                                       const ephemeral_data& eph)
-        : pimpl(std::make_unique<impl>(dev, db_path, cs, eph))
+    feature_renderer::feature_renderer(sdl::device& dev, const char* db_path, const chart_style& cs)
+        : pimpl(std::make_unique<impl>(dev, db_path, cs))
     {
     }
 
@@ -149,10 +145,6 @@ namespace osect
             req.selection = pimpl->selection;
             req.routes = pimpl->routes;
             req.active_route_index = pimpl->active_route_index;
-            // Snapshot ephemeral state into the request so the worker
-            // thread reads from frozen vectors without further locking.
-            req.tfrs = pimpl->eph.tfrs().snapshot();
-            req.tfr_segments = pimpl->eph.tfrs().snapshot_segments();
             pimpl->builder.request(std::move(req));
 
             // Speculatively update cache so we don't re-request next frame

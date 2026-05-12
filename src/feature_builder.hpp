@@ -16,6 +16,7 @@
 namespace osect
 {
     class chart_style;
+    class ephemeral_database;
     class nasr_database;
 
     // Geometry data for a single feature layer
@@ -70,13 +71,6 @@ namespace osect
         // happens inside route_type::build, not here.
         std::vector<flight_route> routes;
         std::optional<std::size_t> active_route_index;
-
-        // Frozen snapshots of every ephemeral source the build path
-        // reads. Captured by the caller (feature_renderer::update)
-        // under the source's shared_lock so the worker thread sees
-        // immutable data with no further synchronization.
-        std::vector<tfr> tfrs;
-        std::vector<tfr_segment> tfr_segments;
     };
 
     // A label candidate from the feature build pass (world-space)
@@ -109,8 +103,7 @@ namespace osect
     struct build_context
     {
         const nasr_database& db;
-        const std::vector<tfr>& tfrs;
-        const std::vector<tfr_segment>& tfr_segments;
+        const ephemeral_database& eph_db;
         const chart_style& styles;
         const feature_build_request& req;
         double mx_offset;
