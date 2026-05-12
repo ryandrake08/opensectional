@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 namespace sdl
@@ -27,6 +28,11 @@ namespace sdl
     {
         std::vector<std::shared_ptr<event_listener>> listeners;
         std::function<void(const void*)> raw_event_hook;
+        // Handlers for custom typed events allocated through
+        // register_event_type(). The default case in dispatch()
+        // checks this map after the built-in event types so a
+        // SDL_EVENT_USER + N can route to per-app callbacks.
+        std::unordered_map<std::uint32_t, std::function<void(int)>> typed_handlers;
 
         // Dispatch a single SDL event to listeners
         bool dispatch(const SDL_Event& event)
@@ -87,7 +93,16 @@ namespace sdl
                 break;
 
             default:
+            {
+                // Custom user events live in the SDL_EVENT_USER+N
+                // range and are routed by exact type match.
+                auto it = typed_handlers.find(event.type);
+                if(it != typed_handlers.end())
+                {
+                    it->second(event.user.code);
+                }
                 break;
+            }
             }
 
             return false;
@@ -123,8 +138,9 @@ namespace sdl
 
         // Block until any event arrives. Background producers
         // (tile_loader, feature_builder, tfr_source, route_submitter)
-        // call wake_main_thread() — i.e. push_user_event() — to wake
-        // us when they have results to drain.
+        // call osect::wake_main_thread() — which pushes a typed event
+        // through push_event() — to wake us when they have results
+        // to drain.
         SDL_WaitEvent(&event);
 
         if(pimpl->dispatch(event))
@@ -143,18 +159,29 @@ namespace sdl
         return false;
     }
 
-    void event_manager::push_user_event()
-    {
-        SDL_Event ev = {};
-        ev.type = SDL_EVENT_USER;
-        SDL_PushEvent(&ev);
-    }
-
     void event_manager::push_quit_event()
     {
         SDL_Event ev = {};
         ev.type = SDL_EVENT_QUIT;
         SDL_PushEvent(&ev);
+    }
+
+    std::uint32_t event_manager::register_event_type()
+    {
+        return SDL_RegisterEvents(1);
+    }
+
+    void event_manager::push_event(std::uint32_t type, int code)
+    {
+        SDL_Event ev = {};
+        ev.user.type = type;
+        ev.user.code = code;
+        SDL_PushEvent(&ev);
+    }
+
+    void event_manager::set_event_handler(std::uint32_t type, std::function<void(int)> handler)
+    {
+        pimpl->typed_handlers[type] = std::move(handler);
     }
 
 } // namespace sdl

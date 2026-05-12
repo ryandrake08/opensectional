@@ -261,6 +261,7 @@ add_executable(osect
     src/data_source.cpp
     src/ephemeral_data.cpp
     src/ephemeral_database.cpp
+    src/ephemeral_source.cpp
     src/http_client.cpp
     src/tfr_source.cpp
     src/tile_renderer.cpp

@@ -57,6 +57,7 @@ target_link_libraries(test_xnotam_parser PRIVATE pugixml sdl_wrapper)
 # http_client so no real network is touched.
 add_osect_test(tfr_source
     ${CMAKE_SOURCE_DIR}/src/tfr_source.cpp
+    ${CMAKE_SOURCE_DIR}/src/ephemeral_source.cpp
     ${CMAKE_SOURCE_DIR}/src/http_client.cpp
     ${CMAKE_SOURCE_DIR}/src/ephemeral_database.cpp
     ${CMAKE_SOURCE_DIR}/src/xnotam_parser.cpp)

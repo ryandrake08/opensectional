@@ -4,7 +4,6 @@
 #include <imgui_impl_sdlgpu3.h>
 #include <sdl/command_buffer.hpp>
 #include <sdl/device.hpp>
-#include <sdl/event.hpp>
 #include <sdl/texture.hpp>
 #include <sdl/window.hpp>
 
@@ -84,17 +83,13 @@ namespace imgui
         {
             return false;
         }
-
         pimpl->warmup_frames--;
-
-        // Push a dummy event so SDL_WaitEvent returns immediately
-        // for the next warmup frame
-        if(pimpl->warmup_frames > 0)
-        {
-            sdl::event_manager::push_user_event();
-        }
-
         return true;
+    }
+
+    bool context::warmup_pending() const
+    {
+        return pimpl->warmup_frames > 0;
     }
 
 } // namespace imgui
