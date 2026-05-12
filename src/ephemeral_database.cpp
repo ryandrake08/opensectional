@@ -304,6 +304,8 @@ namespace osect
         sqlite::database open_and_init_schema(const std::filesystem::path& p)
         {
             sqlite::database db(p.string().c_str(), /*read_only=*/false);
+            // WAL lets db readers proceed without blocking on a writer.
+            db.exec("PRAGMA journal_mode = WAL");
             // FK CASCADE is per-connection in SQLite — must be set every open.
             db.exec("PRAGMA foreign_keys = ON");
             db.exec(BOOTSTRAP_SQL);
