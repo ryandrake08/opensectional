@@ -137,7 +137,7 @@ namespace sdl
         SDL_Event event;
 
         // Block until any event arrives. Background producers
-        // (tile_loader, feature_builder, tfr_source, route_submitter)
+        // (tile_loader, feature_builder, tfr_refresher, route_submitter)
         // call osect::wake_main_thread() — which pushes a typed event
         // through push_event() — to wake us when they have results
         // to drain.

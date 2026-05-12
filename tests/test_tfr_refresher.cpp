@@ -2,8 +2,7 @@
 #include "doctest/doctest.h"
 
 #include "ephemeral_database.hpp"
-#include "http_client.hpp"
-#include "tfr_source.hpp"
+#include "tfr_refresher.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -13,10 +12,9 @@
 
 using osect::airspace_point;
 using osect::ephemeral_database;
-using osect::http_client;
 using osect::tfr;
 using osect::tfr_area;
-using osect::tfr_source;
+using osect::tfr_refresher;
 
 namespace osect
 {
@@ -36,7 +34,7 @@ namespace
         explicit tmp_dir(const char* tag)
         {
             const auto base = std::filesystem::temp_directory_path() /
-                ("osect_tfr_source_test_" + std::string(tag) + "_");
+                ("osect_tfr_refresher_test_" + std::string(tag) + "_");
             for(int i = 0; i < 1000; ++i)
             {
                 const auto candidate = base.string() + std::to_string(i);
@@ -85,62 +83,67 @@ namespace
     }
 }
 
-TEST_CASE("tfr_source: empty database yields empty store")
+TEST_CASE("tfr_refresher: empty database leaves last_updated unset")
 {
     tmp_dir dir("empty");
-    ephemeral_database db(dir.db_file());
-    http_client http(/*offline=*/true);
-
-    tfr_source src(http, db);
-    CHECK(src.snapshot().empty());
-    CHECK(src.snapshot_segments().empty());
+    tfr_refresher src(/*offline=*/true, dir.db_file());
     CHECK(!src.last_updated().has_value());
+
+    // Verify through a separate read connection that no TFR rows
+    // exist — the refresher only writes through refresh(), and
+    // offline+empty means no write happened.
+    ephemeral_database reader(dir.db_file());
+    CHECK(reader.query_tfrs().empty());
 }
 
-TEST_CASE("tfr_source: populated database loads on construction")
+TEST_CASE("tfr_refresher: existing database rows are visible to readers")
 {
     tmp_dir dir("loaded");
-    ephemeral_database db(dir.db_file());
-    http_client http(/*offline=*/true);
 
-    // Pre-populate the database, mirroring what tfr_source itself
-    // would write at the end of refresh().
-    const auto fixture = make_test_tfr();
-    db.replace_tfrs({fixture});
-    db.set_source_meta("tfr", std::chrono::system_clock::now(), "");
+    // Pre-populate the database through a separate connection
+    // before the refresher constructs its own.
+    const auto now = std::chrono::system_clock::now();
+    {
+        ephemeral_database db(dir.db_file());
+        db.replace_tfrs({make_test_tfr()});
+        db.set_source_meta("tfr", now, "");
+    }
 
-    tfr_source src(http, db);
-    auto snap = src.snapshot();
-    REQUIRE(snap.size() == 1);
-    CHECK(snap[0].notam_id == "9/9999");
-    CHECK(snap[0].facility == "ZOA");
-    REQUIRE(snap[0].areas.size() == 1);
-    CHECK(snap[0].areas[0].upper_ft_val == 1000);
-    CHECK(snap[0].areas[0].points.size() == 3);
+    tfr_refresher src(/*offline=*/true, dir.db_file());
 
-    // Segments are built on load too.
-    auto segs = src.snapshot_segments();
-    REQUIRE(!segs.empty());
-    CHECK(segs[0].upper_ft_val == 1000);
-    CHECK(segs[0].lower_ft_ref == "SFC");
+    // Refresher reports the freshness it inherited from SOURCE_META.
+    REQUIRE(src.last_updated().has_value());
+
+    // Any read connection (modeling feature_builder / map_widget)
+    // sees the same TFR rows.
+    ephemeral_database reader(dir.db_file());
+    auto rows = reader.query_tfrs();
+    REQUIRE(rows.size() == 1);
+    CHECK(rows[0].notam_id == "9/9999");
+    CHECK(rows[0].facility == "ZOA");
+    REQUIRE(rows[0].areas.size() == 1);
+    CHECK(rows[0].areas[0].upper_ft_val == 1000);
+    CHECK(rows[0].areas[0].points.size() == 3);
 }
 
-TEST_CASE("tfr_source: refresh in offline mode is a safe no-op")
+TEST_CASE("tfr_refresher: refresh in offline mode preserves database state")
 {
     tmp_dir dir("offline");
-    ephemeral_database db(dir.db_file());
-    http_client http(/*offline=*/true);
 
-    const auto fixture = make_test_tfr();
-    db.replace_tfrs({fixture});
-    db.set_source_meta("tfr", std::chrono::system_clock::now(), "");
+    {
+        ephemeral_database db(dir.db_file());
+        db.replace_tfrs({make_test_tfr()});
+        db.set_source_meta("tfr", std::chrono::system_clock::now(), "");
+    }
 
-    tfr_source src(http, db);
-    REQUIRE(src.snapshot().size() == 1);
+    tfr_refresher src(/*offline=*/true, dir.db_file());
 
     // Offline refresh should swallow the http error and leave the
-    // existing in-memory store intact.
+    // database contents intact.
     src.refresh();
-    CHECK(src.snapshot().size() == 1);
-    CHECK(src.snapshot()[0].notam_id == "9/9999");
+
+    ephemeral_database reader(dir.db_file());
+    auto rows = reader.query_tfrs();
+    REQUIRE(rows.size() == 1);
+    CHECK(rows[0].notam_id == "9/9999");
 }

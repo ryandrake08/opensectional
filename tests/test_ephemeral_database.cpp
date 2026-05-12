@@ -139,12 +139,12 @@ TEST_CASE("ephemeral_database: fresh open creates empty schema")
 {
     tmp_dir d("fresh");
     ephemeral_database db(d.db_file());
-    CHECK(db.load_tfrs().empty());
+    CHECK(db.query_tfrs().empty());
     CHECK(!db.last_refreshed("tfr").has_value());
     CHECK(db.etag("tfr").empty());
 }
 
-TEST_CASE("ephemeral_database: replace_tfrs + load_tfrs round-trip")
+TEST_CASE("ephemeral_database: replace_tfrs + query_tfrs round-trip")
 {
     tmp_dir d("roundtrip");
     ephemeral_database db(d.db_file());
@@ -152,7 +152,7 @@ TEST_CASE("ephemeral_database: replace_tfrs + load_tfrs round-trip")
     const std::vector<tfr> in = {make_tfr_a(), make_tfr_b()};
     db.replace_tfrs(in);
 
-    const auto out = db.load_tfrs();
+    const auto out = db.query_tfrs();
     REQUIRE(out.size() == in.size());
 
     for(std::size_t i = 0; i < in.size(); ++i)
@@ -214,12 +214,12 @@ TEST_CASE("ephemeral_database: replace_tfrs is atomic — no stale rows leak")
     ephemeral_database db(d.db_file());
 
     db.replace_tfrs({make_tfr_a(), make_tfr_b()});
-    REQUIRE(db.load_tfrs().size() == 2);
+    REQUIRE(db.query_tfrs().size() == 2);
 
     // Replace with a strict subset — the prior fixture's areas / points
     // must not survive.
     db.replace_tfrs({make_tfr_b()});
-    const auto out = db.load_tfrs();
+    const auto out = db.query_tfrs();
     REQUIRE(out.size() == 1);
     CHECK(out[0].notam_id == "1/0002");
     REQUIRE(out[0].areas.size() == 1);
@@ -268,7 +268,7 @@ TEST_CASE("ephemeral_database: schema-version mismatch rebuilds tfr group, leave
         db.set_source_meta("tfr",
                            std::chrono::system_clock::from_time_t(1700000000),
                            "old-etag");
-        REQUIRE(db.load_tfrs().size() == 1);
+        REQUIRE(db.query_tfrs().size() == 1);
     }
 
     // Reach into the file directly: bump the on-disk TFR version so the
@@ -284,7 +284,7 @@ TEST_CASE("ephemeral_database: schema-version mismatch rebuilds tfr group, leave
 
     {
         ephemeral_database db(d.db_file());
-        CHECK(db.load_tfrs().empty());
+        CHECK(db.query_tfrs().empty());
         // The rebuild wipes the prior SOURCE_META row for "tfr" as part
         // of the group reset — freshness is meaningless after a wipe.
         CHECK(!db.last_refreshed("tfr").has_value());

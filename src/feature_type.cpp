@@ -2,11 +2,10 @@
 #include "altitude_filter.hpp"
 #include "chart_style.hpp"
 #include "chart_type.hpp"
-#include "ephemeral_data.hpp"
+#include "ephemeral_database.hpp"
 #include "geo_math.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
-#include "tfr_source.hpp"
 #include "ui_overlay.hpp" // for the layer enum
 #include <glm/glm.hpp>
 #include <algorithm>
@@ -87,6 +86,75 @@ namespace osect
             }
             return lon_max >= bbox.lon_min && lon_min <= bbox.lon_max && lat_max >= bbox.lat_min &&
                    lat_min <= bbox.lat_max;
+        }
+
+        // ---- TFR area → segment chunking --------------------------------
+        //
+        // Mirror of tools/build_common.py's subdivide_ring: split a ring
+        // into chunks of at most MAX_POINTS, each overlapping the next
+        // by 1 point, with the final chunk wrapping back to the first
+        // point so the ring renders closed. Used inside tfr_type::build
+        // to turn the per-area airspace_point list (read from
+        // ephemeral.db) into renderable polyline segments per build —
+        // no segment cache anywhere.
+        constexpr std::size_t TFR_MAX_POINTS = 32;
+
+        std::vector<std::vector<airspace_point>> tfr_subdivide_ring(const std::vector<airspace_point>& points)
+        {
+            std::vector<std::vector<airspace_point>> chunks;
+            if(points.empty())
+            {
+                return chunks;
+            }
+            std::vector<airspace_point> closed = points;
+            if(closed.front().lat != closed.back().lat || closed.front().lon != closed.back().lon)
+            {
+                closed.push_back(closed.front());
+            }
+            const std::size_t n = closed.size();
+            if(n <= TFR_MAX_POINTS)
+            {
+                chunks.push_back(std::move(closed));
+                return chunks;
+            }
+            const std::size_t stride = TFR_MAX_POINTS - 1;
+            std::size_t offset = 0;
+            while(offset < n - 1)
+            {
+                const std::size_t end = std::min(offset + TFR_MAX_POINTS, n);
+                std::vector<airspace_point> chunk(closed.begin() + static_cast<std::ptrdiff_t>(offset),
+                                                  closed.begin() + static_cast<std::ptrdiff_t>(end));
+                const auto& chunk_last = closed[end - 1];
+                if(end == n && (chunk_last.lat != closed.front().lat || chunk_last.lon != closed.front().lon))
+                {
+                    chunk.push_back(closed.front());
+                }
+                chunks.push_back(std::move(chunk));
+                offset += stride;
+            }
+            return chunks;
+        }
+
+        // Turn a parsed `tfr` into the `tfr_segment` vector the
+        // renderer expects — one segment per chunk per area, carrying
+        // the area's altitude band so the render path can style by it.
+        std::vector<tfr_segment> tfr_segments_for(const tfr& t)
+        {
+            std::vector<tfr_segment> out;
+            for(const auto& a : t.areas)
+            {
+                for(auto& chunk : tfr_subdivide_ring(a.points))
+                {
+                    tfr_segment seg{};
+                    seg.upper_ft_val = a.upper_ft_val;
+                    seg.upper_ft_ref = a.upper_ft_ref;
+                    seg.lower_ft_val = a.lower_ft_val;
+                    seg.lower_ft_ref = a.lower_ft_ref;
+                    seg.points = std::move(chunk);
+                    out.push_back(std::move(seg));
+                }
+            }
+            return out;
         }
 
         void triangulate_polygon(const std::vector<glm::vec2>& outer, const std::vector<std::vector<glm::vec2>>& holes,
@@ -726,9 +794,10 @@ namespace osect
             }
             // ctx.click_box is degenerate (a single click point), so
             // the SQL r-tree filter the old path used was effectively
-            // a hit-test. Iterate the in-memory list and apply the
-            // same point-in-ring test directly.
-            for(const auto& t : ctx.eph.tfrs().snapshot())
+            // a hit-test. Iterate the database-backed list and apply
+            // the same point-in-ring test directly. TFRs are ~100
+            // nationwide so the query cost is negligible.
+            for(const auto& t : ctx.eph_db.query_tfrs())
             {
                 for(const auto& area : t.areas)
                 {
@@ -2641,33 +2710,35 @@ namespace osect
             {
                 return;
             }
-            // The old SQL path filtered TFR segments by bbox via an
-            // r-tree to keep render-thread cost bounded. The active
-            // US-wide TFR set is ~100 polygons / few thousand
+            // Query the canonical TFR list once per build and derive
+            // renderable segments here on the worker thread. The
+            // active US-wide TFR set is ~100 polygons / few thousand
             // segments, so a flat scan with an inline bbox test is
-            // both simpler and fast enough at v1 volumes.
+            // both simpler than an r-tree and fast enough.
             auto bbox = request_bbox(ctx.req);
-            const auto& segs = ctx.tfr_segments;
+            const auto tfrs = ctx.eph_db.query_tfrs();
             auto ls = to_line_style(ctx.styles.tfr_style());
-            for(const auto& seg : segs)
+            for(const auto& t : tfrs)
             {
-                if(!sua_altitude_visible(ctx.req.altitude, seg.upper_ft_val, seg.upper_ft_ref, seg.lower_ft_val,
-                                         seg.lower_ft_ref))
+                for(const auto& seg : tfr_segments_for(t))
                 {
-                    continue;
+                    if(!sua_altitude_visible(ctx.req.altitude, seg.upper_ft_val, seg.upper_ft_ref, seg.lower_ft_val,
+                                             seg.lower_ft_ref))
+                    {
+                        continue;
+                    }
+                    if(!polyline_intersects_bbox(seg.points, bbox))
+                    {
+                        continue;
+                    }
+                    add_polyline(ctx.poly[layer_tfr], seg.points, ls, ctx.mx_offset);
                 }
-                if(!polyline_intersects_bbox(seg.points, bbox))
-                {
-                    continue;
-                }
-                add_polyline(ctx.poly[layer_tfr], seg.points, ls, ctx.mx_offset);
             }
 
             if(ctx.req.zoom < AIRSPACE_LABEL_MIN_ZOOM)
             {
                 return;
             }
-            const auto& tfrs = ctx.tfrs;
             const auto& fs = ctx.styles.tfr_style();
             for(const auto& t : tfrs)
             {

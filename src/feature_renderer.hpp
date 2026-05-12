@@ -17,7 +17,6 @@ namespace osect
     struct render_context;
     struct layer_visibility;
     class chart_style;
-    class ephemeral_data;
 
     class feature_renderer
     {
@@ -25,7 +24,7 @@ namespace osect
         std::unique_ptr<impl> pimpl;
 
     public:
-        feature_renderer(sdl::device& dev, const char* db_path, const chart_style& cs, const ephemeral_data& eph);
+        feature_renderer(sdl::device& dev, const char* db_path, const chart_style& cs);
         ~feature_renderer();
 
         // Recompute visible features from database

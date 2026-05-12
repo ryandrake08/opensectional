@@ -365,7 +365,7 @@ namespace osect
         }
 
         tfr out{};
-        out.tfr_id = 0; // assigned by the caller (tfr_source)
+        out.tfr_id = 0; // assigned by the caller (tfr_refresher)
         out.notam_id            = child_text(notam.child("NotUid"), "txtLocalName");
         out.date_issued         = child_text(notam.child("NotUid"), "dateIssued");
         out.date_effective      = child_text(notam, "dateEffective");

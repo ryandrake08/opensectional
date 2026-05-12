@@ -23,17 +23,16 @@ namespace osect
 {
     struct layer_visibility;
     class chart_style;
+    class ephemeral_database;
 
     // Bundles the inputs shared by every pick adapter: database,
     // style/visibility predicates, the click location in several forms,
     // and the point-feature pick radius. Built once per click by the
     // dispatcher.
-    class ephemeral_data;
-
     struct pick_context
     {
         const nasr_database& db;
-        const ephemeral_data& eph;
+        const ephemeral_database& eph_db;
         const chart_style& styles;
         const layer_visibility& vis;
         double zoom;
