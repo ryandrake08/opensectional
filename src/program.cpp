@@ -1,5 +1,6 @@
 #include "program.hpp"
 #include "ephemeral_data.hpp"
+#include "ephemeral_source.hpp"
 #include "feature_type.hpp"
 #include "flight_route.hpp"
 #include "ini_config.hpp"
@@ -32,6 +33,18 @@ namespace osect
     namespace
     {
         constexpr auto SEARCH_RESULT_LIMIT = 12;
+
+        // SDL event type used purely to wake SDL_WaitEvent — no
+        // payload, no handler. Background producers push it through
+        // wake_main_thread(); the main loop's render path also
+        // pushes it to keep the imgui warmup frames flowing without
+        // needing user input. Allocated once via SDL_RegisterEvents
+        // on first call; thread-safe via function-local static init.
+        std::uint32_t wake_event_type()
+        {
+            static const std::uint32_t type = sdl::event_manager::register_event_type();
+            return type;
+        }
 
         void print_usage(std::ostream& out, const std::string& prog)
         {
@@ -294,6 +307,9 @@ namespace osect
         {
             event_mgr.set_raw_event_hook([this](const void* event) { imgui_ctx.process_event(event); });
             event_mgr.add_listener(map.event_listener());
+            event_mgr.set_event_handler(ephemeral_refresh_event_type(),
+                                        [this](int code)
+                                        { map.on_ephemeral_refresh(static_cast<ephemeral_source>(code)); });
 
             ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
 
@@ -705,7 +721,19 @@ namespace osect
                 // mutations triggered. Single per-frame sync point.
                 needs_render |= map.update();
                 needs_render |= imgui_ctx.wants_mouse();
-                needs_render |= imgui_ctx.warming_up();
+                if(imgui_ctx.warming_up())
+                {
+                    needs_render = true;
+                    // Schedule the next loop iteration so the
+                    // remaining warmup frames flow without waiting
+                    // on user input. imgui's warmup_pending() tells
+                    // us whether more frames are still queued; the
+                    // wake is harmless if none are.
+                    if(imgui_ctx.warmup_pending())
+                    {
+                        sdl::event_manager::push_event(wake_event_type(), 0);
+                    }
+                }
 
                 if(needs_render)
                 {
@@ -740,6 +768,6 @@ namespace osect
 
     void wake_main_thread()
     {
-        sdl::event_manager::push_user_event();
+        sdl::event_manager::push_event(wake_event_type(), 0);
     }
 }

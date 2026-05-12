@@ -44,8 +44,17 @@ namespace imgui
         // (e.g. a text box has focus).
         bool wants_keyboard() const;
 
-        // Returns true during initial warmup frames where rendering is forced
+        // Consume one warmup-frame credit. Returns true if a forced
+        // render is needed this frame. Caller is responsible for
+        // ensuring the loop runs again next iteration while
+        // warmup_pending() is still true (typically by pushing a
+        // wake event into the SDL queue).
         bool warming_up();
+
+        // Whether further warmup frames are still pending after the
+        // most recent warming_up() call. Used by the caller to
+        // decide whether to schedule another loop iteration.
+        bool warmup_pending() const;
     };
 
 } // namespace imgui

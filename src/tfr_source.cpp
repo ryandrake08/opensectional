@@ -1,5 +1,6 @@
 #include "tfr_source.hpp"
 #include "ephemeral_database.hpp"
+#include "ephemeral_source.hpp"
 #include "http_client.hpp"
 #include "program.hpp"
 #include "xnotam_parser.hpp"
@@ -360,6 +361,15 @@ namespace osect
             sdl::log_info("tfr refresh complete: " + std::to_string(tfr_count) + " TFRs, " + std::to_string(seg_count) +
                           " segments");
 
+            // Notify the main thread that ephemeral data for TFRs
+            // is now fresh. The push doubles as a wake — the event
+            // arrives through dispatch_events and the registered
+            // handler invalidates the relevant feature build. Pushed
+            // after the snapshot swap but before the DB write so
+            // consumers see fresh data even if the cache write
+            // below fails.
+            push_ephemeral_refresh(ephemeral_source::tfr);
+
             // 5. Persist to the ephemeral database for warm starts
             //    and --offline.
             try
@@ -379,8 +389,11 @@ namespace osect
             sdl::log_warn(std::string("tfr refresh failed: ") + e.what());
         }
         // Clear the in-progress flag and wake the main loop so the
-        // status panel flips back from UPD and poll_advance() observes
-        // any swap promptly. Runs on both the success and failure paths.
+        // status panel flips back from UPD. The success-path
+        // notification of new data already happened via
+        // push_ephemeral_refresh above; this wake is for the
+        // failure path (no event was pushed) and to ensure the
+        // status panel observes the flag transition promptly.
         pimpl->refresh_in_progress.store(false);
         wake_main_thread();
     }

@@ -1,4 +1,5 @@
 #pragma once
+#include "ephemeral_source.hpp"
 #include "flight_route.hpp"
 #include <memory>
 #include <optional>
@@ -138,14 +139,21 @@ namespace osect
         // manager keeps a reference even if the map_widget is destroyed.
         std::shared_ptr<sdl::event_listener> event_listener();
 
+        // Notify that an ephemeral data source has new data on disk.
+        // Invalidates any cached projection that depends on it (today
+        // just the feature build) and flags a redraw. Called from
+        // the main thread by the event handler installed on the
+        // ephemeral_refresh_event_type SDL event.
+        void on_ephemeral_refresh(ephemeral_source source);
+
         // Per-frame sync. Called once at the end of each iteration
         // of the main loop after all state-mutating code (input
         // handlers, popup actions). Drains any async tile / feature
         // build results that arrived since the last call, then
         // submits new tile and feature build requests so the next
         // frame can reflect the latest state. Returns true if the
-        // frame needs to be rendered (new geometry uploaded, an
-        // ephemeral source advanced, labels reprojected, etc.).
+        // frame needs to be rendered (new geometry uploaded, labels
+        // reprojected, etc.).
         bool update();
 
         // Execute one full render frame: copy (GPU upload) + all render

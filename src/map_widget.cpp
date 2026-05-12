@@ -1124,6 +1124,16 @@ namespace osect
         return pimpl;
     }
 
+    void map_widget::on_ephemeral_refresh(ephemeral_source /*source*/)
+    {
+        // Today every ephemeral source feeds into the same feature
+        // build, so any refresh invalidates the whole build. When
+        // more sources arrive we can dispatch on `source` to only
+        // invalidate the affected layers.
+        pimpl->features.invalidate();
+        pimpl->needs_update = true;
+    }
+
     bool map_widget::update()
     {
         // Drain phase: pull async results that arrived since the
@@ -1131,16 +1141,6 @@ namespace osect
         if(pimpl->tiles)
         {
             pimpl->tiles->drain();
-        }
-
-        // Pick up fresh data from any ephemeral source whose
-        // last_updated advanced. Invalidating the feature build
-        // forces the submit phase below to re-issue a build request
-        // even if the visible bbox hasn't changed.
-        if(pimpl->eph.poll_advance())
-        {
-            pimpl->features.invalidate();
-            pimpl->needs_update = true;
         }
 
         auto new_candidates = pimpl->features.drain();

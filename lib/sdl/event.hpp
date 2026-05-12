@@ -1,5 +1,6 @@
 #pragma once
 #include "types.hpp"
+#include <cstdint>
 #include <functional>
 #include <memory>
 
@@ -44,11 +45,34 @@ namespace sdl
         // events before returning. Returns true if quit was requested.
         bool dispatch_events();
 
-        // Push a user event to wake SDL_WaitEvent
-        static void push_user_event();
-
         // Push a quit event to terminate the event loop
         static void push_quit_event();
+
+        // Custom typed-event API. SDL allocates a numeric event-type
+        // space (SDL_RegisterEvents); the wrapper exposes that
+        // directly, with a single integer `code` payload, and routes
+        // arriving events of a registered type to a per-type handler
+        // set on the manager. App-level signaling from background
+        // threads to the main loop — whether to wake the loop or to
+        // deliver semantic notifications — goes through this API.
+
+        // Allocate one fresh user-event type number. Safe to call
+        // from any thread; each call returns a distinct value.
+        static std::uint32_t register_event_type();
+
+        // Push a custom event with the given type and integer code.
+        // Thread-safe; wakes SDL_WaitEvent. The event is delivered
+        // through the handler set on the destination event_manager
+        // for this type, if any.
+        static void push_event(std::uint32_t type, int code);
+
+        // Register a handler for a previously-registered event type.
+        // The handler is invoked from the main thread inside
+        // dispatch_events when an event of that type is drained.
+        // Only one handler per type; later calls replace earlier
+        // ones. Call from the main thread before any matching event
+        // is pushed.
+        void set_event_handler(std::uint32_t type, std::function<void(int code)> handler);
     };
 
 } // namespace sdl

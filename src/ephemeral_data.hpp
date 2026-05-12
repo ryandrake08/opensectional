@@ -39,11 +39,5 @@ namespace osect
 
         // Per-source freshness snapshot for the data-status panel.
         std::vector<data_source> as_data_sources() const;
-
-        // True when any owned source's last_updated() has advanced
-        // since the last poll. The render loop uses this to
-        // invalidate the cached feature build so a swapped-in fresh
-        // dataset appears on screen without waiting for a pan/zoom.
-        bool poll_advance();
     };
 }
