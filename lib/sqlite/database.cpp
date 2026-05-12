@@ -74,6 +74,11 @@ namespace sqlite
         }
     }
 
+    std::int64_t database::last_insert_rowid() const
+    {
+        return sqlite3_last_insert_rowid(pimpl->db);
+    }
+
     std::string database::error_message() const
     {
         return sqlite3_errmsg(pimpl->db);

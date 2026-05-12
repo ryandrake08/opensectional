@@ -47,6 +47,11 @@ namespace sqlite
         sqlite3_bind_int(pimpl->stmt, index, value);
     }
 
+    void statement::bind(int index, std::int64_t value)
+    {
+        sqlite3_bind_int64(pimpl->stmt, index, value);
+    }
+
     void statement::bind(int index, double value)
     {
         sqlite3_bind_double(pimpl->stmt, index, value);
@@ -98,6 +103,11 @@ namespace sqlite
     int statement::column_int(int col)
     {
         return sqlite3_column_int(pimpl->stmt, col);
+    }
+
+    std::int64_t statement::column_int64(int col)
+    {
+        return sqlite3_column_int64(pimpl->stmt, col);
     }
 
     double statement::column_double(int col)

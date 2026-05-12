@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -36,6 +37,7 @@ namespace sqlite
         // Bind parameters (1-indexed)
         void bind_null(int index);
         void bind(int index, int value);
+        void bind(int index, std::int64_t value);
         void bind(int index, double value);
         void bind(int index, const char* value);
         void bind(int index, const std::string& value);
@@ -50,6 +52,7 @@ namespace sqlite
 
         // Column accessors (0-indexed)
         int column_int(int col);
+        std::int64_t column_int64(int col);
         double column_double(int col);
         std::string column_text(int col);
     };
