@@ -23,7 +23,7 @@ static nasr_database& test_db()
 
 static const route_planner& test_planner()
 {
-    static route_planner planner(test_db());
+    static route_planner planner("osect.db");
     return planner;
 }
 

@@ -168,7 +168,6 @@ namespace osect
         ephemeral_data eph;
         ini_config ini;
         map_widget map;
-        nasr_database planner_db;
         route_planner planner;
         route_submitter submitter;
         route_plan_options plan_options;
@@ -287,11 +286,10 @@ namespace osect
               eph(opts.offline),
               ini(build_ini(opts)),
               map(dev, tile_path.empty() ? nullptr : tile_path.c_str(), db_path.c_str(), ini, eph, 1280, 1024),
-              planner_db(db_path.c_str()),
-              planner(planner_db),
+              planner(db_path.c_str()),
               submitter(planner),
               plan_options(load_route_plan_options(ini)),
-              static_sources(planner_db.list_data_sources()),
+              static_sources(nasr_database(db_path.c_str()).list_data_sources()),
               prev_vis(ui.visibility())
         {
             event_mgr.set_raw_event_hook([this](const void* event) { imgui_ctx.process_event(event); });

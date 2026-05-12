@@ -35,9 +35,10 @@ namespace osect
         // `route_planner::options` keep working.
         using options = route_plan_options;
 
-        // Build the routable-waypoint catalog and airway adjacency
-        // by scanning APT_BASE / NAV_BASE / FIX_BASE / AWY_SEG.
-        explicit route_planner(const nasr_database& db);
+        // Open the NASR database at `db_path` and build the
+        // routable-waypoint catalog and airway adjacency by scanning
+        // APT_BASE / NAV_BASE / FIX_BASE / AWY_SEG.
+        explicit route_planner(const char* db_path);
         ~route_planner();
 
         route_planner(const route_planner&) = delete;
