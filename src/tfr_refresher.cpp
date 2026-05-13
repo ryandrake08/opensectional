@@ -2,7 +2,6 @@
 #include "ephemeral_database.hpp"
 #include "ephemeral_source.hpp"
 #include "http_client.hpp"
-#include "program.hpp"
 #include "xnotam_parser.hpp"
 #include <atomic>
 #include <condition_variable>
@@ -91,20 +90,14 @@ namespace osect
     // ----------------- impl -----------------
 
     constexpr auto TFR_REFRESH_PERIOD = std::chrono::minutes(15);
-    constexpr auto TFR_EXPIRE_PERIOD = std::chrono::hours(24);
 
     struct tfr_refresher::impl
     {
         http_client http;
         ephemeral_database db;
 
-        // `last_ok` and `refresh_in_progress` are the only runtime
-        // state this class still tracks; the parsed TFR data lives
-        // entirely in `db`. A plain mutex protects `last_ok`;
-        // `refresh_in_progress` is atomic for lock-free reads from
-        // the data-status panel.
-        mutable std::mutex last_ok_mtx;
-        std::optional<std::chrono::system_clock::time_point> last_ok;
+        // Atomic so the data-status panel can read it lock-free.
+        // Parsed TFR data and freshness timestamp live in `db`.
         std::atomic<bool> refresh_in_progress{false};
 
         // Background-refresh plumbing. The worker thread sleeps on
@@ -115,28 +108,19 @@ namespace osect
         bool shutdown = false;
         std::thread worker;
 
-        // Seeds last_ok from whatever the database remembers from
-        // prior runs so the worker's "is data fresh enough?" check
-        // can skip a network fetch on a warm start whose cache was
-        // written within the last interval. Member-init order
-        // (declaration order) guarantees `db` is constructed before
-        // `last_ok` reads from it. No lock needed — no other thread
-        // has a reference to this object yet.
-        impl(bool offline, const std::filesystem::path& db_path)
-            : http(offline), db(db_path), last_ok(db.last_refreshed("tfr"))
+        explicit impl(const std::filesystem::path& db_path)
+            : http(/*offline=*/false), db(db_path)
         {
         }
 
-        // Pull the active TFR list, fetch each detail XML, write
-        // the new state through the owned database connection,
-        // update last_ok, and push an ephemeral_refresh event.
-        // Catches every libcurl / parse failure so a single outage
-        // doesn't leave the app stuck; on failure the database
-        // keeps its prior contents.
+        // Pull the active TFR list, fetch each detail XML, and write
+        // the result through. Fires ephemeral_refresh at start, on
+        // successful commit, and at end. Failures are caught — on
+        // failure the database keeps its prior contents.
         void refresh()
         {
             refresh_in_progress.store(true);
-            wake_main_thread();
+            push_ephemeral_refresh(ephemeral_source::tfr);
             try
             {
                 sdl::log_info("tfr refresh starting");
@@ -211,45 +195,29 @@ namespace osect
                 // 3. Persist the new state through the database.
                 //    The DB is the source of truth — until this
                 //    commit lands, consumers see the previous TFR
-                //    set.
+                //    set and the prior SOURCE_META timestamp.
                 const auto now = std::chrono::system_clock::now();
                 const auto tfr_count = new_tfrs.size();
                 db.replace_tfrs(new_tfrs);
                 db.set_source_meta("tfr", now, "");
 
-                // 4. Update last_ok so the worker's freshness check
-                //    sees the new timestamp and the data-status panel
-                //    reports "current."
-                {
-                    std::lock_guard lock(last_ok_mtx);
-                    last_ok = now;
-                }
                 sdl::log_info("tfr refresh complete: " + std::to_string(tfr_count) + " TFRs");
 
-                // 5. Notify the main thread that ephemeral TFR data
-                //    is now fresh. The push doubles as a wake — the
-                //    event arrives through dispatch_events and the
-                //    registered handler invalidates the relevant
-                //    feature build, so the next build re-queries the
-                //    database and sees the new TFRs.
+                // 4. Notify the main thread; handler resnaps
+                //    SOURCE_META and invalidates the feature build.
                 push_ephemeral_refresh(ephemeral_source::tfr);
             }
             catch(const std::exception& e)
             {
                 // Whole refresh failed — the database keeps its
-                // prior contents and last_ok stays unchanged, so
-                // consumers continue seeing whatever data was last
-                // persisted.
+                // prior contents and SOURCE_META stays unchanged,
+                // so consumers continue seeing whatever data was
+                // last persisted.
                 sdl::log_warn(std::string("tfr refresh failed: ") + e.what());
             }
-            // Clear the in-progress flag and wake the main loop so
-            // the status panel flips back from UPD. The success-path
-            // notification of new data already happened via
-            // push_ephemeral_refresh above; this wake is for the
-            // failure path (no event was pushed) and to ensure the
-            // status panel observes the flag transition promptly.
+            // Clear the flag and fire so the panel drops UPD.
             refresh_in_progress.store(false);
-            wake_main_thread();
+            push_ephemeral_refresh(ephemeral_source::tfr);
         }
 
         // Periodic worker. Refreshes if the on-disk cache is older
@@ -261,15 +229,8 @@ namespace osect
         {
             while(true)
             {
-                bool fresh = false;
-                {
-                    std::lock_guard lock(last_ok_mtx);
-                    if(last_ok && std::chrono::system_clock::now() - *last_ok < TFR_REFRESH_PERIOD)
-                    {
-                        fresh = true;
-                    }
-                }
-                if(!fresh)
+                const auto last = db.last_refreshed("tfr");
+                if(!last || std::chrono::system_clock::now() - *last >= TFR_REFRESH_PERIOD)
                 {
                     refresh();
                 }
@@ -282,8 +243,8 @@ namespace osect
         }
     };
 
-    tfr_refresher::tfr_refresher(bool offline, const std::filesystem::path& db_path)
-        : pimpl(std::make_unique<impl>(offline, db_path))
+    tfr_refresher::tfr_refresher(const std::filesystem::path& db_path)
+        : pimpl(std::make_unique<impl>(db_path))
     {
         pimpl->worker = std::thread(&impl::worker_loop, pimpl.get());
     }
@@ -304,45 +265,8 @@ namespace osect
         }
     }
 
-    void tfr_refresher::refresh()
+    bool tfr_refresher::is_refreshing() const
     {
-        pimpl->refresh();
-    }
-
-    std::optional<std::chrono::system_clock::time_point> tfr_refresher::last_updated() const
-    {
-        std::lock_guard lock(pimpl->last_ok_mtx);
-        return pimpl->last_ok;
-    }
-
-    data_source tfr_refresher::as_data_source() const
-    {
-        data_source ds;
-        ds.name = "tfr";
-        const auto last = last_updated();
-        if(last)
-        {
-            ds.expires = *last + TFR_EXPIRE_PERIOD;
-            const auto t = std::chrono::system_clock::to_time_t(*last);
-            std::tm tm{};
-#if defined(_WIN32)
-            gmtime_s(&tm, &t);
-#else
-            gmtime_r(&t, &tm);
-#endif
-            // Pin to the "C" locale so month abbreviations are always
-            // English ("Apr", not "avr." / "4月" / etc.), matching the
-            // other data sources' info strings.
-            std::ostringstream oss;
-            oss.imbue(std::locale::classic());
-            oss << "TFR " << std::put_time(&tm, "%d %b %Y");
-            ds.info = oss.str();
-        }
-        else
-        {
-            ds.info = "TFR (no data yet)";
-        }
-        ds.updating = pimpl->refresh_in_progress.load();
-        return ds;
+        return pimpl->refresh_in_progress.load();
     }
 }

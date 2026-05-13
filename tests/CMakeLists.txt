@@ -52,17 +52,6 @@ target_link_libraries(test_ephemeral_database PRIVATE sqlite_wrapper sdl_wrapper
 add_osect_test(xnotam_parser   ${CMAKE_SOURCE_DIR}/src/xnotam_parser.cpp)
 target_link_libraries(test_xnotam_parser PRIVATE pugixml sdl_wrapper)
 
-# tfr_refresher pulls in http_client, ephemeral_database, and the
-# xnotam parser (which links pugixml). Tests construct the refresher
-# in offline mode so no real network is touched.
-add_osect_test(tfr_refresher
-    ${CMAKE_SOURCE_DIR}/src/tfr_refresher.cpp
-    ${CMAKE_SOURCE_DIR}/src/ephemeral_source.cpp
-    ${CMAKE_SOURCE_DIR}/src/http_client.cpp
-    ${CMAKE_SOURCE_DIR}/src/ephemeral_database.cpp
-    ${CMAKE_SOURCE_DIR}/src/xnotam_parser.cpp)
-target_link_libraries(test_tfr_refresher PRIVATE pugixml CURL::libcurl sqlite_wrapper sdl_wrapper Threads::Threads)
-
 # http_client confirms that transport failures throw
 add_osect_test(http_client  ${CMAKE_SOURCE_DIR}/src/http_client.cpp)
 target_link_libraries(test_http_client PRIVATE CURL::libcurl)

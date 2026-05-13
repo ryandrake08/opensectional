@@ -178,13 +178,14 @@ namespace osect
         sdl::device dev;
         imgui::context imgui_ctx;
         sdl::event_manager event_mgr;
-        tfr_refresher tfrs;
+        // Null in --offline mode. When present, supplies the UPD
+        // indicator via is_refreshing().
+        std::unique_ptr<tfr_refresher> tfrs;
         ini_config ini;
         map_widget map;
         route_submitter submitter;
         route_plan_options plan_options;
         ui_overlay ui;
-        std::vector<data_source> static_sources;
         // Snapshot of the last visibility state we saw, kept so
         // handle_visibility can log the diff each time the user
         // toggles a layer / altitude band / chart type.
@@ -295,19 +296,19 @@ namespace osect
                   sdl::window_flags::resizable | sdl::window_flags::high_pixel_density),
               dev(win, resolve_gpu_driver(opts), opts.vsync, opts.gpu_debug),
               imgui_ctx(dev, win),
-              tfrs(opts.offline, ephemeral_database::default_path()),
+              tfrs(opts.offline ? nullptr : std::make_unique<tfr_refresher>(ephemeral_database::default_path())),
               ini(build_ini(opts)),
               map(dev, tile_path.empty() ? nullptr : tile_path.c_str(), db_path.c_str(), ini, 1280, 1024),
               submitter(db_path.c_str()),
               plan_options(load_route_plan_options(ini)),
-              static_sources(nasr_database(db_path.c_str()).list_data_sources()),
               prev_vis(ui.visibility())
         {
             event_mgr.set_raw_event_hook([this](const void* event) { imgui_ctx.process_event(event); });
             event_mgr.add_listener(map.event_listener());
             event_mgr.set_event_handler(ephemeral_refresh_event_type(),
-                                        [this](int code)
-                                        { map.on_ephemeral_refresh(static_cast<ephemeral_source>(code)); });
+                                        [this](int code) { on_ephemeral_refresh(code); });
+
+            push_data_sources();
 
             ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
 
@@ -317,22 +318,39 @@ namespace osect
                           " offline=" + (opts.offline ? "true" : "false"));
         }
 
-        std::vector<data_source> build_data_sources()
+        // Read both databases, merge, push to the UI. Fires on
+        // events and at startup, not per frame, so opening fresh
+        // connections each call is fine.
+        void push_data_sources()
         {
-            std::vector<data_source> merged;
-            merged.reserve(static_sources.size() + 1);
-            for(const auto& s : static_sources)
+            auto merged = nasr_database(db_path.c_str()).list_data_sources();
+            auto eph = ephemeral_database(ephemeral_database::default_path()).list_data_sources();
+            if(tfrs)
             {
-                // The legacy static "tfr" META row is replaced by the
-                // refresher's freshness reporting below.
-                if(s.name == "tfr")
+                const bool updating = tfrs->is_refreshing();
+                for(auto& s : eph)
                 {
-                    continue;
+                    if(s.name == "tfr")
+                    {
+                        s.updating = updating;
+                        break;
+                    }
                 }
-                merged.push_back(s);
             }
-            merged.push_back(tfrs.as_data_source());
-            return merged;
+            merged.insert(merged.end(), std::make_move_iterator(eph.begin()),
+                          std::make_move_iterator(eph.end()));
+            ui.set_data_sources(std::move(merged));
+        }
+
+        // Fires on every refresh transition (start, success, end).
+        // push_data_sources picks up the new timestamp on success;
+        // start/end fires re-read SOURCE_META no-op-style.
+        // map.on_ephemeral_refresh invalidates the feature build —
+        // idempotent, so duplicate fires collapse to one rebuild.
+        void on_ephemeral_refresh(int code)
+        {
+            push_data_sources();
+            map.on_ephemeral_refresh(static_cast<ephemeral_source>(code));
         }
 
         // Find the human label for a layer enum value: "Basemap" for
@@ -686,11 +704,6 @@ namespace osect
                     sdl::log_info("shutting down");
                     break;
                 }
-
-                // Refresh data-status state for the panel each frame so
-                // ephemeral sources' freshness flips appear without an
-                // extra signal path.
-                ui.set_data_sources(build_data_sources());
 
                 // Draw all UI
                 imgui_ctx.new_frame();
