@@ -7,7 +7,6 @@
 #include "map_widget.hpp"
 #include "nasr_database.hpp"
 #include "route_plan_config.hpp"
-#include "route_planner.hpp"
 #include "route_submitter.hpp"
 #include "tfr_refresher.hpp"
 #include "ui_overlay.hpp"
@@ -182,7 +181,6 @@ namespace osect
         tfr_refresher tfrs;
         ini_config ini;
         map_widget map;
-        route_planner planner;
         route_submitter submitter;
         route_plan_options plan_options;
         ui_overlay ui;
@@ -300,8 +298,7 @@ namespace osect
               tfrs(opts.offline, ephemeral_database::default_path()),
               ini(build_ini(opts)),
               map(dev, tile_path.empty() ? nullptr : tile_path.c_str(), db_path.c_str(), ini, 1280, 1024),
-              planner(db_path.c_str()),
-              submitter(planner),
+              submitter(db_path.c_str()),
               plan_options(load_route_plan_options(ini)),
               static_sources(nasr_database(db_path.c_str()).list_data_sources()),
               prev_vis(ui.visibility())

@@ -49,11 +49,10 @@ namespace osect
         std::unique_ptr<impl> pimpl;
 
     public:
-        // The planner does the A* and the route parse via
-        // route_planner::parse(). The planner's database handle is
-        // distinct from the rendering thread's so the worker doesn't
-        // contend on its mutex. The planner must outlive the submitter.
-        explicit route_submitter(const route_planner& planner);
+        // Constructs an internal route_planner against `db_path`. The
+        // planner's database handle is distinct from the rendering
+        // thread's so the worker doesn't contend on its mutex.
+        explicit route_submitter(const char* db_path);
         ~route_submitter();
 
         route_submitter(const route_submitter&) = delete;
