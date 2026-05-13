@@ -9,79 +9,94 @@ namespace osect
 {
     struct route_submitter::impl
     {
-        const route_planner& planner;
+        route_planner planner;
         std::thread worker;
         std::atomic<bool> done{false};
         std::optional<flight_route> result;
         std::string error;
         std::uint64_t tag = 0;
 
-        explicit impl(const route_planner& p) : planner(p)
+        explicit impl(const char* db_path) : planner(db_path)
         {
+        }
+
+        ~impl()
+        {
+            if(worker.joinable())
+            {
+                worker.join();
+            }
+        }
+
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = delete;
+        impl& operator=(impl&&) = delete;
+
+        void submit(const std::string& text, const route_planner::options& opts, std::uint64_t tag)
+        {
+            if(worker.joinable())
+            {
+                worker.join();
+            }
+            result.reset();
+            error.clear();
+            this->tag = tag;
+            done = false;
+            worker = std::thread(
+                [this, text, opts]
+                {
+                    try
+                    {
+                        result.emplace(planner.parse(text, opts));
+                    }
+                    catch(const std::exception& e)
+                    {
+                        error = e.what();
+                    }
+                    done = true;
+                    wake_main_thread();
+                });
+        }
+
+        route_status poll()
+        {
+            if(!worker.joinable())
+            {
+                return {false, std::nullopt};
+            }
+            if(!done)
+            {
+                return {true, std::nullopt};
+            }
+            // Worker has finished. Join, transition to idle, and hand
+            // the result/error to the caller in a single shot.
+            worker.join();
+            done = false;
+            route_completion completion;
+            completion.route = std::move(result);
+            completion.error = std::move(error);
+            completion.tag = tag;
+            result.reset();
+            error.clear();
+            return {false, std::move(completion)};
         }
     };
 
-    route_submitter::route_submitter(const route_planner& planner) : pimpl(std::make_unique<impl>(planner))
+    route_submitter::route_submitter(const char* db_path) : pimpl(std::make_unique<impl>(db_path))
     {
     }
 
-    route_submitter::~route_submitter()
-    {
-        if(pimpl->worker.joinable())
-        {
-            pimpl->worker.join();
-        }
-    }
+    route_submitter::~route_submitter() = default;
 
     void route_submitter::submit(const std::string& text, const route_planner::options& opts, std::uint64_t tag)
     {
-        auto& d = *pimpl;
-        if(d.worker.joinable())
-        {
-            d.worker.join();
-        }
-        d.result.reset();
-        d.error.clear();
-        d.tag = tag;
-        d.done = false;
-        d.worker = std::thread(
-            [&d, text, opts]
-            {
-                try
-                {
-                    d.result.emplace(d.planner.parse(text, opts));
-                }
-                catch(const std::exception& e)
-                {
-                    d.error = e.what();
-                }
-                d.done = true;
-                wake_main_thread();
-            });
+        pimpl->submit(text, opts, tag);
     }
 
     route_status route_submitter::poll()
     {
-        auto& d = *pimpl;
-        if(!d.worker.joinable())
-        {
-            return {false, std::nullopt};
-        }
-        if(!d.done)
-        {
-            return {true, std::nullopt};
-        }
-        // Worker has finished. Join, transition to idle, and hand
-        // the result/error to the caller in a single shot.
-        d.worker.join();
-        d.done = false;
-        route_completion completion;
-        completion.route = std::move(d.result);
-        completion.error = std::move(d.error);
-        completion.tag = d.tag;
-        d.result.reset();
-        d.error.clear();
-        return {false, std::move(completion)};
+        return pimpl->poll();
     }
 
 } // namespace osect
