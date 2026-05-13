@@ -1,12 +1,13 @@
 #pragma once
 
-#include "tfr.hpp"
 #include <optional>
 #include <stdexcept>
 #include <string>
 
 namespace osect
 {
+    struct tfr;
+
     // Thrown by parse_xnotam on malformed XML or a structural mismatch
     // (e.g. the document is well-formed but doesn't carry the
     // XNOTAM-Update / Group / Add / Not envelope we expect). The

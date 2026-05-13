@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
 
+#include "ephemeral_database.hpp"
 #include "xnotam_parser.hpp"
 
 #include <filesystem>

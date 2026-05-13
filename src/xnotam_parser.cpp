@@ -1,4 +1,5 @@
 #include "xnotam_parser.hpp"
+#include "ephemeral_database.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <mutex>
