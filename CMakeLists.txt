@@ -266,6 +266,7 @@ add_executable(osect
     src/tile_renderer.cpp
     src/ui_overlay.cpp
     src/ui_sectioned_list.cpp
+    src/user_database.cpp
     src/xnotam_parser.cpp
 )
 target_compile_definitions(osect PRIVATE
