@@ -20,11 +20,11 @@ namespace osect
         tfr = 1,
     };
 
-    // SDL event type number for "an ephemeral data source has new
-    // data on disk and any cached projections (e.g. feature_builder
-    // GPU buffers) should be invalidated." Allocated on first call
-    // and stable for the process lifetime; calling from any thread
-    // is safe.
+    // SDL event type number for "an ephemeral source's state
+    // changed" — covers refresh start, end, and data commit. The
+    // handler re-snapshots SOURCE_META, refreshes the data-status
+    // panel, and invalidates cached projections (feature_builder
+    // GPU buffers).
     std::uint32_t ephemeral_refresh_event_type();
 
     // Convenience: push an ephemeral-refresh event for `source` to

@@ -669,4 +669,59 @@ namespace osect
             throw;
         }
     }
+
+    namespace
+    {
+        // Per-source display config. Add a row when a new source group lands.
+        struct source_display
+        {
+            const char* name;
+            const char* prefix; // "TFR ", "NOTAM ", ...
+            std::chrono::hours expires_after;
+        };
+        constexpr std::array<source_display, 1> SOURCE_DISPLAY = {{
+            {"tfr", "TFR ", std::chrono::hours(24)},
+        }};
+
+        std::string format_info(const source_display& d, std::chrono::system_clock::time_point t)
+        {
+            const auto tt = std::chrono::system_clock::to_time_t(t);
+            std::tm tm{};
+#if defined(_WIN32)
+            gmtime_s(&tm, &tt);
+#else
+            gmtime_r(&tt, &tm);
+#endif
+            // Pin to the "C" locale so month abbreviations are always
+            // English ("Apr", not "avr." / "4月" / etc.), matching the
+            // static (nasr) sources' info strings.
+            std::ostringstream oss;
+            oss.imbue(std::locale::classic());
+            oss << d.prefix << std::put_time(&tm, "%d %b %Y");
+            return oss.str();
+        }
+    }
+
+    std::vector<data_source> ephemeral_database::list_data_sources() const
+    {
+        std::vector<data_source> out;
+        out.reserve(std::size(SOURCE_DISPLAY));
+        for(const auto& d : SOURCE_DISPLAY)
+        {
+            data_source s;
+            s.name = d.name;
+            const auto last = last_refreshed(d.name);
+            if(last)
+            {
+                s.expires = *last + d.expires_after;
+                s.info = format_info(d, *last);
+            }
+            else
+            {
+                s.info = std::string(d.prefix) + "(no data yet)";
+            }
+            out.push_back(std::move(s));
+        }
+        return out;
+    }
 }

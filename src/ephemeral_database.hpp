@@ -1,5 +1,6 @@
 #pragma once
 
+#include "data_source.hpp"
 #include "geo_types.hpp"
 #include <chrono>
 #include <filesystem>
@@ -138,5 +139,12 @@ namespace osect
         // tfr_id / tfr_area::area_id values from the input are written
         // as given — the refresher assigns sequential ids before calling.
         void replace_tfrs(const std::vector<tfr>& tfrs);
+
+        // One data_source per ephemeral source this database knows
+        // about. Mirrors nasr_database::list_data_sources(); info and
+        // expires are formatted from each source's last_refreshed.
+        // `updating` is always false — the refresher overlays its own
+        // state.
+        std::vector<data_source> list_data_sources() const;
     };
 }
