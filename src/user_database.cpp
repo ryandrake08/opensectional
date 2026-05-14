@@ -196,16 +196,25 @@ namespace osect
             }
         }
 
-        sqlite::database open_and_init_schema(const std::filesystem::path& p)
+        // A read-only open skips every pragma and schema step: WAL and
+        // foreign_keys are connection settings that only matter for a
+        // writer (WAL is persisted in the file anyway), and CREATE /
+        // migration SQL would fail SQLITE_READONLY on the handle. A
+        // read-only consumer therefore relies on a read-write owner
+        // having already brought the file's schema current.
+        sqlite::database open_and_init_schema(const std::filesystem::path& p, bool read_only)
         {
-            sqlite::database db(p.string().c_str(), /*read_only=*/false);
-            // WAL lets readers proceed without blocking on a writer,
-            // matching ephemeral_database — needed once consumers
-            // open their own read-only connections.
-            db.exec("PRAGMA journal_mode = WAL");
-            db.exec("PRAGMA foreign_keys = ON");
-            db.exec(BOOTSTRAP_SQL);
-            ensure_routes_group(db);
+            sqlite::database db(p.string().c_str(), read_only);
+            if(!read_only)
+            {
+                // WAL lets readers proceed without blocking on a writer,
+                // matching ephemeral_database — needed once consumers
+                // open their own read-only connections.
+                db.exec("PRAGMA journal_mode = WAL");
+                db.exec("PRAGMA foreign_keys = ON");
+                db.exec(BOOTSTRAP_SQL);
+                ensure_routes_group(db);
+            }
             return db;
         }
 
@@ -242,8 +251,8 @@ namespace osect
         sqlite::statement stmt_delete_waypoints;
         sqlite::statement stmt_delete_route;
 
-        explicit impl(const std::filesystem::path& p)
-            : db(open_and_init_schema(p)),
+        explicit impl(const std::filesystem::path& p, bool read_only)
+            : db(open_and_init_schema(p, read_only)),
               stmt_load_routes(db.prepare(R"(
                 SELECT route_id, name FROM ROUTE ORDER BY route_id
             )")),
@@ -308,8 +317,8 @@ namespace osect
         return app_user_data_dir() / "user.db";
     }
 
-    user_database::user_database(const std::filesystem::path& db_path)
-        : pimpl(std::make_unique<impl>(db_path))
+    user_database::user_database(const std::filesystem::path& db_path, bool read_only)
+        : pimpl(std::make_unique<impl>(db_path, read_only))
     {
     }
 

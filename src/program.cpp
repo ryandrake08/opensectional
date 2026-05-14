@@ -183,6 +183,13 @@ namespace osect
         // indicator via is_refreshing().
         std::unique_ptr<tfr_refresher> tfrs;
         ini_config ini;
+        // Read-write owner of ephemeral.db's existence and schema.
+        // Constructed before `map` so map_widget's and feature_builder's
+        // read-only connections always find a created, migrated file —
+        // in --offline mode there is no tfr_refresher to create it.
+        // tfr_refresher owns the TFR-data writes through its own
+        // connection; this handle backs push_data_sources.
+        ephemeral_database eph_db;
         map_widget map;
         route_submitter submitter;
         route_plan_options plan_options;
@@ -302,10 +309,11 @@ namespace osect
               imgui_ctx(dev, win),
               tfrs(opts.offline ? nullptr : std::make_unique<tfr_refresher>(ephemeral_database::default_path())),
               ini(build_ini(opts)),
+              eph_db(ephemeral_database::default_path(), /*read_only=*/false),
               map(dev, tile_path.empty() ? nullptr : tile_path.c_str(), db_path.c_str(), ini, 1280, 1024),
               submitter(db_path.c_str()),
               plan_options(load_route_plan_options(ini)),
-              udb(user_database::default_path()),
+              udb(user_database::default_path(), /*read_only=*/false),
               prev_vis(ui.visibility())
         {
             event_mgr.set_raw_event_hook([this](const void* event) { imgui_ctx.process_event(event); });
@@ -357,12 +365,13 @@ namespace osect
         }
 
         // Read both databases, merge, push to the UI. Fires on
-        // events and at startup, not per frame, so opening fresh
-        // connections each call is fine.
+        // events and at startup, not per frame, so the fresh
+        // nasr_database connection each call is fine; ephemeral.db
+        // goes through the long-lived eph_db handle.
         void push_data_sources()
         {
             auto merged = nasr_database(db_path.c_str()).list_data_sources();
-            auto eph = ephemeral_database(ephemeral_database::default_path()).list_data_sources();
+            auto eph = eph_db.list_data_sources();
             if(tfrs)
             {
                 const bool updating = tfrs->is_refreshing();

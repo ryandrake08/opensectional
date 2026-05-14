@@ -3,6 +3,7 @@
 
 #include "user_database.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <initializer_list>
 #include <sqlite/database.hpp>
@@ -78,7 +79,7 @@ TEST_CASE("user_database creates schema on fresh file and round-trips one route"
 {
     tmp_dir tmp("fresh");
     {
-        user_database db(tmp.db_file());
+        user_database db(tmp.db_file(), /*read_only=*/false);
         CHECK(db.load_routes().empty());
 
         const auto id = db.insert_route(make_rows({"KCNY", "KSGU"}));
@@ -94,7 +95,7 @@ TEST_CASE("user_database creates schema on fresh file and round-trips one route"
     }
     // Reopen the same file — schema persists, row persists.
     {
-        user_database db(tmp.db_file());
+        user_database db(tmp.db_file(), /*read_only=*/false);
         auto routes = db.load_routes();
         REQUIRE(routes.size() == 1);
         REQUIRE(routes[0].waypoints.size() == 2);
@@ -102,10 +103,32 @@ TEST_CASE("user_database creates schema on fresh file and round-trips one route"
     }
 }
 
+TEST_CASE("a read-only handle reads routes written by a read-write owner")
+{
+    tmp_dir tmp("readonly");
+    std::int64_t id = 0;
+    {
+        user_database writer(tmp.db_file(), /*read_only=*/false);
+        id = writer.insert_route(make_rows({"KCNY", "KSGU"}));
+    }
+    // The default open is read-only: no schema work, relies on the
+    // writer above having created and migrated the file.
+    const user_database reader(tmp.db_file());
+    auto routes = reader.load_routes();
+    REQUIRE(routes.size() == 1);
+    CHECK(routes[0].route_id == id);
+    REQUIRE(routes[0].waypoints.size() == 2);
+    CHECK(routes[0].waypoints[0].identifier == "KCNY");
+
+    const auto rec = reader.query_route(id);
+    REQUIRE(rec);
+    CHECK(rec->waypoints[1].identifier == "KSGU");
+}
+
 TEST_CASE("waypoint rows round-trip every field, including airway grouping")
 {
     tmp_dir tmp("waypoints");
-    user_database db(tmp.db_file());
+    user_database db(tmp.db_file(), /*read_only=*/false);
 
     // O61 — V459{LIN, LOPES} — KTSP: a standalone waypoint, an
     // airway traversal of two rows sharing element_index 1, then
@@ -134,7 +157,7 @@ TEST_CASE("waypoint rows round-trip every field, including airway grouping")
 TEST_CASE("query_route returns nullopt for an unknown id")
 {
     tmp_dir tmp("query_miss");
-    user_database db(tmp.db_file());
+    user_database db(tmp.db_file(), /*read_only=*/false);
     db.insert_route(make_rows({"A", "B"}));
     CHECK_FALSE(db.query_route(9999));
 }
@@ -142,7 +165,7 @@ TEST_CASE("query_route returns nullopt for an unknown id")
 TEST_CASE("insert_route returns strictly monotonic ids that survive deletion")
 {
     tmp_dir tmp("ids");
-    user_database db(tmp.db_file());
+    user_database db(tmp.db_file(), /*read_only=*/false);
 
     const auto id1 = db.insert_route(make_rows({"A", "B"}));
     const auto id2 = db.insert_route(make_rows({"C", "D"}));
@@ -168,7 +191,7 @@ TEST_CASE("insert_route returns strictly monotonic ids that survive deletion")
 TEST_CASE("delete_route cascades to the route's waypoint rows")
 {
     tmp_dir tmp("cascade");
-    user_database db(tmp.db_file());
+    user_database db(tmp.db_file(), /*read_only=*/false);
     const auto id = db.insert_route(make_rows({"A", "B", "C"}));
     db.delete_route(id);
 
@@ -184,7 +207,7 @@ TEST_CASE("delete_route cascades to the route's waypoint rows")
 TEST_CASE("update_route replaces the waypoints and bumps updated_at")
 {
     tmp_dir tmp("update");
-    user_database db(tmp.db_file());
+    user_database db(tmp.db_file(), /*read_only=*/false);
 
     const auto id = db.insert_route(make_rows({"OLD1", "OLD2"}));
     db.update_route(id, make_rows({"NEW1", "NEW2", "NEW3"}));
@@ -211,7 +234,7 @@ TEST_CASE("update_route replaces the waypoints and bumps updated_at")
 TEST_CASE("update_route and delete_route are no-ops on unknown ids")
 {
     tmp_dir tmp("noop");
-    user_database db(tmp.db_file());
+    user_database db(tmp.db_file(), /*read_only=*/false);
 
     db.update_route(9999, make_rows({"ghost1", "ghost2"}));
     db.delete_route(9999);
@@ -234,7 +257,7 @@ TEST_CASE("an older schema version is dropped and recreated at the current versi
     // Opening it brings the group to the current version: no users in
     // the field, so the v1 tables are dropped and recreated empty.
     {
-        user_database db(tmp.db_file());
+        user_database db(tmp.db_file(), /*read_only=*/false);
         CHECK(db.load_routes().empty());
         const auto id = db.insert_route(make_rows({"A", "B"}));
         CHECK(id >= 1);
@@ -255,12 +278,12 @@ TEST_CASE("opening a database with a newer schema version throws")
     // Create a fresh user.db, then tamper with SCHEMA_VERSIONS to
     // look like a future build wrote it.
     {
-        user_database db(tmp.db_file());
+        user_database db(tmp.db_file(), /*read_only=*/false);
         db.insert_route(make_rows({"AAA", "BBB"}));
     }
     {
         sqlite::database raw(tmp.db_file().string().c_str(), /*read_only=*/false);
         raw.exec("UPDATE SCHEMA_VERSIONS SET version = 999 WHERE group_name = 'routes'");
     }
-    CHECK_THROWS_AS(user_database(tmp.db_file()), std::runtime_error);
+    CHECK_THROWS_AS(user_database(tmp.db_file(), /*read_only=*/false), std::runtime_error);
 }

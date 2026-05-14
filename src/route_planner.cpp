@@ -338,7 +338,7 @@ namespace osect
         // the dirty list between runs.
         mutable astar_scratch scratch;
 
-        nasr_database db;
+        const nasr_database db;
 
         explicit impl(const char* db_path) : db(db_path)
         {
