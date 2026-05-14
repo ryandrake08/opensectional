@@ -598,20 +598,20 @@ namespace osect
                 if(std::holds_alternative<airport>(f))
                 {
                     const auto& a = std::get<airport>(f);
-                    return airport_ref{a.arpt_id, a};
+                    return route_waypoint{waypoint_kind::airport, a.arpt_id, a.lat, a.lon};
                 }
                 if(std::holds_alternative<navaid>(f))
                 {
                     const auto& n = std::get<navaid>(f);
-                    return navaid_ref{n.nav_id, n};
+                    return route_waypoint{waypoint_kind::navaid, n.nav_id, n.lat, n.lon};
                 }
                 if(std::holds_alternative<fix>(f))
                 {
                     const auto& x = std::get<fix>(f);
-                    return fix_ref{x.fix_id, x};
+                    return route_waypoint{waypoint_kind::fix, x.fix_id, x.lat, x.lon};
                 }
             }
-            return route_waypoint{latlon_ref{pick.lat, pick.lon}};
+            return route_waypoint{waypoint_kind::latlon, "", pick.lat, pick.lon};
         }
 
         void handle_route_drag_release(route_drag_mode mode)
@@ -712,8 +712,8 @@ namespace osect
             double sum_lat = 0.0;
             for(const auto& wp : route->waypoints)
             {
-                sum_lon += waypoint_lon(wp);
-                sum_lat += waypoint_lat(wp);
+                sum_lon += wp.lon;
+                sum_lat += wp.lat;
             }
             auto n = static_cast<double>(route->waypoints.size());
             return std::pair<double, double>{sum_lon / n, sum_lat / n};
@@ -1295,14 +1295,14 @@ namespace osect
         }
         const auto& wps = route->waypoints;
 
-        auto lat_min = waypoint_lat(wps[0]);
+        auto lat_min = wps[0].lat;
         auto lat_max = lat_min;
-        auto lon_min = waypoint_lon(wps[0]);
+        auto lon_min = wps[0].lon;
         auto lon_max = lon_min;
         for(const auto& wp : wps)
         {
-            auto la = waypoint_lat(wp);
-            auto lo = waypoint_lon(wp);
+            auto la = wp.lat;
+            auto lo = wp.lon;
             lat_min = std::min(la, lat_min);
             lat_max = std::max(la, lat_max);
             lon_min = std::min(lo, lon_min);

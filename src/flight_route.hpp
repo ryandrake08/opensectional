@@ -20,40 +20,44 @@ namespace osect
     // translates id ↔ index at its public seam.
     using route_id = std::int64_t;
 
-    // Parse a NASR-shorthand coordinate token (DDMMSSXDDDMMSSY) into
-    // decimal degrees. Returns nullopt if the token is not in that
-    // exact format. Used by the route parser and by
-    // route_planner::expand_sigils to accept coordinate literals
-    // wherever a point waypoint is expected.
-    struct latlon_ref;
-    std::optional<latlon_ref> parse_latlon(const std::string& token);
-
-    // A resolved waypoint on a route — one of the four point types
-    struct airport_ref
-    {
-        std::string id;
-        airport resolved;
-    };
-    struct navaid_ref
-    {
-        std::string id;
-        navaid resolved;
-    };
-    struct fix_ref
-    {
-        std::string id;
-        fix resolved;
-    };
+    // A coordinate literal — the return type of parse_latlon.
     struct latlon_ref
     {
         double lat;
         double lon;
     };
 
-    using route_waypoint = std::variant<airport_ref, navaid_ref, fix_ref, latlon_ref>;
+    // Parse a NASR-shorthand coordinate token (DDMMSSXDDDMMSSY) into
+    // decimal degrees. Returns nullopt if the token is not in that
+    // exact format. Used by the route parser and by
+    // route_planner::expand_sigils to accept coordinate literals
+    // wherever a point waypoint is expected.
+    std::optional<latlon_ref> parse_latlon(const std::string& token);
 
-    double waypoint_lat(const route_waypoint& wp);
-    double waypoint_lon(const route_waypoint& wp);
+    // Tag for a route waypoint's source type. These are the exact
+    // strings stored in route_waypoint::kind and in the persisted DB
+    // row — comparing against the named constant rather than a bare
+    // literal keeps a typo a compile error.
+    namespace waypoint_kind
+    {
+        inline constexpr const char* airport = "airport";
+        inline constexpr const char* navaid = "navaid";
+        inline constexpr const char* fix = "fix";
+        inline constexpr const char* latlon = "latlon";
+    }
+
+    // A resolved waypoint on a route. Consumers only ever need the
+    // identifier and coordinates, so that is all this carries — `id`
+    // is the airport/navaid/fix identifier, empty for a latlon
+    // waypoint whose identity is its coordinates.
+    struct route_waypoint
+    {
+        std::string kind; // one of the waypoint_kind constants
+        std::string id;
+        double lat;
+        double lon;
+    };
+
     std::string waypoint_id(const route_waypoint& wp);
 
     // An airway traversal: entry fix, exit fix, and the expanded sequence

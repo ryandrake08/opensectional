@@ -140,106 +140,15 @@ namespace osect
     // Waypoint accessors
     // ---------------------------------------------------------------
 
-    double waypoint_lat(const route_waypoint& wp)
-    {
-        return std::visit(
-            [](const auto& v) -> double
-            {
-                if constexpr(std::is_same_v<std::decay_t<decltype(v)>, airport_ref>)
-                {
-                    return v.resolved.lat;
-                }
-                else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, navaid_ref>)
-                {
-                    return v.resolved.lat;
-                }
-                else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, fix_ref>)
-                {
-                    return v.resolved.lat;
-                }
-                else
-                {
-                    return v.lat;
-                }
-            },
-            wp);
-    }
-
-    double waypoint_lon(const route_waypoint& wp)
-    {
-        return std::visit(
-            [](const auto& v) -> double
-            {
-                if constexpr(std::is_same_v<std::decay_t<decltype(v)>, airport_ref>)
-                {
-                    return v.resolved.lon;
-                }
-                else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, navaid_ref>)
-                {
-                    return v.resolved.lon;
-                }
-                else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, fix_ref>)
-                {
-                    return v.resolved.lon;
-                }
-                else
-                {
-                    return v.lon;
-                }
-            },
-            wp);
-    }
-
     std::string waypoint_id(const route_waypoint& wp)
     {
-        return std::visit(
-            [](const auto& v) -> std::string
-            {
-                if constexpr(std::is_same_v<std::decay_t<decltype(v)>, airport_ref>)
-                {
-                    return v.id;
-                }
-                else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, navaid_ref>)
-                {
-                    return v.id;
-                }
-                else if constexpr(std::is_same_v<std::decay_t<decltype(v)>, fix_ref>)
-                {
-                    return v.id;
-                }
-                else
-                {
-                    return format_latlon(v.lat, v.lon);
-                }
-            },
-            wp);
-    }
-
-    // Persistence tag for a waypoint's variant alternative.
-    static std::string waypoint_kind(const route_waypoint& wp)
-    {
-        return std::visit(
-            [](const auto& v) -> std::string
-            {
-                using T = std::decay_t<decltype(v)>;
-                if constexpr(std::is_same_v<T, airport_ref>)
-                {
-                    return "airport";
-                }
-                else if constexpr(std::is_same_v<T, navaid_ref>)
-                {
-                    return "navaid";
-                }
-                else if constexpr(std::is_same_v<T, fix_ref>)
-                {
-                    return "fix";
-                }
-                else
-                {
-                    return "latlon";
-                }
-            },
-            wp);
+        // A latlon waypoint has no identifier — its identity is its
+        // coordinates, rendered back into NASR shorthand.
+        if(wp.kind == waypoint_kind::latlon)
+        {
+            return format_latlon(wp.lat, wp.lon);
+        }
+        return wp.id;
     }
 
     // ---------------------------------------------------------------
@@ -306,20 +215,20 @@ namespace osect
         auto navs = db.lookup_navaids(p.name);
         if(!navs.empty())
         {
-            auto& best = *std::min_element(
+            const auto& best = *std::min_element(
                 navs.begin(), navs.end(), [&](const navaid& a, const navaid& b)
                 { return haversine_nm(p.lat, p.lon, a.lat, a.lon) < haversine_nm(p.lat, p.lon, b.lat, b.lon); });
-            return navaid_ref{p.name, std::move(best)};
+            return route_waypoint{waypoint_kind::navaid, p.name, best.lat, best.lon};
         }
         auto fixes = db.lookup_fixes(p.name);
         if(!fixes.empty())
         {
-            auto& best = *std::min_element(
+            const auto& best = *std::min_element(
                 fixes.begin(), fixes.end(), [&](const fix& a, const fix& b)
                 { return haversine_nm(p.lat, p.lon, a.lat, a.lon) < haversine_nm(p.lat, p.lon, b.lat, b.lon); });
-            return fix_ref{p.name, std::move(best)};
+            return route_waypoint{waypoint_kind::fix, p.name, best.lat, best.lon};
         }
-        return latlon_ref{p.lat, p.lon};
+        return route_waypoint{waypoint_kind::latlon, "", p.lat, p.lon};
     }
 
     // Build an ordered list of unique (name, lat, lon) points along an
@@ -525,30 +434,31 @@ namespace osect
         auto ll = parse_latlon(token);
         if(ll)
         {
-            return route_waypoint{*ll};
+            return route_waypoint{waypoint_kind::latlon, "", ll->lat, ll->lon};
         }
 
         // Try airport — IDs are unique in practice, no disambiguation needed.
         auto apts = db.lookup_airports(token);
         if(!apts.empty())
         {
-            return route_waypoint{airport_ref{token, std::move(apts.front())}};
+            const auto& a = apts.front();
+            return route_waypoint{waypoint_kind::airport, token, a.lat, a.lon};
         }
 
         // Try navaid
         auto navs = db.lookup_navaids(token);
         if(!navs.empty())
         {
-            auto i = nearest_index(navs, hint);
-            return route_waypoint{navaid_ref{token, std::move(navs[i])}};
+            const auto& n = navs[nearest_index(navs, hint)];
+            return route_waypoint{waypoint_kind::navaid, token, n.lat, n.lon};
         }
 
         // Try fix
         auto fixes = db.lookup_fixes(token);
         if(!fixes.empty())
         {
-            auto i = nearest_index(fixes, hint);
-            return route_waypoint{fix_ref{token, std::move(fixes[i])}};
+            const auto& f = fixes[nearest_index(fixes, hint)];
+            return route_waypoint{waypoint_kind::fix, token, f.lat, f.lon};
         }
 
         return std::nullopt;
@@ -569,7 +479,7 @@ namespace osect
         if(std::holds_alternative<route_waypoint>(last))
         {
             const auto& wp = std::get<route_waypoint>(last);
-            return std::pair{waypoint_lat(wp), waypoint_lon(wp)};
+            return std::pair{wp.lat, wp.lon};
         }
         const auto& awy = std::get<airway_ref>(last);
         if(awy.expanded.empty())
@@ -577,7 +487,7 @@ namespace osect
             return std::nullopt;
         }
         const auto& wp = awy.expanded.back();
-        return std::pair{waypoint_lat(wp), waypoint_lon(wp)};
+        return std::pair{wp.lat, wp.lon};
     }
 
     // Check if a token is an airway identifier
@@ -626,41 +536,10 @@ namespace osect
     // Resolved-form (row) serialization
     // ---------------------------------------------------------------
 
-    // Rebuild a route_waypoint from a persisted row. The resolved
-    // airport/navaid/fix struct is populated with only the id and
-    // coordinates — every consumer of a route waypoint reads exactly
-    // those (via waypoint_id / waypoint_lat / waypoint_lon).
+    // Rebuild a route_waypoint from a persisted row.
     static route_waypoint make_waypoint(const route_waypoint_row& row)
     {
-        if(row.kind == "airport")
-        {
-            airport a{};
-            a.arpt_id = row.identifier;
-            a.lat = row.lat;
-            a.lon = row.lon;
-            return airport_ref{row.identifier, std::move(a)};
-        }
-        if(row.kind == "navaid")
-        {
-            navaid n{};
-            n.nav_id = row.identifier;
-            n.lat = row.lat;
-            n.lon = row.lon;
-            return navaid_ref{row.identifier, std::move(n)};
-        }
-        if(row.kind == "fix")
-        {
-            fix f{};
-            f.fix_id = row.identifier;
-            f.lat = row.lat;
-            f.lon = row.lon;
-            return fix_ref{row.identifier, std::move(f)};
-        }
-        if(row.kind == "latlon")
-        {
-            return latlon_ref{row.lat, row.lon};
-        }
-        throw route_parse_error("unknown route waypoint kind: " + row.kind);
+        return route_waypoint{row.kind, row.identifier, row.lat, row.lon};
     }
 
     static route_waypoint_row row_from_waypoint(const route_waypoint& wp, int element_index,
@@ -668,12 +547,12 @@ namespace osect
     {
         route_waypoint_row row;
         row.element_index = element_index;
-        row.kind = waypoint_kind(wp);
+        row.kind = wp.kind;
         // latlon waypoints have no identifier — their coordinates are
         // the identity. waypoint_id would synthesize a DDMMSS string.
-        row.identifier = std::holds_alternative<latlon_ref>(wp) ? std::string{} : waypoint_id(wp);
-        row.lat = waypoint_lat(wp);
-        row.lon = waypoint_lon(wp);
+        row.identifier = wp.kind == waypoint_kind::latlon ? std::string{} : wp.id;
+        row.lat = wp.lat;
+        row.lon = wp.lon;
         row.airway_id = std::move(airway_id);
         return row;
     }
@@ -751,16 +630,16 @@ namespace osect
                         if(std::holds_alternative<route_waypoint>(prev))
                         {
                             const auto& wp = std::get<route_waypoint>(prev);
-                            lat = waypoint_lat(wp);
-                            lon = waypoint_lon(wp);
+                            lat = wp.lat;
+                            lon = wp.lon;
                         }
                         else
                         {
                             auto& aref = std::get<airway_ref>(prev);
                             if(!aref.expanded.empty())
                             {
-                                lat = waypoint_lat(aref.expanded.back());
-                                lon = waypoint_lon(aref.expanded.back());
+                                lat = aref.expanded.back().lat;
+                                lon = aref.expanded.back().lon;
                             }
                         }
                     }
@@ -780,8 +659,7 @@ namespace osect
                     {
                         throw route_parse_error("unknown waypoint: " + exit_id, exit_id, static_cast<int>(i));
                     }
-                    actual_exit =
-                        find_closest_airway_fix(airway_id, waypoint_lat(*exit_wp), waypoint_lon(*exit_wp), db);
+                    actual_exit = find_closest_airway_fix(airway_id, exit_wp->lat, exit_wp->lon, db);
                     if(actual_exit.empty())
                     {
                         throw route_parse_error("cannot find exit point on " + airway_id, airway_id, ti);
@@ -987,10 +865,10 @@ namespace osect
         {
             const auto& a = waypoints[i - 1];
             const auto& b = waypoints[i];
-            auto la = waypoint_lat(a);
-            auto lo_a = waypoint_lon(a);
-            auto lb = waypoint_lat(b);
-            auto lo_b = waypoint_lon(b);
+            auto la = a.lat;
+            auto lo_a = a.lon;
+            auto lb = b.lat;
+            auto lo_b = b.lon;
             legs.push_back({waypoint_id(a), waypoint_id(b), haversine_nm(la, lo_a, lb, lo_b),
                             true_course_deg(la, lo_a, lb, lo_b)});
         }
@@ -1245,10 +1123,10 @@ namespace osect
                     }
 
                     auto step = (idx_b > idx_a) ? 1 : -1;
-                    auto anchor_lat = waypoint_lat(a);
-                    auto anchor_lon = waypoint_lon(a);
-                    auto end_lat = waypoint_lat(b);
-                    auto end_lon = waypoint_lon(b);
+                    auto anchor_lat = a.lat;
+                    auto anchor_lon = a.lon;
+                    auto end_lat = b.lat;
+                    auto end_lon = b.lon;
                     std::vector<route_waypoint> accepted;
                     auto ok = true;
                     for(auto k = idx_a + step; k != idx_b; k += step)

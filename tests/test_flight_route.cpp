@@ -28,13 +28,13 @@ TEST_CASE("latlon waypoint parses DDMMSSXDDDMMSSY and round-trips")
 {
     flight_route route("383412N1210305W 383412N1200000W", test_db());
     REQUIRE(route.waypoints.size() == 2);
-    REQUIRE(std::holds_alternative<latlon_ref>(route.waypoints[0]));
+    const auto& wp = route.waypoints[0];
+    REQUIRE(wp.kind == waypoint_kind::latlon);
 
-    const auto& ll = std::get<latlon_ref>(route.waypoints[0]);
-    CHECK(std::abs(ll.lat - 38.57) < 0.01);
-    CHECK(std::abs(ll.lon - (-121.0514)) < 0.01);
+    CHECK(std::abs(wp.lat - 38.57) < 0.01);
+    CHECK(std::abs(wp.lon - (-121.0514)) < 0.01);
 
-    CHECK(waypoint_id(route.waypoints[0]) == "383412N1210305W");
+    CHECK(waypoint_id(wp) == "383412N1210305W");
 }
 
 TEST_CASE("simple airport-to-airport route")
@@ -49,7 +49,7 @@ TEST_CASE("route with navaid in the middle")
 {
     flight_route route("O61 LIN KMER", test_db());
     REQUIRE(route.waypoints.size() == 3);
-    CHECK(std::holds_alternative<navaid_ref>(route.waypoints[1]));
+    CHECK(route.waypoints[1].kind == waypoint_kind::navaid);
 }
 
 TEST_CASE("route with airway expansion")
@@ -70,7 +70,7 @@ TEST_CASE("route beginning with lat/lon and ending at navaid")
 {
     flight_route route("383412N1210305W LIN", test_db());
     REQUIRE(route.waypoints.size() == 2);
-    CHECK(std::holds_alternative<latlon_ref>(route.waypoints[0]));
+    CHECK(route.waypoints[0].kind == waypoint_kind::latlon);
 }
 
 TEST_CASE("bare FAA ID of an ICAO-assigned airport resolves to a navaid")
@@ -80,8 +80,8 @@ TEST_CASE("bare FAA ID of an ICAO-assigned airport resolves to a navaid")
     // the navaid; the ICAO ID "KSAC" is required to pick the airport.
     flight_route route("SAC KSAC", test_db());
     REQUIRE(route.waypoints.size() == 2);
-    CHECK(std::holds_alternative<navaid_ref>(route.waypoints[0]));
-    CHECK(std::holds_alternative<airport_ref>(route.waypoints[1]));
+    CHECK(route.waypoints[0].kind == waypoint_kind::navaid);
+    CHECK(route.waypoints[1].kind == waypoint_kind::airport);
 }
 
 TEST_CASE("unknown waypoint throws route_parse_error")
@@ -106,7 +106,7 @@ TEST_CASE("insert_waypoint adds a waypoint at the given segment")
 
     auto navs = test_db().lookup_navaids("LIN");
     REQUIRE_FALSE(navs.empty());
-    route.insert_waypoint(0, navaid_ref{"LIN", std::move(navs.front())},
+    route.insert_waypoint(0, route_waypoint{waypoint_kind::navaid, "LIN", navs.front().lat, navs.front().lon},
                           test_db());
 
     REQUIRE(route.waypoints.size() == 3);
@@ -320,8 +320,8 @@ static void check_row_round_trip(const flight_route& original)
     for(std::size_t i = 0; i < original.waypoints.size(); ++i)
     {
         CHECK(waypoint_id(restored.waypoints[i]) == waypoint_id(original.waypoints[i]));
-        CHECK(waypoint_lat(restored.waypoints[i]) == waypoint_lat(original.waypoints[i]));
-        CHECK(waypoint_lon(restored.waypoints[i]) == waypoint_lon(original.waypoints[i]));
+        CHECK(restored.waypoints[i].lat == original.waypoints[i].lat);
+        CHECK(restored.waypoints[i].lon == original.waypoints[i].lon);
     }
 
     auto a = original.compute_legs();
