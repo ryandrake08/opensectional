@@ -37,10 +37,10 @@ namespace osect
 
         // SDL event type used purely to wake SDL_WaitEvent — no
         // payload, no handler. Background producers push it through
-        // wake_main_thread(); the main loop's render path also
-        // pushes it to keep the imgui warmup frames flowing without
-        // needing user input. Allocated once via SDL_RegisterEvents
-        // on first call; thread-safe via function-local static init.
+        // wake_main_thread() after publishing a result so the render
+        // loop notices without needing user input. Allocated once via
+        // SDL_RegisterEvents on first call; thread-safe via
+        // function-local static init.
         std::uint32_t wake_event_type()
         {
             static const std::uint32_t type = sdl::event_manager::register_event_type();
@@ -773,92 +773,97 @@ namespace osect
             return true;
         }
 
+        // One pass of input-capture handoff, state handling, UI draw,
+        // and conditional GPU render. ui_result and last_render_ms are
+        // carried across calls. force renders unconditionally even when
+        // nothing changed — used for the startup warmup passes, where
+        // the render exists purely to let ImGui's auto-resize panels
+        // settle their layout.
+        void render_iteration(ui_overlay_result& ui_result, float& last_render_ms, bool force)
+        {
+            map.set_imgui_wants_mouse(imgui_ctx.wants_mouse());
+            map.set_imgui_wants_keyboard(imgui_ctx.wants_keyboard());
+
+            // State handlers run before ui.draw() so their mutations —
+            // active tab, popups, route tabs — land in this frame's
+            // draw rather than a frame late. They consume two inputs:
+            // state set by this iteration's dispatch_events() (a map
+            // click activating a route, drag results), which they see
+            // immediately; and the previous iteration's ui_result (tab
+            // clicks, the pick selector), whose effects land one event
+            // later — the mouse-up that follows every such interaction
+            // always provides that iteration.
+            bool needs_render = force;
+            needs_render |= handle_visibility(ui_result);
+            needs_render |= handle_search_selection(ui_result);
+            needs_render |= handle_search_query(ui_result);
+            needs_render |= handle_tab_closed(ui_result);
+            needs_render |= handle_active_tab_changed(ui_result);
+            needs_render |= handle_route_request(ui_result);
+            needs_render |= handle_route_status();
+            needs_render |= handle_route_dirty();
+            needs_render |= handle_route_delete_request();
+            needs_render |= handle_route_activate_request();
+
+            // Draw all UI, producing the ui_result the next iteration's
+            // handlers consume.
+            imgui_ctx.new_frame();
+            ui_result = ui.draw(last_render_ms, map.feature_types());
+            needs_render |= map.draw_imgui();
+            imgui_ctx.end_frame();
+
+            // Drain async results that arrived during the wait, and
+            // submit any new build requests this frame's mutations
+            // triggered. Single per-frame sync point.
+            needs_render |= map.update();
+            needs_render |= imgui_ctx.wants_mouse();
+
+            if(needs_render)
+            {
+                sdl::timer render_timer;
+                sdl::command_buffer cmd(dev);
+
+                unsigned width = 0;
+                unsigned height = 0;
+                auto swapchain = cmd.acquire_swapchain(win, width, height);
+                if(swapchain)
+                {
+                    map.render_frame(cmd, *swapchain);
+                    imgui_ctx.render(cmd, *swapchain);
+                }
+
+                last_render_ms = render_timer.elapsed_ms();
+            }
+        }
+
         void run()
         {
             auto last_render_ms = 0.0F;
             // Carried across iterations: the state handlers run before
-            // ui.draw() (see below), so they consume the ui_result
-            // produced by the previous iteration's draw.
+            // ui.draw(), so they consume the ui_result produced by the
+            // previous iteration's draw.
             ui_overlay_result ui_result;
+
+            // ImGui's auto-resize panels need three draws to settle
+            // their layout — the route panel's tab bar is the slowest
+            // to converge. The event loop below only renders in
+            // response to input or a background producer's wake, so
+            // without this the first frames the user sees would be
+            // mis-sized until they moved the mouse. Pump three forced
+            // renders through before entering the loop.
+            for(int i = 0; i < 3; ++i)
+            {
+                render_iteration(ui_result, last_render_ms, /*force=*/true);
+            }
+
             while(true)
             {
-                map.set_imgui_wants_mouse(imgui_ctx.wants_mouse());
-                map.set_imgui_wants_keyboard(imgui_ctx.wants_keyboard());
-
                 if(event_mgr.dispatch_events())
                 {
                     sdl::log_info("shutting down");
                     break;
                 }
-
-                // State handlers run before ui.draw() so their
-                // mutations — active tab, popups, route tabs — land in
-                // this frame's draw rather than a frame late. They
-                // consume two inputs: state set by this iteration's
-                // dispatch_events() (a map click activating a route,
-                // drag results), which they see immediately; and the
-                // previous frame's ui_result (tab clicks, the pick
-                // selector), whose effects land one event later — the
-                // mouse-up that follows every such interaction always
-                // provides that iteration.
-                bool needs_render = false;
-                needs_render |= handle_visibility(ui_result);
-                needs_render |= handle_search_selection(ui_result);
-                needs_render |= handle_search_query(ui_result);
-                needs_render |= handle_tab_closed(ui_result);
-                needs_render |= handle_active_tab_changed(ui_result);
-                needs_render |= handle_route_request(ui_result);
-                needs_render |= handle_route_status();
-                needs_render |= handle_route_dirty();
-                needs_render |= handle_route_delete_request();
-                needs_render |= handle_route_activate_request();
-
-                // Draw all UI, producing the ui_result the next
-                // iteration's handlers consume.
-                imgui_ctx.new_frame();
-                ui_result = ui.draw(last_render_ms, map.feature_types());
-                needs_render |= map.draw_imgui();
-                imgui_ctx.end_frame();
-
-                // Drain async results that arrived during the wait,
-                // and submit any new build requests this frame's
-                // mutations triggered. Single per-frame sync point.
-                needs_render |= map.update();
-                needs_render |= imgui_ctx.wants_mouse();
-
-                // HACK: Handle imgui "warmup" by scheduling two runs
-                // through the event loop on startup. Need to figure
-                // out a better way to do this.
-                if(imgui_ctx.warming_up())
-                {
-                    needs_render = true;
-                    // Schedule the next loop iteration so the
-                    // remaining warmup frames flow without waiting
-                    // on user input. imgui's warmup_pending() tells
-                    // us whether more frames are still queued; the
-                    // wake is harmless if none are.
-                    if(imgui_ctx.warmup_pending())
-                    {
-                        sdl::event_manager::push_event(wake_event_type(), 0);
-                    }
-                }
-
-                if(needs_render)
-                {
-                    sdl::timer render_timer;
-                    sdl::command_buffer cmd(dev);
-
-                    unsigned width = 0;
-                    unsigned height = 0;
-                    auto swapchain = cmd.acquire_swapchain(win, width, height);
-                    if(swapchain)
-                    {
-                        map.render_frame(cmd, *swapchain);
-                        imgui_ctx.render(cmd, *swapchain);
-                    }
-
-                    last_render_ms = render_timer.elapsed_ms();
-                }
+                render_iteration(ui_result, last_render_ms, /*force=*/false);
             }
         }
     };
