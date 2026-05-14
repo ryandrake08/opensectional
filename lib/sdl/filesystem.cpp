@@ -3,10 +3,6 @@
 #include <cstdlib>
 #include <sys/stat.h>
 
-#ifndef OSECT_BUNDLE_IDENTIFIER
-#define OSECT_BUNDLE_IDENTIFIER "org.existens.opensectional"
-#endif
-
 namespace sdl
 {
     namespace
@@ -50,7 +46,7 @@ namespace sdl
         return {};
     }
 
-    std::string resolve_user_asset(const char* name)
+    std::string resolve_user_asset(const app_dirs& dirs, const char* name)
     {
 #if defined(__APPLE__)
         auto home = getenv_or_empty("HOME");
@@ -58,14 +54,14 @@ namespace sdl
         {
             return {};
         }
-        auto candidate = home + "/Library/Application Support/" + OSECT_BUNDLE_IDENTIFIER + "/" + name;
+        auto candidate = home + "/Library/Application Support/" + dirs.macos + "/" + name;
 #elif defined(_WIN32)
         auto appdata = getenv_or_empty("APPDATA");
         if(appdata.empty())
         {
             return {};
         }
-        auto candidate = appdata + "\\osect\\" + name;
+        auto candidate = appdata + "\\" + dirs.other + "\\" + name;
 #else
         auto xdg = getenv_or_empty("XDG_CONFIG_HOME");
         if(xdg.empty())
@@ -77,7 +73,7 @@ namespace sdl
             }
             xdg = home + "/.config";
         }
-        auto candidate = xdg + "/osect/" + name;
+        auto candidate = xdg + "/" + dirs.other + "/" + name;
 #endif
         return path_exists(candidate) ? candidate : std::string{};
     }

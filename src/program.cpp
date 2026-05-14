@@ -247,7 +247,7 @@ namespace osect
                 sdl::log_info("ini merge: bundled " + bundled);
                 ini.merge(ini_config(bundled));
             }
-            auto user = sdl::resolve_user_asset("osect.ini");
+            auto user = sdl::resolve_user_asset({OSECT_BUNDLE_IDENTIFIER, OSECT_APP_NAME}, "osect.ini");
             if(!user.empty())
             {
                 sdl::log_info("ini merge: user " + user);

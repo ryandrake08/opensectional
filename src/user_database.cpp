@@ -12,10 +12,6 @@
 #include <string>
 #include <unordered_map>
 
-#ifndef OSECT_BUNDLE_IDENTIFIER
-#define OSECT_BUNDLE_IDENTIFIER "org.existens.opensectional"
-#endif
-
 namespace osect
 {
     namespace
@@ -35,20 +31,20 @@ namespace osect
         // one points at the OS cache directory, which is purgeable
         // by contract and unsuitable for user-authored data.
         //   macOS:   $HOME/Library/Application Support/<bundle_id>/
-        //   Linux:   ${XDG_DATA_HOME:-$HOME/.local/share}/osect/
-        //   Windows: %APPDATA%/osect/  (Roaming)
+        //   Linux:   ${XDG_DATA_HOME:-$HOME/.local/share}/<app_name>/
+        //   Windows: %APPDATA%/<app_name>/  (Roaming)
         std::filesystem::path app_user_data_dir()
         {
 #if defined(__APPLE__)
             const auto dir = std::filesystem::path(getenv_or_throw("HOME")) /
                              "Library/Application Support" / OSECT_BUNDLE_IDENTIFIER;
 #elif defined(_WIN32)
-            const auto dir = std::filesystem::path(getenv_or_throw("APPDATA")) / "osect";
+            const auto dir = std::filesystem::path(getenv_or_throw("APPDATA")) / OSECT_APP_NAME;
 #else
             const char* xdg = std::getenv("XDG_DATA_HOME");
             const auto dir = ((xdg && *xdg) ? std::filesystem::path(xdg)
                                             : std::filesystem::path(getenv_or_throw("HOME")) / ".local/share") /
-                             "osect";
+                             OSECT_APP_NAME;
 #endif
             std::error_code ec;
             std::filesystem::create_directories(dir, ec);

@@ -45,10 +45,16 @@ add_osect_test(data_source     ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
 # ephemeral_database links the sqlite wrapper and sdl_wrapper (for log_warn).
 add_osect_test(ephemeral_database ${CMAKE_SOURCE_DIR}/src/ephemeral_database.cpp)
 target_link_libraries(test_ephemeral_database PRIVATE sqlite_wrapper sdl_wrapper)
+target_compile_definitions(test_ephemeral_database PRIVATE
+    OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
+    OSECT_APP_NAME="${APP_SHORT_NAME}")
 
 # user_database — same wiring as ephemeral_database.
 add_osect_test(user_database ${CMAKE_SOURCE_DIR}/src/user_database.cpp)
 target_link_libraries(test_user_database PRIVATE sqlite_wrapper sdl_wrapper)
+target_compile_definitions(test_user_database PRIVATE
+    OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
+    OSECT_APP_NAME="${APP_SHORT_NAME}")
 
 # xnotam_parser links the vendored pugixml lib; the test reads
 # fixture XMLs from nasr_data/tfr_data/ at the repo root via the

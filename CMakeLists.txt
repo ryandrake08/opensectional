@@ -7,6 +7,8 @@ set(MINOR_VERSION "1")
 set(BUILD_VERSION "0")
 set(APPLICATION_VERSION "${MAJOR_VERSION}.${MINOR_VERSION}.${BUILD_VERSION}")
 set(BUNDLE_IDENTIFIER "org.existens.opensectional")
+# Short application name — the user-directory segment on Linux/Windows.
+set(APP_SHORT_NAME "osect")
 
 # Export compile commands
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -271,6 +273,7 @@ add_executable(osect
 )
 target_compile_definitions(osect PRIVATE
     OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
+    OSECT_APP_NAME="${APP_SHORT_NAME}"
 )
 
 # SDL C++ wrapper library
@@ -419,7 +422,7 @@ add_dependencies(osect shaders embedded_font)
 # the SDL_GPU shader-formats mask, and the --gpu direct3d12 runtime check).
 if(OSECT_BUILD_D3D12)
     target_compile_definitions(osect PRIVATE OSECT_HAVE_DXIL=1)
-    target_compile_definitions(sdl_wrapper PRIVATE OSECT_HAVE_DXIL=1)
+    target_compile_definitions(sdl_wrapper PRIVATE SDL_WRAPPER_HAVE_DXIL=1)
 endif()
 
 # Propagate Metal-library build state. When set, the build embeds precompiled
@@ -427,7 +430,7 @@ endif()
 # to compiling the embedded MSL source via the Metal driver on first use.
 if(OSECT_BUILD_METALLIB)
     target_compile_definitions(osect PRIVATE OSECT_HAVE_METALLIB=1)
-    target_compile_definitions(sdl_wrapper PRIVATE OSECT_HAVE_METALLIB=1)
+    target_compile_definitions(sdl_wrapper PRIVATE SDL_WRAPPER_HAVE_METALLIB=1)
 endif()
 
 # =============================================================================

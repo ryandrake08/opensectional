@@ -19,10 +19,6 @@
 #include <unordered_map>
 #include <vector>
 
-#ifndef OSECT_BUNDLE_IDENTIFIER
-#define OSECT_BUNDLE_IDENTIFIER "org.existens.opensectional"
-#endif
-
 namespace osect
 {
     namespace
@@ -41,8 +37,8 @@ namespace osect
         // the root of this directory — no further subdirectory,
         // since the database is the only file the app caches there.
         //   macOS:   $HOME/Library/Caches/<bundle_id>/
-        //   Linux:   ${XDG_CACHE_HOME:-$HOME/.cache}/osect/
-        //   Windows: %LOCALAPPDATA%/osect/
+        //   Linux:   ${XDG_CACHE_HOME:-$HOME/.cache}/<app_name>/
+        //   Windows: %LOCALAPPDATA%/<app_name>/
         // Created if missing; throws if the platform env var isn't
         // set or the directory can't be created.
         std::filesystem::path app_cache_dir()
@@ -51,12 +47,12 @@ namespace osect
             const auto dir = std::filesystem::path(getenv_or_throw("HOME")) / "Library/Caches" /
                              OSECT_BUNDLE_IDENTIFIER;
 #elif defined(_WIN32)
-            const auto dir = std::filesystem::path(getenv_or_throw("LOCALAPPDATA")) / "osect";
+            const auto dir = std::filesystem::path(getenv_or_throw("LOCALAPPDATA")) / OSECT_APP_NAME;
 #else
             const char* xdg = std::getenv("XDG_CACHE_HOME");
             const auto dir = ((xdg && *xdg) ? std::filesystem::path(xdg)
                                             : std::filesystem::path(getenv_or_throw("HOME")) / ".cache") /
-                             "osect";
+                             OSECT_APP_NAME;
 #endif
             std::error_code ec;
             std::filesystem::create_directories(dir, ec);
