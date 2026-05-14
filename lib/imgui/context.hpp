@@ -1,5 +1,4 @@
 #pragma once
-#include <memory>
 
 namespace sdl
 {
@@ -14,9 +13,6 @@ namespace imgui
 
     class context
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
-
     public:
         context(sdl::device& dev, sdl::window& win);
         ~context();
@@ -43,18 +39,6 @@ namespace imgui
         // Returns true if ImGui wants to capture keyboard input
         // (e.g. a text box has focus).
         bool wants_keyboard() const;
-
-        // Consume one warmup-frame credit. Returns true if a forced
-        // render is needed this frame. Caller is responsible for
-        // ensuring the loop runs again next iteration while
-        // warmup_pending() is still true (typically by pushing a
-        // wake event into the SDL queue).
-        bool warming_up();
-
-        // Whether further warmup frames are still pending after the
-        // most recent warming_up() call. Used by the caller to
-        // decide whether to schedule another loop iteration.
-        bool warmup_pending() const;
     };
 
 } // namespace imgui

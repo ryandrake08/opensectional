@@ -10,13 +10,7 @@
 namespace imgui
 {
 
-    struct context::impl
-    {
-        // ImGui auto-resize windows need two frames to stabilize layout
-        int warmup_frames = 2;
-    };
-
-    context::context(sdl::device& dev, sdl::window& win) : pimpl(new impl())
+    context::context(sdl::device& dev, sdl::window& win)
     {
         ImGui::CreateContext();
         ImGui::GetIO().IniFilename = nullptr;
@@ -75,21 +69,6 @@ namespace imgui
     bool context::wants_keyboard() const
     {
         return ImGui::GetIO().WantCaptureKeyboard;
-    }
-
-    bool context::warming_up()
-    {
-        if(pimpl->warmup_frames <= 0)
-        {
-            return false;
-        }
-        pimpl->warmup_frames--;
-        return true;
-    }
-
-    bool context::warmup_pending() const
-    {
-        return pimpl->warmup_frames > 0;
     }
 
 } // namespace imgui
