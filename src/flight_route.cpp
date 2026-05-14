@@ -215,6 +215,33 @@ namespace osect
             wp);
     }
 
+    // Persistence tag for a waypoint's variant alternative.
+    static std::string waypoint_kind(const route_waypoint& wp)
+    {
+        return std::visit(
+            [](const auto& v) -> std::string
+            {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr(std::is_same_v<T, airport_ref>)
+                {
+                    return "airport";
+                }
+                else if constexpr(std::is_same_v<T, navaid_ref>)
+                {
+                    return "navaid";
+                }
+                else if constexpr(std::is_same_v<T, fix_ref>)
+                {
+                    return "fix";
+                }
+                else
+                {
+                    return "latlon";
+                }
+            },
+            wp);
+    }
+
     // ---------------------------------------------------------------
     // Airway expansion
     // ---------------------------------------------------------------
@@ -596,6 +623,62 @@ namespace osect
     }
 
     // ---------------------------------------------------------------
+    // Resolved-form (row) serialization
+    // ---------------------------------------------------------------
+
+    // Rebuild a route_waypoint from a persisted row. The resolved
+    // airport/navaid/fix struct is populated with only the id and
+    // coordinates — every consumer of a route waypoint reads exactly
+    // those (via waypoint_id / waypoint_lat / waypoint_lon).
+    static route_waypoint make_waypoint(const route_waypoint_row& row)
+    {
+        if(row.kind == "airport")
+        {
+            airport a{};
+            a.arpt_id = row.identifier;
+            a.lat = row.lat;
+            a.lon = row.lon;
+            return airport_ref{row.identifier, std::move(a)};
+        }
+        if(row.kind == "navaid")
+        {
+            navaid n{};
+            n.nav_id = row.identifier;
+            n.lat = row.lat;
+            n.lon = row.lon;
+            return navaid_ref{row.identifier, std::move(n)};
+        }
+        if(row.kind == "fix")
+        {
+            fix f{};
+            f.fix_id = row.identifier;
+            f.lat = row.lat;
+            f.lon = row.lon;
+            return fix_ref{row.identifier, std::move(f)};
+        }
+        if(row.kind == "latlon")
+        {
+            return latlon_ref{row.lat, row.lon};
+        }
+        throw route_parse_error("unknown route waypoint kind: " + row.kind);
+    }
+
+    static route_waypoint_row row_from_waypoint(const route_waypoint& wp, int element_index,
+                                                std::optional<std::string> airway_id)
+    {
+        route_waypoint_row row;
+        row.element_index = element_index;
+        row.kind = waypoint_kind(wp);
+        // latlon waypoints have no identifier — their coordinates are
+        // the identity. waypoint_id would synthesize a DDMMSS string.
+        row.identifier = std::holds_alternative<latlon_ref>(wp) ? std::string{} : waypoint_id(wp);
+        row.lat = waypoint_lat(wp);
+        row.lon = waypoint_lon(wp);
+        row.airway_id = std::move(airway_id);
+        return row;
+    }
+
+    // ---------------------------------------------------------------
     // Constructor — parse and resolve, or throw
     // ---------------------------------------------------------------
 
@@ -758,6 +841,61 @@ namespace osect
     }
 
     // ---------------------------------------------------------------
+    // Constructor — reconstruct from persisted rows, no database
+    // ---------------------------------------------------------------
+
+    flight_route::flight_route(const std::vector<route_waypoint_row>& rows)
+    {
+        if(rows.empty())
+        {
+            throw route_parse_error("empty route");
+        }
+
+        // Rows are in route order; a run of consecutive rows sharing
+        // an element_index is one route_element. A run whose rows
+        // carry an airway_id rebuilds an airway_ref; a lone row with
+        // no airway_id is a standalone waypoint.
+        std::size_t i = 0;
+        while(i < rows.size())
+        {
+            const int ei = rows[i].element_index;
+            std::size_t j = i;
+            while(j < rows.size() && rows[j].element_index == ei)
+            {
+                ++j;
+            }
+
+            if(rows[i].airway_id)
+            {
+                std::vector<route_waypoint> expanded;
+                expanded.reserve(j - i);
+                for(std::size_t k = i; k < j; ++k)
+                {
+                    expanded.push_back(make_waypoint(rows[k]));
+                }
+                elements.push_back(airway_ref{*rows[i].airway_id, waypoint_id(expanded.front()),
+                                              waypoint_id(expanded.back()), std::move(expanded)});
+            }
+            else
+            {
+                if(j - i != 1)
+                {
+                    throw route_parse_error("malformed route: non-airway element spans multiple rows");
+                }
+                elements.push_back(make_waypoint(rows[i]));
+            }
+            i = j;
+        }
+
+        if(elements.size() < 2)
+        {
+            throw route_parse_error("route must have at least two waypoints");
+        }
+
+        expand_elements(elements, waypoints);
+    }
+
+    // ---------------------------------------------------------------
     // to_text — reconstruct shorthand
     // ---------------------------------------------------------------
 
@@ -785,6 +923,33 @@ namespace osect
             }
         }
         return result;
+    }
+
+    // ---------------------------------------------------------------
+    // to_rows — flatten to persistable resolved form
+    // ---------------------------------------------------------------
+
+    std::vector<route_waypoint_row> flight_route::to_rows() const
+    {
+        std::vector<route_waypoint_row> rows;
+        for(std::size_t ei = 0; ei < elements.size(); ++ei)
+        {
+            const auto element_index = static_cast<int>(ei);
+            const auto& elem = elements[ei];
+            if(std::holds_alternative<route_waypoint>(elem))
+            {
+                rows.push_back(row_from_waypoint(std::get<route_waypoint>(elem), element_index, std::nullopt));
+            }
+            else
+            {
+                const auto& awy = std::get<airway_ref>(elem);
+                for(const auto& wp : awy.expanded)
+                {
+                    rows.push_back(row_from_waypoint(wp, element_index, awy.airway_id));
+                }
+            }
+        }
+        return rows;
     }
 
     // ---------------------------------------------------------------

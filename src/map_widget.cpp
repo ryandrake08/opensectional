@@ -549,19 +549,19 @@ namespace osect
             return std::nullopt;
         }
 
-        // Load and parse a single route from user.db by id. Returns
-        // nullopt if no row matches or the row's text fails to parse
-        // (NASR cycle drift, corruption).
+        // Rebuild a single route from user.db by id. Returns nullopt
+        // if no row matches or the stored waypoints are structurally
+        // invalid.
         std::optional<flight_route> load_route(route_id id) const
         {
-            const auto row = pick_udb.query_route(id);
-            if(!row)
+            const auto rec = pick_udb.query_route(id);
+            if(!rec)
             {
                 return std::nullopt;
             }
             try
             {
-                return flight_route(row->text, pick_db);
+                return flight_route(rec->waypoints);
             }
             catch(const std::exception&)
             {

@@ -3441,37 +3441,38 @@ namespace osect
                    waypoint_id(wps.at(inner_index + 1)) + " (leg)";
         }
 
-        // Load every persisted route from user.db and parse via
-        // nasr_database. Rows that fail to parse (e.g. a NASR cycle
-        // dropped a referenced airport) are silently skipped; the
-        // row stays in user.db for a future build to recover. The
-        // returned vector's order is the display order (user.db row
-        // order), and `display_index` for the "Route N" label is
-        // its position in that vector. If `override_id` is set, the
-        // route with that id is replaced by `override_route` —
-        // used to surface an in-progress drag preview without
-        // committing it to disk.
+        // Load every persisted route from user.db and rebuild each
+        // flight_route from its resolved waypoint rows — no
+        // nasr_database. A row whose stored waypoints are
+        // structurally invalid is silently skipped; it stays in
+        // user.db for a future build to recover. The returned
+        // vector's order is the display order (user.db row order),
+        // and `display_index` for the "Route N" label is its
+        // position in that vector. If `override_id` is set, the
+        // route with that id is replaced by `override_route` — used
+        // to surface an in-progress drag preview without committing
+        // it to disk.
         std::vector<std::pair<route_id, flight_route>>
-        load_parsed_routes(const user_database& udb, const nasr_database& db, std::optional<route_id> override_id,
+        load_parsed_routes(const user_database& udb, std::optional<route_id> override_id,
                            const std::optional<flight_route>& override_route)
         {
             std::vector<std::pair<route_id, flight_route>> out;
-            const auto rows = udb.load_routes();
-            out.reserve(rows.size());
-            for(const auto& row : rows)
+            const auto records = udb.load_routes();
+            out.reserve(records.size());
+            for(const auto& rec : records)
             {
-                if(override_id && row.route_id == *override_id && override_route)
+                if(override_id && rec.route_id == *override_id && override_route)
                 {
-                    out.emplace_back(row.route_id, *override_route);
+                    out.emplace_back(rec.route_id, *override_route);
                     continue;
                 }
                 try
                 {
-                    out.emplace_back(row.route_id, flight_route(row.text, db));
+                    out.emplace_back(rec.route_id, flight_route(rec.waypoints));
                 }
                 catch(const std::exception&)
                 {
-                    // Skip — corrupted row, NASR data drift, etc.
+                    // Skip — structurally invalid stored route.
                 }
             }
             return out;
@@ -3479,7 +3480,7 @@ namespace osect
 
         void route_type::pick(const pick_context& ctx, std::vector<feature>& out) const
         {
-            const auto loaded = load_parsed_routes(ctx.udb, ctx.db, std::nullopt, std::nullopt);
+            const auto loaded = load_parsed_routes(ctx.udb, std::nullopt, std::nullopt);
             for(std::size_t r = 0; r < loaded.size(); ++r)
             {
                 const auto rid = loaded[r].first;
@@ -3638,7 +3639,7 @@ namespace osect
                 }
             };
 
-            const auto loaded = load_parsed_routes(ctx.udb, ctx.db, req.drag_route_id, req.drag_route);
+            const auto loaded = load_parsed_routes(ctx.udb, req.drag_route_id, req.drag_route);
             std::optional<std::size_t> selected_pos;
             for(std::size_t i = 0; i < loaded.size(); ++i)
             {

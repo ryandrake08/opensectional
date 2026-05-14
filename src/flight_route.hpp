@@ -68,6 +68,24 @@ namespace osect
     // A route element is either a single waypoint or an airway traversal
     using route_element = std::variant<route_waypoint, airway_ref>;
 
+    // One waypoint of a route in flat, persistable form. The database
+    // stores a route as an ordered list of these; because each row
+    // carries resolved coordinates, reconstructing a flight_route from
+    // rows needs no nasr_database. `element_index` ties the row back
+    // to the route_element it came from: consecutive rows sharing an
+    // index whose `airway_id` is set form one airway traversal, while
+    // a lone row with no `airway_id` is a standalone waypoint. Row
+    // order is route order — `seq` is implicit in the vector index.
+    struct route_waypoint_row
+    {
+        int element_index;
+        std::string kind;       // "airport" | "navaid" | "fix" | "latlon"
+        std::string identifier; // empty for "latlon"
+        double lat;
+        double lon;
+        std::optional<std::string> airway_id;
+    };
+
     // Thrown when a route string cannot be parsed or resolved
     struct route_parse_error : std::runtime_error
     {
@@ -116,8 +134,19 @@ namespace osect
         // Throws route_parse_error on failure.
         flight_route(const std::string& text, const nasr_database& db);
 
+        // Reconstruct a route from its persisted resolved form (see
+        // route_waypoint_row). Touches no nasr_database — the rows
+        // already carry resolved coordinates. Throws route_parse_error
+        // if `rows` is empty or the element grouping is malformed.
+        explicit flight_route(const std::vector<route_waypoint_row>& rows);
+
         // Reconstruct the shorthand text from the definition form
         std::string to_text() const;
+
+        // The route in flat, persistable form: one row per waypoint in
+        // each element, in route order. Round-trips through the row
+        // constructor with no nasr_database.
+        std::vector<route_waypoint_row> to_rows() const;
 
         // Insert a waypoint between expanded waypoints at `segment_index`
         // and `segment_index + 1`. Updates both elements and waypoints.

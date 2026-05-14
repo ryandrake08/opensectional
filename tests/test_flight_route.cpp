@@ -304,3 +304,90 @@ TEST_CASE("planned route round-trips through to_text")
         CHECK(waypoint_id(reparsed.waypoints[i])
               == waypoint_id(route.waypoints[i]));
 }
+
+// ---- resolved-form (row) round-trip ----
+
+// Reconstruct via the no-database row constructor and assert the
+// route is identical: same shorthand, same expanded waypoints (id
+// and coordinates), same legs.
+static void check_row_round_trip(const flight_route& original)
+{
+    flight_route restored(original.to_rows());
+
+    CHECK(restored.to_text() == original.to_text());
+
+    REQUIRE(restored.waypoints.size() == original.waypoints.size());
+    for(std::size_t i = 0; i < original.waypoints.size(); ++i)
+    {
+        CHECK(waypoint_id(restored.waypoints[i]) == waypoint_id(original.waypoints[i]));
+        CHECK(waypoint_lat(restored.waypoints[i]) == waypoint_lat(original.waypoints[i]));
+        CHECK(waypoint_lon(restored.waypoints[i]) == waypoint_lon(original.waypoints[i]));
+    }
+
+    auto a = original.compute_legs();
+    auto b = restored.compute_legs();
+    REQUIRE(a.size() == b.size());
+    for(std::size_t i = 0; i < a.size(); ++i)
+    {
+        CHECK(b[i].from_id == a[i].from_id);
+        CHECK(b[i].to_id == a[i].to_id);
+        CHECK(b[i].distance_nm == a[i].distance_nm);
+        CHECK(b[i].true_course_deg == a[i].true_course_deg);
+    }
+}
+
+TEST_CASE("row round-trip: airport-to-airport")
+{
+    check_row_round_trip(flight_route("O61 KMER", test_db()));
+}
+
+TEST_CASE("row round-trip: navaid in the middle")
+{
+    check_row_round_trip(flight_route("O61 LIN KMER", test_db()));
+}
+
+TEST_CASE("row round-trip: lat/lon waypoint")
+{
+    flight_route route("383412N1210305W LIN", test_db());
+    check_row_round_trip(route);
+    // The lat/lon row carries no identifier — coordinates are its identity.
+    auto rows = route.to_rows();
+    REQUIRE(rows.size() == 2);
+    CHECK(rows[0].kind == "latlon");
+    CHECK(rows[0].identifier.empty());
+}
+
+TEST_CASE("row round-trip: airway expansion preserves shorthand and structure")
+{
+    flight_route route("O61 LIN V459 LOPES KTSP", test_db());
+    REQUIRE(route.to_text().find("V459") != std::string::npos);
+    check_row_round_trip(route);
+
+    // The airway's expanded waypoints all carry the airway_id and a
+    // shared element_index; the surrounding waypoints carry neither.
+    auto rows = route.to_rows();
+    bool saw_airway_row = false;
+    for(const auto& r : rows)
+    {
+        if(r.airway_id)
+        {
+            CHECK(*r.airway_id == "V459");
+            saw_airway_row = true;
+        }
+    }
+    CHECK(saw_airway_row);
+}
+
+TEST_CASE("row round-trip: collapsed airway shorthand")
+{
+    // SLI..KIMMO collapses to "SLI V459 KIMMO" via airway_ize; the
+    // row form must reproduce that collapsed shorthand without a db.
+    flight_route route("SLI DODGR DARTS BERRI KIMMO", test_db());
+    REQUIRE(route.to_text() == "SLI V459 KIMMO");
+    check_row_round_trip(route);
+}
+
+TEST_CASE("row constructor rejects an empty row list")
+{
+    CHECK_THROWS_AS(flight_route(std::vector<route_waypoint_row>{}), route_parse_error);
+}

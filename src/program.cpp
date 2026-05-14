@@ -317,34 +317,32 @@ namespace osect
 
             ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
 
-            // Read every persisted route from user.db, parse via a
-            // fresh nasr_database, and seed map_widget + ui_overlay so
-            // the user sees the same tabs they had last session. Parse
-            // failures (e.g. a NASR cycle dropped a referenced airport)
-            // are logged and skipped; the row stays in user.db for a
-            // future build to handle.
-            const auto rows = udb.load_routes();
-            if(rows.empty())
+            // Read every persisted route from user.db and seed
+            // map_widget + ui_overlay so the user sees the same tabs
+            // they had last session. A row whose stored waypoints are
+            // structurally invalid is logged and skipped; it stays in
+            // user.db for a future build to handle.
+            const auto records = udb.load_routes();
+            if(records.empty())
             {
                 return;
             }
-            nasr_database planner_db(db_path.c_str());
             std::size_t loaded = 0;
             std::size_t skipped = 0;
-            for(const auto& row : rows)
+            for(const auto& rec : records)
             {
                 try
                 {
-                    flight_route route(row.text, planner_db);
+                    flight_route route(rec.waypoints);
                     auto tab_id = ui.add_route_tab(route);
-                    map.add_route(row.route_id);
-                    tab_to_route.emplace(tab_id, row.route_id);
+                    map.add_route(rec.route_id);
+                    tab_to_route.emplace(tab_id, rec.route_id);
                     ++loaded;
                 }
                 catch(const std::exception& e)
                 {
-                    sdl::log_warn("user.db: route_id=" + std::to_string(row.route_id) +
-                                  " failed to parse: " + e.what() + " — row retained, not loaded");
+                    sdl::log_warn("user.db: route_id=" + std::to_string(rec.route_id) +
+                                  " failed to load: " + e.what() + " — row retained, not loaded");
                     ++skipped;
                 }
             }
@@ -600,7 +598,7 @@ namespace osect
                     rid = it->second;
                     try
                     {
-                        udb.update_route(rid, route.to_text());
+                        udb.update_route(rid, route.to_rows());
                     }
                     catch(const std::exception& e)
                     {
@@ -612,7 +610,7 @@ namespace osect
                 {
                     try
                     {
-                        rid = udb.insert_route(route.to_text());
+                        rid = udb.insert_route(route.to_rows());
                     }
                     catch(const std::exception& e)
                     {
@@ -656,7 +654,7 @@ namespace osect
             }
             try
             {
-                udb.update_route(*active, result->to_text());
+                udb.update_route(*active, result->to_rows());
             }
             catch(const std::exception& e)
             {
@@ -769,6 +767,10 @@ namespace osect
         void run()
         {
             auto last_render_ms = 0.0F;
+            // Carried across iterations: the state handlers run before
+            // ui.draw() (see below), so they consume the ui_result
+            // produced by the previous iteration's draw.
+            ui_overlay_result ui_result;
             while(true)
             {
                 map.set_imgui_wants_mouse(imgui_ctx.wants_mouse());
@@ -780,13 +782,17 @@ namespace osect
                     break;
                 }
 
-                // Draw all UI
-                imgui_ctx.new_frame();
-                auto ui_result = ui.draw(last_render_ms, map.feature_types());
-                auto needs_render = map.draw_imgui();
-                imgui_ctx.end_frame();
-
-                // Call all state handlers
+                // State handlers run before ui.draw() so their
+                // mutations — active tab, popups, route tabs — land in
+                // this frame's draw rather than a frame late. They
+                // consume two inputs: state set by this iteration's
+                // dispatch_events() (a map click activating a route,
+                // drag results), which they see immediately; and the
+                // previous frame's ui_result (tab clicks, the pick
+                // selector), whose effects land one event later — the
+                // mouse-up that follows every such interaction always
+                // provides that iteration.
+                bool needs_render = false;
                 needs_render |= handle_visibility(ui_result);
                 needs_render |= handle_search_selection(ui_result);
                 needs_render |= handle_search_query(ui_result);
@@ -798,11 +804,22 @@ namespace osect
                 needs_render |= handle_route_delete_request();
                 needs_render |= handle_route_activate_request();
 
+                // Draw all UI, producing the ui_result the next
+                // iteration's handlers consume.
+                imgui_ctx.new_frame();
+                ui_result = ui.draw(last_render_ms, map.feature_types());
+                needs_render |= map.draw_imgui();
+                imgui_ctx.end_frame();
+
                 // Drain async results that arrived during the wait,
                 // and submit any new build requests this frame's
                 // mutations triggered. Single per-frame sync point.
                 needs_render |= map.update();
                 needs_render |= imgui_ctx.wants_mouse();
+
+                // HACK: Handle imgui "warmup" by scheduling two runs
+                // through the event loop on startup. Need to figure
+                // out a better way to do this.
                 if(imgui_ctx.warming_up())
                 {
                     needs_render = true;
