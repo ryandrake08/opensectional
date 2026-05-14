@@ -378,7 +378,7 @@ namespace osect
 
         auto draw_from = [&](std::size_t idx)
         {
-            auto p = view.world_to_pixel(waypoint_lon(wps[idx]), waypoint_lat(wps[idx]));
+            auto p = view.world_to_pixel(wps[idx].lon, wps[idx].lat);
             dl->AddLine(ImVec2(static_cast<float>(p.x), static_cast<float>(p.y)), cursor, col, 2.0F);
         };
 

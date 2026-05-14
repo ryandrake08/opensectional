@@ -3488,8 +3488,7 @@ namespace osect
                 bool found = false;
                 for(std::size_t i = 0; i < wps.size(); ++i)
                 {
-                    auto d =
-                        point_distance_nm(ctx.click_lon, ctx.click_lat, waypoint_lon(wps[i]), waypoint_lat(wps[i]));
+                    auto d = point_distance_nm(ctx.click_lon, ctx.click_lat, wps[i].lon, wps[i].lat);
                     if(d <= ctx.pick_radius_nm)
                     {
                         out.push_back(route_pick{rid, route_pick::part_kind::waypoint, i,
@@ -3506,8 +3505,7 @@ namespace osect
                 }
                 for(std::size_t i = 1; i < wps.size() && !found; ++i)
                 {
-                    auto arc = geodesic_interpolate(waypoint_lat(wps[i - 1]), waypoint_lon(wps[i - 1]),
-                                                    waypoint_lat(wps[i]), waypoint_lon(wps[i]));
+                    auto arc = geodesic_interpolate(wps[i - 1].lat, wps[i - 1].lon, wps[i].lat, wps[i].lon);
                     auto best = std::numeric_limits<double>::infinity();
                     for(std::size_t j = 1; j < arc.size(); ++j)
                     {
@@ -3574,8 +3572,7 @@ namespace osect
 
                 for(std::size_t i = 1; i < wps.size(); ++i)
                 {
-                    auto arc = geodesic_interpolate(waypoint_lat(wps[i - 1]), waypoint_lon(wps[i - 1]),
-                                                    waypoint_lat(wps[i]), waypoint_lon(wps[i]));
+                    auto arc = geodesic_interpolate(wps[i - 1].lat, wps[i - 1].lon, wps[i].lat, wps[i].lon);
                     std::vector<glm::vec2> polyline;
                     polyline.reserve(arc.size());
                     for(const auto& p : arc)
@@ -3591,8 +3588,8 @@ namespace osect
                 {
                     label_candidate lbl;
                     lbl.text = waypoint_id(wp);
-                    lbl.mx = lon_to_mx(waypoint_lon(wp)) + ctx.mx_offset;
-                    lbl.my = lat_to_my(waypoint_lat(wp));
+                    lbl.mx = lon_to_mx(wp.lon) + ctx.mx_offset;
+                    lbl.my = lat_to_my(wp.lat);
                     lbl.priority = 100;
                     lbl.layer = layer_route;
                     ctx.labels.push_back(std::move(lbl));
@@ -3621,8 +3618,8 @@ namespace osect
                 auto& halo_pd = ctx.poly[layer_route_halo];
                 for(const auto& wp : wps)
                 {
-                    auto cx = lon_to_mx(waypoint_lon(wp)) + ctx.mx_offset;
-                    auto cy = lat_to_my(waypoint_lat(wp));
+                    auto cx = lon_to_mx(wp.lon) + ctx.mx_offset;
+                    auto cy = lat_to_my(wp.lat);
 
                     constexpr auto HALO_SEGMENTS = 24;
                     std::vector<glm::vec2> pts;
