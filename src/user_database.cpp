@@ -194,6 +194,7 @@ namespace osect
         mutable std::mutex mutex;
 
         sqlite::statement stmt_load_routes;
+        sqlite::statement stmt_query_route;
         sqlite::statement stmt_insert_route;
         sqlite::statement stmt_update_route;
         sqlite::statement stmt_delete_route;
@@ -202,6 +203,9 @@ namespace osect
             : db(open_and_init_schema(p)),
               stmt_load_routes(db.prepare(R"(
                 SELECT route_id, name, text FROM ROUTE ORDER BY route_id
+            )")),
+              stmt_query_route(db.prepare(R"(
+                SELECT route_id, name, text FROM ROUTE WHERE route_id = ?
             )")),
               stmt_insert_route(db.prepare(R"(
                 INSERT INTO ROUTE (text, created_at, updated_at) VALUES (?, ?, ?)
@@ -245,6 +249,23 @@ namespace osect
         return out;
     }
 
+    std::optional<route_record> user_database::query_route(std::int64_t route_id) const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        auto& st = pimpl->stmt_query_route;
+        st.reset();
+        st.bind(1, route_id);
+        if(!st.step())
+        {
+            return std::nullopt;
+        }
+        route_record r;
+        r.route_id = st.column_int64(0);
+        r.name     = st.column_text(1);
+        r.text     = st.column_text(2);
+        return r;
+    }
+
     std::int64_t user_database::insert_route(const std::string& text)
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);
@@ -276,11 +297,5 @@ namespace osect
         s.reset();
         s.bind(1, route_id);
         s.step();
-    }
-
-    void user_database::delete_all_routes()
-    {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
-        pimpl->db.exec("DELETE FROM ROUTE");
     }
 }

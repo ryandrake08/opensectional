@@ -122,6 +122,14 @@ namespace osect
         // index from ui_overlay_result to retrieve the chosen hit).
         const std::vector<search_hit>& search_results() const;
 
+        // Programmatically create a new panel pre-populated with a
+        // planned route, returning its tab_id. Used at startup to
+        // restore tabs for routes loaded from user.db. If the only
+        // existing panel is the pristine starter (no route, no
+        // text), it's populated in place so loading N saved routes
+        // produces exactly N tabs.
+        std::uint64_t add_route_tab(const flight_route& route);
+
         // Mark the panel for `tab_id` as holding a planned route.
         // Snaps the input buffer to the canonical shorthand (so any
         // entry/exit auto-corrections appear) and clears any error.

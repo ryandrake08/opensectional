@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -60,6 +61,9 @@ namespace osect
         // reorder UI lands.
         std::vector<route_record> load_routes() const;
 
+        // Single-row lookup by id. nullopt if no row matches.
+        std::optional<route_record> query_route(std::int64_t route_id) const;
+
         // Insert a new route with the given shorthand text.
         // `name` defaults to empty (no UI to set it yet).
         // Returns the assigned route_id.
@@ -71,8 +75,5 @@ namespace osect
 
         // Remove a saved route. No-op if route_id does not exist.
         void delete_route(std::int64_t route_id);
-
-        // Remove every saved route.
-        void delete_all_routes();
     };
 }

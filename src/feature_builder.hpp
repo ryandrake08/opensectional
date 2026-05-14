@@ -18,6 +18,7 @@ namespace osect
     class chart_style;
     class ephemeral_database;
     class nasr_database;
+    class user_database;
 
     // Geometry data for a single feature layer
     struct polyline_data
@@ -62,15 +63,25 @@ namespace osect
         chart_type chart = chart_type::sectional;
         std::optional<feature> selection;
 
-        // All flight routes. The route at `active_route_index`
-        // (when set) is the panel / drag target — renders in the
-        // configured color with full alpha. Routes that are not
-        // active render with reduced alpha. The selected route
-        // (white + halos + popup) is whichever route is identified
-        // by `selection` if it holds a `route_pick`; that lookup
-        // happens inside route_type::build, not here.
-        std::vector<flight_route> routes;
-        std::optional<std::size_t> active_route_index;
+        // Persistent id of the active route — panel / drag target.
+        // Renders in the configured color with full alpha; other
+        // routes render with reduced alpha. nullopt when no route
+        // is active. The actual route list is loaded by
+        // route_type::build from build_context::udb each build;
+        // there is no in-memory route cache. The selected route
+        // (white + halos + popup) is identified by `selection`
+        // when it holds a `route_pick`.
+        std::optional<route_id> active_route_id;
+
+        // Transient route overlay used during a drag: while the
+        // user is dragging a waypoint or segment, map_widget has
+        // mutated this route locally but hasn't yet committed it
+        // to user.db. Render path uses this in place of whatever
+        // user.db has for the same id, so the drag preview tracks
+        // the cursor. When the drag commits, the new text is
+        // persisted and this becomes nullopt.
+        std::optional<route_id> drag_route_id;
+        std::optional<flight_route> drag_route;
     };
 
     // A label candidate from the feature build pass (world-space)
@@ -104,6 +115,7 @@ namespace osect
     {
         const nasr_database& db;
         const ephemeral_database& eph_db;
+        const user_database& udb;
         const chart_style& styles;
         const feature_build_request& req;
         double mx_offset;

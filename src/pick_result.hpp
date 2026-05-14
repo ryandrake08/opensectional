@@ -1,5 +1,6 @@
 #pragma once
 
+#include "flight_route.hpp" // route_id
 #include "nasr_database.hpp"
 #include "ephemeral_database.hpp"
 #include <cstddef>
@@ -21,7 +22,9 @@ namespace osect
             waypoint,
             leg
         };
-        std::size_t route_index;
+        // Persistent id of the route this pick belongs to. Stable
+        // across mutations and across runs (matches user.db rowid).
+        route_id route;
         part_kind part;
         // Waypoint index when part==waypoint, leg index (== from-
         // waypoint index) when part==leg.

@@ -24,8 +24,9 @@ namespace osect
     struct layer_visibility;
     class chart_style;
     class ephemeral_database;
+    class user_database;
 
-    // Bundles the inputs shared by every pick adapter: database,
+    // Bundles the inputs shared by every pick adapter: databases,
     // style/visibility predicates, the click location in several forms,
     // and the point-feature pick radius. Built once per click by the
     // dispatcher.
@@ -33,6 +34,7 @@ namespace osect
     {
         const nasr_database& db;
         const ephemeral_database& eph_db;
+        const user_database& udb;
         const chart_style& styles;
         const layer_visibility& vis;
         double zoom;
@@ -41,9 +43,6 @@ namespace osect
         geo_bbox pick_box;     // padded around click for point features
         geo_bbox click_box;    // degenerate — click point only
         double pick_radius_nm; // half-diagonal of pick_box, for line hits
-        // Runtime route state available to route_type::pick. Empty
-        // for picks where no routes are loaded.
-        const std::vector<flight_route>& routes;
     };
 
     // Info-popup key/value rows produced by feature_type::info_kv().

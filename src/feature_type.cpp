@@ -6,6 +6,7 @@
 #include "geo_math.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
+#include "user_database.hpp"
 #include "ui_overlay.hpp" // for the layer enum
 #include <glm/glm.hpp>
 #include <algorithm>
@@ -3427,10 +3428,10 @@ namespace osect
 
         // -- route_type implementation ----------------------------------
 
-        std::string route_pick_label(std::size_t route_index, route_pick::part_kind part, std::size_t inner_index,
+        std::string route_pick_label(std::size_t display_index, route_pick::part_kind part, std::size_t inner_index,
                                      const flight_route& route)
         {
-            auto route_num = std::to_string(route_index + 1);
+            auto route_num = std::to_string(display_index + 1);
             const auto& wps = route.waypoints;
             if(part == route_pick::part_kind::waypoint)
             {
@@ -3440,11 +3441,49 @@ namespace osect
                    waypoint_id(wps.at(inner_index + 1)) + " (leg)";
         }
 
+        // Load every persisted route from user.db and parse via
+        // nasr_database. Rows that fail to parse (e.g. a NASR cycle
+        // dropped a referenced airport) are silently skipped; the
+        // row stays in user.db for a future build to recover. The
+        // returned vector's order is the display order (user.db row
+        // order), and `display_index` for the "Route N" label is
+        // its position in that vector. If `override_id` is set, the
+        // route with that id is replaced by `override_route` —
+        // used to surface an in-progress drag preview without
+        // committing it to disk.
+        std::vector<std::pair<route_id, flight_route>>
+        load_parsed_routes(const user_database& udb, const nasr_database& db, std::optional<route_id> override_id,
+                           const std::optional<flight_route>& override_route)
+        {
+            std::vector<std::pair<route_id, flight_route>> out;
+            const auto rows = udb.load_routes();
+            out.reserve(rows.size());
+            for(const auto& row : rows)
+            {
+                if(override_id && row.route_id == *override_id && override_route)
+                {
+                    out.emplace_back(row.route_id, *override_route);
+                    continue;
+                }
+                try
+                {
+                    out.emplace_back(row.route_id, flight_route(row.text, db));
+                }
+                catch(const std::exception&)
+                {
+                    // Skip — corrupted row, NASR data drift, etc.
+                }
+            }
+            return out;
+        }
+
         void route_type::pick(const pick_context& ctx, std::vector<feature>& out) const
         {
-            for(std::size_t r = 0; r < ctx.routes.size(); ++r)
+            const auto loaded = load_parsed_routes(ctx.udb, ctx.db, std::nullopt, std::nullopt);
+            for(std::size_t r = 0; r < loaded.size(); ++r)
             {
-                const auto& wps = ctx.routes[r].waypoints;
+                const auto rid = loaded[r].first;
+                const auto& wps = loaded[r].second.waypoints;
                 bool found = false;
                 for(std::size_t i = 0; i < wps.size(); ++i)
                 {
@@ -3452,8 +3491,9 @@ namespace osect
                         point_distance_nm(ctx.click_lon, ctx.click_lat, waypoint_lon(wps[i]), waypoint_lat(wps[i]));
                     if(d <= ctx.pick_radius_nm)
                     {
-                        out.push_back(route_pick{r, route_pick::part_kind::waypoint, i,
-                                                 route_pick_label(r, route_pick::part_kind::waypoint, i, ctx.routes[r]),
+                        out.push_back(route_pick{rid, route_pick::part_kind::waypoint, i,
+                                                 route_pick_label(r, route_pick::part_kind::waypoint, i,
+                                                                  loaded[r].second),
                                                  d});
                         found = true;
                         break;
@@ -3476,8 +3516,9 @@ namespace osect
                     }
                     if(best <= ctx.pick_radius_nm)
                     {
-                        out.push_back(route_pick{r, route_pick::part_kind::leg, i - 1,
-                                                 route_pick_label(r, route_pick::part_kind::leg, i - 1, ctx.routes[r]),
+                        out.push_back(route_pick{rid, route_pick::part_kind::leg, i - 1,
+                                                 route_pick_label(r, route_pick::part_kind::leg, i - 1,
+                                                                  loaded[r].second),
                                                  best});
                         found = true;
                     }
@@ -3492,12 +3533,12 @@ namespace osect
             // identifies via a route_pick variant. Render unselected
             // routes first so the selected route's white line and halos
             // draw on top of any overlap.
-            std::optional<std::size_t> selected;
+            std::optional<route_id> selected_id;
             if(req.selection && std::holds_alternative<route_pick>(*req.selection))
             {
-                selected = std::get<route_pick>(*req.selection).route_index;
+                selected_id = std::get<route_pick>(*req.selection).route;
             }
-            const auto& act = req.active_route_index;
+            const auto& act = req.active_route_id;
 
             auto draw_one = [&](const flight_route& route, bool is_active, bool is_highlighted)
             {
@@ -3597,19 +3638,22 @@ namespace osect
                 }
             };
 
-            for(std::size_t i = 0; i < req.routes.size(); ++i)
+            const auto loaded = load_parsed_routes(ctx.udb, ctx.db, req.drag_route_id, req.drag_route);
+            std::optional<std::size_t> selected_pos;
+            for(std::size_t i = 0; i < loaded.size(); ++i)
             {
-                if(selected && *selected == i)
+                if(selected_id && loaded[i].first == *selected_id)
                 {
+                    selected_pos = i;
                     continue;
                 }
-                bool is_active = act && *act == i;
-                draw_one(req.routes[i], is_active, /*is_highlighted=*/false);
+                bool is_active = act && *act == loaded[i].first;
+                draw_one(loaded[i].second, is_active, /*is_highlighted=*/false);
             }
-            if(selected && *selected < req.routes.size())
+            if(selected_pos)
             {
-                bool is_active = act && *act == *selected;
-                draw_one(req.routes[*selected], is_active, /*is_highlighted=*/true);
+                bool is_active = act && *act == loaded[*selected_pos].first;
+                draw_one(loaded[*selected_pos].second, is_active, /*is_highlighted=*/true);
             }
         }
     }

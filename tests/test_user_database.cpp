@@ -134,25 +134,6 @@ TEST_CASE("update_route and delete_route are no-ops on unknown ids")
     CHECK(db.load_routes().empty());
 }
 
-TEST_CASE("delete_all_routes wipes every row")
-{
-    tmp_dir tmp("clear");
-    user_database db(tmp.db_file());
-
-    db.insert_route("A");
-    db.insert_route("B");
-    db.insert_route("C");
-    REQUIRE(db.load_routes().size() == 3);
-
-    db.delete_all_routes();
-    CHECK(db.load_routes().empty());
-
-    // AUTOINCREMENT survives a table wipe — next id is strictly
-    // greater than the highest before the wipe.
-    const auto id = db.insert_route("D");
-    CHECK(id >= 4);
-}
-
 TEST_CASE("opening a database with a newer schema version throws")
 {
     tmp_dir tmp("newer");
