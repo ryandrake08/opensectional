@@ -15,9 +15,9 @@ using namespace osect;
 
 // Shared DB/planner for all tests. Built once on first use; the test
 // binary is expected to run with the repo root as its working directory.
-static nasr_database& test_db()
+static const nasr_database& test_db()
 {
-    static nasr_database db("osect.db");
+    static const nasr_database db("osect.db");
     return db;
 }
 

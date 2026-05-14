@@ -12,9 +12,9 @@ using namespace osect;
 // Shared DB for all tests. Opened lazily on first use; the test binary is
 // expected to run with the repo root as its working directory (see
 // tests/CMakeLists.txt — WORKING_DIRECTORY is set to the source tree).
-static nasr_database& test_db()
+static const nasr_database& test_db()
 {
-    static nasr_database db("osect.db");
+    static const nasr_database db("osect.db");
     return db;
 }
 

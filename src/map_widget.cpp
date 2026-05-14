@@ -269,15 +269,15 @@ namespace osect
         render_context render_ctx;
 
         // NASR database for picks and search
-        nasr_database pick_db;
+        const nasr_database pick_db;
         // Read connection to the same ephemeral.db the refresher
         // writes; used by the pick path (tfr_type::pick queries
         // through pick_context::eph_db).
-        ephemeral_database pick_eph_db;
+        const ephemeral_database pick_eph_db;
         // Read connection to user.db. Lets the pick path,
         // fit_view_to_route, and popup centroid query saved routes
         // without map_widget caching them in memory.
-        user_database pick_udb;
+        const user_database pick_udb;
 
         chart_style styles;
         layer_visibility vis;

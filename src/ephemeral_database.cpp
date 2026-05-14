@@ -343,19 +343,27 @@ namespace osect
             }
         }
 
-        // Open the file read-write, set per-connection PRAGMAs, run the
-        // bootstrap schema, and ensure each known group is current.
-        // Pulled out so it can run inside the impl's member-init list
-        // before the prepared statements that depend on the schema.
-        sqlite::database open_and_init_schema(const std::filesystem::path& p)
+        // Open the file, and on a read-write open set per-connection
+        // PRAGMAs, run the bootstrap schema, and ensure each known group
+        // is current. Pulled out so it can run inside the impl's
+        // member-init list before the prepared statements that depend on
+        // the schema. A read-only open skips every pragma and schema
+        // step: WAL and foreign_keys only matter for a writer (WAL is
+        // persisted in the file anyway), and the CREATE / rebuild SQL
+        // would fail SQLITE_READONLY — a read-only consumer relies on a
+        // read-write owner having already brought the file current.
+        sqlite::database open_and_init_schema(const std::filesystem::path& p, bool read_only)
         {
-            sqlite::database db(p.string().c_str(), /*read_only=*/false);
-            // WAL lets db readers proceed without blocking on a writer.
-            db.exec("PRAGMA journal_mode = WAL");
-            // FK CASCADE is per-connection in SQLite — must be set every open.
-            db.exec("PRAGMA foreign_keys = ON");
-            db.exec(BOOTSTRAP_SQL);
-            ensure_groups(db);
+            sqlite::database db(p.string().c_str(), read_only);
+            if(!read_only)
+            {
+                // WAL lets db readers proceed without blocking on a writer.
+                db.exec("PRAGMA journal_mode = WAL");
+                // FK CASCADE is per-connection in SQLite — must be set every open.
+                db.exec("PRAGMA foreign_keys = ON");
+                db.exec(BOOTSTRAP_SQL);
+                ensure_groups(db);
+            }
             return db;
         }
     }
@@ -376,8 +384,8 @@ namespace osect
         sqlite::statement stmt_insert_area;
         sqlite::statement stmt_insert_point;
 
-        explicit impl(const std::filesystem::path& p)
-            : db(open_and_init_schema(p))
+        explicit impl(const std::filesystem::path& p, bool read_only)
+            : db(open_and_init_schema(p, read_only))
 
               ,
               stmt_select_source_meta(db.prepare(R"(
@@ -457,8 +465,8 @@ namespace osect
         return app_cache_dir() / "ephemeral.db";
     }
 
-    ephemeral_database::ephemeral_database(const std::filesystem::path& db_path)
-        : pimpl(std::make_unique<impl>(db_path))
+    ephemeral_database::ephemeral_database(const std::filesystem::path& db_path, bool read_only)
+        : pimpl(std::make_unique<impl>(db_path, read_only))
     {
     }
 

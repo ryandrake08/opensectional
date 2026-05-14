@@ -41,9 +41,9 @@ namespace osect
 
     struct feature_builder::impl
     {
-        nasr_database db;
-        ephemeral_database eph_db;
-        user_database udb;
+        const nasr_database db;
+        const ephemeral_database eph_db;
+        const user_database udb;
         chart_style styles;
         std::vector<std::unique_ptr<feature_type>> types;
 
