@@ -17,10 +17,10 @@ namespace sdl
 #ifdef __APPLE__
             formats_mask |= SDL_GPU_SHADERFORMAT_MSL;
 #endif
-#ifdef OSECT_HAVE_METALLIB
+#ifdef SDL_WRAPPER_HAVE_METALLIB
             formats_mask |= SDL_GPU_SHADERFORMAT_METALLIB;
 #endif
-#ifdef OSECT_HAVE_DXIL
+#ifdef SDL_WRAPPER_HAVE_DXIL
             formats_mask |= SDL_GPU_SHADERFORMAT_DXIL;
 #endif
             SDL_GPUDevice* dev = SDL_CreateGPUDevice(formats_mask, debug_mode, preferred_driver);
@@ -152,7 +152,7 @@ namespace sdl
         // METALLIB > MSL > SPIRV > DXIL. METALLIB is gated by whether the
         // build embedded precompiled bytecode (full Xcode), MSL by whether
         // the platform is macOS (always built when so).
-#ifdef OSECT_HAVE_METALLIB
+#ifdef SDL_WRAPPER_HAVE_METALLIB
         if(formats & SDL_GPU_SHADERFORMAT_METALLIB)
         {
             return shader_format::metallib;
@@ -168,7 +168,7 @@ namespace sdl
         {
             return shader_format::spirv;
         }
-#ifdef OSECT_HAVE_DXIL
+#ifdef SDL_WRAPPER_HAVE_DXIL
         if(formats & SDL_GPU_SHADERFORMAT_DXIL)
         {
             return shader_format::dxil;
