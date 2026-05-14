@@ -1,5 +1,6 @@
 #pragma once
 
+#include "flight_route.hpp" // route_waypoint_row
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -9,11 +10,14 @@
 
 namespace osect
 {
+    // A saved route in resolved form: stable identity, display name,
+    // and the ordered waypoint rows. Reconstruct a flight_route via
+    // flight_route(record.waypoints) — no nasr_database needed.
     struct route_record
     {
         std::int64_t route_id;
         std::string name;
-        std::string text;
+        std::vector<route_waypoint_row> waypoints;
     };
 
     // SQLite-backed persistence for user-authored data — today,
@@ -25,12 +29,16 @@ namespace osect
     // content is not re-fetchable, so an OS-level cache purge
     // silently destroying it would be a data-integrity failure.
     //
-    // Schema policy differs deliberately from ephemeral_database:
-    // versions are explicit integers (not auto-derived hashes)
-    // and mismatches NEVER auto-drop. Missing group → create;
-    // on-disk == current → no-op; on-disk < current → walk
-    // forward through migrations; on-disk > current → throw.
-    // Every schema change must come with a deliberate migration.
+    // Routes are stored in resolved form — every waypoint row carries
+    // its coordinates — so loading touches no nasr_database.
+    //
+    // Schema policy: versions are explicit integers (not auto-derived
+    // hashes). Missing group → create; on-disk == current → no-op;
+    // on-disk > current → throw (refuse to operate on a database
+    // newer than this build understands). on-disk < current → today,
+    // with no users in the field, the group is simply dropped and
+    // recreated; a real forward-migration path goes here once saved
+    // routes must survive a schema bump.
     class user_database
     {
         struct impl;
@@ -64,16 +72,17 @@ namespace osect
         // Single-row lookup by id. nullopt if no row matches.
         std::optional<route_record> query_route(std::int64_t route_id) const;
 
-        // Insert a new route with the given shorthand text.
-        // `name` defaults to empty (no UI to set it yet).
-        // Returns the assigned route_id.
-        std::int64_t insert_route(const std::string& text);
+        // Insert a new route from its resolved waypoint rows. `name`
+        // starts empty (no UI to set it yet). Returns the assigned
+        // route_id. Route + waypoints are written in one transaction.
+        std::int64_t insert_route(const std::vector<route_waypoint_row>& waypoints);
 
-        // Replace the text of an existing route; bumps updated_at.
+        // Replace an existing route's waypoints; bumps updated_at.
         // No-op if route_id does not exist.
-        void update_route(std::int64_t route_id, const std::string& text);
+        void update_route(std::int64_t route_id, const std::vector<route_waypoint_row>& waypoints);
 
-        // Remove a saved route. No-op if route_id does not exist.
+        // Remove a saved route. Its waypoint rows cascade away. No-op
+        // if route_id does not exist.
         void delete_route(std::int64_t route_id);
     };
 }
