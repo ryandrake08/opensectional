@@ -100,6 +100,29 @@ namespace osect
     }
     ui_overlay::~ui_overlay() = default;
 
+    std::uint64_t ui_overlay::add_route_tab(const flight_route& route)
+    {
+        auto& d = *pimpl;
+        // Absorb the pristine starter panel rather than appending a
+        // sibling, so loading N saved routes produces N tabs with no
+        // leading empty.
+        if(d.panels.size() == 1 && !d.panels.front().has_route && !d.panels.front().planning &&
+           d.panels.front().text_buf.empty())
+        {
+            auto& p = d.panels.front();
+            p.has_route = true;
+            p.error.clear();
+            p.text_buf = route.to_text();
+            return p.id;
+        }
+        auto p = d.make_panel();
+        p.has_route = true;
+        p.text_buf = route.to_text();
+        auto id = p.id;
+        d.panels.push_back(std::move(p));
+        return id;
+    }
+
     void ui_overlay::set_route_state(std::uint64_t tab_id, const flight_route& route)
     {
         auto i = pimpl->find_panel(tab_id);

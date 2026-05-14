@@ -54,8 +54,9 @@ namespace osect
 
         layer_visibility vis;
         std::optional<feature> selection;
-        std::vector<flight_route> routes;
-        std::optional<std::size_t> active_route_index;
+        std::optional<route_id> active_route_id;
+        std::optional<route_id> drag_route_id;
+        std::optional<flight_route> drag_route;
 
         impl(sdl::device& dev, const char* db_path, const chart_style& styles)
             : dev(dev), builder(db_path, styles), half_extent_y(HALF_CIRCUMFERENCE), query_bbox{0, 0, 0, 0}
@@ -143,8 +144,9 @@ namespace osect
             req.altitude = pimpl->vis.altitude;
             req.chart = pimpl->vis.chart;
             req.selection = pimpl->selection;
-            req.routes = pimpl->routes;
-            req.active_route_index = pimpl->active_route_index;
+            req.active_route_id = pimpl->active_route_id;
+            req.drag_route_id = pimpl->drag_route_id;
+            req.drag_route = pimpl->drag_route;
             pimpl->builder.request(std::move(req));
 
             // Speculatively update cache so we don't re-request next frame
@@ -258,11 +260,20 @@ namespace osect
         return pimpl->selection;
     }
 
-    void feature_renderer::set_routes(std::vector<flight_route> routes, std::optional<std::size_t> active_index)
+    void feature_renderer::set_active_route_id(std::optional<route_id> id)
     {
-        assert(!active_index || *active_index < routes.size());
-        pimpl->routes = std::move(routes);
-        pimpl->active_route_index = active_index;
+        if(pimpl->active_route_id == id)
+        {
+            return;
+        }
+        pimpl->active_route_id = id;
+        pimpl->has_cached_query = false;
+    }
+
+    void feature_renderer::set_drag_preview(std::optional<route_id> id, std::optional<flight_route> route)
+    {
+        pimpl->drag_route_id = id;
+        pimpl->drag_route = std::move(route);
         pimpl->has_cached_query = false;
     }
 

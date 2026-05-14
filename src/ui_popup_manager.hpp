@@ -70,11 +70,13 @@ namespace osect
             bool route_delete = false;
         };
 
-        // Draw all open popups. `routes` is needed to render the
-        // legs table when the info popup is showing a route_pick,
-        // and to auto-close the popup if the route disappeared.
+        // Draw all open popups. `route_for_popup` is the parsed
+        // route the open info popup's route_pick refers to — the
+        // caller resolves it from its own cache and passes a
+        // const reference. An empty optional while the popup holds
+        // a route_pick auto-closes the popup (route disappeared).
         actions draw(const map_view& view, const std::vector<std::unique_ptr<feature_type>>& feature_types,
-                     const std::vector<flight_route>& routes);
+                     const std::optional<flight_route>& route_for_popup);
     };
 
     // Draw rubber-band lines from the dragged route waypoint(s) to the

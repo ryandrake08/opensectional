@@ -65,16 +65,19 @@ namespace osect
         // nullopt when nothing is selected.
         const std::optional<feature>& selection() const;
 
-        // Set the full route list and the active route index (the
-        // panel / drag target — renders full alpha vs the dim
-        // non-active alpha). The "selected" route (highlighted in
-        // white + halos) is identified through `set_selection` with
-        // a `route_pick` feature, so it doesn't appear separately
-        // here. Pass an empty vector to clear.
-        //
-        // Precondition: active_index, when set, must be <
-        // routes.size(). Asserts on violation.
-        void set_routes(std::vector<flight_route> routes, std::optional<std::size_t> active_index);
+        // Set the active route id — the panel / drag target,
+        // rendered with full alpha vs. dim for inactive routes. The
+        // actual route list is loaded from user.db by the build
+        // path each build; the renderer doesn't hold a copy.
+        // nullopt clears the active marker.
+        void set_active_route_id(std::optional<route_id> id);
+
+        // While the user is dragging a route, the on-disk text is
+        // stale relative to the visible preview. Map_widget pushes
+        // the transient flight_route here; the build path renders
+        // it in place of whatever user.db has for the same id.
+        // Pass nullopt to clear (drag ended / committed).
+        void set_drag_preview(std::optional<route_id> id, std::optional<flight_route> route);
     };
 
 } // namespace osect

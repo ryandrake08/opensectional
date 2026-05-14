@@ -245,7 +245,7 @@ namespace osect
 
         bool draw_info(info_state& p, popup_manager::actions& out, const map_view& view,
                        const std::vector<std::unique_ptr<feature_type>>& feature_types,
-                       const std::vector<flight_route>& routes)
+                       const std::optional<flight_route>& route_for_popup)
         {
             if(!p.open)
             {
@@ -269,9 +269,9 @@ namespace osect
                                             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar);
 
             // Auto-close a route popup whose route has been removed
-            // (route_pick.route_index points past the end of routes).
-            if(std::holds_alternative<route_pick>(p.payload) &&
-               std::get<route_pick>(p.payload).route_index >= routes.size())
+            // (caller passed an empty route_for_popup while the
+            // payload still holds a route_pick).
+            if(std::holds_alternative<route_pick>(p.payload) && !route_for_popup)
             {
                 p.open = false;
                 out.info_dismissed = true;
@@ -305,7 +305,7 @@ namespace osect
             if(std::holds_alternative<route_pick>(p.payload))
             {
                 const auto& rp = std::get<route_pick>(p.payload);
-                if(draw_route_info_body(rp, routes[rp.route_index]))
+                if(draw_route_info_body(rp, *route_for_popup))
                 {
                     p.open = false;
                     out.route_delete = true;
@@ -402,11 +402,11 @@ namespace osect
 
     popup_manager::actions popup_manager::draw(const map_view& view,
                                                const std::vector<std::unique_ptr<feature_type>>& feature_types,
-                                               const std::vector<flight_route>& routes)
+                                               const std::optional<flight_route>& route_for_popup)
     {
         actions out{};
         auto a = draw_pick(pimpl->pick, out, view, feature_types);
-        auto b = draw_info(pimpl->info, out, view, feature_types, routes);
+        auto b = draw_info(pimpl->info, out, view, feature_types, route_for_popup);
         out.needs_more_frames = a || b;
         return out;
     }

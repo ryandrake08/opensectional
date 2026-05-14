@@ -10,6 +10,7 @@
 #include "route_submitter.hpp"
 #include "tfr_refresher.hpp"
 #include "ui_overlay.hpp"
+#include "user_database.hpp"
 #include <imgui/context.hpp>
 #include <cstdint>
 #include <iostream>
@@ -186,15 +187,18 @@ namespace osect
         route_submitter submitter;
         route_plan_options plan_options;
         ui_overlay ui;
+        // Persistent saved-route store. Source of truth for route
+        // text and identity; in-memory map.routes() is a cache.
+        user_database udb;
         // Snapshot of the last visibility state we saw, kept so
         // handle_visibility can log the diff each time the user
         // toggles a layer / altitude band / chart type.
         layer_visibility prev_vis;
-        // Maps each route-panel tab id to its route's index in
-        // map.routes(). Tabs without a planned route are absent.
-        // Updated on submission completion, panel close, popup
-        // delete, and any other operation that shifts route indexes.
-        std::unordered_map<std::uint64_t, std::size_t> tab_to_route;
+        // Maps each route-panel tab id to its planned route's
+        // persistent route_id. Tabs without a planned route are
+        // absent. route_id is stable across mutations (no
+        // shift-after-remove housekeeping needed).
+        std::unordered_map<std::uint64_t, route_id> tab_to_route;
         // Last active panel tab id observed via active_tab_changed.
         // Used to decide whether a freshly-planned route should pull
         // the view (only when the user is still focused on the
@@ -301,6 +305,7 @@ namespace osect
               map(dev, tile_path.empty() ? nullptr : tile_path.c_str(), db_path.c_str(), ini, 1280, 1024),
               submitter(db_path.c_str()),
               plan_options(load_route_plan_options(ini)),
+              udb(user_database::default_path()),
               prev_vis(ui.visibility())
         {
             event_mgr.set_raw_event_hook([this](const void* event) { imgui_ctx.process_event(event); });
@@ -312,6 +317,41 @@ namespace osect
 
             ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
 
+            // Read every persisted route from user.db, parse via a
+            // fresh nasr_database, and seed map_widget + ui_overlay so
+            // the user sees the same tabs they had last session. Parse
+            // failures (e.g. a NASR cycle dropped a referenced airport)
+            // are logged and skipped; the row stays in user.db for a
+            // future build to handle.
+            const auto rows = udb.load_routes();
+            if(rows.empty())
+            {
+                return;
+            }
+            nasr_database planner_db(db_path.c_str());
+            std::size_t loaded = 0;
+            std::size_t skipped = 0;
+            for(const auto& row : rows)
+            {
+                try
+                {
+                    flight_route route(row.text, planner_db);
+                    auto tab_id = ui.add_route_tab(route);
+                    map.add_route(row.route_id);
+                    tab_to_route.emplace(tab_id, row.route_id);
+                    ++loaded;
+                }
+                catch(const std::exception& e)
+                {
+                    sdl::log_warn("user.db: route_id=" + std::to_string(row.route_id) +
+                                  " failed to parse: " + e.what() + " — row retained, not loaded");
+                    ++skipped;
+                }
+            }
+            sdl::log_info("user.db: restored " + std::to_string(loaded) + " routes (" +
+                          std::to_string(skipped) + " skipped)");
+
+            // Log info about the GPU driver
             const char* gpu = resolve_gpu_driver(opts);
             sdl::log_info(std::string("started: gpu=") + (gpu ? gpu : "auto") + " db=" + db_path +
                           " basemap=" + (tile_path.empty() ? std::string("(none)") : tile_path) +
@@ -457,33 +497,19 @@ namespace osect
             return true;
         }
 
-        // Reverse lookup: which tab id (if any) owns the route at
-        // `route_index`. O(n) over tab_to_route; n is the number of
-        // tabs with planned routes (typically <10).
-        std::optional<std::uint64_t> tab_for_route_index(std::size_t route_index) const
+        // Reverse lookup: which tab id (if any) owns route `rid`.
+        // O(n) over tab_to_route; n is the number of tabs with
+        // planned routes (typically <10).
+        std::optional<std::uint64_t> tab_for_route(route_id rid) const
         {
-            for(const auto& [tab_id, idx] : tab_to_route)
+            for(const auto& [tab_id, id] : tab_to_route)
             {
-                if(idx == route_index)
+                if(id == rid)
                 {
                     return tab_id;
                 }
             }
             return std::nullopt;
-        }
-
-        // After remove_route(removed_idx), every entry in tab_to_route
-        // whose index was > removed_idx must shift down by one to
-        // stay aligned with map.routes().
-        void shift_tab_to_route_after_remove(std::size_t removed_idx)
-        {
-            for(auto& [tab_id, idx] : tab_to_route)
-            {
-                if(idx > removed_idx)
-                {
-                    --idx;
-                }
-            }
         }
 
         bool handle_route_request(const ui_overlay_result& r)
@@ -501,11 +527,18 @@ namespace osect
                 auto it = tab_to_route.find(req.tab_id);
                 if(it != tab_to_route.end())
                 {
-                    auto idx = it->second;
+                    auto rid = it->second;
                     sdl::log_info("route cleared: tab=" + std::to_string(req.tab_id));
-                    map.remove_route(idx);
+                    map.remove_route(rid);
                     tab_to_route.erase(it);
-                    shift_tab_to_route_after_remove(idx);
+                    try
+                    {
+                        udb.delete_route(rid);
+                    }
+                    catch(const std::exception& e)
+                    {
+                        sdl::log_warn(std::string("user.db: delete_route failed (continuing): ") + e.what());
+                    }
                 }
                 ui.clear_route_state(req.tab_id);
                 return true;
@@ -561,17 +594,34 @@ namespace osect
                 ui.set_route_state(tag, route);
 
                 auto it = tab_to_route.find(tag);
-                std::size_t idx = 0;
+                route_id rid = 0;
                 if(it != tab_to_route.end())
                 {
-                    idx = it->second;
-                    map.replace_route(idx, std::move(route));
+                    rid = it->second;
+                    try
+                    {
+                        udb.update_route(rid, route.to_text());
+                    }
+                    catch(const std::exception& e)
+                    {
+                        sdl::log_warn(std::string("user.db: update_route failed (continuing): ") + e.what());
+                    }
+                    map.replace_route(rid);
                 }
                 else
                 {
-                    map.add_route(std::move(route));
-                    idx = map.routes().size() - 1;
-                    tab_to_route.emplace(tag, idx);
+                    try
+                    {
+                        rid = udb.insert_route(route.to_text());
+                    }
+                    catch(const std::exception& e)
+                    {
+                        sdl::log_warn(std::string("user.db: insert_route failed, dropping plan: ") + e.what());
+                        ui.clear_route_state(tag, "Failed to save route");
+                        return true;
+                    }
+                    map.add_route(rid);
+                    tab_to_route.emplace(tag, rid);
                 }
 
                 // Only pull the view, activate, and highlight if the
@@ -579,9 +629,9 @@ namespace osect
                 // otherwise the map stays where the user has it.
                 if(tag == active_tab_id)
                 {
-                    map.set_active_route(idx);
-                    map.select_route(idx);
-                    map.fit_view_to_route(idx);
+                    map.set_active_route(rid);
+                    map.select_route(rid);
+                    map.fit_view_to_route(rid);
                 }
             }
             else
@@ -594,24 +644,34 @@ namespace osect
 
         bool handle_route_dirty()
         {
-            if(!map.drain_route_dirty())
+            auto result = map.drain_route_drag_result();
+            if(!result)
             {
                 return false;
             }
-            // The mutated route is whichever one the user was
-            // dragging — i.e. the active route. Push its new text
-            // back to the corresponding tab.
-            auto active = map.active_route_index();
+            auto active = map.active_route();
             if(!active)
             {
                 return true;
             }
-            auto tab = tab_for_route_index(*active);
+            try
+            {
+                udb.update_route(*active, result->to_text());
+            }
+            catch(const std::exception& e)
+            {
+                // On write failure, user.db keeps the prior text;
+                // the next feature build will render the old route.
+                // Leave the tab's text alone too so disk and UI agree.
+                sdl::log_warn(std::string("user.db: drag update_route failed: ") + e.what());
+                return true;
+            }
+            auto tab = tab_for_route(*active);
             if(!tab)
             {
                 return true;
             }
-            ui.set_route_state(*tab, map.routes().at(*active));
+            ui.set_route_state(*tab, *result);
             return true;
         }
 
@@ -623,12 +683,12 @@ namespace osect
             }
             active_tab_id = *r.active_tab_changed;
             auto it = tab_to_route.find(active_tab_id);
-            auto idx = it != tab_to_route.end() ? std::optional<std::size_t>(it->second) : std::optional<std::size_t>{};
-            map.set_active_route(idx);
+            auto rid = it != tab_to_route.end() ? std::optional<route_id>(it->second) : std::optional<route_id>{};
+            map.set_active_route(rid);
             // Tab switch is the user's intentional focus gesture, so
             // align selection with the new tab's route. They can
             // diverge again by clicking a different route on the map.
-            map.select_route(idx);
+            map.select_route(rid);
             return true;
         }
 
@@ -641,53 +701,68 @@ namespace osect
             auto it = tab_to_route.find(*r.tab_closed);
             if(it != tab_to_route.end())
             {
-                auto idx = it->second;
-                sdl::log_info("route removed: tab=" + std::to_string(*r.tab_closed) + " index=" + std::to_string(idx));
-                map.remove_route(idx);
+                auto rid = it->second;
+                sdl::log_info("route removed: tab=" + std::to_string(*r.tab_closed) +
+                              " route_id=" + std::to_string(rid));
+                map.remove_route(rid);
                 tab_to_route.erase(it);
-                shift_tab_to_route_after_remove(idx);
+                try
+                {
+                    udb.delete_route(rid);
+                }
+                catch(const std::exception& e)
+                {
+                    sdl::log_warn(std::string("user.db: delete_route failed (continuing): ") + e.what());
+                }
             }
             return true;
         }
 
         bool handle_route_delete_request()
         {
-            auto idx = map.drain_route_delete_request();
-            if(!idx)
+            auto rid = map.drain_route_delete_request();
+            if(!rid)
             {
                 return false;
             }
-            auto tab = tab_for_route_index(*idx);
+            auto tab = tab_for_route(*rid);
             if(tab)
             {
                 sdl::log_info("route deleted via popup: tab=" + std::to_string(*tab) +
-                              " index=" + std::to_string(*idx));
+                              " route_id=" + std::to_string(*rid));
                 ui.close_tab(*tab);
                 tab_to_route.erase(*tab);
             }
-            map.remove_route(*idx);
-            shift_tab_to_route_after_remove(*idx);
+            map.remove_route(*rid);
+            try
+            {
+                udb.delete_route(*rid);
+            }
+            catch(const std::exception& e)
+            {
+                sdl::log_warn(std::string("user.db: delete_route failed (continuing): ") + e.what());
+            }
             return true;
         }
 
         bool handle_route_activate_request()
         {
-            auto idx = map.drain_route_activate_request();
-            if(!idx)
+            auto rid = map.drain_route_activate_request();
+            if(!rid)
             {
                 return false;
             }
-            auto tab = tab_for_route_index(*idx);
+            auto tab = tab_for_route(*rid);
             if(!tab)
             {
                 return false;
             }
             sdl::log_info("activate route via map click: tab=" + std::to_string(*tab) +
-                          " index=" + std::to_string(*idx));
+                          " route_id=" + std::to_string(*rid));
             ui.set_active_tab(*tab);
             active_tab_id = *tab;
-            map.set_active_route(*idx);
-            map.select_route(*idx);
+            map.set_active_route(*rid);
+            map.select_route(*rid);
             return true;
         }
 

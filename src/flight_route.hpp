@@ -1,6 +1,7 @@
 #pragma once
 
 #include "nasr_database.hpp"
+#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -9,6 +10,16 @@
 
 namespace osect
 {
+    // Stable identity for a saved route. Issued by user_database on
+    // first persist (matches the user.db ROUTE row's primary key)
+    // and carried by every layer that needs to talk about a
+    // specific route — map_widget's public API, program.cpp's
+    // tab_to_route map, etc. The render pipeline beneath map_widget
+    // (feature_builder, feature_type, route_pick) still uses a
+    // transient std::size_t into the routes vector; map_widget
+    // translates id ↔ index at its public seam.
+    using route_id = std::int64_t;
+
     // Parse a NASR-shorthand coordinate token (DDMMSSXDDDMMSSY) into
     // decimal degrees. Returns nullopt if the token is not in that
     // exact format. Used by the route parser and by

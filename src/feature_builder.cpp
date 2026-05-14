@@ -1,6 +1,7 @@
 #include "feature_builder.hpp"
 #include "chart_style.hpp"
 #include "ephemeral_database.hpp"
+#include "user_database.hpp"
 #include "feature_type.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
@@ -42,6 +43,7 @@ namespace osect
     {
         nasr_database db;
         ephemeral_database eph_db;
+        user_database udb;
         chart_style styles;
         std::vector<std::unique_ptr<feature_type>> types;
 
@@ -58,8 +60,8 @@ namespace osect
         std::vector<label_candidate> labels;
 
         impl(const char* db_path, chart_style cs)
-            : db(db_path), eph_db(ephemeral_database::default_path()), styles(std::move(cs)),
-              types(make_feature_types())
+            : db(db_path), eph_db(ephemeral_database::default_path()),
+              udb(user_database::default_path()), styles(std::move(cs)), types(make_feature_types())
         {
         }
 
@@ -74,7 +76,7 @@ namespace osect
             local.lon_max = bbox.lon_max;
             local.lat_max = bbox.lat_max;
 
-            build_context ctx{db, eph_db, styles, local, mx_offset, poly, labels, state};
+            build_context ctx{db, eph_db, udb, styles, local, mx_offset, poly, labels, state};
             for(const auto& t : types)
             {
                 t->build(ctx);
@@ -112,7 +114,7 @@ namespace osect
         void build_selection_overlay(const feature_build_request& req, const feature& sel, polyline_data& out,
                                      polygon_fill_data& fill_out)
         {
-            build_context ctx{db, eph_db, styles, req, 0.0, poly, labels, state};
+            build_context ctx{db, eph_db, udb, styles, req, 0.0, poly, labels, state};
             find_feature_type(types, sel).build_selection(ctx, sel, out, fill_out);
         }
 

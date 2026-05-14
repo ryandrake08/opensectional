@@ -55,67 +55,62 @@ namespace osect
         // Run a full-text search against the NASR database.
         std::vector<search_hit> search(const std::string& query, int limit);
 
-        // Append a parsed route. Pure append: does not change the
-        // active or selected indexes, and does not move the view.
-        // Caller decides which of those side effects to apply (see
-        // fit_view_to_route, set_active_route, select_route).
-        void add_route(flight_route route);
+        // Notify map_widget that a new route exists in user.db.
+        // Caller has already persisted; this just flags a rebuild
+        // so the next feature build picks it up. Pure append — does
+        // not change the active or selected route, and does not
+        // move the view (see fit_view_to_route / set_active_route /
+        // select_route for those).
+        void add_route(route_id id);
 
         // Center and zoom the view to fit the bounding box of the
-        // route at `index`. No effect on active/selected. Asserts
-        // on out-of-range.
-        void fit_view_to_route(std::size_t index);
+        // named route. No effect on active/selected. No-op if the
+        // route doesn't exist or fails to parse.
+        void fit_view_to_route(route_id id);
 
-        // Make `index` the selected route — opens the route info
-        // popup anchored at the route's centroid and renders that
-        // route in white + halos. nullopt closes the popup and
-        // un-highlights. Independent of the active route. Asserts
-        // on out-of-range.
-        void select_route(std::optional<std::size_t> index);
+        // Make `id` the selected route — opens the route info popup
+        // anchored at the route's centroid and renders that route
+        // in white + halos. nullopt closes the popup and
+        // un-highlights. Independent of the active route.
+        void select_route(std::optional<route_id> id);
 
-        // Replace the route at `index` with a freshly-planned one.
-        // Used when re-submitting a panel that already has a route
-        // so the route's position in the routes vector (and any
-        // tab-id ↔ index mapping the caller maintains) doesn't shift.
-        void replace_route(std::size_t index, flight_route route);
+        // Notify map_widget that a route's text has been replaced
+        // in user.db. Caller has already persisted; this just flags
+        // a rebuild.
+        void replace_route(route_id id);
 
-        // Remove the route at `index`. Adjusts active and selected
-        // indexes so each still points to a valid route or becomes
-        // nullopt. Asserts on out-of-range index.
-        void remove_route(std::size_t index);
+        // Forget the route — clears active/selected if either
+        // referenced this id and flags a rebuild. Caller is
+        // responsible for the user.db delete.
+        void remove_route(route_id id);
 
-        // Remove every route and clear the active/selected indexes.
-        void clear_routes();
-
-        // Make `index` the active route. nullopt clears active. The
+        // Make `id` the active route. nullopt clears active. The
         // active route is the panel/drag target. Independent of the
-        // selected (highlighted) route. Asserts on out-of-range.
-        void set_active_route(std::optional<std::size_t> index);
+        // selected (highlighted) route.
+        void set_active_route(std::optional<route_id> id);
 
-        // The full route list (read-only).
-        const std::vector<flight_route>& routes() const;
+        // The active route, or nullopt if none.
+        std::optional<route_id> active_route() const;
 
-        // Index of the active route, or nullopt if none.
-        std::optional<std::size_t> active_route_index() const;
-
-        // Returns true once if a route was mutated internally (e.g. via
-        // segment drag-insert) since the last call; used by main() to re-push
-        // the route state into the UI overlay.
-        bool drain_route_dirty();
+        // If a drag finished since the last call, returns the
+        // mutated flight_route (already committed to user.db). The
+        // caller pushes its new text into the UI overlay. nullopt
+        // otherwise.
+        std::optional<flight_route> drain_route_drag_result();
 
         // If the user clicked Delete on the route info popup since
-        // the last call, return the route index that was selected at
-        // the time. The route is NOT removed by map_widget — caller
-        // owns the lifecycle (so the corresponding panel tab can be
-        // closed in the same operation). Returns nullopt otherwise.
-        std::optional<std::size_t> drain_route_delete_request();
+        // the last call, return the route id that was selected at
+        // the time. The route is NOT removed from user.db by
+        // map_widget — caller owns persistence so it can close the
+        // corresponding panel tab in the same operation. nullopt
+        // otherwise.
+        std::optional<route_id> drain_route_delete_request();
 
         // If the user clicked a non-active route's leg or waypoint
-        // since the last call, return that route's index. The
-        // caller switches the panel tab to the corresponding tab
-        // and updates active/selection accordingly. Returns nullopt
-        // otherwise.
-        std::optional<std::size_t> drain_route_activate_request();
+        // since the last call, return that route's id. The caller
+        // switches the panel tab to the corresponding tab and
+        // updates active/selection accordingly. nullopt otherwise.
+        std::optional<route_id> drain_route_activate_request();
 
         // Tell the map whether ImGui is consuming the mouse this frame
         // (suppresses pick on click when true).
