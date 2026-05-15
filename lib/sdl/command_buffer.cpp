@@ -60,6 +60,23 @@ namespace sdl
         return pimpl->handle;
     }
 
+    optional<texture> command_buffer::acquire_swapchain(const window& win)
+    {
+        SDL_GPUTexture* swapchain = nullptr;
+        if(!SDL_WaitAndAcquireGPUSwapchainTexture(pimpl->handle, win.get(), &swapchain, nullptr, nullptr))
+        {
+            throw error("Failed to acquire swapchain texture");
+        }
+
+        // swapchain is null when no texture is available yet (vsync pacing),
+        // or when the window is minimized/occluded — caller skips the frame
+        if(swapchain)
+        {
+            return texture(swapchain);
+        }
+        return {};
+    }
+
     optional<texture> command_buffer::acquire_swapchain(const window& win, unsigned& width, unsigned& height)
     {
         SDL_GPUTexture* swapchain = nullptr;

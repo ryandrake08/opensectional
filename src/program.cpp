@@ -781,6 +781,9 @@ namespace osect
         // settle their layout.
         void render_iteration(ui_overlay_result& ui_result, float& last_render_ms, bool force)
         {
+            // Start the frame timer
+            sdl::timer render_timer;
+
             map.set_imgui_wants_mouse(imgui_ctx.wants_mouse());
             map.set_imgui_wants_keyboard(imgui_ctx.wants_keyboard());
 
@@ -820,12 +823,9 @@ namespace osect
 
             if(needs_render)
             {
-                sdl::timer render_timer;
                 sdl::command_buffer cmd(dev);
 
-                unsigned width = 0;
-                unsigned height = 0;
-                auto swapchain = cmd.acquire_swapchain(win, width, height);
+                auto swapchain = cmd.acquire_swapchain(win);
                 if(swapchain)
                 {
                     map.render_frame(cmd, *swapchain);
