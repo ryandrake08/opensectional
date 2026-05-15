@@ -58,8 +58,9 @@ namespace osect
         using ac = awy_class;
 
         // Max leg length. Default matches g3xfplan.
-        o.max_leg_length_nm =
-            ini.exists("route_plan.max_leg_length_nm") ? ini.get<double>("route_plan.max_leg_length_nm") : 80.0;
+        o.max_leg_length_nm = ini.exists("route_plan.max_leg_length_nm")
+                                  ? ini.get<double>("route_plan.max_leg_length_nm")
+                                  : default_max_leg_length_nm;
 
         // Waypoint subtypes. Defaults match g3xfplan's argparse
         // defaults: airports INCLUDE, other airport flavors REJECT,
@@ -114,7 +115,7 @@ namespace osect
         // The GUI controls use_airways at runtime — leave it off
         // by default so a freshly-loaded ini reproduces the
         // previous (uniform) behavior.
-        o.use_airways = false;
+        o.use_airways = default_use_airways;
 
         if(auto err = validate_route_plan_options(o); !err.empty())
         {

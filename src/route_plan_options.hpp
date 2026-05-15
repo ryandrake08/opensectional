@@ -14,6 +14,13 @@ namespace osect
     inline constexpr double cost_avoid = 1.25;
     inline constexpr double cost_reject = 1000.0;
 
+    // Startup defaults for the two GUI-driven planner knobs, shared
+    // by the route_plan_options struct defaults, the ini loader
+    // fallback, and the GUI route panel so the literals live in one
+    // place. max_leg matches g3xfplan.
+    inline constexpr double default_max_leg_length_nm = 80.0;
+    inline constexpr bool default_use_airways = false;
+
     // Fine-grained per-node classification. Drives the
     // per-waypoint cost modifier in the A* search. Layout matters:
     // `count` is used to size the modifier array.
@@ -67,7 +74,7 @@ namespace osect
     {
         // Maximum direct-leg length, in nautical miles. A direct
         // step longer than this is multiplied by `cost_reject`.
-        double max_leg_length_nm = 80.0;
+        double max_leg_length_nm = default_max_leg_length_nm;
 
         // Per-subtype cost modifier. Default-initialized to
         // `cost_include` so a default-constructed value is
@@ -91,7 +98,7 @@ namespace osect
         // configured `wp_cost`, and `awy_cost` modifies on-airway
         // edges. When false: `wp_cost` is honored verbatim and
         // airway edges receive no special treatment.
-        bool use_airways = false;
+        bool use_airways = default_use_airways;
 
         route_plan_options() : wp_cost{}, awy_cost{}
         {
