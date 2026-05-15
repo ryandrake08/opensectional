@@ -52,6 +52,15 @@ namespace sdl
          * Acquire swapchain texture for rendering.
          *
          * @param win Window to acquire swapchain from
+         * @return Non-owning texture wrapper (empty if window minimized/occluded)
+         * @throws std::runtime_error if acquisition fails
+         */
+        optional<texture> acquire_swapchain(const window& win);
+
+        /**
+         * Acquire swapchain texture for rendering, reporting its dimensions.
+         *
+         * @param win Window to acquire swapchain from
          * @param width Swapchain texture width
          * @param height Swapchain texture height
          * @return Non-owning texture wrapper (empty if window minimized/occluded)
