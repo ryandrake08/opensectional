@@ -1,5 +1,6 @@
 #include "ui_overlay.hpp"
 #include "feature_type.hpp"
+#include "route_plan_options.hpp"
 #include "ui_sectioned_list.hpp"
 #include <imgui.h>
 #include <imgui/scoped.hpp>
@@ -28,9 +29,9 @@ namespace osect
         // inside the tab's body. Stays anchored to the originating
         // tab even if the user switches tabs while in flight.
         bool planning = false;
-        // Per-tab planner knobs. ImGui::InputFloat takes float.
-        float max_leg_nm = 80.0F;
-        bool use_airways = false;
+        // Per-tab planner knobs.
+        double max_leg_nm = default_max_leg_length_nm;
+        bool use_airways = default_use_airways;
     };
 
     struct ui_overlay::impl
@@ -53,10 +54,6 @@ namespace osect
         // result.active_tab_changed; used to detect transitions.
         std::uint64_t last_reported_active_id = 0;
 
-        // Defaults applied to newly created panels. Updated via
-        // set_route_planner_defaults().
-        float default_max_leg_nm = 80.0F;
-        bool default_use_airways = false;
         // True until the first draw completes. Used to force-select
         // the active tab on the first frame so its body renders and
         // the auto-resized panel snaps to its full width — without
@@ -84,8 +81,6 @@ namespace osect
         {
             route_panel p;
             p.id = next_panel_id++;
-            p.max_leg_nm = default_max_leg_nm;
-            p.use_airways = default_use_airways;
             return p;
         }
     };
@@ -202,15 +197,15 @@ namespace osect
 
     void ui_overlay::set_route_planner_defaults(double max_leg_nm, bool use_airways)
     {
-        pimpl->default_max_leg_nm = static_cast<float>(max_leg_nm);
-        pimpl->default_use_airways = use_airways;
-        // Apply to the initial panel created at construction so the
-        // app starts with the user's configured defaults.
+        // Seed the initial panel created at construction so the app
+        // starts with the user's configured defaults. Only the
+        // pristine starter panel is touched; thereafter each tab's
+        // knobs are its own and new tabs inherit from the active tab.
         if(pimpl->panels.size() == 1 && !pimpl->panels.front().has_route && !pimpl->panels.front().planning &&
            pimpl->panels.front().text_buf.empty())
         {
-            pimpl->panels.front().max_leg_nm = pimpl->default_max_leg_nm;
-            pimpl->panels.front().use_airways = pimpl->default_use_airways;
+            pimpl->panels.front().max_leg_nm = max_leg_nm;
+            pimpl->panels.front().use_airways = use_airways;
         }
     }
 
@@ -508,7 +503,7 @@ namespace osect
                         ImGui::Checkbox("Use airways", &p.use_airways);
                         ImGui::SameLine();
                         ImGui::SetNextItemWidth(90.0F);
-                        ImGui::InputFloat("Max leg (nm)", &p.max_leg_nm, 0.0F, 0.0F, "%.0f");
+                        ImGui::InputDouble("Max leg (nm)", &p.max_leg_nm, 0.0, 0.0, "%.0f");
                         ImGui::EndDisabled();
 
                         if(submit && !p.planning)
@@ -559,6 +554,11 @@ namespace osect
                 if(ImGui::TabItemButton("+", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip))
                 {
                     auto p = d.make_panel();
+                    // New tabs inherit the active tab's planner knobs
+                    // rather than ini defaults, so opening a series of
+                    // tabs carries the user's last-used settings.
+                    p.max_leg_nm = d.panels[d.active_panel_index].max_leg_nm;
+                    p.use_airways = d.panels[d.active_panel_index].use_airways;
                     d.panels.push_back(std::move(p));
                     // BeginTabBar's AutoSelectNewTabs flag will switch
                     // focus to the new panel on the next frame; record
