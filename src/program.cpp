@@ -190,13 +190,17 @@ namespace osect
         // tfr_refresher owns the TFR-data writes through its own
         // connection; this handle backs push_data_sources.
         ephemeral_database eph_db;
+        // Read-write owner of user.db's existence and schema —
+        // constructed before `map` for the same reason as eph_db:
+        // map_widget and feature_builder open read-only user.db
+        // connections during `map`'s construction, so the file must
+        // already exist and be migrated. Source of truth for saved
+        // routes and user waypoints.
+        user_database udb;
         map_widget map;
         route_submitter submitter;
         route_plan_options plan_options;
         ui_overlay ui;
-        // Persistent saved-route store. Source of truth for route
-        // text and identity; in-memory map.routes() is a cache.
-        user_database udb;
         // Snapshot of the last visibility state we saw, kept so
         // handle_visibility can log the diff each time the user
         // toggles a layer / altitude band / chart type.
@@ -310,10 +314,10 @@ namespace osect
               tfrs(opts.offline ? nullptr : std::make_unique<tfr_refresher>(ephemeral_database::default_path())),
               ini(build_ini(opts)),
               eph_db(ephemeral_database::default_path(), /*read_only=*/false),
+              udb(user_database::default_path(), /*read_only=*/false),
               map(dev, tile_path.empty() ? nullptr : tile_path.c_str(), db_path.c_str(), ini, 1280, 1024),
               submitter(db_path.c_str()),
               plan_options(load_route_plan_options(ini)),
-              udb(user_database::default_path(), /*read_only=*/false),
               prev_vis(ui.visibility())
         {
             event_mgr.set_raw_event_hook([this](const void* event) { imgui_ctx.process_event(event); });
@@ -773,6 +777,98 @@ namespace osect
             return true;
         }
 
+        bool handle_create_waypoint_request()
+        {
+            auto req = map.drain_create_waypoint_request();
+            if(!req)
+            {
+                return false;
+            }
+            auto [lon, lat] = *req;
+            try
+            {
+                const auto wp = udb.insert_waypoint(lat, lon);
+                sdl::log_info("user waypoint created: " + wp.name);
+                map.show_waypoint_info(wp);
+            }
+            catch(const std::exception& e)
+            {
+                sdl::log_warn(std::string("user.db: insert_waypoint failed: ") + e.what());
+            }
+            return true;
+        }
+
+        bool handle_rename_waypoint_request()
+        {
+            auto req = map.drain_rename_waypoint_request();
+            if(!req)
+            {
+                return false;
+            }
+            const auto cur = udb.query_waypoint(req->first);
+            if(!cur)
+            {
+                return true; // the waypoint no longer exists
+            }
+            bool renamed = false;
+            try
+            {
+                // update_waypoint replaces the whole row; keep the
+                // current position and change only the name.
+                renamed = udb.update_waypoint(req->first, req->second, cur->lat, cur->lon);
+            }
+            catch(const std::exception& e)
+            {
+                sdl::log_warn(std::string("user.db: update_waypoint failed: ") + e.what());
+                return true;
+            }
+            // Show what the database now holds — a name collision
+            // leaves the old name in place.
+            const auto shown = renamed ? user_waypoint{req->first, req->second, cur->lat, cur->lon} : *cur;
+            map.show_waypoint_info(shown);
+            return true;
+        }
+
+        bool handle_delete_waypoint_request()
+        {
+            auto id = map.drain_delete_waypoint_request();
+            if(!id)
+            {
+                return false;
+            }
+            try
+            {
+                udb.delete_waypoint(*id);
+                sdl::log_info("user waypoint deleted: id=" + std::to_string(*id));
+            }
+            catch(const std::exception& e)
+            {
+                sdl::log_warn(std::string("user.db: delete_waypoint failed (continuing): ") + e.what());
+            }
+            map.notify_waypoints_changed();
+            return true;
+        }
+
+        bool handle_move_waypoint_request()
+        {
+            auto wp = map.drain_waypoint_drag_result();
+            if(!wp)
+            {
+                return false;
+            }
+            try
+            {
+                udb.update_waypoint(wp->waypoint_id, wp->name, wp->lat, wp->lon);
+                sdl::log_info("user waypoint repositioned: " + wp->name);
+            }
+            catch(const std::exception& e)
+            {
+                sdl::log_warn(std::string("user.db: update_waypoint (drag) failed: ") + e.what());
+            }
+            map.notify_waypoints_changed();
+            return true;
+        }
+
         // One pass of input-capture handoff, state handling, UI draw,
         // and conditional GPU render. ui_result and last_render_ms are
         // carried across calls. force renders unconditionally even when
@@ -807,6 +903,10 @@ namespace osect
             needs_render |= handle_route_dirty();
             needs_render |= handle_route_delete_request();
             needs_render |= handle_route_activate_request();
+            needs_render |= handle_create_waypoint_request();
+            needs_render |= handle_rename_waypoint_request();
+            needs_render |= handle_delete_waypoint_request();
+            needs_render |= handle_move_waypoint_request();
 
             // Draw all UI, producing the ui_result the next iteration's
             // handlers consume.

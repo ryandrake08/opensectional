@@ -301,9 +301,13 @@ namespace osect
         // in user.db — these are id references and ephemeral drag
         // state.
         std::optional<route_id> active_route_id;
-        std::optional<flight_route> drag_result; // surfaces via drain after a drag commit
-        std::optional<route_id> delete_request;
-        std::optional<route_id> activate_request;
+        std::optional<flight_route> route_drag_result; // surfaces via drain after a drag commit
+        std::optional<route_id> route_delete_request;
+        std::optional<route_id> route_activate_request;
+        std::optional<std::pair<double, double>> create_waypoint_request;
+        std::optional<std::int64_t> delete_waypoint_request;
+        std::optional<std::pair<std::int64_t, std::string>> rename_waypoint_request;
+        std::optional<user_waypoint> waypoint_drag_result;
         struct
         {
             route_drag_mode mode = route_drag_mode::none;
@@ -312,7 +316,10 @@ namespace osect
             // overlay and drag-end mutation can run without re-
             // querying user.db every frame. Cleared at drag-end.
             std::optional<flight_route> route;
-        } drag;
+        } route_drag;
+        // The user waypoint being dragged, captured at press time;
+        // nullopt when no waypoint drag is in progress.
+        std::optional<user_waypoint> waypoint_drag;
 
         // The currently-selected route, parsed once at select time
         // so the info popup's per-frame body render doesn't re-parse
@@ -588,6 +595,19 @@ namespace osect
             return std::nullopt;
         }
 
+        // The first user_waypoint among the picks, or nullptr.
+        const user_waypoint* first_user_waypoint(const std::vector<feature>& picks) const
+        {
+            for(const auto& f : picks)
+            {
+                if(const auto* wp = std::get_if<user_waypoint>(&f))
+                {
+                    return wp;
+                }
+            }
+            return nullptr;
+        }
+
         // Resolve a release point to a route_waypoint: prefer the first
         // airport/navaid/fix under the cursor; otherwise lat/lon at the click.
         route_waypoint resolve_release_waypoint()
@@ -616,16 +636,16 @@ namespace osect
 
         void handle_route_drag_release(route_drag_mode mode)
         {
-            if(!drag.route || !active_route_id)
+            if(!route_drag.route || !active_route_id)
             {
                 return;
             }
-            auto& r = *drag.route;
+            auto& r = *route_drag.route;
             if(mode == route_drag_mode::segment)
             {
                 auto wp = resolve_release_waypoint();
-                sdl::log_info("route insert: index=" + std::to_string(drag.index) + " waypoint=" + waypoint_id(wp));
-                r.insert_waypoint(drag.index, wp, pick_db);
+                sdl::log_info("route insert: index=" + std::to_string(route_drag.index) + " waypoint=" + waypoint_id(wp));
+                r.insert_waypoint(route_drag.index, wp, pick_db);
             }
             else
             {
@@ -633,7 +653,7 @@ namespace osect
                 // the dragged waypoint (but only if the route keeps >= 2
                 // waypoints afterward). Otherwise replace it with whatever's
                 // under the cursor.
-                auto i = drag.index;
+                auto i = route_drag.index;
                 auto picks = pick_at(cursor_ndc_x, cursor_ndc_y);
                 auto pick = first_active_route_pick(picks.features);
                 std::optional<std::size_t> hit;
@@ -666,12 +686,23 @@ namespace osect
             // post-drag geometry without going back to SQLite.
             if(selected_route_cache_id == active_route_id)
             {
-                selected_route_cache = *drag.route;
+                selected_route_cache = *route_drag.route;
             }
-            drag_result = std::move(*drag.route);
-            drag.route.reset();
+            route_drag_result = std::move(*route_drag.route);
+            route_drag.route.reset();
             features.set_drag_preview(std::nullopt, std::nullopt);
             features.invalidate();
+            needs_update = true;
+        }
+
+        // Commit a finished user-waypoint drag: surface the waypoint
+        // at its release position for the caller to persist. No
+        // snapping — the new position is the bare cursor lat/lon.
+        void handle_waypoint_drag_release(const user_waypoint& wp)
+        {
+            auto [lon, lat] = ndc_to_lonlat(cursor_ndc_x, cursor_ndc_y);
+            sdl::log_info("user waypoint moved: " + wp.name);
+            waypoint_drag_result = user_waypoint{wp.waypoint_id, wp.name, lat, lon};
             needs_update = true;
         }
 
@@ -685,9 +716,9 @@ namespace osect
         {
             if(auto sel = selected_route_id())
             {
-                if(drag.route && active_route_id && *active_route_id == *sel)
+                if(route_drag.route && active_route_id && *active_route_id == *sel)
                 {
-                    return drag.route;
+                    return route_drag.route;
                 }
                 if(selected_route_cache && selected_route_cache_id == *sel)
                 {
@@ -838,7 +869,7 @@ namespace osect
                     // existing popup in place until that runs avoids
                     // a one-frame flash to "no popup".
                     sdl::log_info("pick: activate route_id=" + std::to_string(r.route));
-                    activate_request = r.route;
+                    route_activate_request = r.route;
                     needs_update = true;
                 }
                 return;
@@ -893,6 +924,13 @@ namespace osect
 
             if(result.features.empty())
             {
+                // No feature here — still open the (empty) selector
+                // so its WPT button can create a waypoint at this
+                // point.
+                close_info_popup();
+                select_route(std::nullopt);
+                popups.open_pick({}, result.lon, result.lat);
+                needs_update = true;
                 return;
             }
             if(result.features.size() == 1)
@@ -927,8 +965,24 @@ namespace osect
             }
             if(out.route_delete && sel_id_before)
             {
-                delete_request = sel_id_before;
+                route_delete_request = sel_id_before;
                 features.set_selection(std::nullopt);
+                needs_update = true;
+            }
+            if(out.create_waypoint)
+            {
+                create_waypoint_request = out.create_waypoint;
+                needs_update = true;
+            }
+            if(out.delete_waypoint)
+            {
+                delete_waypoint_request = out.delete_waypoint;
+                features.set_selection(std::nullopt);
+                needs_update = true;
+            }
+            if(out.rename_waypoint)
+            {
+                rename_waypoint_request = out.rename_waypoint;
                 needs_update = true;
             }
 
@@ -977,34 +1031,48 @@ namespace osect
                         // rubber-band overlay (and drag-end mutation)
                         // can operate on a flight_route without re-
                         // querying user.db every frame.
-                        drag.route = load_route(*active_route_id);
-                        if(drag.route)
+                        route_drag.route = load_route(*active_route_id);
+                        if(route_drag.route)
                         {
-                            drag.mode = pick->part == route_pick::part_kind::waypoint ? route_drag_mode::waypoint
+                            route_drag.mode = pick->part == route_pick::part_kind::waypoint ? route_drag_mode::waypoint
                                                                                       : route_drag_mode::segment;
-                            drag.index = pick->inner_index;
-                            features.set_drag_preview(active_route_id, drag.route);
+                            route_drag.index = pick->inner_index;
+                            features.set_drag_preview(active_route_id, route_drag.route);
                             select_route(active_route_id, std::pair{lon, lat});
                         }
+                    }
+                    else if(const auto* wp = first_user_waypoint(picks.features))
+                    {
+                        // Press on a user waypoint: capture it as a
+                        // drag candidate. A press without motion falls
+                        // through to handle_pick on release (a click);
+                        // motion turns it into a drag.
+                        waypoint_drag = *wp;
                     }
                 }
             }
             else // release
             {
-                auto mode = drag.mode;
-                drag.mode = route_drag_mode::none;
+                auto mode = route_drag.mode;
+                route_drag.mode = route_drag_mode::none;
+                auto wp_drag = std::move(waypoint_drag);
+                waypoint_drag.reset();
                 pan_drag_active = false;
                 if(mode != route_drag_mode::none && dragged)
                 {
                     handle_route_drag_release(mode);
                 }
+                else if(wp_drag && dragged)
+                {
+                    handle_waypoint_drag_release(*wp_drag);
+                }
                 else if(!dragged && !imgui_wants_mouse)
                 {
                     handle_pick();
                 }
-                if(drag.route)
+                if(route_drag.route)
                 {
-                    drag.route.reset();
+                    route_drag.route.reset();
                     features.set_drag_preview(std::nullopt, std::nullopt);
                     needs_update = true;
                 }
@@ -1024,10 +1092,23 @@ namespace osect
             // If any button is held, dispatch as a drag.
             if(!buttons_down.empty())
             {
+                bool first_motion = !dragged;
                 dragged = true;
-                if(drag.mode != route_drag_mode::none)
+                if(route_drag.mode != route_drag_mode::none)
                 {
                     // Rubber-band follows cursor; force a redraw.
+                    needs_update = true;
+                }
+                else if(waypoint_drag)
+                {
+                    // First motion turns a press into a drag: drop any
+                    // selection / info popup so no stale halo lingers
+                    // at the waypoint's old position.
+                    if(first_motion)
+                    {
+                        close_info_popup();
+                    }
+                    // Drag ghost follows the cursor; force a redraw.
                     needs_update = true;
                 }
                 else if(pan_drag_active)
@@ -1211,10 +1292,14 @@ namespace osect
     {
         auto need_more = pimpl->draw_popups();
 
-        if(pimpl->drag.route && pimpl->drag.mode != route_drag_mode::none)
+        if(pimpl->route_drag.route && pimpl->route_drag.mode != route_drag_mode::none)
         {
-            auto is_segment = pimpl->drag.mode == route_drag_mode::segment;
-            draw_route_drag_rubber_band(pimpl->view, *pimpl->drag.route, is_segment, pimpl->drag.index);
+            auto is_segment = pimpl->route_drag.mode == route_drag_mode::segment;
+            draw_route_drag_rubber_band(pimpl->view, *pimpl->route_drag.route, is_segment, pimpl->route_drag.index);
+        }
+        if(pimpl->waypoint_drag && pimpl->dragged)
+        {
+            draw_waypoint_drag_ghost();
         }
 
         return need_more;
@@ -1372,23 +1457,63 @@ namespace osect
 
     std::optional<flight_route> map_widget::drain_route_drag_result()
     {
-        auto r = std::move(pimpl->drag_result);
-        pimpl->drag_result.reset();
+        auto r = std::move(pimpl->route_drag_result);
+        pimpl->route_drag_result.reset();
         return r;
     }
 
     std::optional<route_id> map_widget::drain_route_delete_request()
     {
-        auto r = pimpl->delete_request;
-        pimpl->delete_request.reset();
+        auto r = pimpl->route_delete_request;
+        pimpl->route_delete_request.reset();
         return r;
     }
 
     std::optional<route_id> map_widget::drain_route_activate_request()
     {
-        auto r = pimpl->activate_request;
-        pimpl->activate_request.reset();
+        auto r = pimpl->route_activate_request;
+        pimpl->route_activate_request.reset();
         return r;
+    }
+
+    std::optional<std::pair<double, double>> map_widget::drain_create_waypoint_request()
+    {
+        auto r = pimpl->create_waypoint_request;
+        pimpl->create_waypoint_request.reset();
+        return r;
+    }
+
+    std::optional<std::int64_t> map_widget::drain_delete_waypoint_request()
+    {
+        auto r = pimpl->delete_waypoint_request;
+        pimpl->delete_waypoint_request.reset();
+        return r;
+    }
+
+    std::optional<std::pair<std::int64_t, std::string>> map_widget::drain_rename_waypoint_request()
+    {
+        auto r = std::move(pimpl->rename_waypoint_request);
+        pimpl->rename_waypoint_request.reset();
+        return r;
+    }
+
+    std::optional<user_waypoint> map_widget::drain_waypoint_drag_result()
+    {
+        auto r = std::move(pimpl->waypoint_drag_result);
+        pimpl->waypoint_drag_result.reset();
+        return r;
+    }
+
+    void map_widget::show_waypoint_info(const user_waypoint& wp)
+    {
+        pimpl->open_info_popup(feature{wp}, wp.lon, wp.lat);
+        pimpl->features.invalidate();
+    }
+
+    void map_widget::notify_waypoints_changed()
+    {
+        pimpl->features.invalidate();
+        pimpl->needs_update = true;
     }
 
     void map_widget::render_frame(sdl::command_buffer& cmd, sdl::texture& swapchain)

@@ -10,6 +10,7 @@ namespace osect
         {"RWY", "RUNWAYS"},
         {"NAV", "NAVAIDS"},
         {"FIX", "FIXES"},
+        {"WPT", "USER WAYPOINTS"},
         {"OBS", "OBSTACLES"},
         {"AWOS", "WEATHER STATIONS"},
         {"COM", "COMM OUTLETS"},

@@ -14,6 +14,7 @@
 
 using osect::route_waypoint_row;
 using osect::user_database;
+using osect::user_waypoint;
 
 namespace
 {
@@ -286,4 +287,132 @@ TEST_CASE("opening a database with a newer schema version throws")
         raw.exec("UPDATE SCHEMA_VERSIONS SET version = 999 WHERE group_name = 'routes'");
     }
     CHECK_THROWS_AS(user_database(tmp.db_file(), /*read_only=*/false), std::runtime_error);
+}
+
+TEST_CASE("insert_waypoint auto-names WPT<n> and round-trips its fields")
+{
+    tmp_dir tmp("wpt_insert");
+    user_database db(tmp.db_file(), /*read_only=*/false);
+    CHECK(db.load_waypoints().empty());
+
+    const auto a = db.insert_waypoint(37.5, -122.3);
+    const auto b = db.insert_waypoint(40.0, -105.0);
+    CHECK(a.name == "WPT1");
+    CHECK(b.name == "WPT2");
+    CHECK(a.waypoint_id != b.waypoint_id);
+
+    auto all = db.load_waypoints();
+    REQUIRE(all.size() == 2);
+    CHECK(all[0].waypoint_id == a.waypoint_id);
+    CHECK(all[0].name == "WPT1");
+    // lat/lon round-trip a stored IEEE double untouched — exact.
+    CHECK(all[0].lat == 37.5);
+    CHECK(all[0].lon == -122.3);
+    CHECK(all[1].name == "WPT2");
+
+    const auto got = db.query_waypoint(b.waypoint_id);
+    REQUIRE(got);
+    CHECK(got->name == "WPT2");
+    CHECK(got->lat == 40.0);
+    CHECK(got->lon == -105.0);
+    CHECK_FALSE(db.query_waypoint(9999));
+}
+
+TEST_CASE("insert_waypoint fills the lowest unused WPT number")
+{
+    tmp_dir tmp("wpt_gap");
+    user_database db(tmp.db_file(), /*read_only=*/false);
+
+    const auto w1 = db.insert_waypoint(1.0, 1.0);
+    const auto w2 = db.insert_waypoint(2.0, 2.0);
+    const auto w3 = db.insert_waypoint(3.0, 3.0);
+    CHECK(w1.name == "WPT1");
+    CHECK(w2.name == "WPT2");
+    CHECK(w3.name == "WPT3");
+
+    db.delete_waypoint(w2.waypoint_id);
+
+    // WPT2 is free again — the next insert reuses the lowest gap.
+    const auto w4 = db.insert_waypoint(4.0, 4.0);
+    CHECK(w4.name == "WPT2");
+}
+
+TEST_CASE("update_waypoint writes name and position, and rejects collisions")
+{
+    tmp_dir tmp("wpt_update");
+    user_database db(tmp.db_file(), /*read_only=*/false);
+
+    const auto a = db.insert_waypoint(1.0, 1.0); // WPT1
+    const auto b = db.insert_waypoint(2.0, 2.0); // WPT2
+
+    // A fresh name and a new position are written together.
+    CHECK(db.update_waypoint(a.waypoint_id, "HOME", 47.5, -122.25));
+    {
+        const auto got = db.query_waypoint(a.waypoint_id);
+        REQUIRE(got);
+        CHECK(got->name == "HOME");
+        CHECK(got->lat == 47.5);
+        CHECK(got->lon == -122.25);
+    }
+
+    // Another waypoint's name is rejected; nothing is written — the
+    // position too, so the collision pre-check runs before the UPDATE.
+    CHECK_FALSE(db.update_waypoint(b.waypoint_id, "HOME", 9.0, 9.0));
+    // An empty name is rejected.
+    CHECK_FALSE(db.update_waypoint(b.waypoint_id, "", 9.0, 9.0));
+    {
+        const auto got = db.query_waypoint(b.waypoint_id);
+        REQUIRE(got);
+        CHECK(got->name == "WPT2");
+        CHECK(got->lat == 2.0);
+        CHECK(got->lon == 2.0);
+    }
+
+    // Re-positioning under the waypoint's own name (the drag case) is
+    // allowed.
+    CHECK(db.update_waypoint(b.waypoint_id, "WPT2", 30.0, -80.0));
+    {
+        const auto got = db.query_waypoint(b.waypoint_id);
+        REQUIRE(got);
+        CHECK(got->lat == 30.0);
+        CHECK(got->lon == -80.0);
+    }
+
+    // Freeing WPT1 lets the next auto-named insert reuse it.
+    const auto c = db.insert_waypoint(3.0, 3.0);
+    CHECK(c.name == "WPT1");
+}
+
+TEST_CASE("delete_waypoint removes the waypoint and is a no-op on unknown ids")
+{
+    tmp_dir tmp("wpt_delete");
+    user_database db(tmp.db_file(), /*read_only=*/false);
+
+    const auto w = db.insert_waypoint(5.0, 6.0);
+    db.delete_waypoint(w.waypoint_id);
+    CHECK(db.load_waypoints().empty());
+    CHECK_FALSE(db.query_waypoint(w.waypoint_id));
+
+    db.delete_waypoint(9999); // unknown id — no-op, no throw
+}
+
+TEST_CASE("a read-only handle reads waypoints written by a read-write owner")
+{
+    tmp_dir tmp("wpt_readonly");
+    std::int64_t id = 0;
+    {
+        user_database writer(tmp.db_file(), /*read_only=*/false);
+        id = writer.insert_waypoint(12.34, -56.78).waypoint_id;
+    }
+    const user_database reader(tmp.db_file());
+    auto all = reader.load_waypoints();
+    REQUIRE(all.size() == 1);
+    CHECK(all[0].waypoint_id == id);
+    CHECK(all[0].name == "WPT1");
+    CHECK(all[0].lat == 12.34);
+    CHECK(all[0].lon == -56.78);
+
+    const auto got = reader.query_waypoint(id);
+    REQUIRE(got);
+    CHECK(got->name == "WPT1");
 }

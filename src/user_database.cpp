@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace osect
 {
@@ -102,6 +103,29 @@ namespace osect
             );
         )";
 
+        // Waypoints group, v1.
+        //
+        // USER_WAYPOINT holds user-defined persistent waypoints.
+        // waypoint_id is AUTOINCREMENT so a row's identity stays
+        // stable for future cross-references. `name` is UNIQUE and,
+        // by CHECK, non-empty — it is the identifier the waypoint is
+        // referenced by in route shorthand and search.
+        constexpr int WAYPOINTS_GROUP_VERSION = 1;
+        constexpr const char* WAYPOINTS_GROUP_NAME = "waypoints";
+        constexpr const char* WAYPOINTS_GROUP_DROP_SQL = R"(
+            DROP TABLE IF EXISTS USER_WAYPOINT;
+        )";
+        constexpr const char* WAYPOINTS_GROUP_CREATE_SQL = R"(
+            CREATE TABLE USER_WAYPOINT (
+                waypoint_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL UNIQUE CHECK(name <> ''),
+                lat         REAL NOT NULL,
+                lon         REAL NOT NULL,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            );
+        )";
+
         std::string format_iso8601(std::chrono::system_clock::time_point tp)
         {
             const auto t = std::chrono::system_clock::to_time_t(tp);
@@ -122,21 +146,22 @@ namespace osect
             return format_iso8601(std::chrono::system_clock::now());
         }
 
-        // Bring the routes group to ROUTES_GROUP_VERSION:
-        //   missing    → create v2, stamp version.
+        // Bring one schema group to `version`:
+        //   missing    → create, stamp version.
         //   == current → no-op.
         //   > current  → throw. Refuse to operate on a database newer
         //                than this build understands.
         //   < current  → drop and recreate. No users in the field yet,
-        //                so the v1→v2 change carries no migration; a
+        //                so a schema bump carries no migration; a real
         //                forward-migration branch goes here later.
-        void ensure_routes_group(sqlite::database& db)
+        void ensure_group(sqlite::database& db, const char* group_name, int version, const char* drop_sql,
+                          const char* create_sql)
         {
             int on_disk = 0;
             bool present = false;
             {
                 auto check = db.prepare("SELECT version FROM SCHEMA_VERSIONS WHERE group_name = ?");
-                check.bind(1, ROUTES_GROUP_NAME);
+                check.bind(1, group_name);
                 if(check.step())
                 {
                     on_disk = check.column_int(0);
@@ -144,37 +169,37 @@ namespace osect
                 }
             }
 
-            if(present && on_disk == ROUTES_GROUP_VERSION)
+            if(present && on_disk == version)
             {
                 return;
             }
 
-            if(present && on_disk > ROUTES_GROUP_VERSION)
+            if(present && on_disk > version)
             {
                 throw std::runtime_error(
-                    std::string("user.db: '") + ROUTES_GROUP_NAME + "' group is at version " +
+                    std::string("user.db: '") + group_name + "' group is at version " +
                     std::to_string(on_disk) + " but this build only understands version " +
-                    std::to_string(ROUTES_GROUP_VERSION) +
+                    std::to_string(version) +
                     ". Refusing to open — upgrade the application or restore a backup.");
             }
 
             db.exec("BEGIN");
             try
             {
-                db.exec(ROUTES_GROUP_DROP_SQL);
-                db.exec(ROUTES_GROUP_CREATE_SQL);
+                db.exec(drop_sql);
+                db.exec(create_sql);
                 if(present)
                 {
                     auto upd = db.prepare("UPDATE SCHEMA_VERSIONS SET version = ? WHERE group_name = ?");
-                    upd.bind(1, ROUTES_GROUP_VERSION);
-                    upd.bind(2, ROUTES_GROUP_NAME);
+                    upd.bind(1, version);
+                    upd.bind(2, group_name);
                     upd.step();
                 }
                 else
                 {
                     auto ins = db.prepare("INSERT INTO SCHEMA_VERSIONS (group_name, version) VALUES (?, ?)");
-                    ins.bind(1, ROUTES_GROUP_NAME);
-                    ins.bind(2, ROUTES_GROUP_VERSION);
+                    ins.bind(1, group_name);
+                    ins.bind(2, version);
                     ins.step();
                 }
                 db.exec("COMMIT");
@@ -209,7 +234,10 @@ namespace osect
                 db.exec("PRAGMA journal_mode = WAL");
                 db.exec("PRAGMA foreign_keys = ON");
                 db.exec(BOOTSTRAP_SQL);
-                ensure_routes_group(db);
+                ensure_group(db, ROUTES_GROUP_NAME, ROUTES_GROUP_VERSION, ROUTES_GROUP_DROP_SQL,
+                             ROUTES_GROUP_CREATE_SQL);
+                ensure_group(db, WAYPOINTS_GROUP_NAME, WAYPOINTS_GROUP_VERSION, WAYPOINTS_GROUP_DROP_SQL,
+                             WAYPOINTS_GROUP_CREATE_SQL);
             }
             return db;
         }
@@ -229,6 +257,33 @@ namespace osect
             r.airway_id = airway.empty() ? std::nullopt : std::optional<std::string>(std::move(airway));
             return r;
         }
+
+        // The integer suffix of an auto-generated waypoint name —
+        // "WPT" followed by one or more digits — or nullopt for any
+        // other name. Used to pick the next free WPT<n>.
+        std::optional<int> wpt_name_number(const std::string& name)
+        {
+            constexpr std::size_t prefix_len = 3; // "WPT"
+            if(name.size() <= prefix_len || name.compare(0, prefix_len, "WPT") != 0)
+            {
+                return std::nullopt;
+            }
+            for(std::size_t i = prefix_len; i < name.size(); ++i)
+            {
+                if(name[i] < '0' || name[i] > '9')
+                {
+                    return std::nullopt;
+                }
+            }
+            try
+            {
+                return std::stoi(name.substr(prefix_len));
+            }
+            catch(const std::out_of_range&)
+            {
+                return std::nullopt;
+            }
+        }
     }
 
     struct user_database::impl
@@ -246,6 +301,13 @@ namespace osect
         sqlite::statement stmt_insert_waypoint;
         sqlite::statement stmt_delete_waypoints;
         sqlite::statement stmt_delete_route;
+        sqlite::statement stmt_load_user_waypoints;
+        sqlite::statement stmt_query_user_waypoint;
+        sqlite::statement stmt_user_waypoint_names;
+        sqlite::statement stmt_insert_user_waypoint;
+        sqlite::statement stmt_user_waypoint_name_taken;
+        sqlite::statement stmt_update_user_waypoint;
+        sqlite::statement stmt_delete_user_waypoint;
 
         explicit impl(const std::filesystem::path& p, bool read_only)
             : db(open_and_init_schema(p, read_only)),
@@ -282,6 +344,28 @@ namespace osect
             )")),
               stmt_delete_route(db.prepare(R"(
                 DELETE FROM ROUTE WHERE route_id = ?
+            )")),
+              stmt_load_user_waypoints(db.prepare(R"(
+                SELECT waypoint_id, name, lat, lon FROM USER_WAYPOINT ORDER BY waypoint_id
+            )")),
+              stmt_query_user_waypoint(db.prepare(R"(
+                SELECT waypoint_id, name, lat, lon FROM USER_WAYPOINT WHERE waypoint_id = ?
+            )")),
+              stmt_user_waypoint_names(db.prepare(R"(
+                SELECT name FROM USER_WAYPOINT
+            )")),
+              stmt_insert_user_waypoint(db.prepare(R"(
+                INSERT INTO USER_WAYPOINT (name, lat, lon, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+            )")),
+              stmt_user_waypoint_name_taken(db.prepare(R"(
+                SELECT 1 FROM USER_WAYPOINT WHERE name = ? AND waypoint_id != ?
+            )")),
+              stmt_update_user_waypoint(db.prepare(R"(
+                UPDATE USER_WAYPOINT SET name = ?, lat = ?, lon = ?, updated_at = ? WHERE waypoint_id = ?
+            )")),
+              stmt_delete_user_waypoint(db.prepare(R"(
+                DELETE FROM USER_WAYPOINT WHERE waypoint_id = ?
             )"))
         {
         }
@@ -455,6 +539,116 @@ namespace osect
         auto& s = pimpl->stmt_delete_route;
         s.reset();
         s.bind(1, route_id);
+        s.step();
+    }
+
+    std::vector<user_waypoint> user_database::load_waypoints() const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::vector<user_waypoint> out;
+        auto& st = pimpl->stmt_load_user_waypoints;
+        st.reset();
+        while(st.step())
+        {
+            user_waypoint w;
+            w.waypoint_id = st.column_int64(0);
+            w.name        = st.column_text(1);
+            w.lat         = st.column_double(2);
+            w.lon         = st.column_double(3);
+            out.push_back(std::move(w));
+        }
+        return out;
+    }
+
+    std::optional<user_waypoint> user_database::query_waypoint(std::int64_t waypoint_id) const
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        auto& st = pimpl->stmt_query_user_waypoint;
+        st.reset();
+        st.bind(1, waypoint_id);
+        if(!st.step())
+        {
+            return std::nullopt;
+        }
+        user_waypoint w;
+        w.waypoint_id = st.column_int64(0);
+        w.name        = st.column_text(1);
+        w.lat         = st.column_double(2);
+        w.lon         = st.column_double(3);
+        return w;
+    }
+
+    user_waypoint user_database::insert_waypoint(double lat, double lon)
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+
+        // Auto-name with the lowest unused WPT<n>. The mutex serializes
+        // every user_database call, so this scan-then-insert can't race.
+        std::unordered_set<int> used;
+        {
+            auto& names = pimpl->stmt_user_waypoint_names;
+            names.reset();
+            while(names.step())
+            {
+                if(const auto n = wpt_name_number(names.column_text(0)))
+                {
+                    used.insert(*n);
+                }
+            }
+        }
+        int n = 1;
+        while(used.count(n) != 0)
+        {
+            ++n;
+        }
+        const auto name = "WPT" + std::to_string(n);
+
+        const auto ts = now_iso8601();
+        auto& s = pimpl->stmt_insert_user_waypoint;
+        s.reset();
+        s.bind(1, name);
+        s.bind(2, lat);
+        s.bind(3, lon);
+        s.bind(4, ts);
+        s.bind(5, ts);
+        s.step();
+        return user_waypoint{pimpl->db.last_insert_rowid(), name, lat, lon};
+    }
+
+    bool user_database::update_waypoint(std::int64_t waypoint_id, const std::string& name, double lat, double lon)
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        if(name.empty())
+        {
+            return false;
+        }
+        {
+            auto& taken = pimpl->stmt_user_waypoint_name_taken;
+            taken.reset();
+            taken.bind(1, name);
+            taken.bind(2, waypoint_id);
+            if(taken.step())
+            {
+                return false;
+            }
+        }
+        auto& s = pimpl->stmt_update_user_waypoint;
+        s.reset();
+        s.bind(1, name);
+        s.bind(2, lat);
+        s.bind(3, lon);
+        s.bind(4, now_iso8601());
+        s.bind(5, waypoint_id);
+        s.step();
+        return true;
+    }
+
+    void user_database::delete_waypoint(std::int64_t waypoint_id)
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        auto& s = pimpl->stmt_delete_user_waypoint;
+        s.reset();
+        s.bind(1, waypoint_id);
         s.step();
     }
 }

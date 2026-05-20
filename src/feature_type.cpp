@@ -602,6 +602,7 @@ namespace osect
         DECLARE_POINT_FEATURE_TYPE(obstacle_type, "Obstacles", layer_obstacles, "OBS", obstacle)
         DECLARE_POINT_FEATURE_TYPE(comm_outlet_type, "RCO", layer_rco, "COM", comm_outlet)
         DECLARE_POINT_FEATURE_TYPE(awos_type, "AWOS", layer_awos, "AWOS", awos)
+        DECLARE_POINT_FEATURE_TYPE(user_waypoint_type, "User Waypoints", layer_user_waypoints, "WPT", user_waypoint)
 
 #undef DECLARE_AREA_FEATURE_TYPE
 #undef DECLARE_POINT_FEATURE_TYPE
@@ -653,6 +654,22 @@ namespace osect
                     continue;
                 }
                 out.push_back(f);
+            }
+        }
+
+        void user_waypoint_type::pick(const pick_context& ctx, std::vector<feature>& out) const
+        {
+            if(!ctx.styles.user_waypoint_visible(ctx.zoom))
+            {
+                return;
+            }
+            for(const auto& w : ctx.udb.load_waypoints())
+            {
+                if(w.lon >= ctx.pick_box.lon_min && w.lon <= ctx.pick_box.lon_max &&
+                   w.lat >= ctx.pick_box.lat_min && w.lat <= ctx.pick_box.lat_max)
+                {
+                    out.push_back(w);
+                }
             }
         }
 
@@ -1076,6 +1093,10 @@ namespace osect
         {
             return "Fix: " + std::get<fix>(f).fix_id;
         }
+        std::string user_waypoint_type::summary(const feature& f) const
+        {
+            return "Waypoint: " + std::get<user_waypoint>(f).name;
+        }
         std::string obstacle_type::summary(const feature& f) const
         {
             const auto& v = std::get<obstacle>(f);
@@ -1194,6 +1215,16 @@ namespace osect
             return {
                 {"ID", v.fix_id},         {"State", v.state_code},       {"ICAO region", v.icao_region_code},
                 {"Use code", v.use_code}, {"Low ARTCC", v.artcc_id_low}, {"High ARTCC", v.artcc_id_high},
+            };
+        }
+
+        kv_list user_waypoint_type::info_kv(const feature& f) const
+        {
+            const auto& v = std::get<user_waypoint>(f);
+            return {
+                {"Name", v.name},
+                {"Latitude", fmt_dbl(v.lat, 5)},
+                {"Longitude", fmt_dbl(v.lon, 5)},
             };
         }
 
@@ -1562,6 +1593,7 @@ namespace osect
         // Label placement priorities (higher = placed first in overlap pass).
         constexpr auto LABEL_PRIORITY_AIRPORT_TOWERED = 100;
         constexpr auto LABEL_PRIORITY_AIRPORT_UNTOWERED = 80;
+        constexpr auto LABEL_PRIORITY_USER_WAYPOINT = 70;
         constexpr auto LABEL_PRIORITY_NAVAID_VOR = 60;
         constexpr auto LABEL_PRIORITY_NAVAID_NDB = 40;
         constexpr auto LABEL_PRIORITY_AIRWAY = 50;
@@ -1801,6 +1833,15 @@ namespace osect
             {
                 add_waypoint_star_polyline(pd, cx, cy, r, ls);
             }
+        }
+
+        // --- User-waypoint icon: a filled orange square, FIX-sized ---
+
+        void emit_user_waypoint_icon(polyline_data& pd, double cx, double cy, double r, const feature_style& fs)
+        {
+            auto ls = to_line_style(fs);
+            ls.fill_width = SYMBOL_FILL_PX;
+            add_rect(pd, cx, cy, r, r, ls);
         }
 
         // --- Obstacle icon ---
@@ -2279,6 +2320,29 @@ namespace osect
                     .my = lat_to_my(f.lat),
                     .priority = on_airway ? LABEL_PRIORITY_FIX_AIRWAY : LABEL_PRIORITY_FIX_OTHER,
                     .layer = layer_fixes,
+                });
+            }
+        }
+
+        void user_waypoint_type::build(const build_context& ctx) const
+        {
+            if(!ctx.styles.user_waypoint_visible(ctx.req.zoom))
+            {
+                return;
+            }
+            const auto& fs = ctx.styles.user_waypoint_style();
+            auto radius = ctx.req.half_extent_y * SYMBOL_RADIUS_FIX;
+            for(const auto& w : ctx.udb.load_waypoints())
+            {
+                auto cx = lon_to_mx(w.lon) + ctx.mx_offset;
+                auto cy = lat_to_my(w.lat);
+                emit_user_waypoint_icon(ctx.poly[layer_user_waypoints], cx, cy, radius, fs);
+                ctx.labels.push_back({
+                    .text = w.name,
+                    .mx = cx,
+                    .my = cy,
+                    .priority = LABEL_PRIORITY_USER_WAYPOINT,
+                    .layer = layer_user_waypoints,
                 });
             }
         }
@@ -3092,6 +3156,15 @@ namespace osect
             emit_fix_icon(out, g.cx, g.cy, g.r_base, v, ctx.styles.fix_style(v.use_code));
         }
 
+        void user_waypoint_type::build_selection(const build_context& ctx, const feature& f, polyline_data& out,
+                                                 polygon_fill_data& /*fill*/) const
+        {
+            const auto& v = std::get<user_waypoint>(f);
+            auto g = point_selection_geom_for(v, ctx.req);
+            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_user_waypoint_icon(out, g.cx, g.cy, g.r_base, ctx.styles.user_waypoint_style());
+        }
+
         void obstacle_type::build_selection(const build_context& ctx, const feature& f, polyline_data& out,
                                             polygon_fill_data& /*fill*/) const
         {
@@ -3660,7 +3733,7 @@ namespace osect
     {
         // Order controls z-priority of pick results and checkbox order.
         std::vector<std::unique_ptr<feature_type>> v;
-        v.reserve(17);
+        v.reserve(18);
         // Order also determines build dependency order: navaid populates
         // navaid_positions (used by airway clearance), airway populates
         // airway_waypoints (used by fix on-airway test). So: navaid ->
@@ -3681,6 +3754,7 @@ namespace osect
         v.push_back(std::make_unique<obstacle_type>());
         v.push_back(std::make_unique<comm_outlet_type>());
         v.push_back(std::make_unique<awos_type>());
+        v.push_back(std::make_unique<user_waypoint_type>());
         // Routes are user-created runtime data; route_type reads
         // them from the build / pick context rather than from the
         // database.

@@ -361,7 +361,7 @@ namespace osect
         float gap_length;
     };
 
-    static constexpr std::array<style_default, 70> defaults = {{
+    static constexpr std::array<style_default, 71> defaults = {{
         // Airports — zoom thresholds keyed by airspace class
         {"airport_class_b", 7.0, "", 1.0F, 0.0F, 0.0F},
         {"airport_class_c", 8.0, "", 1.0F, 0.0F, 0.0F},
@@ -454,6 +454,8 @@ namespace osect
         {"route", 0.0, "magenta", 3.0F, 0.0F, 0.0F},
         // TFR
         {"tfr", 6.0, "crimson", 2.0F, 15.0F, 8.0F},
+        // User-defined waypoints
+        {"waypoint_user", 0.0, "orange", 1.0F, 0.0F, 0.0F},
     }};
 
     static feature_style resolve_default(const style_default& d)
@@ -884,6 +886,14 @@ namespace osect
     const feature_style& chart_style::tfr_style() const
     {
         return get("tfr");
+    }
+    bool chart_style::user_waypoint_visible(double zoom) const
+    {
+        return visible("waypoint_user", zoom);
+    }
+    const feature_style& chart_style::user_waypoint_style() const
+    {
+        return get("waypoint_user");
     }
 
     // PJA

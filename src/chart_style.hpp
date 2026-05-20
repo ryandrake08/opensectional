@@ -92,6 +92,10 @@ namespace osect
         bool tfr_visible(double zoom) const;
         const feature_style& tfr_style() const;
 
+        // User-defined waypoint visibility and style
+        bool user_waypoint_visible(double zoom) const;
+        const feature_style& user_waypoint_style() const;
+
         // PJA visibility and style (area vs point)
         bool pja_area_visible(double zoom) const;
         bool pja_point_visible(double zoom) const;

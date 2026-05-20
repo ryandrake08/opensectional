@@ -5,6 +5,7 @@
 #include "ui_sectioned_list.hpp"
 #include <imgui.h>
 #include <imgui/scoped.hpp>
+#include <misc/cpp/imgui_stdlib.h>
 #include <string>
 
 namespace osect
@@ -39,6 +40,11 @@ namespace osect
             double anchor_lon = 0.0;
             double anchor_lat = 0.0;
             feature payload{airport{}};
+            // Inline-rename state, used only for a user_waypoint
+            // payload. `renaming` swaps the Rename button for an
+            // InputText pre-filled with `rename_buf`.
+            bool renaming = false;
+            std::string rename_buf;
         };
 
         // Compute popup placement for a world-space lon/lat anchor.
@@ -101,6 +107,7 @@ namespace osect
         p.anchor_lon = anchor_lon;
         p.anchor_lat = anchor_lat;
         p.payload = f;
+        p.renaming = false;
     }
 
     void popup_manager::close_info()
@@ -150,8 +157,16 @@ namespace osect
                                         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
                                             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar);
 
-            // Header: lat/long left, [X] right
+            // Header: lat/long left, [WPT] [X] right
             ImGui::Text("Lat, Long: %.5f, %.5f", p.click_lat, p.click_lon);
+            ImGui::SameLine();
+            if(ImGui::SmallButton("WPT##pick_make_wpt"))
+            {
+                out.create_waypoint = std::pair{p.click_lon, p.click_lat};
+                p.open = false;
+                p.items.clear();
+                return false;
+            }
             if(imgui::right_aligned_close_button("X##pick_close"))
             {
                 p.open = false;
@@ -241,6 +256,49 @@ namespace osect
             ImGui::Text("Total: %.1f nm", total_nm);
             (void)rp;
             return ImGui::Button("Delete route");
+        }
+
+        // Rename / Delete controls for a user-waypoint info popup.
+        // Rename swaps in an inline text field (the codebase uses no
+        // modal popups); the chosen action is surfaced via `out`.
+        void draw_waypoint_actions(info_state& p, popup_manager::actions& out)
+        {
+            const auto& wp = std::get<user_waypoint>(p.payload);
+            ImGui::Separator();
+            if(p.renaming)
+            {
+                ImGui::SetNextItemWidth(180.0F);
+                bool submit = ImGui::InputText("##wpt_rename", &p.rename_buf, ImGuiInputTextFlags_EnterReturnsTrue);
+                ImGui::SameLine();
+                if(ImGui::Button("Save"))
+                {
+                    submit = true;
+                }
+                ImGui::SameLine();
+                if(ImGui::Button("Cancel"))
+                {
+                    p.renaming = false;
+                }
+                if(submit && !p.rename_buf.empty())
+                {
+                    out.rename_waypoint = std::pair{wp.waypoint_id, p.rename_buf};
+                    p.renaming = false;
+                }
+            }
+            else
+            {
+                if(ImGui::Button("Rename"))
+                {
+                    p.renaming = true;
+                    p.rename_buf = wp.name;
+                }
+                ImGui::SameLine();
+                if(ImGui::Button("Delete"))
+                {
+                    p.open = false;
+                    out.delete_waypoint = wp.waypoint_id;
+                }
+            }
         }
 
         bool draw_info(info_state& p, popup_manager::actions& out, const map_view& view,
@@ -356,6 +414,11 @@ namespace osect
                         ImGui::PopTextWrapPos();
                     }
                 }
+
+                if(std::holds_alternative<user_waypoint>(p.payload))
+                {
+                    draw_waypoint_actions(p, out);
+                }
             }
 
             auto need_more = p.warmup_frames > 0;
@@ -398,6 +461,16 @@ namespace osect
                 draw_from(index + 1);
             }
         }
+    }
+
+    void draw_waypoint_drag_ghost()
+    {
+        auto cursor = ImGui::GetMousePos();
+        auto* dl = ImGui::GetForegroundDrawList();
+        constexpr float half = 7.0F;
+        const auto col = IM_COL32(255, 165, 0, 255); // orange, matching the waypoint glyph
+        dl->AddRect(ImVec2(cursor.x - half, cursor.y - half), ImVec2(cursor.x + half, cursor.y + half), col, 0.0F, 0,
+                    2.0F);
     }
 
     popup_manager::actions popup_manager::draw(const map_view& view,

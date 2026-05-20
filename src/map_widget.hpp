@@ -1,9 +1,12 @@
 #pragma once
 #include "ephemeral_source.hpp"
 #include "flight_route.hpp"
+#include "user_database.hpp"
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 class ini_config;
@@ -111,6 +114,39 @@ namespace osect
         // switches the panel tab to the corresponding tab and
         // updates active/selection accordingly. nullopt otherwise.
         std::optional<route_id> drain_route_activate_request();
+
+        // If the user clicked "WPT" in the pick selector since the
+        // last call, return the {lon, lat} to create a user waypoint
+        // at. The caller persists via user_database::insert_waypoint
+        // and passes the stored row to show_waypoint_info. nullopt
+        // otherwise.
+        std::optional<std::pair<double, double>> drain_create_waypoint_request();
+
+        // If the user clicked Delete on a user-waypoint info popup
+        // since the last call, return the waypoint_id. The caller
+        // owns the user.db delete, then calls notify_waypoints_changed.
+        // nullopt otherwise.
+        std::optional<std::int64_t> drain_delete_waypoint_request();
+
+        // If the user confirmed a waypoint rename since the last
+        // call, return {waypoint_id, new name}. The caller owns the
+        // user.db update_waypoint call. nullopt otherwise.
+        std::optional<std::pair<std::int64_t, std::string>> drain_rename_waypoint_request();
+
+        // If the user finished dragging a waypoint since the last
+        // call, return it with its new position. The caller persists
+        // via user_database::update_waypoint, then calls
+        // notify_waypoints_changed. nullopt otherwise.
+        std::optional<user_waypoint> drain_waypoint_drag_result();
+
+        // Open the info popup on `wp`, select it, and flag a rebuild.
+        // Called after a create or rename has been persisted so the
+        // popup reflects the stored waypoint.
+        void show_waypoint_info(const user_waypoint& wp);
+
+        // Flag a feature rebuild after the caller has changed the
+        // user-waypoint set in user.db (e.g. a delete).
+        void notify_waypoints_changed();
 
         // Tell the map whether ImGui is consuming the mouse this frame
         // (suppresses pick on click when true).

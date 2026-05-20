@@ -3,6 +3,7 @@
 #include "flight_route.hpp" // route_id
 #include "nasr_database.hpp"
 #include "ephemeral_database.hpp"
+#include "user_database.hpp" // user_waypoint
 #include <cstddef>
 #include <limits>
 #include <string>
@@ -43,7 +44,7 @@ namespace osect
     };
 
     using feature = std::variant<airport, navaid, fix, obstacle, class_airspace, sua, artcc, adiz, tfr, maa, pja, awos,
-                                 comm_outlet, airway_segment, mtr_segment, runway, route_pick>;
+                                 comm_outlet, airway_segment, mtr_segment, runway, user_waypoint, route_pick>;
 
     struct pick_result
     {

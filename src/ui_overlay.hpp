@@ -37,6 +37,7 @@ namespace osect
         layer_navaids,
         layer_airports,
         layer_tfr,
+        layer_user_waypoints,
         layer_route,
         layer_sdf_count,
 

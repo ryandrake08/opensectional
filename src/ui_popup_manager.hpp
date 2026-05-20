@@ -1,8 +1,11 @@
 #pragma once
 
 #include "pick_result.hpp"
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace osect
@@ -68,6 +71,15 @@ namespace osect
             // only when the info popup was showing a route_pick;
             // the caller drains and removes the route.
             bool route_delete = false;
+            // The user clicked "WPT" in the pick selector — create a
+            // user waypoint at the selector's click point {lon, lat}.
+            std::optional<std::pair<double, double>> create_waypoint;
+            // The user clicked Delete on a user-waypoint info popup;
+            // the value is the waypoint_id.
+            std::optional<std::int64_t> delete_waypoint;
+            // The user confirmed a rename in a user-waypoint info
+            // popup. The pair is {waypoint_id, new name}.
+            std::optional<std::pair<std::int64_t, std::string>> rename_waypoint;
         };
 
         // Draw all open popups. `route_for_popup` is the parsed
@@ -86,5 +98,9 @@ namespace osect
     // the neighbors of `index`, when they exist).
     void draw_route_drag_rubber_band(const map_view& view, const flight_route& route, bool is_segment_drag,
                                      std::size_t index);
+
+    // Draw an orange square outline at the current mouse cursor — the
+    // affordance for an in-progress user-waypoint drag.
+    void draw_waypoint_drag_ghost();
 
 } // namespace osect

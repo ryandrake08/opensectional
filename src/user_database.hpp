@@ -20,9 +20,21 @@ namespace osect
         std::vector<route_waypoint_row> waypoints;
     };
 
-    // SQLite-backed persistence for user-authored data — today,
-    // saved flight routes; designed for user-defined waypoints to
-    // join as a second schema group later.
+    // A user-defined persistent waypoint: a named lat/lon point the
+    // user places on the map and reuses across sessions. `name` is
+    // unique and non-empty — it is the identifier the waypoint is
+    // referenced by in route shorthand and search.
+    struct user_waypoint
+    {
+        std::int64_t waypoint_id;
+        std::string name;
+        double lat;
+        double lon;
+    };
+
+    // SQLite-backed persistence for user-authored data: saved flight
+    // routes and user-defined waypoints, each its own versioned
+    // schema group.
     //
     // Lives in the platform-durable application data directory
     // (NOT the cache directory ephemeral.db lives in): user
@@ -90,5 +102,26 @@ namespace osect
         // Remove a saved route. Its waypoint rows cascade away. No-op
         // if route_id does not exist.
         void delete_route(std::int64_t route_id);
+
+        // ----- USER_WAYPOINT -----
+        // Every user-defined waypoint in waypoint_id ascending order.
+        std::vector<user_waypoint> load_waypoints() const;
+
+        // Single-row lookup by id. nullopt if no row matches.
+        std::optional<user_waypoint> query_waypoint(std::int64_t waypoint_id) const;
+
+        // Create a waypoint at lat/lon with an auto-generated unique
+        // name — the lowest unused WPT<n>. Returns the stored row.
+        user_waypoint insert_waypoint(double lat, double lon);
+
+        // Replace a waypoint's name and position. Returns false,
+        // writing nothing, if `name` is empty or already used by
+        // another waypoint; true otherwise. A true return on an
+        // unknown waypoint_id is a no-op (the name is free, but no
+        // row matches).
+        bool update_waypoint(std::int64_t waypoint_id, const std::string& name, double lat, double lon);
+
+        // Remove a waypoint. No-op if waypoint_id does not exist.
+        void delete_waypoint(std::int64_t waypoint_id);
     };
 }
