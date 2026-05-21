@@ -7,6 +7,7 @@
 // Primitive types
 #define PRIMITIVE_POLYLINE 0
 #define PRIMITIVE_CIRCLE   1
+#define PRIMITIVE_ICON     2
 
 // Shared uniforms (same for all instances)
 #ifdef VERTEX_SHADER
@@ -36,8 +37,8 @@ struct PolylineMetadata
     float fill_width;          // pixels (inside/left of path direction)
     uint segment_count;
     uint point_offset;
-    uint primitive_type;       // 0 = polyline, 1 = circle
-    float2 circle_center;     // world-space Mercator (for circles)
+    uint primitive_type;       // 0 = polyline, 1 = circle, 2 = icon
+    float2 circle_center;     // world-space Mercator (circle center, or icon anchor)
     float circle_radius;       // world-space Mercator (for circles)
     float _pad2;
 };
@@ -102,7 +103,7 @@ float4 load_polyline_point(uint index) { return polyline[index]; }
 struct PSInput
 {
     float4 position : SV_Position;
-    float2 world_pos : TEXCOORD0;
+    float2 world_pos : TEXCOORD0; // world space (polyline) or screen space (icon)
     nointerpolation uint instance_id : TEXCOORD1;
 };
 
@@ -110,15 +111,8 @@ PSInput vertex_main(uint vertex_id : SV_VertexID, uint instance_id : SV_Instance
 {
     PolylineMetadata meta = load_metadata(instance_id);
 
-    // Expand bounds by line margin in world space
     float effective_fill = (meta.fill_width > 0) ? meta.fill_width : meta.border_width;
     float margin_pixels = meta.line_half_width + max(meta.border_width, effective_fill);
-    float margin_x = margin_pixels / abs(world_to_screen_scale.x);
-    float margin_y = margin_pixels / abs(world_to_screen_scale.y);
-
-    float4 bounds = meta.bounds_min_max;
-    bounds.xy -= float2(margin_x, margin_y);
-    bounds.zw += float2(margin_x, margin_y);
 
     // Two triangles forming a quad
     float2 uv;
@@ -133,11 +127,34 @@ PSInput vertex_main(uint vertex_id : SV_VertexID, uint instance_id : SV_Instance
     default: uv = float2(0, 0); break;
     }
 
-    float2 world_pos = lerp(bounds.xy, bounds.zw, uv);
-
     PSInput output;
-    output.position = mul(projection_matrix, mul(view_matrix, float4(world_pos, 0, 1)));
-    output.world_pos = world_pos;
+    if(meta.primitive_type == PRIMITIVE_ICON)
+    {
+        // Icon: bounds_min_max holds pixel offsets from the anchor. Lay the
+        // quad out in screen space so the symbol keeps a fixed pixel size
+        // regardless of zoom. sign(world_to_screen_scale) flips the y axis
+        // from the y-up frame the geometry is authored in to screen space.
+        float2 anchor_s = meta.circle_center * world_to_screen_scale + world_to_screen_offset;
+        float2 lo = meta.bounds_min_max.xy - margin_pixels;
+        float2 hi = meta.bounds_min_max.zw + margin_pixels;
+        float2 screen_pos = anchor_s + lerp(lo, hi, uv) * sign(world_to_screen_scale);
+        float2 ndc = float2(screen_pos.x / viewport_size.x * 2.0 - 1.0,
+                            1.0 - screen_pos.y / viewport_size.y * 2.0);
+        output.position = float4(ndc, 0, 1);
+        output.world_pos = screen_pos;
+    }
+    else
+    {
+        // Expand bounds by line margin in world space
+        float margin_x = margin_pixels / abs(world_to_screen_scale.x);
+        float margin_y = margin_pixels / abs(world_to_screen_scale.y);
+        float4 bounds = meta.bounds_min_max;
+        bounds.xy -= float2(margin_x, margin_y);
+        bounds.zw += float2(margin_x, margin_y);
+        float2 world_pos = lerp(bounds.xy, bounds.zw, uv);
+        output.position = mul(projection_matrix, mul(view_matrix, float4(world_pos, 0, 1)));
+        output.world_pos = world_pos;
+    }
     output.instance_id = instance_id;
     return output;
 }
@@ -146,7 +163,11 @@ float4 fragment_main(PSInput input) : SV_Target
 {
     PolylineMetadata meta = load_metadata(input.instance_id);
 
-    float2 screen_pos = input.world_pos * world_to_screen_scale + world_to_screen_offset;
+    bool is_icon = (meta.primitive_type == PRIMITIVE_ICON);
+
+    // For icons, world_pos already carries the screen position (see vertex_main).
+    float2 screen_pos = is_icon ? input.world_pos
+                                : input.world_pos * world_to_screen_scale + world_to_screen_offset;
 
     float min_dist = 1e10;
     float path_dist = 0;
@@ -164,14 +185,22 @@ float4 fragment_main(PSInput input) : SV_Target
     }
     else
     {
-        // Polyline SDF — loop over segments
+        // Polyline / icon SDF — loop over segments
         uint base = meta.point_offset;
         float winding = sign(world_to_screen_scale.x * world_to_screen_scale.y);
 
+        // Icon points are pixel offsets from the anchor; polyline points are world-space.
+        float2 anchor_s = meta.circle_center * world_to_screen_scale + world_to_screen_offset;
+        float2 icon_axis = sign(world_to_screen_scale);
+
         for(uint i = 0; i < meta.segment_count; i++)
         {
-            float2 a = load_polyline_point(base + i).xy * world_to_screen_scale + world_to_screen_offset;
-            float2 b = load_polyline_point(base + i + 1).xy * world_to_screen_scale + world_to_screen_offset;
+            float2 a = is_icon
+                           ? anchor_s + load_polyline_point(base + i).xy * icon_axis
+                           : load_polyline_point(base + i).xy * world_to_screen_scale + world_to_screen_offset;
+            float2 b = is_icon
+                           ? anchor_s + load_polyline_point(base + i + 1).xy * icon_axis
+                           : load_polyline_point(base + i + 1).xy * world_to_screen_scale + world_to_screen_offset;
 
             float2 ab = b - a;
             float len_sq = dot(ab, ab);

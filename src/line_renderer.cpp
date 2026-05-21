@@ -23,6 +23,7 @@ namespace osect
     // Primitive types for instanced rendering
     constexpr uint32_t PRIMITIVE_POLYLINE = 0;
     constexpr uint32_t PRIMITIVE_CIRCLE = 1;
+    constexpr uint32_t PRIMITIVE_ICON = 2;
 
     // Per-instance metadata (must match PolylineMetadata in line.hlsl)
     struct polyline_metadata_gpu
@@ -137,7 +138,18 @@ namespace osect
             meta.fill_width = effective_fill;
             meta.segment_count = static_cast<uint32_t>(positions.size() - 1);
             meta.point_offset = point_offset;
-            meta.primitive_type = PRIMITIVE_POLYLINE;
+            if(style.is_icon)
+            {
+                // Icon: positions are pixel offsets; circle_center holds the
+                // world-space Mercator anchor the renderer adds them to.
+                meta.primitive_type = PRIMITIVE_ICON;
+                meta.circle_center_x = style.icon_anchor_x;
+                meta.circle_center_y = style.icon_anchor_y;
+            }
+            else
+            {
+                meta.primitive_type = PRIMITIVE_POLYLINE;
+            }
             all_metadata.push_back(meta);
         }
 

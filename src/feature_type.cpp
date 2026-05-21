@@ -50,10 +50,10 @@ namespace osect
     {
         // -- Dimensional constants ---------------------------------------------
 
-        constexpr auto SYMBOL_RADIUS_AIRPORT = 0.012;
-        constexpr auto SYMBOL_RADIUS_FIX = 0.012;
-        constexpr auto SYMBOL_RADIUS_OBSTACLE = 0.012;
-        constexpr auto SYMBOL_RADIUS_COMM = 0.012;
+        // Point-symbol radius in framebuffer pixels. Icons are built in a
+        // pixel-offset frame (see mark_icon) and keep this size at every
+        // zoom and window size.
+        constexpr auto SYMBOL_RADIUS_PX = 10.0;
 
         constexpr auto LETTER_HEIGHT = 0.385;
         constexpr auto LETTER_ASPECT = 0.7;
@@ -193,6 +193,21 @@ namespace osect
             for(uint32_t idx : indices)
             {
                 out.triangles.push_back({flat[idx], color});
+            }
+        }
+
+        // Tag every polyline pushed to `pd` at or after index `first` as a
+        // fixed-pixel-size icon anchored at world-Mercator (cx, cy). The
+        // emit_*_icon helpers build their shapes in a pixel-offset frame
+        // centered on the origin; the renderer adds the anchor back so the
+        // symbol stays a constant size regardless of zoom.
+        void mark_icon(polyline_data& pd, std::size_t first, double cx, double cy)
+        {
+            for(std::size_t i = first; i < pd.styles.size(); i++)
+            {
+                pd.styles[i].is_icon = true;
+                pd.styles[i].icon_anchor_x = static_cast<float>(cx);
+                pd.styles[i].icon_anchor_y = static_cast<float>(cy);
             }
         }
 
@@ -1636,15 +1651,16 @@ namespace osect
                    apt.ownership_type_code == "MN" || apt.ownership_type_code == "CG";
         }
 
-        void emit_airport_icon(polyline_data& pd, double cx, double cy, double r, double pixels_per_world,
-                               const airport& apt, const feature_style& cs)
+        void emit_airport_icon(polyline_data& pd, double cx, double cy, double r, const airport& apt,
+                               const feature_style& cs)
         {
             constexpr auto APT_OUTER_SCALE = 1.2;
             constexpr auto APT_RING_WIDTH_PX = 1.0F;
             constexpr auto APT_FILL_RADIUS = 0.5;
 
+            auto first = pd.polylines.size();
             auto symbol_r = r * APT_OUTER_SCALE;
-            auto ring_geom_r = symbol_r - (APT_RING_WIDTH_PX * 0.5) / pixels_per_world;
+            auto ring_geom_r = symbol_r - APT_RING_WIDTH_PX * 0.5;
             auto ring_ls = line_style{APT_RING_WIDTH_PX, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
 
             auto closed = apt.arpt_status == "CI" || apt.arpt_status == "CP";
@@ -1691,25 +1707,26 @@ namespace osect
             if(apt.hard_surface)
             {
                 auto geom_r = symbol_r * APT_FILL_RADIUS;
-                auto fill_px = static_cast<float>(symbol_r * pixels_per_world);
+                auto fill_px = static_cast<float>(symbol_r);
                 auto fill_ls = line_style{fill_px, 1.0F, 0, 0, cs.r, cs.g, cs.b, cs.a, 0};
-                add_circle_to(pd, cx, cy, geom_r, fill_ls);
+                add_circle_to(pd, 0, 0, geom_r, fill_ls);
                 if(letter)
                 {
-                    add_letter(pd, *letter, cx, cy, w, h, white_ls);
+                    add_letter(pd, *letter, 0, 0, w, h, white_ls);
                 }
             }
             else if(letter)
             {
                 auto filled_ring = ring_ls;
                 filled_ring.fill_width = SYMBOL_FILL_PX;
-                add_circle_to(pd, cx, cy, ring_geom_r, filled_ring);
-                add_letter(pd, *letter, cx, cy, w, h, white_ls);
+                add_circle_to(pd, 0, 0, ring_geom_r, filled_ring);
+                add_letter(pd, *letter, 0, 0, w, h, white_ls);
             }
             else
             {
-                add_circle_to(pd, cx, cy, ring_geom_r, ring_ls);
+                add_circle_to(pd, 0, 0, ring_geom_r, ring_ls);
             }
+            mark_icon(pd, first, cx, cy);
         }
 
         void emit_navaid_icon(polyline_data& pd, double cx, double cy, double r, const navaid& nav,
@@ -1723,36 +1740,38 @@ namespace osect
             auto filled_ls = ls;
             filled_ls.fill_width = SYMBOL_FILL_PX;
 
+            auto first = pd.polylines.size();
             if(nav.nav_type == "NDB")
             {
-                add_circle(pd, cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
+                add_circle(pd, 0, 0, r * NAV_NDB_CIRCLE, filled_ls);
             }
             else if(nav.nav_type == "NDB/DME")
             {
-                add_circle(pd, cx, cy, r * NAV_NDB_CIRCLE, filled_ls);
-                add_rect(pd, cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, ls);
+                add_circle(pd, 0, 0, r * NAV_NDB_CIRCLE, filled_ls);
+                add_rect(pd, 0, 0, r * NAV_DME_RECT, r * NAV_DME_RECT, ls);
             }
             else if(nav.nav_type == "DME")
             {
-                add_rect(pd, cx, cy, r * NAV_DME_RECT, r * NAV_DME_RECT, filled_ls);
+                add_rect(pd, 0, 0, r * NAV_DME_RECT, r * NAV_DME_RECT, filled_ls);
             }
             else if(nav.nav_type == "VOR/DME")
             {
-                add_hexagon(pd, cx, cy, r, filled_ls);
-                add_center_dot(pd, cx, cy, r, ls);
-                add_rect(pd, cx, cy, r * NAV_VORDME_WIDTH, r * NAV_DME_RECT, ls);
+                add_hexagon(pd, 0, 0, r, filled_ls);
+                add_center_dot(pd, 0, 0, r, ls);
+                add_rect(pd, 0, 0, r * NAV_VORDME_WIDTH, r * NAV_DME_RECT, ls);
             }
             else if(nav.nav_type == "VORTAC" || nav.nav_type == "TACAN")
             {
-                add_hexagon(pd, cx, cy, r, filled_ls);
-                add_center_dot(pd, cx, cy, r, ls);
-                add_caltrop(pd, cx, cy, r, ls);
+                add_hexagon(pd, 0, 0, r, filled_ls);
+                add_center_dot(pd, 0, 0, r, ls);
+                add_caltrop(pd, 0, 0, r, ls);
             }
             else
             {
-                add_hexagon(pd, cx, cy, r, filled_ls);
-                add_center_dot(pd, cx, cy, r, ls);
+                add_hexagon(pd, 0, 0, r, filled_ls);
+                add_center_dot(pd, 0, 0, r, ls);
             }
+            mark_icon(pd, first, cx, cy);
         }
 
         // --- Fix-specific icon shapes ---
@@ -1825,14 +1844,16 @@ namespace osect
         {
             auto ls = to_line_style(fs);
             ls.fill_width = SYMBOL_FILL_PX;
+            auto first = pd.polylines.size();
             if(f.use_code == "RP" || f.use_code == "MR")
             {
-                add_triangle_polyline(pd, cx, cy, r, ls);
+                add_triangle_polyline(pd, 0, 0, r, ls);
             }
             else
             {
-                add_waypoint_star_polyline(pd, cx, cy, r, ls);
+                add_waypoint_star_polyline(pd, 0, 0, r, ls);
             }
+            mark_icon(pd, first, cx, cy);
         }
 
         // --- User-waypoint icon: a filled orange square, FIX-sized ---
@@ -1841,7 +1862,9 @@ namespace osect
         {
             auto ls = to_line_style(fs);
             ls.fill_width = SYMBOL_FILL_PX;
-            add_rect(pd, cx, cy, r, r, ls);
+            auto first = pd.polylines.size();
+            add_rect(pd, 0, 0, r, r, ls);
+            mark_icon(pd, first, cx, cy);
         }
 
         // --- Obstacle icon ---
@@ -1909,7 +1932,9 @@ namespace osect
         {
             auto ls = to_line_style(fs);
             auto lighted = obs.lighting != "N";
-            add_obstacle_polylines(pd, cx, cy, r, obs.agl_ht >= 1000, lighted, ls);
+            auto first = pd.polylines.size();
+            add_obstacle_polylines(pd, 0, 0, r, obs.agl_ht >= 1000, lighted, ls);
+            mark_icon(pd, first, cx, cy);
         }
 
         // --- PJA / MAA point icons (diamond with a letter) ---
@@ -1918,25 +1943,22 @@ namespace osect
         {
             auto ls = to_line_style(fs);
             ls.fill_width = SYMBOL_FILL_PX;
-            auto fcx = static_cast<float>(cx);
-            auto fcy = static_cast<float>(cy);
-            auto fright = static_cast<float>(cx + r);
-            auto fleft = static_cast<float>(cx - r);
-            auto fup = static_cast<float>(cy + r);
-            auto fdown = static_cast<float>(cy - r);
+            auto first = pd.polylines.size();
+            auto fr = static_cast<float>(r);
             pd.polylines.push_back({
-                {fright, fcy},
-                {fcx, fup},
-                {fleft, fcy},
-                {fcx, fdown},
-                {fright, fcy},
+                {fr, 0.0F},
+                {0.0F, fr},
+                {-fr, 0.0F},
+                {0.0F, -fr},
+                {fr, 0.0F},
             });
             pd.styles.push_back(ls);
 
             auto lh = r * LETTER_HEIGHT;
             auto lw = lh * LETTER_ASPECT;
             auto white_ls = line_style{LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
-            add_letter(pd, letter_P, cx, cy, lw, lh, white_ls);
+            add_letter(pd, letter_P, 0, 0, lw, lh, white_ls);
+            mark_icon(pd, first, cx, cy);
         }
 
         void emit_maa_point_icon(polyline_data& pd, double cx, double cy, double r, const maa& m,
@@ -1944,18 +1966,14 @@ namespace osect
         {
             auto ls = to_line_style(fs);
             ls.fill_width = SYMBOL_FILL_PX;
-            auto fcx = static_cast<float>(cx);
-            auto fcy = static_cast<float>(cy);
-            auto fright = static_cast<float>(cx + r);
-            auto fleft = static_cast<float>(cx - r);
-            auto fup = static_cast<float>(cy + r);
-            auto fdown = static_cast<float>(cy - r);
+            auto first = pd.polylines.size();
+            auto fr = static_cast<float>(r);
             pd.polylines.push_back({
-                {fright, fcy},
-                {fcx, fup},
-                {fleft, fcy},
-                {fcx, fdown},
-                {fright, fcy},
+                {fr, 0.0F},
+                {0.0F, fr},
+                {-fr, 0.0F},
+                {0.0F, -fr},
+                {fr, 0.0F},
             });
             pd.styles.push_back(ls);
 
@@ -1990,12 +2008,15 @@ namespace osect
             auto lh = r * LETTER_HEIGHT;
             auto lw = lh * LETTER_ASPECT;
             auto white_ls = line_style{LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
-            add_letter(pd, ld, cx, cy, lw, lh, white_ls);
+            add_letter(pd, ld, 0, 0, lw, lh, white_ls);
+            mark_icon(pd, first, cx, cy);
         }
 
         void emit_comm_icon(polyline_data& pd, double cx, double cy, double r, const line_style& ls)
         {
-            add_comm_symbol(pd, cx, cy, r * 0.75, ls);
+            auto first = pd.polylines.size();
+            add_comm_symbol(pd, 0, 0, r * 0.75, ls);
+            mark_icon(pd, first, cx, cy);
         }
 
         // -- build() bodies -------------------------------------------------
@@ -2009,8 +2030,7 @@ namespace osect
             const auto& airports =
                 ctx.db.query_airports(request_bbox(ctx.req), ctx.styles.visible_airport_classes(ctx.req.zoom));
 
-            auto r = ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT;
-            auto pixels_per_world = ctx.req.viewport_height / (2.0 * ctx.req.half_extent_y);
+            auto r = SYMBOL_RADIUS_PX;
 
             for(const auto& apt : airports)
             {
@@ -2027,7 +2047,7 @@ namespace osect
                 auto cx = lon_to_mx(apt.lon) + ctx.mx_offset;
                 auto cy = lat_to_my(apt.lat);
 
-                emit_airport_icon(ctx.poly[layer_airports], cx, cy, r, pixels_per_world, apt, cs);
+                emit_airport_icon(ctx.poly[layer_airports], cx, cy, r, apt, cs);
 
                 const auto& id = apt.icao_id.empty() ? apt.arpt_id : apt.icao_id;
                 auto towered = apt.twr_type_code.find("ATCT") != std::string::npos;
@@ -2077,10 +2097,13 @@ namespace osect
             constexpr auto NAV_CLEARANCE = 2.0;
 
             const auto& navaids = ctx.db.query_navaids(request_bbox(ctx.req));
-            auto r = ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT;
+            auto r = SYMBOL_RADIUS_PX;
 
             ctx.state.navaid_positions.clear();
-            ctx.state.navaid_clearance = static_cast<float>(r * NAV_CLEARANCE);
+            // navaid_clearance is a world-space Mercator distance; convert the
+            // navaid symbol's pixel footprint to world units at the current zoom.
+            auto world_per_pixel = (2.0 * ctx.req.half_extent_y) / ctx.req.viewport_height;
+            ctx.state.navaid_clearance = static_cast<float>(r * NAV_CLEARANCE * world_per_pixel);
 
             for(const auto& nav : navaids)
             {
@@ -2294,7 +2317,7 @@ namespace osect
                 return;
             }
             const auto& fixes = ctx.db.query_fixes(request_bbox(ctx.req));
-            auto radius = ctx.req.half_extent_y * SYMBOL_RADIUS_FIX;
+            auto radius = SYMBOL_RADIUS_PX;
 
             for(const auto& f : fixes)
             {
@@ -2331,7 +2354,7 @@ namespace osect
                 return;
             }
             const auto& fs = ctx.styles.user_waypoint_style();
-            auto radius = ctx.req.half_extent_y * SYMBOL_RADIUS_FIX;
+            auto radius = SYMBOL_RADIUS_PX;
             for(const auto& w : ctx.udb.load_waypoints())
             {
                 auto cx = lon_to_mx(w.lon) + ctx.mx_offset;
@@ -2674,8 +2697,6 @@ namespace osect
                 return;
             }
 
-            constexpr auto SYMBOL_RADIUS_PJA = SYMBOL_RADIUS_AIRPORT;
-
             const auto& pjas = ctx.db.query_pjas(request_bbox(ctx.req));
 
             for(const auto& p : pjas)
@@ -2704,7 +2725,7 @@ namespace osect
                 {
                     auto cx = lon_to_mx(p.lon) + ctx.mx_offset;
                     auto cy = lat_to_my(p.lat);
-                    auto r = ctx.req.half_extent_y * SYMBOL_RADIUS_PJA;
+                    auto r = SYMBOL_RADIUS_PX;
                     emit_pja_point_icon(ctx.poly[layer_pja], cx, cy, r, ctx.styles.pja_point_style());
                 }
             }
@@ -2744,7 +2765,7 @@ namespace osect
                 {
                     auto cx = lon_to_mx(m.lon) + ctx.mx_offset;
                     auto cy = lat_to_my(m.lat);
-                    auto r = ctx.req.half_extent_y * SYMBOL_RADIUS_AIRPORT;
+                    auto r = SYMBOL_RADIUS_PX;
                     emit_maa_point_icon(ctx.poly[layer_maa], cx, cy, r, m, ctx.styles.maa_point_style());
                 }
 
@@ -2926,7 +2947,7 @@ namespace osect
                 return;
             }
             const auto& obstacles = ctx.db.query_obstacles(request_bbox(ctx.req));
-            auto radius = ctx.req.half_extent_y * SYMBOL_RADIUS_OBSTACLE;
+            auto radius = SYMBOL_RADIUS_PX;
 
             for(const auto& obs : obstacles)
             {
@@ -3001,7 +3022,7 @@ namespace osect
             {
                 return;
             }
-            auto radius = ctx.req.half_extent_y * SYMBOL_RADIUS_COMM;
+            auto radius = SYMBOL_RADIUS_PX;
             auto ls = to_line_style(ctx.styles.rco_style());
             for(const auto& f : ctx.db.query_comm_outlets(request_bbox(ctx.req)))
             {
@@ -3021,7 +3042,7 @@ namespace osect
             {
                 return;
             }
-            auto radius = ctx.req.half_extent_y * SYMBOL_RADIUS_COMM;
+            auto radius = SYMBOL_RADIUS_PX;
             auto ls = to_line_style(ctx.styles.awos_style());
             for(const auto& f : ctx.db.query_awos(request_bbox(ctx.req)))
             {
@@ -3037,12 +3058,14 @@ namespace osect
         // feature: airport_outer (1.2) × 1.5.
         constexpr auto HALO_SCALE = 1.8;
 
-        void emit_halo(polyline_data& out, double cx, double cy, double r_base, double pixels_per_world)
+        void emit_halo(polyline_data& out, double cx, double cy, double r_base)
         {
             auto halo_r = r_base * HALO_SCALE;
-            auto fill_px = static_cast<float>(halo_r * pixels_per_world);
+            auto fill_px = static_cast<float>(halo_r);
             auto halo_ls = line_style{fill_px, 0, 0, 0, 1, 1, 1, 1, 0};
-            add_circle_to(out, cx, cy, halo_r * 0.5, halo_ls);
+            auto first = out.polylines.size();
+            add_circle_to(out, 0, 0, halo_r * 0.5, halo_ls);
+            mark_icon(out, first, cx, cy);
         }
 
         // Convert a polygon ring to Mercator vec2s, interpolating
@@ -3119,14 +3142,12 @@ namespace osect
             double cx;
             double cy;
             double r_base;
-            double pixels_per_world;
         };
 
         template <typename T>
-        point_selection_geom point_selection_geom_for(const T& v, const feature_build_request& req)
+        point_selection_geom point_selection_geom_for(const T& v, const feature_build_request& /*req*/)
         {
-            return {lon_to_mx(v.lon), lat_to_my(v.lat), req.half_extent_y * SYMBOL_RADIUS_AIRPORT,
-                    req.viewport_height / (2.0 * req.half_extent_y)};
+            return {lon_to_mx(v.lon), lat_to_my(v.lat), SYMBOL_RADIUS_PX};
         }
 
         void airport_type::build_selection(const build_context& ctx, const feature& f, polyline_data& out,
@@ -3134,8 +3155,8 @@ namespace osect
         {
             const auto& v = std::get<airport>(f);
             auto g = point_selection_geom_for(v, ctx.req);
-            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
-            emit_airport_icon(out, g.cx, g.cy, g.r_base, g.pixels_per_world, v, ctx.styles.airport_style(v));
+            emit_halo(out, g.cx, g.cy, g.r_base);
+            emit_airport_icon(out, g.cx, g.cy, g.r_base, v, ctx.styles.airport_style(v));
         }
 
         void navaid_type::build_selection(const build_context& ctx, const feature& f, polyline_data& out,
@@ -3143,7 +3164,7 @@ namespace osect
         {
             const auto& v = std::get<navaid>(f);
             auto g = point_selection_geom_for(v, ctx.req);
-            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_halo(out, g.cx, g.cy, g.r_base);
             emit_navaid_icon(out, g.cx, g.cy, g.r_base, v, ctx.styles.navaid_style(v.nav_type));
         }
 
@@ -3152,7 +3173,7 @@ namespace osect
         {
             const auto& v = std::get<fix>(f);
             auto g = point_selection_geom_for(v, ctx.req);
-            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_halo(out, g.cx, g.cy, g.r_base);
             emit_fix_icon(out, g.cx, g.cy, g.r_base, v, ctx.styles.fix_style(v.use_code));
         }
 
@@ -3161,7 +3182,7 @@ namespace osect
         {
             const auto& v = std::get<user_waypoint>(f);
             auto g = point_selection_geom_for(v, ctx.req);
-            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_halo(out, g.cx, g.cy, g.r_base);
             emit_user_waypoint_icon(out, g.cx, g.cy, g.r_base, ctx.styles.user_waypoint_style());
         }
 
@@ -3170,7 +3191,7 @@ namespace osect
         {
             const auto& v = std::get<obstacle>(f);
             auto g = point_selection_geom_for(v, ctx.req);
-            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_halo(out, g.cx, g.cy, g.r_base);
             emit_obstacle_icon(out, g.cx, g.cy, g.r_base, v, ctx.styles.obstacle_style(v.agl_ht));
         }
 
@@ -3179,7 +3200,7 @@ namespace osect
         {
             const auto& v = std::get<awos>(f);
             auto g = point_selection_geom_for(v, ctx.req);
-            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_halo(out, g.cx, g.cy, g.r_base);
             emit_comm_icon(out, g.cx, g.cy, g.r_base, to_line_style(ctx.styles.awos_style()));
         }
 
@@ -3188,7 +3209,7 @@ namespace osect
         {
             const auto& v = std::get<comm_outlet>(f);
             auto g = point_selection_geom_for(v, ctx.req);
-            emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+            emit_halo(out, g.cx, g.cy, g.r_base);
             emit_comm_icon(out, g.cx, g.cy, g.r_base, to_line_style(ctx.styles.rco_style()));
         }
 
@@ -3215,7 +3236,7 @@ namespace osect
             else
             {
                 auto g = point_selection_geom_for(v, ctx.req);
-                emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+                emit_halo(out, g.cx, g.cy, g.r_base);
                 emit_pja_point_icon(out, g.cx, g.cy, g.r_base, ctx.styles.pja_point_style());
             }
         }
@@ -3244,7 +3265,7 @@ namespace osect
             else
             {
                 auto g = point_selection_geom_for(v, ctx.req);
-                emit_halo(out, g.cx, g.cy, g.r_base, g.pixels_per_world);
+                emit_halo(out, g.cx, g.cy, g.r_base);
                 emit_maa_point_icon(out, g.cx, g.cy, g.r_base, v, ctx.styles.maa_point_style());
             }
         }
@@ -3673,12 +3694,9 @@ namespace osect
                     return;
                 }
 
-                constexpr auto SYMBOL_RADIUS = 0.012;
                 constexpr auto HALO_SCALE = 1.8;
-                auto r_base = req.half_extent_y * SYMBOL_RADIUS;
-                auto ppw = req.viewport_height / (2.0 * req.half_extent_y);
-                auto halo_r = r_base * HALO_SCALE;
-                auto fill_px = halo_r * ppw;
+                auto halo_r = SYMBOL_RADIUS_PX * HALO_SCALE;
+                auto fill_px = halo_r;
 
                 line_style halo_ls{};
                 halo_ls.line_width = static_cast<float>(fill_px);
@@ -3701,11 +3719,13 @@ namespace osect
                     {
                         auto angle = 2.0 * M_PI * s / HALO_SEGMENTS;
                         auto hr = halo_r * 0.5;
-                        pts.emplace_back(static_cast<float>(cx + hr * std::cos(angle)),
-                                         static_cast<float>(cy + hr * std::sin(angle)));
+                        pts.emplace_back(static_cast<float>(hr * std::cos(angle)),
+                                         static_cast<float>(hr * std::sin(angle)));
                     }
+                    auto first = halo_pd.polylines.size();
                     halo_pd.polylines.push_back(std::move(pts));
                     halo_pd.styles.push_back(halo_ls);
+                    mark_icon(halo_pd, first, cx, cy);
                 }
             };
 
