@@ -66,16 +66,16 @@ namespace osect
         // created.
         static std::filesystem::path default_path();
 
-        // Opens db_path. read_only (the default) opens the file with
-        // SQLITE_OPEN_READONLY and skips all schema work — the caller
-        // must point it at a database a read-write owner already
-        // created and migrated. read_only = false creates the file if
-        // missing, ensures every known group's schema is current, and
-        // throws on an on-disk version newer than this build
-        // understands. Hold a read-only handle as `const user_database`
-        // so the mutator API is a compile error rather than a
-        // runtime SQLITE_READONLY.
-        explicit user_database(const std::filesystem::path& db_path, bool read_only = true);
+        // Opens db_path read-write (SQLITE_OPEN_READWRITE |
+        // SQLITE_OPEN_CREATE): creates the file if missing, ensures
+        // every known group's schema is current, and throws on an
+        // on-disk version newer than this build understands. Every
+        // connection is self-sufficient — there is no ordering
+        // dependency on a separate owner having prepared the file
+        // first. Hold a handle as `const user_database` to make the
+        // mutator API a compile error; that const is the read-only
+        // enforcement, since the file itself is always opened writable.
+        explicit user_database(const std::filesystem::path& db_path);
         ~user_database();
 
         user_database(const user_database&) = delete;

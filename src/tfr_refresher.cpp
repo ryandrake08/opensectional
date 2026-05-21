@@ -108,7 +108,7 @@ namespace osect
         bool shutdown = false;
         std::thread worker;
 
-        explicit impl(const std::filesystem::path& db_path) : http(/*offline=*/false), db(db_path, false)
+        explicit impl(const std::filesystem::path& db_path) : http(/*offline=*/false), db(db_path)
         {
         }
 

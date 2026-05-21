@@ -138,24 +138,24 @@ namespace
 TEST_CASE("ephemeral_database: fresh open creates empty schema")
 {
     tmp_dir d("fresh");
-    ephemeral_database db(d.db_file(), /*read_only=*/false);
+    ephemeral_database db(d.db_file());
     CHECK(db.query_tfrs().empty());
     CHECK(!db.last_refreshed("tfr").has_value());
     CHECK(db.etag("tfr").empty());
 }
 
-TEST_CASE("ephemeral_database: a read-only handle reads what a read-write owner wrote")
+TEST_CASE("ephemeral_database: a const handle reads what another connection wrote")
 {
     tmp_dir d("readonly");
     {
-        ephemeral_database writer(d.db_file(), /*read_only=*/false);
+        ephemeral_database writer(d.db_file());
         writer.replace_tfrs({make_tfr_a()});
         writer.set_source_meta("tfr",
                                std::chrono::system_clock::from_time_t(1700000000),
                                "etag-ro");
     }
-    // The default open is read-only: no schema work, relies on the
-    // writer above having created and migrated the file.
+    // A separate handle, held const so it can only read. WAL makes the
+    // first connection's committed rows visible to this one.
     const ephemeral_database reader(d.db_file());
     const auto out = reader.query_tfrs();
     REQUIRE(out.size() == 1);
@@ -167,7 +167,7 @@ TEST_CASE("ephemeral_database: a read-only handle reads what a read-write owner 
 TEST_CASE("ephemeral_database: replace_tfrs + query_tfrs round-trip")
 {
     tmp_dir d("roundtrip");
-    ephemeral_database db(d.db_file(), /*read_only=*/false);
+    ephemeral_database db(d.db_file());
 
     const std::vector<tfr> in = {make_tfr_a(), make_tfr_b()};
     db.replace_tfrs(in);
@@ -231,7 +231,7 @@ TEST_CASE("ephemeral_database: replace_tfrs + query_tfrs round-trip")
 TEST_CASE("ephemeral_database: replace_tfrs is atomic — no stale rows leak")
 {
     tmp_dir d("atomic");
-    ephemeral_database db(d.db_file(), /*read_only=*/false);
+    ephemeral_database db(d.db_file());
 
     db.replace_tfrs({make_tfr_a(), make_tfr_b()});
     REQUIRE(db.query_tfrs().size() == 2);
@@ -250,7 +250,7 @@ TEST_CASE("ephemeral_database: replace_tfrs is atomic — no stale rows leak")
 TEST_CASE("ephemeral_database: source_meta round-trip")
 {
     tmp_dir d("meta");
-    ephemeral_database db(d.db_file(), /*read_only=*/false);
+    ephemeral_database db(d.db_file());
 
     // System clock resolution might exceed seconds; format_iso8601
     // truncates to 1-second granularity, so build a time_point that
@@ -283,7 +283,7 @@ TEST_CASE("ephemeral_database: schema-version mismatch rebuilds tfr group, leave
     tmp_dir d("mismatch");
 
     {
-        ephemeral_database db(d.db_file(), /*read_only=*/false);
+        ephemeral_database db(d.db_file());
         db.replace_tfrs({make_tfr_a()});
         db.set_source_meta("tfr",
                            std::chrono::system_clock::from_time_t(1700000000),
@@ -303,7 +303,7 @@ TEST_CASE("ephemeral_database: schema-version mismatch rebuilds tfr group, leave
     }
 
     {
-        ephemeral_database db(d.db_file(), /*read_only=*/false);
+        ephemeral_database db(d.db_file());
         CHECK(db.query_tfrs().empty());
         // The rebuild wipes the prior SOURCE_META row for "tfr" as part
         // of the group reset — freshness is meaningless after a wipe.

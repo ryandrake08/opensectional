@@ -7,12 +7,12 @@ namespace osect
 {
 
     // Background refresher for TFR data. Owns its own http_client
-    // and a read-write ephemeral_database connection — the
-    // database is the canonical store, and this class's job is to
-    // keep it fresh by periodically fetching the FAA TFR list and
-    // writing the result through. Every consumer (feature_builder,
-    // the pick path) opens its own read-only connection to the
-    // same file.
+    // and an ephemeral_database connection — the database is the
+    // canonical store, and this class's job is to keep it fresh by
+    // periodically fetching the FAA TFR list and writing the result
+    // through. Every consumer (feature_builder, the pick path) opens
+    // its own connection to the same file, held const so it only
+    // reads.
     //
     // Construct only when online; --offline skips it entirely and
     // reads freshness from the database directly.

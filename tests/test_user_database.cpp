@@ -80,7 +80,7 @@ TEST_CASE("user_database creates schema on fresh file and round-trips one route"
 {
     tmp_dir tmp("fresh");
     {
-        user_database db(tmp.db_file(), /*read_only=*/false);
+        user_database db(tmp.db_file());
         CHECK(db.load_routes().empty());
 
         const auto id = db.insert_route(make_rows({"KCNY", "KSGU"}));
@@ -96,7 +96,7 @@ TEST_CASE("user_database creates schema on fresh file and round-trips one route"
     }
     // Reopen the same file — schema persists, row persists.
     {
-        user_database db(tmp.db_file(), /*read_only=*/false);
+        user_database db(tmp.db_file());
         auto routes = db.load_routes();
         REQUIRE(routes.size() == 1);
         REQUIRE(routes[0].waypoints.size() == 2);
@@ -104,16 +104,16 @@ TEST_CASE("user_database creates schema on fresh file and round-trips one route"
     }
 }
 
-TEST_CASE("a read-only handle reads routes written by a read-write owner")
+TEST_CASE("a const handle reads routes written by another connection")
 {
     tmp_dir tmp("readonly");
     std::int64_t id = 0;
     {
-        user_database writer(tmp.db_file(), /*read_only=*/false);
+        user_database writer(tmp.db_file());
         id = writer.insert_route(make_rows({"KCNY", "KSGU"}));
     }
-    // The default open is read-only: no schema work, relies on the
-    // writer above having created and migrated the file.
+    // A separate handle, held const so it can only read. WAL makes the
+    // first connection's committed rows visible to this one.
     const user_database reader(tmp.db_file());
     auto routes = reader.load_routes();
     REQUIRE(routes.size() == 1);
@@ -129,7 +129,7 @@ TEST_CASE("a read-only handle reads routes written by a read-write owner")
 TEST_CASE("waypoint rows round-trip every field, including airway grouping")
 {
     tmp_dir tmp("waypoints");
-    user_database db(tmp.db_file(), /*read_only=*/false);
+    user_database db(tmp.db_file());
 
     // O61 — V459{LIN, LOPES} — KTSP: a standalone waypoint, an
     // airway traversal of two rows sharing element_index 1, then
@@ -158,7 +158,7 @@ TEST_CASE("waypoint rows round-trip every field, including airway grouping")
 TEST_CASE("query_route returns nullopt for an unknown id")
 {
     tmp_dir tmp("query_miss");
-    user_database db(tmp.db_file(), /*read_only=*/false);
+    user_database db(tmp.db_file());
     db.insert_route(make_rows({"A", "B"}));
     CHECK_FALSE(db.query_route(9999));
 }
@@ -166,7 +166,7 @@ TEST_CASE("query_route returns nullopt for an unknown id")
 TEST_CASE("insert_route returns strictly monotonic ids that survive deletion")
 {
     tmp_dir tmp("ids");
-    user_database db(tmp.db_file(), /*read_only=*/false);
+    user_database db(tmp.db_file());
 
     const auto id1 = db.insert_route(make_rows({"A", "B"}));
     const auto id2 = db.insert_route(make_rows({"C", "D"}));
@@ -192,7 +192,7 @@ TEST_CASE("insert_route returns strictly monotonic ids that survive deletion")
 TEST_CASE("delete_route cascades to the route's waypoint rows")
 {
     tmp_dir tmp("cascade");
-    user_database db(tmp.db_file(), /*read_only=*/false);
+    user_database db(tmp.db_file());
     const auto id = db.insert_route(make_rows({"A", "B", "C"}));
     db.delete_route(id);
 
@@ -208,7 +208,7 @@ TEST_CASE("delete_route cascades to the route's waypoint rows")
 TEST_CASE("update_route replaces the waypoints and bumps updated_at")
 {
     tmp_dir tmp("update");
-    user_database db(tmp.db_file(), /*read_only=*/false);
+    user_database db(tmp.db_file());
 
     const auto id = db.insert_route(make_rows({"OLD1", "OLD2"}));
     db.update_route(id, make_rows({"NEW1", "NEW2", "NEW3"}));
@@ -235,7 +235,7 @@ TEST_CASE("update_route replaces the waypoints and bumps updated_at")
 TEST_CASE("update_route and delete_route are no-ops on unknown ids")
 {
     tmp_dir tmp("noop");
-    user_database db(tmp.db_file(), /*read_only=*/false);
+    user_database db(tmp.db_file());
 
     db.update_route(9999, make_rows({"ghost1", "ghost2"}));
     db.delete_route(9999);
@@ -258,7 +258,7 @@ TEST_CASE("an older schema version is dropped and recreated at the current versi
     // Opening it brings the group to the current version: no users in
     // the field, so the v1 tables are dropped and recreated empty.
     {
-        user_database db(tmp.db_file(), /*read_only=*/false);
+        user_database db(tmp.db_file());
         CHECK(db.load_routes().empty());
         const auto id = db.insert_route(make_rows({"A", "B"}));
         CHECK(id >= 1);
@@ -279,20 +279,20 @@ TEST_CASE("opening a database with a newer schema version throws")
     // Create a fresh user.db, then tamper with SCHEMA_VERSIONS to
     // look like a future build wrote it.
     {
-        user_database db(tmp.db_file(), /*read_only=*/false);
+        user_database db(tmp.db_file());
         db.insert_route(make_rows({"AAA", "BBB"}));
     }
     {
         sqlite::database raw(tmp.db_file().string().c_str(), /*read_only=*/false);
         raw.exec("UPDATE SCHEMA_VERSIONS SET version = 999 WHERE group_name = 'routes'");
     }
-    CHECK_THROWS_AS(user_database(tmp.db_file(), /*read_only=*/false), std::runtime_error);
+    CHECK_THROWS_AS(user_database(tmp.db_file()), std::runtime_error);
 }
 
 TEST_CASE("insert_waypoint auto-names WPT<n> and round-trips its fields")
 {
     tmp_dir tmp("wpt_insert");
-    user_database db(tmp.db_file(), /*read_only=*/false);
+    user_database db(tmp.db_file());
     CHECK(db.load_waypoints().empty());
 
     const auto a = db.insert_waypoint(37.5, -122.3);
@@ -321,7 +321,7 @@ TEST_CASE("insert_waypoint auto-names WPT<n> and round-trips its fields")
 TEST_CASE("insert_waypoint fills the lowest unused WPT number")
 {
     tmp_dir tmp("wpt_gap");
-    user_database db(tmp.db_file(), /*read_only=*/false);
+    user_database db(tmp.db_file());
 
     const auto w1 = db.insert_waypoint(1.0, 1.0);
     const auto w2 = db.insert_waypoint(2.0, 2.0);
@@ -340,7 +340,7 @@ TEST_CASE("insert_waypoint fills the lowest unused WPT number")
 TEST_CASE("update_waypoint writes name and position, and rejects collisions")
 {
     tmp_dir tmp("wpt_update");
-    user_database db(tmp.db_file(), /*read_only=*/false);
+    user_database db(tmp.db_file());
 
     const auto a = db.insert_waypoint(1.0, 1.0); // WPT1
     const auto b = db.insert_waypoint(2.0, 2.0); // WPT2
@@ -386,7 +386,7 @@ TEST_CASE("update_waypoint writes name and position, and rejects collisions")
 TEST_CASE("delete_waypoint removes the waypoint and is a no-op on unknown ids")
 {
     tmp_dir tmp("wpt_delete");
-    user_database db(tmp.db_file(), /*read_only=*/false);
+    user_database db(tmp.db_file());
 
     const auto w = db.insert_waypoint(5.0, 6.0);
     db.delete_waypoint(w.waypoint_id);
@@ -396,12 +396,12 @@ TEST_CASE("delete_waypoint removes the waypoint and is a no-op on unknown ids")
     db.delete_waypoint(9999); // unknown id — no-op, no throw
 }
 
-TEST_CASE("a read-only handle reads waypoints written by a read-write owner")
+TEST_CASE("a const handle reads waypoints written by another connection")
 {
     tmp_dir tmp("wpt_readonly");
     std::int64_t id = 0;
     {
-        user_database writer(tmp.db_file(), /*read_only=*/false);
+        user_database writer(tmp.db_file());
         id = writer.insert_waypoint(12.34, -56.78).waypoint_id;
     }
     const user_database reader(tmp.db_file());

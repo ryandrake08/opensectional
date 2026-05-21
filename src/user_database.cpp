@@ -217,28 +217,20 @@ namespace osect
             }
         }
 
-        // A read-only open skips every pragma and schema step: WAL and
-        // foreign_keys are connection settings that only matter for a
-        // writer (WAL is persisted in the file anyway), and CREATE /
-        // migration SQL would fail SQLITE_READONLY on the handle. A
-        // read-only consumer therefore relies on a read-write owner
-        // having already brought the file's schema current.
-        sqlite::database open_and_init_schema(const std::filesystem::path& p, bool read_only)
+        // Open the file read-write, set per-connection PRAGMAs, run the
+        // bootstrap schema, and ensure each known group is current.
+        sqlite::database open_and_init_schema(const std::filesystem::path& p)
         {
-            sqlite::database db(p.string().c_str(), read_only);
-            if(!read_only)
-            {
-                // WAL lets readers proceed without blocking on a writer,
-                // matching ephemeral_database — needed once consumers
-                // open their own read-only connections.
-                db.exec("PRAGMA journal_mode = WAL");
-                db.exec("PRAGMA foreign_keys = ON");
-                db.exec(BOOTSTRAP_SQL);
-                ensure_group(db, ROUTES_GROUP_NAME, ROUTES_GROUP_VERSION, ROUTES_GROUP_DROP_SQL,
-                             ROUTES_GROUP_CREATE_SQL);
-                ensure_group(db, WAYPOINTS_GROUP_NAME, WAYPOINTS_GROUP_VERSION, WAYPOINTS_GROUP_DROP_SQL,
-                             WAYPOINTS_GROUP_CREATE_SQL);
-            }
+            sqlite::database db(p.string().c_str(), /*read_only=*/false);
+            // WAL lets readers proceed without blocking on a writer.
+            db.exec("PRAGMA journal_mode = WAL");
+            // FK CASCADE is per-connection in SQLite — must be set every open.
+            db.exec("PRAGMA foreign_keys = ON");
+            db.exec(BOOTSTRAP_SQL);
+            ensure_group(db, ROUTES_GROUP_NAME, ROUTES_GROUP_VERSION, ROUTES_GROUP_DROP_SQL,
+                         ROUTES_GROUP_CREATE_SQL);
+            ensure_group(db, WAYPOINTS_GROUP_NAME, WAYPOINTS_GROUP_VERSION, WAYPOINTS_GROUP_DROP_SQL,
+                         WAYPOINTS_GROUP_CREATE_SQL);
             return db;
         }
 
@@ -309,8 +301,8 @@ namespace osect
         sqlite::statement stmt_update_user_waypoint;
         sqlite::statement stmt_delete_user_waypoint;
 
-        explicit impl(const std::filesystem::path& p, bool read_only)
-            : db(open_and_init_schema(p, read_only)),
+        explicit impl(const std::filesystem::path& p)
+            : db(open_and_init_schema(p)),
               stmt_load_routes(db.prepare(R"(
                 SELECT route_id, name FROM ROUTE ORDER BY route_id
             )")),
@@ -397,8 +389,8 @@ namespace osect
         return app_user_data_dir() / "user.db";
     }
 
-    user_database::user_database(const std::filesystem::path& db_path, bool read_only)
-        : pimpl(std::make_unique<impl>(db_path, read_only))
+    user_database::user_database(const std::filesystem::path& db_path)
+        : pimpl(std::make_unique<impl>(db_path))
     {
     }
 

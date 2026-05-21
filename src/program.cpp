@@ -64,18 +64,9 @@ namespace osect
         // indicator via is_refreshing().
         std::unique_ptr<tfr_refresher> tfrs;
         ini_config ini;
-        // Read-write owner of ephemeral.db's existence and schema.
-        // Constructed before `map` so map_widget's and feature_builder's
-        // read-only connections always find a created, migrated file —
-        // in --offline mode there is no tfr_refresher to create it.
-        // tfr_refresher owns the TFR-data writes through its own
-        // connection; this handle backs push_data_sources.
-        ephemeral_database eph_db;
-        // Read-write owner of user.db's existence and schema —
-        // constructed before `map` for the same reason as eph_db:
-        // map_widget and feature_builder open read-only user.db
-        // connections during `map`'s construction, so the file must
-        // already exist and be migrated. Source of truth for saved
+        // Read-write user.db handle. waypoint_session and route_session
+        // write user edits — created/renamed/deleted waypoints, saved
+        // routes — through it; it is the source of truth for saved
         // routes and user waypoints.
         user_database udb;
         map_widget map;
@@ -102,8 +93,7 @@ namespace osect
               imgui_ctx(dev, win),
               tfrs(opts.offline ? nullptr : std::make_unique<tfr_refresher>(ephemeral_database::default_path())),
               ini(build_ini(opts)),
-              eph_db(ephemeral_database::default_path(), /*read_only=*/false),
-              udb(user_database::default_path(), /*read_only=*/false),
+              udb(user_database::default_path()),
               map(dev, tile_path.empty() ? nullptr : tile_path.c_str(), db_path.c_str(), ini, 1280, 1024),
               waypoints(map, udb),
               routes(ui, map, udb, ini, db_path.c_str()),
@@ -126,14 +116,13 @@ namespace osect
                           " offline=" + (opts.offline ? "true" : "false"));
         }
 
-        // Read both databases, merge, push to the UI. Fires on
-        // events and at startup, not per frame, so the fresh
-        // nasr_database connection each call is fine; ephemeral.db
-        // goes through the long-lived eph_db handle.
+        // Read both databases, merge, push to the UI. Fires on events
+        // and at startup, not per frame, so opening a fresh connection
+        // to each database per call is fine.
         void push_data_sources()
         {
             auto merged = nasr_database(db_path.c_str()).list_data_sources();
-            auto eph = eph_db.list_data_sources();
+            auto eph = ephemeral_database(ephemeral_database::default_path()).list_data_sources();
             if(tfrs)
             {
                 const bool updating = tfrs->is_refreshing();

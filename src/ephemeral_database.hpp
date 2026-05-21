@@ -104,16 +104,16 @@ namespace osect
         // created.
         static std::filesystem::path default_path();
 
-        // Opens db_path. read_only (the default) opens the file with
-        // SQLITE_OPEN_READONLY and skips all schema work — the caller
-        // must point it at a database a read-write owner already
-        // created and migrated. read_only = false creates the file if
-        // missing, runs the schema version checks for every known
-        // source group, and rebuilds any that are missing or stale.
-        // Hold a read-only handle as `const ephemeral_database` so the
-        // mutator API is a compile error rather than a runtime
-        // SQLITE_READONLY.
-        explicit ephemeral_database(const std::filesystem::path& db_path, bool read_only = true);
+        // Opens db_path read-write (SQLITE_OPEN_READWRITE |
+        // SQLITE_OPEN_CREATE): creates the file if missing, runs the
+        // schema version checks for every known source group, and
+        // rebuilds any that are missing or stale. Every connection is
+        // self-sufficient — there is no ordering dependency on a
+        // separate owner having prepared the file first. Hold a handle
+        // as `const ephemeral_database` to make the mutator API a
+        // compile error; that const is the read-only enforcement, since
+        // the file itself is always opened writable.
+        explicit ephemeral_database(const std::filesystem::path& db_path);
         ~ephemeral_database();
 
         ephemeral_database(const ephemeral_database&) = delete;
