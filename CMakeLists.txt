@@ -240,6 +240,7 @@ option(OSECT_ENABLE_METALLIB "Embed precompiled .metallib bytecode on macOS (req
 # Main executable
 add_executable(osect
     # Application sources
+    src/app_options.cpp
     src/ini_config.cpp
     src/geo_math.cpp
     src/map_view.cpp

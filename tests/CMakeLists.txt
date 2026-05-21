@@ -93,3 +93,14 @@ target_link_libraries(test_route_planner PRIVATE sqlite_wrapper sdl_wrapper)
 target_compile_definitions(test_route_planner PRIVATE
     OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
     OSECT_APP_NAME="${APP_SHORT_NAME}")
+
+# app_options — command-line parsing + asset/driver resolution.
+# build_ini pulls in ini_config; the resolve_* helpers and log_info
+# need the sdl wrapper.
+add_osect_test(app_options
+    ${CMAKE_SOURCE_DIR}/src/app_options.cpp
+    ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
+target_link_libraries(test_app_options PRIVATE sdl_wrapper)
+target_compile_definitions(test_app_options PRIVATE
+    OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
+    OSECT_APP_NAME="${APP_SHORT_NAME}")

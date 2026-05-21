@@ -1,3 +1,4 @@
+#include "app_options.hpp"
 #include "program.hpp"
 #include <csignal>
 #include <cstdlib>
@@ -30,7 +31,7 @@ int main(int argc, char** argv)
         p.run();
         return EXIT_SUCCESS;
     }
-    catch(const osect::program::help_requested&)
+    catch(const osect::help_requested&)
     {
         return EXIT_SUCCESS;
     }

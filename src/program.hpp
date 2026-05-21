@@ -10,23 +10,16 @@ namespace osect
     // the route planner, the ephemeral data facade, the ui overlay)
     // and runs the main loop.
     //
-    // The constructor parses options, resolves bundled assets, and
-    // initializes every subsystem, throwing on failure. `-h`/`--help`
-    // prints usage to stdout and calls std::exit(EXIT_SUCCESS).
+    // The constructor parses options (see app_options.hpp), resolves
+    // bundled assets, and initializes every subsystem, throwing on
+    // failure. `-h`/`--help` throws osect::help_requested after
+    // printing usage to stdout.
     class program
     {
         struct impl;
         std::unique_ptr<impl> pimpl;
 
     public:
-        // Thrown by the constructor on -h/--help, after usage has
-        // been printed to stdout. main converts this to a successful
-        // exit. Does not derive from std::exception so it bypasses
-        // the FATAL ERROR catch-all.
-        struct help_requested
-        {
-        };
-
         explicit program(const std::vector<std::string>& cmdline);
         ~program();
 
