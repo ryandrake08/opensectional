@@ -99,6 +99,47 @@ TEST_CASE("unknown waypoint throws route_parse_error")
     }
 }
 
+TEST_CASE("a user waypoint resolves as a route token after the NASR lookups")
+{
+    // ZZZZZ is not a NASR airport / navaid / fix (see the unknown-
+    // waypoint case above), so the token falls through to the
+    // user-waypoint catalog.
+    std::vector<route_waypoint> user_wps{
+        route_waypoint{waypoint_kind::user, "ZZZZZ", 38.0, -121.0},
+    };
+    flight_route route("O61 ZZZZZ KMER", test_db(), user_wps);
+    REQUIRE(route.waypoints.size() == 3);
+    CHECK(route.waypoints[1].kind == waypoint_kind::user);
+    CHECK(waypoint_id(route.waypoints[1]) == "ZZZZZ");
+    CHECK(route.waypoints[1].lat == 38.0);
+    CHECK(route.waypoints[1].lon == -121.0);
+}
+
+TEST_CASE("a user waypoint resolves case-insensitively, keeping its stored name")
+{
+    std::vector<route_waypoint> user_wps{
+        route_waypoint{waypoint_kind::user, "Zzzzz", 38.0, -121.0},
+    };
+    // The route tokenizer upper-cases tokens; a naturally-cased
+    // waypoint name still resolves, and the stored name is preserved.
+    flight_route route("O61 zzzzz KMER", test_db(), user_wps);
+    REQUIRE(route.waypoints.size() == 3);
+    CHECK(route.waypoints[1].kind == waypoint_kind::user);
+    CHECK(waypoint_id(route.waypoints[1]) == "Zzzzz");
+}
+
+TEST_CASE("a NASR identifier outranks a same-named user waypoint")
+{
+    // LIN is a real navaid; a user waypoint sharing the name must not
+    // shadow it — the NASR lookups run first.
+    std::vector<route_waypoint> user_wps{
+        route_waypoint{waypoint_kind::user, "LIN", 0.0, 0.0},
+    };
+    flight_route route("O61 LIN KMER", test_db(), user_wps);
+    REQUIRE(route.waypoints.size() == 3);
+    CHECK(route.waypoints[1].kind == waypoint_kind::navaid);
+}
+
 TEST_CASE("insert_waypoint adds a waypoint at the given segment")
 {
     flight_route route("O61 KMER", test_db());

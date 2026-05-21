@@ -3,6 +3,7 @@
 #include "geo_math.hpp"
 #include "geo_types.hpp"
 #include "nasr_database.hpp"
+#include "user_database.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -339,8 +340,12 @@ namespace osect
         mutable astar_scratch scratch;
 
         const nasr_database db;
+        // Read-only handle to user.db. The user-waypoint set is read
+        // fresh on each parse() so a waypoint created since
+        // construction still resolves in route text.
+        const user_database udb;
 
-        explicit impl(const char* db_path) : db(db_path)
+        explicit impl(const char* db_path) : db(db_path), udb(user_database::default_path())
         {
         }
 
@@ -964,7 +969,16 @@ namespace osect
 
     flight_route route_planner::parse(const std::string& text, const options& opts) const
     {
-        return {expand_sigils(text, opts), pimpl->db};
+        // User waypoints are runtime data — snapshot them per parse so
+        // a waypoint created since construction still resolves. They
+        // are plain route tokens here; routing A* through them is a
+        // separate feature.
+        std::vector<route_waypoint> user_waypoints;
+        for(const auto& w : pimpl->udb.load_waypoints())
+        {
+            user_waypoints.push_back({waypoint_kind::user, w.name, w.lat, w.lon});
+        }
+        return {expand_sigils(text, opts), pimpl->db, user_waypoints};
     }
 
 } // namespace osect

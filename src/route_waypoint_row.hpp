@@ -20,7 +20,7 @@ namespace osect
     struct route_waypoint_row
     {
         int element_index;
-        std::string kind;       // "airport" | "navaid" | "fix" | "latlon"
+        std::string kind;       // "airport" | "navaid" | "fix" | "latlon" | "user"
         std::string identifier; // empty for "latlon"
         double lat;
         double lon;

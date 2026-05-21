@@ -18,6 +18,7 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <iostream>
 #include <memory>
 #include <sdl/buffer.hpp>
@@ -1231,7 +1232,20 @@ namespace osect
 
     void map_widget::focus_on_hit(const search_hit& hit)
     {
-        auto bbox = pimpl->pick_db.get_hit_bbox(hit);
+        std::optional<geo_bbox> bbox;
+        if(hit.entity_type == "WPT")
+        {
+            // User waypoints aren't in the NASR tables get_hit_bbox
+            // queries — resolve directly and center on the point.
+            if(const auto wp = pimpl->pick_udb.query_waypoint(hit.entity_rowid))
+            {
+                bbox = geo_bbox{wp->lon, wp->lat, wp->lon, wp->lat};
+            }
+        }
+        else
+        {
+            bbox = pimpl->pick_db.get_hit_bbox(hit);
+        }
         if(!bbox)
         {
             return;
@@ -1360,7 +1374,29 @@ namespace osect
 
     std::vector<search_hit> map_widget::search(const std::string& query, int limit)
     {
-        return pimpl->pick_db.search(query, limit);
+        auto hits = pimpl->pick_db.search(query, limit);
+        // User waypoints aren't in the NASR FTS index — match them
+        // here by a case-insensitive name substring and append as
+        // "WPT" hits so they group under the search dropdown's USER
+        // WAYPOINTS section.
+        auto needle = query;
+        for(auto& c : needle)
+        {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        for(const auto& w : pimpl->pick_udb.load_waypoints())
+        {
+            auto name = w.name;
+            for(auto& c : name)
+            {
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            if(name.find(needle) != std::string::npos)
+            {
+                hits.push_back(search_hit{"WPT", static_cast<int>(w.waypoint_id), w.name, ""});
+            }
+        }
+        return hits;
     }
 
     void map_widget::add_route(route_id /*id*/)

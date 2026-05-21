@@ -428,7 +428,8 @@ namespace osect
     // closest to the hint wins.
     static std::optional<route_waypoint> resolve_waypoint(
         const std::string& token, const nasr_database& db,
-        const std::optional<std::pair<double, double>>& hint = std::nullopt)
+        const std::optional<std::pair<double, double>>& hint = std::nullopt,
+        const std::vector<route_waypoint>& user_waypoints = {})
     {
         // Try lat/lon first
         auto ll = parse_latlon(token);
@@ -459,6 +460,22 @@ namespace osect
         {
             const auto& f = fixes[nearest_index(fixes, hint)];
             return route_waypoint{waypoint_kind::fix, token, f.lat, f.lon};
+        }
+
+        // Try a user-defined waypoint. `token` is already upper-cased
+        // by the tokenizer; match the name case-insensitively so a
+        // naturally-cased name (e.g. "Cabin") still resolves.
+        for(const auto& w : user_waypoints)
+        {
+            std::string name = w.id;
+            for(auto& c : name)
+            {
+                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            }
+            if(name == token)
+            {
+                return w;
+            }
         }
 
         return std::nullopt;
@@ -561,7 +578,8 @@ namespace osect
     // Constructor — parse and resolve, or throw
     // ---------------------------------------------------------------
 
-    flight_route::flight_route(const std::string& text, const nasr_database& db)
+    flight_route::flight_route(const std::string& text, const nasr_database& db,
+                               const std::vector<route_waypoint>& user_waypoints)
     {
         // Tokenize
         std::vector<std::string> tokens;
@@ -654,7 +672,7 @@ namespace osect
                 auto actual_exit = exit_id;
                 if(!is_on_airway(exit_id, airway_id, db))
                 {
-                    auto exit_wp = resolve_waypoint(exit_id, db, hint_from_elements(elements));
+                    auto exit_wp = resolve_waypoint(exit_id, db, hint_from_elements(elements), user_waypoints);
                     if(!exit_wp)
                     {
                         throw route_parse_error("unknown waypoint: " + exit_id, exit_id, static_cast<int>(i));
@@ -690,7 +708,7 @@ namespace osect
                 // separate waypoint
                 if(actual_exit != exit_id)
                 {
-                    auto exit_wp = resolve_waypoint(exit_id, db, hint_from_elements(elements));
+                    auto exit_wp = resolve_waypoint(exit_id, db, hint_from_elements(elements), user_waypoints);
                     if(!exit_wp)
                     {
                         throw route_parse_error("unknown waypoint: " + exit_id, exit_id, static_cast<int>(i));
@@ -700,7 +718,7 @@ namespace osect
             }
             else
             {
-                auto wp = resolve_waypoint(tokens[i], db, hint_from_elements(elements));
+                auto wp = resolve_waypoint(tokens[i], db, hint_from_elements(elements), user_waypoints);
                 if(!wp)
                 {
                     throw route_parse_error("unknown waypoint: " + tokens[i], tokens[i], ti);

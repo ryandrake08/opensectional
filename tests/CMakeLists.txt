@@ -66,14 +66,19 @@ target_link_libraries(test_xnotam_parser PRIVATE pugixml sdl_wrapper)
 add_osect_test(http_client  ${CMAKE_SOURCE_DIR}/src/http_client.cpp)
 target_link_libraries(test_http_client PRIVATE CURL::libcurl)
 
-# flight_route pulls in the DB layer and needs the sqlite wrapper
+# flight_route pulls in the DB layer and needs the sqlite wrapper.
+# route_planner reads user.db, so user_database.cpp comes along too.
 add_osect_test(flight_route
     ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
     ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
     ${CMAKE_SOURCE_DIR}/src/data_source.cpp
     ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
+    ${CMAKE_SOURCE_DIR}/src/user_database.cpp
     ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
 target_link_libraries(test_flight_route PRIVATE sqlite_wrapper sdl_wrapper)
+target_compile_definitions(test_flight_route PRIVATE
+    OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
+    OSECT_APP_NAME="${APP_SHORT_NAME}")
 
 add_osect_test(route_planner
     ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
@@ -82,5 +87,9 @@ add_osect_test(route_planner
     ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
     ${CMAKE_SOURCE_DIR}/src/data_source.cpp
     ${CMAKE_SOURCE_DIR}/src/geo_math.cpp
-    ${CMAKE_SOURCE_DIR}/src/flight_route.cpp)
+    ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
+    ${CMAKE_SOURCE_DIR}/src/user_database.cpp)
 target_link_libraries(test_route_planner PRIVATE sqlite_wrapper sdl_wrapper)
+target_compile_definitions(test_route_planner PRIVATE
+    OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
+    OSECT_APP_NAME="${APP_SHORT_NAME}")

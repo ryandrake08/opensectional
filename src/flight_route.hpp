@@ -45,6 +45,7 @@ namespace osect
         inline constexpr const char* navaid = "navaid";
         inline constexpr const char* fix = "fix";
         inline constexpr const char* latlon = "latlon";
+        inline constexpr const char* user = "user";
     }
 
     // A resolved waypoint on a route. Consumers only ever need the
@@ -112,14 +113,18 @@ namespace osect
 
         // Parse a route string and resolve against the database.
         // The grammar is a sequence of space-separated tokens:
-        //   - a waypoint ID (airport / navaid / fix), or
+        //   - a waypoint ID (airport / navaid / fix / user waypoint),
         //   - a DDMMSSXDDDMMSSY coordinate literal, or
         //   - an airway ID, which must appear as the middle of an
         //     `ENTRY AIRWAY EXIT` triple. ENTRY and EXIT are
         //     auto-corrected to the nearest published fix on the
         //     airway when necessary.
-        // Throws route_parse_error on failure.
-        flight_route(const std::string& text, const nasr_database& db);
+        // A token is resolved against the NASR database first; only if
+        // no airport / navaid / fix matches is `user_waypoints`
+        // searched, by name and case-insensitively. Throws
+        // route_parse_error on failure.
+        flight_route(const std::string& text, const nasr_database& db,
+                     const std::vector<route_waypoint>& user_waypoints = {});
 
         // Reconstruct a route from its persisted resolved form (see
         // route_waypoint_row). Touches no nasr_database — the rows
