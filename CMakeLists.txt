@@ -257,6 +257,7 @@ add_executable(osect
     src/ui_popup_manager.cpp
     src/route_plan_config.cpp
     src/route_planner.cpp
+    src/route_session.cpp
     src/route_submitter.cpp
     src/tile_loader.cpp
     src/chart_style.cpp
@@ -270,6 +271,7 @@ add_executable(osect
     src/ui_overlay.cpp
     src/ui_sectioned_list.cpp
     src/user_database.cpp
+    src/waypoint_session.cpp
     src/xnotam_parser.cpp
 )
 target_compile_definitions(osect PRIVATE
