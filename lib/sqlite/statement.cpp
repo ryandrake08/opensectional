@@ -1,10 +1,25 @@
 #include "statement.hpp"
+#include "error.hpp"
 #include <sqlite3.h>
-#include <stdexcept>
 #include <string>
 
 namespace sqlite
 {
+    namespace
+    {
+        // sqlite3_bind_* returns SQLITE_OK or, most commonly, SQLITE_RANGE for
+        // an out-of-range parameter index; left unchecked that misbinding is
+        // silent and the query runs with the parameter still NULL.
+        void check_bind(int rc, int index, sqlite3_stmt* stmt)
+        {
+            if(rc != SQLITE_OK)
+            {
+                throw error("Failed to bind parameter " + std::to_string(index),
+                            sqlite3_db_handle(stmt));
+            }
+        }
+    } // namespace
+
     struct statement::impl
     {
         sqlite3_stmt* stmt;
@@ -39,44 +54,47 @@ namespace sqlite
 
     void statement::bind_null(int index)
     {
-        sqlite3_bind_null(pimpl->stmt, index);
+        check_bind(sqlite3_bind_null(pimpl->stmt, index), index, pimpl->stmt);
     }
 
     void statement::bind(int index, int value)
     {
-        sqlite3_bind_int(pimpl->stmt, index, value);
+        check_bind(sqlite3_bind_int(pimpl->stmt, index, value), index, pimpl->stmt);
     }
 
     void statement::bind(int index, std::int64_t value)
     {
-        sqlite3_bind_int64(pimpl->stmt, index, value);
+        check_bind(sqlite3_bind_int64(pimpl->stmt, index, value), index, pimpl->stmt);
     }
 
     void statement::bind(int index, double value)
     {
-        sqlite3_bind_double(pimpl->stmt, index, value);
+        check_bind(sqlite3_bind_double(pimpl->stmt, index, value), index, pimpl->stmt);
     }
 
     void statement::bind(int index, const char* value)
     {
-        sqlite3_bind_text(pimpl->stmt, index, value, -1, SQLITE_TRANSIENT);
+        check_bind(sqlite3_bind_text(pimpl->stmt, index, value, -1, SQLITE_TRANSIENT), index, pimpl->stmt);
     }
 
     void statement::bind(int index, const std::string& value)
     {
-        sqlite3_bind_text(pimpl->stmt, index, value.c_str(), -1, SQLITE_TRANSIENT);
+        check_bind(sqlite3_bind_text(pimpl->stmt, index, value.c_str(), -1, SQLITE_TRANSIENT), index,
+                   pimpl->stmt);
     }
 
     void statement::bind(int index, const std::vector<int>& values)
     {
-        sqlite3_bind_blob(pimpl->stmt, index, values.data(), static_cast<int>(values.size() * sizeof(int)),
-                          SQLITE_TRANSIENT);
+        check_bind(sqlite3_bind_blob(pimpl->stmt, index, values.data(),
+                                     static_cast<int>(values.size() * sizeof(int)), SQLITE_TRANSIENT),
+                   index, pimpl->stmt);
     }
 
     void statement::bind(int index, const std::vector<double>& values)
     {
-        sqlite3_bind_blob(pimpl->stmt, index, values.data(), static_cast<int>(values.size() * sizeof(double)),
-                          SQLITE_TRANSIENT);
+        check_bind(sqlite3_bind_blob(pimpl->stmt, index, values.data(),
+                                     static_cast<int>(values.size() * sizeof(double)), SQLITE_TRANSIENT),
+                   index, pimpl->stmt);
     }
 
     bool statement::step()
@@ -90,9 +108,7 @@ namespace sqlite
         {
             return false;
         }
-        std::string msg = "sqlite3_step failed: ";
-        msg += sqlite3_errmsg(sqlite3_db_handle(pimpl->stmt));
-        throw std::runtime_error(msg);
+        throw error("sqlite3_step failed", sqlite3_db_handle(pimpl->stmt));
     }
 
     int statement::column_count() const

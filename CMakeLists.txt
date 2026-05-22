@@ -337,6 +337,7 @@ target_compile_options(imgui_wrapper PRIVATE
 # SQLite C++ wrapper library
 add_library(sqlite_wrapper STATIC
     lib/sqlite/database.cpp
+    lib/sqlite/error.cpp
     lib/sqlite/statement.cpp
 )
 target_compile_features(sqlite_wrapper PRIVATE cxx_std_11)

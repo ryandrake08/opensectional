@@ -1,7 +1,7 @@
 #include "database.hpp"
+#include "error.hpp"
 #include "statement.hpp"
 #include <sqlite3.h>
-#include <stdexcept>
 
 namespace sqlite
 {
@@ -15,10 +15,9 @@ namespace sqlite
             int rc = sqlite3_open_v2(path, &db, flags, nullptr);
             if(rc != SQLITE_OK)
             {
-                std::string msg = "Failed to open database: ";
-                msg += sqlite3_errmsg(db);
-                sqlite3_close(db);
-                throw std::runtime_error(msg);
+                error err("Failed to open database", db);
+                sqlite3_close_v2(db);
+                throw err;
             }
             // Performance hints: mmap the file (faster than pread on
             // macOS), keep more index pages resident across queries,
@@ -31,7 +30,7 @@ namespace sqlite
 
         ~impl()
         {
-            sqlite3_close(db);
+            sqlite3_close_v2(db);
         }
 
         impl(const impl&) = delete;
@@ -54,34 +53,23 @@ namespace sqlite
         int rc = sqlite3_prepare_v2(pimpl->db, sql, -1, &stmt, nullptr);
         if(rc != SQLITE_OK)
         {
-            std::string msg = "Failed to prepare statement: ";
-            msg += sqlite3_errmsg(pimpl->db);
-            throw std::runtime_error(msg);
+            throw error("Failed to prepare statement", pimpl->db);
         }
         return statement(stmt);
     }
 
     void database::exec(const char* sql)
     {
-        char* err = nullptr;
-        int rc = sqlite3_exec(pimpl->db, sql, nullptr, nullptr, &err);
+        int rc = sqlite3_exec(pimpl->db, sql, nullptr, nullptr, nullptr);
         if(rc != SQLITE_OK)
         {
-            std::string msg = "Failed to exec SQL: ";
-            msg += err ? err : sqlite3_errmsg(pimpl->db);
-            sqlite3_free(err);
-            throw std::runtime_error(msg);
+            throw error("Failed to exec SQL", pimpl->db);
         }
     }
 
     std::int64_t database::last_insert_rowid() const
     {
         return sqlite3_last_insert_rowid(pimpl->db);
-    }
-
-    std::string database::error_message() const
-    {
-        return sqlite3_errmsg(pimpl->db);
     }
 
 } // namespace sqlite

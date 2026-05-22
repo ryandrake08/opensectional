@@ -40,9 +40,6 @@ namespace sqlite
         // connection. Wraps sqlite3_last_insert_rowid; intended use is
         // capturing INTEGER PRIMARY KEY AUTOINCREMENT ids right after step().
         std::int64_t last_insert_rowid() const;
-
-        // Get the last error message
-        std::string error_message() const;
     };
 
 } // namespace sqlite
