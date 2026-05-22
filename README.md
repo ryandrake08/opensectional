@@ -1,6 +1,6 @@
 # OpenSectional
 
-A desktop application for visualizing FAA NASR (National Airspace System Resource) data on an interactive map. Displays airports, navaids, fixes, airways, airspace boundaries, TFRs, military training routes, obstacles, weather stations, and communication outlets as vector overlays on a raster basemap. Features include rotated airway/MTR labels, composite airspace labels with altitude bounds, overlap-eliminated text placement, interactive flight-route planning with drag-to-edit waypoints, and A\* route pathfinding driven by a `?` sigil in the route text. Geographic features use spherical geometry (great-circle arcs, geodesic circles).
+A desktop application for visualizing FAA NASR (National Airspace System Resource) data on an interactive map. Displays airports, navaids, fixes, airways, airspace boundaries, TFRs, military training routes, obstacles, weather stations, and communication outlets as vector overlays on a raster basemap. Features include rotated airway/MTR labels, composite airspace labels with altitude bounds, overlap-eliminated text placement, interactive flight-route planning with drag-to-edit waypoints, user-placed persistent waypoints, and A\* route pathfinding driven by a `?` sigil in the route text. Geographic features use spherical geometry (great-circle arcs, geodesic circles).
 
 ## Quick Start
 
@@ -376,8 +376,10 @@ For a basemap derived from FAA aeronav charts, generate XYZ tile pyramids using 
 | Drag route leg | Insert a new waypoint on that leg at the release point |
 | Drag route waypoint | Replace that waypoint with whatever's under the cursor on release |
 | Drag route waypoint → adjacent waypoint | Delete the dragged waypoint |
+| **WPT** button in the click popup header | Drop a user-defined waypoint at the clicked coordinates |
+| Drag a user waypoint | Move it to a new location |
 
-Type a route string in the "Route" panel at the top-center, e.g. `O61 LIN V459 LOPES KTSP`, and press Enter or click **Set**. Waypoints may be airports, navaids, fixes, or raw lat/lon (`DDMMSSXDDDMMSSY`, e.g. `383412N1210305W`). Three-token runs `ENTRY AIRWAY EXIT` expand airway shorthand into individual fixes (auto-correcting ENTRY/EXIT to the closest airway fix if needed).
+Type a route string in the "Route" panel at the top-center, e.g. `O61 LIN V459 LOPES KTSP`, and press Enter or click **Set**. Waypoints may be airports, navaids, fixes, or raw lat/lon (`DDMMSSXDDDMMSSY`, e.g. `383412N1210305W`). Three-token runs `ENTRY AIRWAY EXIT` expand airway shorthand into individual fixes (auto-correcting ENTRY/EXIT to the closest airway fix if needed). Each route occupies its own Route-panel tab — the **+** tab adds another — and routes are saved automatically and restored the next time OpenSectional launches.
 
 After a route is parsed or drag-edited, OpenSectional rewrites it into its most compact airway-aware form:
 
@@ -400,6 +402,20 @@ Insert a `?` between two waypoints (or between a waypoint and an airway token) a
 The "Use airways" checkbox in the Route panel turns on the airway-class preference (Victor PREFER by default, etc.) and forces airway-routable navaids and WP/RP/CN/MR fixes to INCLUDE for that submission. The "Max leg (nm)" input next to it caps any single A\* hop at the chosen distance. While planning runs on a background thread the input is disabled and an animated indicator is shown. Cross-country plans (e.g. `KSFO ? KJFK`) take a couple of seconds; short hops are imperceptible.
 
 Routing preferences are configured in the `[route_plan]` section of an `osect.ini` override file (see [Configuration](#configuration)). Each waypoint subtype (airport, balloonport, seaplane base, gliderport, heliport, ultralight, VOR, VORTAC, VOR/DME, DME, NDB, NDB/DME, VFR fix) and each airway class (Victor, Jet, RNAV, color, other) takes one of `PREFER` / `INCLUDE` / `AVOID` / `REJECT` (cost multipliers 0.8 / 1.0 / 1.25 / 1000). A separate `route_airway_gap` key controls how A\* prices crossings of published airway discontinuities — `PREFER` makes following a named airway through its gaps cost-attractive; `INCLUDE` is neutral; `AVOID`/`REJECT` push the planner toward switching airways.
+
+### User-defined waypoints
+
+Drop your own waypoints anywhere on the map: click a point and press the **WPT** button in the popup header. The waypoint appears under the "user waypoints" layer; its info popup carries **Rename** and **Delete** buttons, and dragging it relocates it.
+
+User waypoints are first-class route points — type a waypoint's name in the Route panel or the search box and it resolves like any airport, navaid, or fix. A NASR identifier of the same name always wins, so a user waypoint never shadows published data.
+
+Saved routes and user waypoints persist across launches in a `user.db` SQLite file under the platform user-data directory — distinct from the re-fetchable ephemeral cache:
+
+- macOS: `~/Library/Application Support/org.existens.opensectional/user.db`
+- Windows: `%APPDATA%\osect\user.db`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/osect/user.db`
+
+Delete it to reset OpenSectional to no saved routes or waypoints.
 
 ### Configuration
 
@@ -437,17 +453,18 @@ basemap layer is skipped if no basemap is found; the database is required.
 override-file lookup order.
 
 Layer visibility (basemap, airports, runways, navaids, fixes, airways, MTRs,
-airspace, SUA, ADIZ, ARTCC, PJA, MAA, TFR, obstacles, AWOS, RCO) is controlled
-via checkbox panel in the top-right corner.
+airspace, SUA, ADIZ, ARTCC, PJA, MAA, TFR, user waypoints, obstacles, AWOS,
+RCO) is controlled via checkbox panel in the top-right corner.
 
 ## Network and offline mode
 
 Static data ships in `osect.db` and never causes runtime network
 traffic. Ephemeral data — TFRs, NOTAMs, weather, etc. — is fetched
-in-app on a per-source schedule once the corresponding source lands.
-At present no source is wired up, so a default-launched binary makes
-zero outbound requests; this section is here to document what to
-expect as those sources land.
+in-app on a per-source schedule. TFRs are live today: a
+default-launched binary fetches them at startup and every 15 minutes
+after. NOTAMs, weather, and other sources are planned and will be
+documented here as they land. Pass `--offline` to suppress every
+outbound request (see below).
 
 **Endpoints contacted:**
 
@@ -455,16 +472,16 @@ expect as those sources land.
 |--------|----------|---------|
 | TFRs | `https://tfr.faa.gov/tfrapi/getTfrList` + `https://tfr.faa.gov/download/detail_*.xml` | 15 min auto-refresh, manual via the data-status panel |
 
-**Cache directory.** Cached responses live under a per-platform
-directory:
+**Cache file.** Fetched data is cached in a single `ephemeral.db`
+SQLite file at the per-platform cache directory:
 
-- macOS: `~/Library/Caches/org.existens.opensectional/ephemeral/`
-- Linux/BSD: `${XDG_CACHE_HOME:-$HOME/.cache}/osect/ephemeral/`
-- Windows: `%LOCALAPPDATA%\osect\ephemeral\`
+- macOS: `~/Library/Caches/org.existens.opensectional/ephemeral.db`
+- Linux/BSD: `${XDG_CACHE_HOME:-$HOME/.cache}/osect/ephemeral.db`
+- Windows: `%LOCALAPPDATA%\osect\ephemeral.db`
 
-One file per source, with a versioned binary header. Safe to delete
-manually — sources fall back to "no prior data" and re-fetch on next
-launch.
+It holds every cached source, schema-versioned per source group. Safe
+to delete manually — sources fall back to "no prior data" and re-fetch
+on next launch.
 
 **`--offline` flag.** Suppresses every outbound HTTP request for the
 process lifetime. Sources catch the resulting "offline mode" exception
@@ -476,27 +493,40 @@ captive portal, or against a stale-but-frozen view of the world.
 
 ```
 src/                      Application sources
-  main.cpp                Entry point, SDL init, main loop
+  main.cpp                Entry point: parse options, construct and run the app
+  program.cpp             Application object: SDL init, main run loop, event dispatch
+  app_options.cpp         Command-line parsing and bundled-asset path resolution
   map_widget.cpp          Map container: pipelines, input, grid, render orchestration
   map_view.cpp            Web Mercator viewport, pan/zoom, coordinate conversions
-  geo_math.cpp            Spherical geometry (geodesic circles, great-circle interpolation)
+  geo_math.cpp            Geodesic and equirectangular geometry helpers
   tile_renderer.cpp       XYZ tile loading with LRU GPU cache
+  tile_loader.cpp         Background tile I/O
   feature_renderer.cpp    Feature layer: query scheduling, SDF line packing, GPU upload
   feature_builder.cpp     Background worker: builds polyline geometry from DB results
   feature_type.cpp        Per-feature-type build/pick/selection logic (polymorphic)
+  line_renderer.cpp       SDF polyline rendering (lines, dashes, borders, circles)
+  label_renderer.cpp      Text label placement, overlap elimination, and rendering (supports rotated and composite labels)
+  chart_style.cpp         INI-based zoom-dependent feature styling
+  chart_type.cpp          Chart-type enum and per-feature chart membership
   flight_route.cpp        Route data model, shorthand parser, airway expansion, leg computation
   route_planner.cpp       In-memory A* route planner (catalog, airway adjacency, project-and-walk, sigil expansion)
   route_plan_config.cpp   Loads [route_plan] preferences (per-subtype/airway costs) into route_planner::options
   route_submitter.cpp     Background-thread wrapper around route_planner::expand_sigils
-  line_renderer.cpp       SDF polyline rendering (lines, dashes, borders, circles)
-  label_renderer.cpp      Text label placement, overlap elimination, and rendering (supports rotated and composite labels)
+  route_session.cpp       Route panel / map / user.db route correspondence and events
+  waypoint_session.cpp    User-waypoint create/rename/delete/drag handling
   nasr_database.cpp       SQLite query interface with R-tree spatial queries
-  chart_style.cpp         INI-based zoom-dependent feature styling
-  tile_loader.cpp         Background tile I/O
-  ui_overlay.cpp          ImGui UI (FPS, layer checkboxes, search, altitude filter, route input/info, planner knobs)
+  user_database.cpp       SQLite store for user content (saved routes, user waypoints)
+  ephemeral_database.cpp  SQLite store for runtime-fetched (ephemeral) data
+  ephemeral_source.cpp    Ephemeral-source enum and refresh SDL event type
+  tfr_refresher.cpp       Background TFR fetch into ephemeral_database
+  http_client.cpp         Synchronous libcurl HTTP client (ETag, offline support)
+  xnotam_parser.cpp       XNOTAM XML parser (TFR detail documents)
+  data_source.cpp         Data-source freshness records for the status panel
+  ui_overlay.cpp          ImGui UI (FPS, layer checkboxes, search, altitude filter, route panel, planner knobs)
+  ui_popup_manager.cpp    Feature-info and pick-selector popups
   ui_sectioned_list.cpp   Grouped selectable list widget (pick popup, search results)
-  render_context.cpp      Render state (projection matrix, sampler)
   ini_config.cpp          INI file parser
+tests/                    doctest unit-test suites (run via ctest)
 lib/imgui/                ImGui RAII wrapper library
 lib/sdl/                  SDL3 GPU API wrapper library
 lib/sqlite/               SQLite RAII wrapper library
@@ -516,13 +546,18 @@ tools/
   render_basemap.py       Natural Earth basemap tile renderer
   build-macos-package.sh  Vendored universal-binary build → DMG installer (cleans thirdparty/ on success unless --no-clean)
   build-mingw-package.sh  Vendored MinGW-w64 cross build → NSIS installer  (cleans thirdparty/ on success unless --no-clean)
+  build_macos_icon.sh     PNG → .icns app icon (sips + iconutil)
+  build_windows_icon.sh   PNG → .ico installer icon (ImageMagick)
   test_nasr_queries.py    Database query correctness and performance tests
 ```
 
 ## Testing
 
 ```bash
-# Run database query tests (requires a built osect.db)
+# C++ unit tests (doctest, registered with ctest)
+ctest --test-dir build --output-on-failure
+
+# Database query tests (requires a built osect.db)
 tools/env/bin/python3 tools/test_nasr_queries.py osect.db
 ```
 
