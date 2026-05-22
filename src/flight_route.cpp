@@ -1,4 +1,5 @@
 #include "flight_route.hpp"
+#include "geo_math.hpp"
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -155,42 +156,6 @@ namespace osect
     // Airway expansion
     // ---------------------------------------------------------------
 
-    // Haversine distance in NM between two lat/lon points
-    static double haversine_nm(double lat1, double lon1, double lat2, double lon2)
-    {
-        constexpr auto DEG2RAD = 3.14159265358979323846 / 180.0;
-        constexpr auto EARTH_RADIUS_NM = 3440.065;
-        auto dlat = (lat2 - lat1) * DEG2RAD;
-        auto dlon = (lon2 - lon1) * DEG2RAD;
-        auto a = std::sin(dlat / 2) * std::sin(dlat / 2) +
-                 std::cos(lat1 * DEG2RAD) * std::cos(lat2 * DEG2RAD) * std::sin(dlon / 2) * std::sin(dlon / 2);
-        return 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a)) * EARTH_RADIUS_NM;
-    }
-
-    // Signed cross-track distance in NM from point (lat_p, lon_p) to the
-    // great circle through (lat1, lon1) and (lat2, lon2). Absolute value
-    // is the perpendicular distance from the point to the great circle.
-    static double cross_track_nm(double lat1, double lon1, double lat2, double lon2, double lat_p, double lon_p)
-    {
-        constexpr auto DEG2RAD = 3.14159265358979323846 / 180.0;
-        constexpr auto EARTH_RADIUS_NM = 3440.065;
-        auto d13 = haversine_nm(lat1, lon1, lat_p, lon_p);
-        if(d13 == 0.0)
-        {
-            return 0.0;
-        }
-        auto rla1 = lat1 * DEG2RAD;
-        auto rla2 = lat2 * DEG2RAD;
-        auto rla3 = lat_p * DEG2RAD;
-        auto dlon12 = (lon2 - lon1) * DEG2RAD;
-        auto dlon13 = (lon_p - lon1) * DEG2RAD;
-        auto b12 = std::atan2(std::sin(dlon12) * std::cos(rla2),
-                              std::cos(rla1) * std::sin(rla2) - std::sin(rla1) * std::cos(rla2) * std::cos(dlon12));
-        auto b13 = std::atan2(std::sin(dlon13) * std::cos(rla3),
-                              std::cos(rla1) * std::sin(rla3) - std::sin(rla1) * std::cos(rla3) * std::cos(dlon13));
-        return std::asin(std::sin(d13 / EARTH_RADIUS_NM) * std::sin(b13 - b12)) * EARTH_RADIUS_NM;
-    }
-
     // One point on an airway — the fix name plus its coordinates as
     // stored on the airway segment. `lat`/`lon` are authoritative for
     // the airway's geometry; the same name may resolve to a nearby
@@ -215,18 +180,14 @@ namespace osect
         auto navs = db.lookup_navaids(p.name);
         if(!navs.empty())
         {
-            const auto& best = *std::min_element(
-                navs.begin(), navs.end(), [&](const navaid& a, const navaid& b)
-                { return haversine_nm(p.lat, p.lon, a.lat, a.lon) < haversine_nm(p.lat, p.lon, b.lat, b.lon); });
-            return route_waypoint{waypoint_kind::navaid, p.name, best.lat, best.lon};
+            const auto best = nearest_to(navs, p.lat, p.lon);
+            return route_waypoint{waypoint_kind::navaid, p.name, best->lat, best->lon};
         }
         auto fixes = db.lookup_fixes(p.name);
         if(!fixes.empty())
         {
-            const auto& best = *std::min_element(
-                fixes.begin(), fixes.end(), [&](const fix& a, const fix& b)
-                { return haversine_nm(p.lat, p.lon, a.lat, a.lon) < haversine_nm(p.lat, p.lon, b.lat, b.lon); });
-            return route_waypoint{waypoint_kind::fix, p.name, best.lat, best.lon};
+            const auto best = nearest_to(fixes, p.lat, p.lon);
+            return route_waypoint{waypoint_kind::fix, p.name, best->lat, best->lon};
         }
         return route_waypoint{waypoint_kind::latlon, "", p.lat, p.lon};
     }
@@ -368,13 +329,13 @@ namespace osect
         auto best_dist = 1e18;
         for(const auto& seg : segments)
         {
-            auto d = haversine_nm(lat, lon, seg.from_lat, seg.from_lon);
+            auto d = haversine_distance_nm(lat, lon, seg.from_lat, seg.from_lon);
             if(d < best_dist)
             {
                 best_dist = d;
                 best = seg.from_point;
             }
-            d = haversine_nm(lat, lon, seg.to_lat, seg.to_lon);
+            d = haversine_distance_nm(lat, lon, seg.to_lat, seg.to_lon);
             if(d < best_dist)
             {
                 best_dist = d;
@@ -395,31 +356,6 @@ namespace osect
     // ---------------------------------------------------------------
     // Resolve a single token to a waypoint (airport > navaid > fix)
     // ---------------------------------------------------------------
-
-    // Pick the index of the candidate nearest to (hint_lat, hint_lon).
-    // When `hint` is empty or the candidate list has one entry, returns 0
-    // (preserving the historical "first match wins" behavior).
-    template <typename T>
-    static std::size_t nearest_index(const std::vector<T>& candidates,
-                                     const std::optional<std::pair<double, double>>& hint)
-    {
-        if(!hint || candidates.size() <= 1)
-        {
-            return 0;
-        }
-        std::size_t best = 0;
-        auto best_d = haversine_nm(hint->first, hint->second, candidates[0].lat, candidates[0].lon);
-        for(std::size_t i = 1; i < candidates.size(); ++i)
-        {
-            auto d = haversine_nm(hint->first, hint->second, candidates[i].lat, candidates[i].lon);
-            if(d < best_d)
-            {
-                best_d = d;
-                best = i;
-            }
-        }
-        return best;
-    }
 
     // `hint`, when set, is the lat/lon of the nearest already-resolved
     // waypoint — used to disambiguate ID collisions where the database
@@ -446,11 +382,12 @@ namespace osect
             return route_waypoint{waypoint_kind::airport, token, a.lat, a.lon};
         }
 
-        // Try navaid
+        // Try navaid. With no hint, the first match wins; otherwise the
+        // candidate geographically closest to the hint disambiguates.
         auto navs = db.lookup_navaids(token);
         if(!navs.empty())
         {
-            const auto& n = navs[nearest_index(navs, hint)];
+            const auto& n = hint ? *nearest_to(navs, hint->first, hint->second) : navs.front();
             return route_waypoint{waypoint_kind::navaid, token, n.lat, n.lon};
         }
 
@@ -458,7 +395,7 @@ namespace osect
         auto fixes = db.lookup_fixes(token);
         if(!fixes.empty())
         {
-            const auto& f = fixes[nearest_index(fixes, hint)];
+            const auto& f = hint ? *nearest_to(fixes, hint->first, hint->second) : fixes.front();
             return route_waypoint{waypoint_kind::fix, token, f.lat, f.lon};
         }
 
@@ -856,25 +793,6 @@ namespace osect
     // Leg computation
     // ---------------------------------------------------------------
 
-    // Initial great-circle bearing from (lat1, lon1) to (lat2, lon2), in
-    // degrees, normalized to [0, 360).
-    static double true_course_deg(double lat1, double lon1, double lat2, double lon2)
-    {
-        constexpr auto DEG2RAD = 3.14159265358979323846 / 180.0;
-        constexpr auto RAD2DEG = 180.0 / 3.14159265358979323846;
-        auto rlat1 = lat1 * DEG2RAD;
-        auto rlat2 = lat2 * DEG2RAD;
-        auto dlon = (lon2 - lon1) * DEG2RAD;
-        auto y = std::sin(dlon) * std::cos(rlat2);
-        auto x = std::cos(rlat1) * std::sin(rlat2) - std::sin(rlat1) * std::cos(rlat2) * std::cos(dlon);
-        auto brg = std::atan2(y, x) * RAD2DEG;
-        if(brg < 0)
-        {
-            brg += 360.0;
-        }
-        return brg;
-    }
-
     std::vector<route_leg> flight_route::compute_legs() const
     {
         std::vector<route_leg> legs;
@@ -887,7 +805,7 @@ namespace osect
             auto lo_a = a.lon;
             auto lb = b.lat;
             auto lo_b = b.lon;
-            legs.push_back({waypoint_id(a), waypoint_id(b), haversine_nm(la, lo_a, lb, lo_b),
+            legs.push_back({waypoint_id(a), waypoint_id(b), haversine_distance_nm(la, lo_a, lb, lo_b),
                             true_course_deg(la, lo_a, lb, lo_b)});
         }
         return legs;

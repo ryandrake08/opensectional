@@ -18,19 +18,6 @@ namespace osect
 {
     namespace
     {
-        // Approximate bounding box of `radius_nm` around (lat, lon).
-        // Over-estimates near the poles and across the antimeridian
-        // (CONUS-only at v1; the caller still filters results by
-        // exact haversine distance).
-        geo_bbox bbox_around(double lat, double lon, double radius_nm)
-        {
-            constexpr auto NM_PER_DEG = 60.0;
-            auto dlat = radius_nm / NM_PER_DEG;
-            auto cos_lat = std::cos(lat * M_PI / 180.0);
-            auto dlon = (cos_lat > 1e-6) ? radius_nm / (NM_PER_DEG * cos_lat) : 180.0;
-            return {lon - dlon, lat - dlat, lon + dlon, lat + dlat};
-        }
-
         // Uniform 1°×1° grid over the routable-waypoint catalog.
         // Replaces three SQLite R*Tree queries per A* expansion with
         // direct cell indexing into in-memory vectors. Built once at
@@ -358,11 +345,11 @@ namespace osect
             }
             const auto& candidates = it->second;
             auto best = candidates.front();
-            auto best_d = haversine_nm(lat, lon, nodes[best].lat, nodes[best].lon);
+            auto best_d = haversine_distance_nm(lat, lon, nodes[best].lat, nodes[best].lon);
             for(std::size_t i = 1; i < candidates.size(); ++i)
             {
                 auto c = candidates[i];
-                auto d = haversine_nm(lat, lon, nodes[c].lat, nodes[c].lon);
+                auto d = haversine_distance_nm(lat, lon, nodes[c].lat, nodes[c].lon);
                 if(d < best_d)
                 {
                     best_d = d;
@@ -486,7 +473,7 @@ namespace osect
         // this is correct because no intermediate path can be
         // cheaper than the direct great-circle when the heuristic
         // is admissible.
-        if(haversine_nm(origin.lat, origin.lon, destination.lat, destination.lon) <= max_leg)
+        if(haversine_distance_nm(origin.lat, origin.lon, destination.lat, destination.lon) <= max_leg)
         {
             return std::vector<std::size_t>{};
         }
@@ -540,7 +527,7 @@ namespace osect
         std::priority_queue<open_entry> open;
 
         auto heuristic = [&](std::size_t n) -> double
-        { return haversine_nm(nodes[n].lat, nodes[n].lon, destination.lat, destination.lon) * heuristic_factor; };
+        { return haversine_distance_nm(nodes[n].lat, nodes[n].lon, destination.lat, destination.lon) * heuristic_factor; };
 
         // Cost factor of a single A* step. `from_st` is nullopt
         // when the step originates from the synthetic origin
@@ -593,7 +580,7 @@ namespace osect
                 {
                     continue;
                 }
-                auto d = haversine_nm(from_lat, from_lon, nodes[to_idx].lat, nodes[to_idx].lon);
+                auto d = haversine_distance_nm(from_lat, from_lon, nodes[to_idx].lat, nodes[to_idx].lon);
                 if(d > max_leg)
                 {
                     continue;
@@ -614,7 +601,7 @@ namespace osect
                     {
                         continue;
                     }
-                    auto d = haversine_nm(from_lat, from_lon, nodes[e.neighbor_index].lat, nodes[e.neighbor_index].lon);
+                    auto d = haversine_distance_nm(from_lat, from_lon, nodes[e.neighbor_index].lat, nodes[e.neighbor_index].lon);
                     if(d > max_leg)
                     {
                         continue;
@@ -646,7 +633,7 @@ namespace osect
 
             // Goal test: if the final direct leg from n to destination
             // fits within max_leg, n is the last intermediate node.
-            if(haversine_nm(nodes[n].lat, nodes[n].lon, destination.lat, destination.lon) <= max_leg)
+            if(haversine_distance_nm(nodes[n].lat, nodes[n].lon, destination.lat, destination.lon) <= max_leg)
             {
                 std::vector<std::size_t> path;
                 auto cur = n;
@@ -752,8 +739,8 @@ namespace osect
             }
 
             const auto& s = segs[best];
-            auto d_from = haversine_nm(s.from_lat, s.from_lon, toward_lat, toward_lon);
-            auto d_to = haversine_nm(s.to_lat, s.to_lon, toward_lat, toward_lon);
+            auto d_from = haversine_distance_nm(s.from_lat, s.from_lon, toward_lat, toward_lon);
+            auto d_to = haversine_distance_nm(s.to_lat, s.to_lon, toward_lat, toward_lon);
             if(d_from <= d_to)
             {
                 return {s.from_point, s.from_lat, s.from_lon};

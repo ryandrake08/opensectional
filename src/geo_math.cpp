@@ -7,6 +7,10 @@ namespace osect
     {
         // WGS84 semi-major axis
         constexpr auto EARTH_RADIUS_NM = 6378137.0 / 1852.0;
+
+        // Local equirectangular approximation: 1° of latitude ≈ 60 NM
+        // everywhere; 1° of longitude is this scaled by cos(latitude).
+        constexpr auto NM_PER_DEG = 60.0;
     }
 
     std::vector<airspace_point> geodesic_circle(double center_lat, double center_lon, double radius_nm, int n)
@@ -47,7 +51,7 @@ namespace osect
         return pts;
     }
 
-    double haversine_nm(double lat1, double lon1, double lat2, double lon2)
+    double haversine_distance_nm(double lat1, double lon1, double lat2, double lon2)
     {
         auto rlat1 = lat1 * M_PI / 180.0;
         auto rlat2 = lat2 * M_PI / 180.0;
@@ -58,15 +62,57 @@ namespace osect
         return 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a)) * EARTH_RADIUS_NM;
     }
 
+    double equirectangular_distance_nm(double lat1, double lon1, double lat2, double lon2)
+    {
+        // Project onto a plane tangent at the midpoint latitude, so the
+        // result is symmetric in the two points.
+        auto nm_per_deg_lon = NM_PER_DEG * std::cos((lat1 + lat2) * 0.5 * M_PI / 180.0);
+        auto dlat = (lat2 - lat1) * NM_PER_DEG;
+        auto dlon = (lon2 - lon1) * nm_per_deg_lon;
+        return std::sqrt(dlat * dlat + dlon * dlon);
+    }
+
+    double true_course_deg(double lat1, double lon1, double lat2, double lon2)
+    {
+        auto rlat1 = lat1 * M_PI / 180.0;
+        auto rlat2 = lat2 * M_PI / 180.0;
+        auto dlon = (lon2 - lon1) * M_PI / 180.0;
+        auto y = std::sin(dlon) * std::cos(rlat2);
+        auto x = std::cos(rlat1) * std::sin(rlat2) - std::sin(rlat1) * std::cos(rlat2) * std::cos(dlon);
+        auto brg = std::atan2(y, x) * 180.0 / M_PI;
+        if(brg < 0.0)
+        {
+            brg += 360.0;
+        }
+        return brg;
+    }
+
+    double cross_track_nm(double lat1, double lon1, double lat2, double lon2, double lat_p, double lon_p)
+    {
+        auto d13 = haversine_distance_nm(lat1, lon1, lat_p, lon_p);
+        if(d13 == 0.0)
+        {
+            return 0.0;
+        }
+        auto rla1 = lat1 * M_PI / 180.0;
+        auto rla2 = lat2 * M_PI / 180.0;
+        auto rla3 = lat_p * M_PI / 180.0;
+        auto dlon12 = (lon2 - lon1) * M_PI / 180.0;
+        auto dlon13 = (lon_p - lon1) * M_PI / 180.0;
+        auto b12 = std::atan2(std::sin(dlon12) * std::cos(rla2),
+                              std::cos(rla1) * std::sin(rla2) - std::sin(rla1) * std::cos(rla2) * std::cos(dlon12));
+        auto b13 = std::atan2(std::sin(dlon13) * std::cos(rla3),
+                              std::cos(rla1) * std::sin(rla3) - std::sin(rla1) * std::cos(rla3) * std::cos(dlon13));
+        return std::asin(std::sin(d13 / EARTH_RADIUS_NM) * std::sin(b13 - b12)) * EARTH_RADIUS_NM;
+    }
+
     double point_to_segment_distance_nm(double lat_a, double lon_a, double lat_b, double lon_b, double lat_p,
                                         double lon_p)
     {
         // Local equirectangular projection about the segment midpoint.
-        // 1° latitude ≈ 60 nm everywhere; 1° longitude depends on
-        // latitude. Using a single cos(lat) factor is accurate to a
-        // small fraction of a percent for segment lengths of a few
-        // hundred nautical miles.
-        constexpr auto NM_PER_DEG = 60.0;
+        // Using a single cos(lat) factor is accurate to a small
+        // fraction of a percent for segment lengths of a few hundred
+        // nautical miles.
         auto mid_lat = (lat_a + lat_b) * 0.5;
         auto nm_per_deg_lon = NM_PER_DEG * std::cos(mid_lat * M_PI / 180.0);
 
@@ -147,6 +193,19 @@ namespace osect
             pts.push_back({lat, lon});
         }
         return pts;
+    }
+
+    double nm_to_deg_lon(double nm, double lat)
+    {
+        auto cos_lat = std::cos(lat * M_PI / 180.0);
+        return (cos_lat > 1e-6) ? nm / (NM_PER_DEG * cos_lat) : 180.0;
+    }
+
+    geo_bbox bbox_around(double lat, double lon, double radius_nm)
+    {
+        auto dlat = radius_nm / NM_PER_DEG;
+        auto dlon = nm_to_deg_lon(radius_nm, lat);
+        return {lon - dlon, lat - dlat, lon + dlon, lat + dlat};
     }
 
 } // namespace osect

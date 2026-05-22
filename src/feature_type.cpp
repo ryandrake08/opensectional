@@ -425,38 +425,7 @@ namespace osect
 
         bool point_in_circle_nm(double px, double py, double cx, double cy, double radius_nm)
         {
-            auto dlat = (py - cy) * 60.0;
-            auto dlon = (px - cx) * 60.0 * std::cos(cy * M_PI / 180.0);
-            return (dlat * dlat + dlon * dlon) <= (radius_nm * radius_nm);
-        }
-
-        double point_to_segment_nm(double px, double py, double ax, double ay, double bx, double by)
-        {
-            auto cos_lat = std::cos(py * M_PI / 180.0);
-            auto ax_nm = (ax - px) * 60.0 * cos_lat;
-            auto ay_nm = (ay - py) * 60.0;
-            auto bx_nm = (bx - px) * 60.0 * cos_lat;
-            auto by_nm = (by - py) * 60.0;
-
-            auto dx = bx_nm - ax_nm;
-            auto dy = by_nm - ay_nm;
-            auto len2 = dx * dx + dy * dy;
-            double t = 0;
-            if(len2 > 0)
-            {
-                t = -(ax_nm * dx + ay_nm * dy) / len2;
-                if(t < 0)
-                {
-                    t = 0;
-                }
-                else if(t > 1)
-                {
-                    t = 1;
-                }
-            }
-            auto cx = ax_nm + t * dx;
-            auto cy = ay_nm + t * dy;
-            return std::sqrt(cx * cx + cy * cy);
+            return equirectangular_distance_nm(py, px, cy, cx) <= radius_nm;
         }
 
         // Distance, in nautical miles, from (px, py) to the nearest
@@ -473,7 +442,7 @@ namespace osect
             auto best = std::numeric_limits<double>::infinity();
             for(std::size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++)
             {
-                auto d = point_to_segment_nm(px, py, ring[j].lon, ring[j].lat, ring[i].lon, ring[i].lat);
+                auto d = point_to_segment_distance_nm(ring[j].lat, ring[j].lon, ring[i].lat, ring[i].lon, py, px);
                 best = std::min(d, best);
             }
             return best;
@@ -488,15 +457,6 @@ namespace osect
                 best = std::min(d, best);
             }
             return best;
-        }
-
-        // Equirectangular distance to a point in nautical miles, matching
-        // the cos-latitude approximation used by point_in_circle_nm.
-        double point_distance_nm(double px, double py, double cx, double cy)
-        {
-            auto dlat = (py - cy) * 60.0;
-            auto dlon = (px - cx) * 60.0 * std::cos(cy * M_PI / 180.0);
-            return std::sqrt(dlat * dlat + dlon * dlon);
         }
 
         line_style to_line_style(const feature_style& fs)
@@ -950,8 +910,8 @@ namespace osect
                 {
                     continue;
                 }
-                auto d = point_to_segment_nm(ctx.click_lon, ctx.click_lat, seg.from_lon, seg.from_lat, seg.to_lon,
-                                             seg.to_lat);
+                auto d = point_to_segment_distance_nm(seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon,
+                                                      ctx.click_lat, ctx.click_lon);
                 if(d <= ctx.pick_radius_nm)
                 {
                     out.push_back(seg);
@@ -971,8 +931,8 @@ namespace osect
                 {
                     continue;
                 }
-                auto d = point_to_segment_nm(ctx.click_lon, ctx.click_lat, seg.from_lon, seg.from_lat, seg.to_lon,
-                                             seg.to_lat);
+                auto d = point_to_segment_distance_nm(seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon,
+                                                      ctx.click_lat, ctx.click_lon);
                 if(d <= ctx.pick_radius_nm)
                 {
                     out.push_back(seg);
@@ -988,8 +948,8 @@ namespace osect
             }
             for(const auto& rwy : ctx.db.query_runways(ctx.pick_box))
             {
-                auto d = point_to_segment_nm(ctx.click_lon, ctx.click_lat, rwy.end1_lon, rwy.end1_lat, rwy.end2_lon,
-                                             rwy.end2_lat);
+                auto d = point_to_segment_distance_nm(rwy.end1_lat, rwy.end1_lon, rwy.end2_lat, rwy.end2_lon,
+                                                      ctx.click_lat, ctx.click_lon);
                 if(d <= ctx.pick_radius_nm)
                 {
                     out.push_back(rwy);
@@ -1002,19 +962,19 @@ namespace osect
         double airway_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
         {
             const auto& s = std::get<airway_segment>(f);
-            return point_to_segment_nm(click_lon, click_lat, s.from_lon, s.from_lat, s.to_lon, s.to_lat);
+            return point_to_segment_distance_nm(s.from_lat, s.from_lon, s.to_lat, s.to_lon, click_lat, click_lon);
         }
 
         double mtr_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
         {
             const auto& s = std::get<mtr_segment>(f);
-            return point_to_segment_nm(click_lon, click_lat, s.from_lon, s.from_lat, s.to_lon, s.to_lat);
+            return point_to_segment_distance_nm(s.from_lat, s.from_lon, s.to_lat, s.to_lon, click_lat, click_lon);
         }
 
         double runway_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
         {
             const auto& r = std::get<runway>(f);
-            return point_to_segment_nm(click_lon, click_lat, r.end1_lon, r.end1_lat, r.end2_lon, r.end2_lat);
+            return point_to_segment_distance_nm(r.end1_lat, r.end1_lon, r.end2_lat, r.end2_lon, click_lat, click_lon);
         }
 
         double airspace_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
@@ -1072,10 +1032,10 @@ namespace osect
             const auto& p = std::get<pja>(f);
             if(p.radius_nm <= 0)
             {
-                return point_distance_nm(click_lon, click_lat, p.lon, p.lat);
+                return equirectangular_distance_nm(click_lat, click_lon, p.lat, p.lon);
             }
             // Distance to circle boundary: |radial - radius|.
-            return std::abs(point_distance_nm(click_lon, click_lat, p.lon, p.lat) - p.radius_nm);
+            return std::abs(equirectangular_distance_nm(click_lat, click_lon, p.lat, p.lon) - p.radius_nm);
         }
 
         double maa_type::pick_distance_nm(const feature& f, double click_lon, double click_lat) const
@@ -1087,9 +1047,9 @@ namespace osect
             }
             if(m.radius_nm > 0)
             {
-                return std::abs(point_distance_nm(click_lon, click_lat, m.lon, m.lat) - m.radius_nm);
+                return std::abs(equirectangular_distance_nm(click_lat, click_lon, m.lat, m.lon) - m.radius_nm);
             }
-            return point_distance_nm(click_lon, click_lat, m.lon, m.lat);
+            return equirectangular_distance_nm(click_lat, click_lon, m.lat, m.lon);
         }
 
         // -- summary() bodies ------------------------------------------------
@@ -2591,14 +2551,16 @@ namespace osect
         {
             auto view_lon = mx_to_lon(view_mx - mx_offset);
             auto view_lat = my_to_lat(view_my);
-            if(haversine_nm(lat, lon, view_lat, view_lon) <= radius_nm)
+            if(haversine_distance_nm(lat, lon, view_lat, view_lon) <= radius_nm)
             {
                 return {view_mx, view_my};
             }
 
-            constexpr auto NM_TO_DEG_LAT = 1.0 / 60.0;
-            auto edge_lat = lat + radius_nm * NM_TO_DEG_LAT * 0.707;
-            auto edge_lon = lon + radius_nm * NM_TO_DEG_LAT * 0.707 / std::cos(lat * M_PI / 180.0);
+            // A point on the circle's upper-right quadrant — 45° around,
+            // so radius_nm * sin(45°) of reach along each axis.
+            auto reach_nm = radius_nm * 0.707;
+            auto edge_lat = lat + reach_nm / 60.0; // 60 NM per degree of latitude
+            auto edge_lon = lon + nm_to_deg_lon(reach_nm, lat);
             auto cmx = lon_to_mx(lon) + mx_offset;
             auto cmy = lat_to_my(lat);
             auto emx = lon_to_mx(edge_lon) + mx_offset;
@@ -3582,7 +3544,7 @@ namespace osect
                 bool found = false;
                 for(std::size_t i = 0; i < wps.size(); ++i)
                 {
-                    auto d = point_distance_nm(ctx.click_lon, ctx.click_lat, wps[i].lon, wps[i].lat);
+                    auto d = equirectangular_distance_nm(ctx.click_lat, ctx.click_lon, wps[i].lat, wps[i].lon);
                     if(d <= ctx.pick_radius_nm)
                     {
                         out.push_back(route_pick{rid, route_pick::part_kind::waypoint, i,
@@ -3603,8 +3565,8 @@ namespace osect
                     auto best = std::numeric_limits<double>::infinity();
                     for(std::size_t j = 1; j < arc.size(); ++j)
                     {
-                        auto d = point_to_segment_nm(ctx.click_lon, ctx.click_lat, arc[j - 1].lon, arc[j - 1].lat,
-                                                     arc[j].lon, arc[j].lat);
+                        auto d = point_to_segment_distance_nm(arc[j - 1].lat, arc[j - 1].lon, arc[j].lat, arc[j].lon,
+                                                              ctx.click_lat, ctx.click_lon);
                         best = std::min(d, best);
                     }
                     if(best <= ctx.pick_radius_nm)
@@ -3617,6 +3579,48 @@ namespace osect
                     }
                 }
             }
+        }
+
+        // True if the airport / navaid / fix / user-waypoint icon that a
+        // route node sits on top of is itself drawn at the current chart
+        // type and zoom — the same decision the airport/navaid/fix/user
+        // builders make per feature. Route-node halos are suppressed when
+        // their icon is decluttered away so a far-zoom route does not show
+        // highlights floating over nothing. A latlon node has no underlying
+        // icon — its halo is the node's only marker, so it always shows.
+        bool route_node_icon_on_chart_and_visible(const build_context& ctx, const route_waypoint& wp)
+        {
+            const auto chart = ctx.req.chart;
+            const auto zoom = ctx.req.zoom;
+            // lookup_* can return several same-id features in distinct
+            // states; nearest_to re-applies resolve_waypoint's coordinate
+            // disambiguation to recover the one this route node names.
+            if(wp.kind == waypoint_kind::airport)
+            {
+                const auto apts = ctx.db.lookup_airports(wp.id);
+                const auto apt = nearest_to(apts, wp.lat, wp.lon);
+                return apt != apts.end() && airport_on_chart(*apt, chart) &&
+                        ctx.styles.airport_visible(*apt, zoom);
+            }
+            if(wp.kind == waypoint_kind::navaid)
+            {
+                const auto navs = ctx.db.lookup_navaids(wp.id);
+                const auto nav = nearest_to(navs, wp.lat, wp.lon);
+                return nav != navs.end() && navaid_on_chart(*nav, chart) &&
+                       ctx.styles.navaid_visible(nav->nav_type, zoom);
+            }
+            if(wp.kind == waypoint_kind::fix)
+            {
+                const auto fixes = ctx.db.lookup_fixes(wp.id);
+                const auto f = nearest_to(fixes, wp.lat, wp.lon);
+                return f != fixes.end() && fix_on_chart(*f, chart) &&
+                       ctx.styles.fix_visible(ctx.fix_on_airway(f->fix_id), zoom);
+            }
+            if(wp.kind == waypoint_kind::user)
+            {
+                return ctx.styles.user_waypoint_visible(zoom);
+            }
+            return true; // latlon — no underlying icon
         }
 
         void route_type::build(const build_context& ctx) const
@@ -3709,6 +3713,10 @@ namespace osect
                 auto& halo_pd = ctx.poly[layer_route_halo];
                 for(const auto& wp : wps)
                 {
+                    if(!route_node_icon_on_chart_and_visible(ctx, wp))
+                    {
+                        continue;
+                    }
                     auto cx = lon_to_mx(wp.lon) + ctx.mx_offset;
                     auto cy = lat_to_my(wp.lat);
 
@@ -3786,9 +3794,7 @@ namespace osect
     {
         if(auto c = point_coord(f))
         {
-            auto dlat = (click_lat - c->second) * 60.0;
-            auto dlon = (click_lon - c->first) * 60.0 * std::cos(c->second * M_PI / 180.0);
-            return std::sqrt(dlat * dlat + dlon * dlon);
+            return equirectangular_distance_nm(click_lat, click_lon, c->second, c->first);
         }
         return std::numeric_limits<double>::infinity();
     }
