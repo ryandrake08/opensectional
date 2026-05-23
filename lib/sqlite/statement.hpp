@@ -44,7 +44,12 @@ namespace sqlite
         void bind(int index, const std::vector<int>& values);
         void bind(int index, const std::vector<double>& values);
 
-        // Step to next row; returns true if a row is available
+        // Step to next row; returns true if a row is available, false
+        // when the result set is exhausted. A statement parked on a row
+        // holds an implicit read transaction open until reset() — single-
+        // row reads (`if (step()) { ...read columns... }`) must call
+        // reset() before returning, or the connection will be pinned to
+        // that snapshot and miss writes made by other connections.
         bool step();
 
         // Number of columns in the result set

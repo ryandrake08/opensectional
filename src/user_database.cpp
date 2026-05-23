@@ -441,6 +441,11 @@ namespace osect
             }
             rec.route_id = st.column_int64(0);
             rec.name     = st.column_text(1);
+            // A statement parked on SQLITE_ROW holds an implicit read
+            // transaction open until the next reset, pinning this
+            // connection to that snapshot. Release it now so concurrent
+            // writers' commits become visible on the next query.
+            st.reset();
         }
         auto& wps = pimpl->stmt_query_waypoints;
         wps.reset();
@@ -494,6 +499,10 @@ namespace osect
                 s.reset();
                 s.bind(1, route_id);
                 exists = s.step();
+                // Release the implicit read transaction held by a
+                // statement parked on SQLITE_ROW — see query_route for
+                // the rationale.
+                s.reset();
             }
             if(exists)
             {
@@ -567,6 +576,9 @@ namespace osect
         w.name        = st.column_text(1);
         w.lat         = st.column_double(2);
         w.lon         = st.column_double(3);
+        // Release the implicit read transaction held by a statement
+        // parked on SQLITE_ROW — see query_route for the rationale.
+        st.reset();
         return w;
     }
 
@@ -621,6 +633,10 @@ namespace osect
             taken.bind(2, waypoint_id);
             if(taken.step())
             {
+                // Release the implicit read transaction held by a
+                // statement parked on SQLITE_ROW — see query_route for
+                // the rationale.
+                taken.reset();
                 return false;
             }
         }
