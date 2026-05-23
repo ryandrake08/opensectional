@@ -255,13 +255,14 @@ namespace osect
             return true;
         }
 
-        // One pass of input-capture handoff, state handling, UI draw,
-        // and conditional GPU render. ui_result and last_render_ms are
-        // carried across calls. force renders unconditionally even when
-        // nothing changed — used for the startup warmup passes, where
+        // One main-loop iteration: hand the latest ImGui mouse/keyboard
+        // capture state to the map, drain the produce/consume pipeline
+        // to convergence, then conditionally render. last_render_ms is
+        // carried across calls for the FPS readout. force renders
+        // unconditionally — used for the startup warmup passes, where
         // the render exists purely to let ImGui's auto-resize panels
         // settle their layout.
-        void render_iteration(ui_overlay_result& ui_result, float& last_render_ms, bool force)
+        void render_iteration(float& last_render_ms, bool force)
         {
             // Start the frame timer
             sdl::timer render_timer;
@@ -269,32 +270,40 @@ namespace osect
             map.set_imgui_wants_mouse(imgui_ctx.wants_mouse());
             map.set_imgui_wants_keyboard(imgui_ctx.wants_keyboard());
 
-            // State handlers run before ui.draw() so their mutations —
-            // active tab, popups, route tabs — land in this frame's
-            // draw rather than a frame late. They consume two inputs:
-            // state set by this iteration's dispatch_events() (a map
-            // click activating a route, drag results), which they see
-            // immediately; and the previous iteration's ui_result (tab
-            // clicks, the pick selector), whose effects land one event
-            // later — the mouse-up that follows every such interaction
-            // always provides that iteration.
             bool needs_render = force;
-            needs_render |= handle_visibility(ui_result);
-            needs_render |= handle_search_selection(ui_result);
-            needs_render |= handle_search_query(ui_result);
-            needs_render |= routes.process(ui_result);
-            needs_render |= waypoints.process();
 
-            // Draw all UI, producing the ui_result the next iteration's
-            // handlers consume.
-            imgui_ctx.new_frame();
-            ui_result = ui.draw(last_render_ms, map.feature_types());
-            needs_render |= map.draw_imgui();
-            imgui_ctx.end_frame();
+            // Drain the frame to a fixed point. A pass's ui.draw() /
+            // draw_popups() produces ui_result / *_request work that
+            // only the next pass's handlers can consume; a handler can
+            // spawn more (closing a route tab makes the next draw emit
+            // active_tab_changed); ImGui's input trickling can hold a
+            // batched click's release for a later new_frame(); and a
+            // popup body change needs another draw to show. The two
+            // map-side signals (*_request and popup-redraw) are
+            // unified behind map.has_pending_actions(). Loop while any
+            // signal is outstanding; all are one-shot or count down,
+            // so this converges.
+            ui_overlay_result ui_result;
+            while(true)
+            {
+                needs_render |= handle_visibility(ui_result);
+                needs_render |= handle_search_selection(ui_result);
+                needs_render |= handle_search_query(ui_result);
+                needs_render |= routes.process(ui_result);
+                needs_render |= waypoints.process();
+
+                imgui_ctx.new_frame();
+                ui_result = ui.draw(last_render_ms, map.feature_types());
+                needs_render |= map.draw_imgui();
+                imgui_ctx.end_frame();
+
+                if(!ui_result.any() && !map.has_pending_actions() && !imgui_ctx.has_pending_input_events())
+                    break;
+            }
 
             // Drain async results that arrived during the wait, and
-            // submit any new build requests this frame's mutations
-            // triggered. Single per-frame sync point.
+            // submit any new build requests this iteration's mutations
+            // triggered. Single per-iteration sync point.
             needs_render |= map.update();
             needs_render |= imgui_ctx.wants_mouse();
 
@@ -316,10 +325,6 @@ namespace osect
         void run()
         {
             auto last_render_ms = 0.0F;
-            // Carried across iterations: the state handlers run before
-            // ui.draw(), so they consume the ui_result produced by the
-            // previous iteration's draw.
-            ui_overlay_result ui_result;
 
             // ImGui's auto-resize panels need three draws to settle
             // their layout — the route panel's tab bar is the slowest
@@ -330,7 +335,7 @@ namespace osect
             // renders through before entering the loop.
             for(int i = 0; i < 3; ++i)
             {
-                render_iteration(ui_result, last_render_ms, /*force=*/true);
+                render_iteration(last_render_ms, /*force=*/true);
             }
 
             while(true)
@@ -340,7 +345,7 @@ namespace osect
                     sdl::log_info("shutting down");
                     break;
                 }
-                render_iteration(ui_result, last_render_ms, /*force=*/false);
+                render_iteration(last_render_ms, /*force=*/false);
             }
         }
     };

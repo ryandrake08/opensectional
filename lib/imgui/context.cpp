@@ -2,6 +2,7 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
+#include <imgui_internal.h>
 #include <sdl/command_buffer.hpp>
 #include <sdl/device.hpp>
 #include <sdl/texture.hpp>
@@ -69,6 +70,11 @@ namespace imgui
     bool context::wants_keyboard() const
     {
         return ImGui::GetIO().WantCaptureKeyboard;
+    }
+
+    bool context::has_pending_input_events() const
+    {
+        return ImGui::GetCurrentContext()->InputEventsQueue.Size > 0;
     }
 
 } // namespace imgui

@@ -130,8 +130,12 @@ namespace osect
 
     namespace
     {
-        // Draw the pick selector. Returns the warmup-still-running flag.
-        // Dismissal/selection are reported through `out`.
+        // Draw the pick selector. Returns true if the popup needs
+        // another draw — either auto-resize warmup is still running,
+        // or the popup just closed this call (its Begin/End ran
+        // before the close path decided, so one more draw is needed
+        // to drop it from the rendered frame). Dismissal/selection
+        // are reported through `out`.
         bool draw_pick(pick_state& p, popup_manager::actions& out, const map_view& view,
                        const std::vector<std::unique_ptr<feature_type>>& feature_types)
         {
@@ -147,7 +151,7 @@ namespace osect
                 p.open = false;
                 p.items.clear();
                 out.pick_dismissed = true;
-                return false;
+                return true;
             }
 
             ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
@@ -165,14 +169,14 @@ namespace osect
                 out.create_waypoint = std::pair{p.click_lon, p.click_lat};
                 p.open = false;
                 p.items.clear();
-                return false;
+                return true;
             }
             if(imgui::right_aligned_close_button("X##pick_close"))
             {
                 p.open = false;
                 p.items.clear();
                 out.pick_dismissed = true;
-                return false;
+                return true;
             }
 
             if(!p.items.empty())
@@ -218,7 +222,7 @@ namespace osect
             {
                 --p.warmup_frames;
             }
-            return need_more;
+            return need_more || !p.open;
         }
 
         // Render the legs table + Delete button for a route_pick
@@ -316,7 +320,7 @@ namespace osect
             {
                 p.open = false;
                 out.info_dismissed = true;
-                return false;
+                return true;
             }
 
             ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
@@ -333,7 +337,7 @@ namespace osect
             {
                 p.open = false;
                 out.info_dismissed = true;
-                return false;
+                return true;
             }
 
             // Title row: feature summary left, [X] right. Route_picks
@@ -354,7 +358,7 @@ namespace osect
             {
                 p.open = false;
                 out.info_dismissed = true;
-                return false;
+                return true;
             }
             ImGui::Separator();
 
@@ -367,7 +371,7 @@ namespace osect
                 {
                     p.open = false;
                     out.route_delete = true;
-                    return false;
+                    return true;
                 }
             }
             else
@@ -417,7 +421,17 @@ namespace osect
 
                 if(std::holds_alternative<user_waypoint>(p.payload))
                 {
+                    const bool was_renaming = p.renaming;
                     draw_waypoint_actions(p, out);
+                    if(p.renaming != was_renaming)
+                    {
+                        // Toggling rename mode swaps the popup body
+                        // (Rename/Delete buttons <-> name field), so
+                        // the auto-resized window must re-settle and
+                        // the swapped body only appears on the next
+                        // draw. warmup_frames drives both.
+                        p.warmup_frames = 2;
+                    }
                 }
             }
 
@@ -426,7 +440,7 @@ namespace osect
             {
                 --p.warmup_frames;
             }
-            return need_more;
+            return need_more || !p.open;
         }
 
     } // namespace

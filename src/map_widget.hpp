@@ -139,6 +139,16 @@ namespace osect
         // notify_waypoints_changed. nullopt otherwise.
         std::optional<user_waypoint> drain_waypoint_drag_result();
 
+        // True while the map widget is not yet settled for this
+        // frame: a popup- or drag-produced action (route
+        // delete/activate, waypoint create/delete/rename, or a
+        // committed route/waypoint drag) is still awaiting its
+        // session handler, OR a popup body still needs another draw
+        // to settle (auto-resize warmup or a rename-mode swap).
+        // render_iteration queries this to decide whether to run
+        // another pass.
+        bool has_pending_actions() const;
+
         // Open the info popup on `wp`, select it, and flag a rebuild.
         // Called after a create or rename has been persisted so the
         // popup reflects the stored waypoint.

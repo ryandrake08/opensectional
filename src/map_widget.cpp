@@ -295,6 +295,12 @@ namespace osect
         bool imgui_wants_keyboard = false;
 
         popup_manager popups;
+        // Cached "popups need another draw" signal from the last
+        // draw_imgui(). has_pending_actions() ORs this in so the
+        // render loop's convergence query covers popup auto-resize
+        // warmup and rename-mode redraws alongside the *_request
+        // fields, behind a single map-side signal.
+        bool popups_unsettled = false;
 
         std::vector<std::unique_ptr<feature_type>> feature_types;
 
@@ -1305,6 +1311,7 @@ namespace osect
     bool map_widget::draw_imgui()
     {
         auto need_more = pimpl->draw_popups();
+        pimpl->popups_unsettled = need_more;
 
         if(pimpl->route_drag.route && pimpl->route_drag.mode != route_drag_mode::none)
         {
@@ -1538,6 +1545,14 @@ namespace osect
         auto r = std::move(pimpl->waypoint_drag_result);
         pimpl->waypoint_drag_result.reset();
         return r;
+    }
+
+    bool map_widget::has_pending_actions() const
+    {
+        const auto& d = *pimpl;
+        return d.route_delete_request || d.route_activate_request || d.create_waypoint_request ||
+               d.delete_waypoint_request || d.rename_waypoint_request || d.route_drag_result ||
+               d.waypoint_drag_result || d.popups_unsettled;
     }
 
     void map_widget::show_waypoint_info(const user_waypoint& wp)

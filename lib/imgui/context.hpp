@@ -39,6 +39,14 @@ namespace imgui
         // Returns true if ImGui wants to capture keyboard input
         // (e.g. a text box has focus).
         bool wants_keyboard() const;
+
+        // True if ImGui still has unprocessed input events queued.
+        // ImGui's input trickling spreads a batched press+release
+        // across frames, so a fast click can leave the release
+        // pending after a new_frame(). The render loop drains these
+        // before it idles, otherwise a stranded release fires only
+        // on the next unrelated event.
+        bool has_pending_input_events() const;
     };
 
 } // namespace imgui

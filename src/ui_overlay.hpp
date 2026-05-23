@@ -104,6 +104,16 @@ namespace osect
         // The active tab changed this frame. The caller propagates
         // the new tab's route_index to map_widget::set_active_route.
         std::optional<std::uint64_t> active_tab_changed;
+
+        // True if the draw that produced this result emitted work
+        // for the state handlers to consume. render_iteration loops
+        // until a draw produces none.
+        bool any() const
+        {
+            return visibility_changed || search_query.has_value() ||
+                   selected_hit_index.has_value() || route_submit.has_value() ||
+                   tab_closed.has_value() || active_tab_changed.has_value();
+        }
     };
 
     class ui_overlay
