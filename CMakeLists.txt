@@ -188,7 +188,7 @@ if(OSECT_VENDOR_DEPS)
         SQLITE_ENABLE_RTREE=1
         SQLITE_ENABLE_FTS5=1)
     target_compile_options(sqlite3 PRIVATE -O2)
-    add_library(SQLite::SQLite3 ALIAS sqlite3)
+    set(SQLITE3_TARGET sqlite3)
 else()
     # System mode (default for contributor builds). Each dependency
     # comes from the host's package manager — apt, brew, pacman/MSYS2.
@@ -204,6 +204,14 @@ else()
     find_package(CURL           REQUIRED)
     find_package(ZLIB           REQUIRED)
     find_package(SQLite3        REQUIRED)
+    # vcpkg's sqlite3 port exports SQLite3::SQLite3 and deprecates the
+    # SQLite::SQLite3 alias; standard CMake's FindSQLite3 only exports the
+    # latter. Prefer the new name where available.
+    if(TARGET SQLite3::SQLite3)
+        set(SQLITE3_TARGET SQLite3::SQLite3)
+    else()
+        set(SQLITE3_TARGET SQLite::SQLite3)
+    endif()
 endif()
 
 # Third-party libraries (header-only / single-source vendored)
@@ -342,7 +350,7 @@ add_library(sqlite_wrapper STATIC
 )
 target_compile_features(sqlite_wrapper PRIVATE cxx_std_11)
 target_include_directories(sqlite_wrapper PUBLIC ${CMAKE_SOURCE_DIR}/lib)
-target_link_libraries(sqlite_wrapper PUBLIC SQLite::SQLite3)
+target_link_libraries(sqlite_wrapper PUBLIC ${SQLITE3_TARGET})
 target_compile_options(sqlite_wrapper PRIVATE -Wall -Wextra)
 target_compile_options(sqlite_wrapper PRIVATE
     $<$<CONFIG:Debug>:${DEBUG_COMPILE_OPTIONS}>
