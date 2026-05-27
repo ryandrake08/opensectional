@@ -30,6 +30,7 @@
 #include <sdl/pipeline.hpp>
 #include <sdl/render_pass.hpp>
 #include <sdl/shader.hpp>
+#include <sdl/transfer_buffer.hpp>
 #include <sdl/types.hpp>
 #include <sstream>
 #include <string>
@@ -1586,7 +1587,10 @@ namespace osect
             if(!d.grid_vertices.empty())
             {
                 d.grid_buffer.reset();
-                auto buf = copy.create_and_upload_buffer(d.dev, sdl::buffer_usage::vertex, d.grid_vertices);
+                sdl::buffer buf(d.dev, sdl::buffer_usage::vertex, static_cast<uint32_t>(d.grid_vertices.size()),
+                                sizeof(sdl::vertex_t2f_c4ub_v3f));
+                sdl::transfer_buffer transfer(d.dev, buf.byte_size());
+                copy.upload_buffer(transfer, buf, d.grid_vertices);
                 d.grid_buffer = std::make_unique<sdl::buffer>(std::move(buf));
             }
             if(d.tiles)

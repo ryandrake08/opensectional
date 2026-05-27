@@ -11,6 +11,7 @@ namespace sdl
         SDL_GPUDevice* device; // Non-owning
         SDL_GPUBuffer* handle; // Owning
         Uint32 count;          // Store SDL type internally
+        Uint32 byte_size;
 
         static SDL_GPUBuffer* create_buffer(SDL_GPUDevice* dev, SDL_GPUBufferUsageFlags usage, uint32_t size)
         {
@@ -22,7 +23,7 @@ namespace sdl
         }
 
         impl(SDL_GPUDevice* dev, SDL_GPUBufferUsageFlags usage, uint32_t num, uint32_t size)
-            : device(dev), handle(create_buffer(dev, usage, num * size)), count(num)
+            : device(dev), handle(create_buffer(dev, usage, num * size)), count(num), byte_size(num * size)
         {
             if(!handle)
             {
@@ -72,5 +73,10 @@ namespace sdl
     uint32_t buffer::count() const
     {
         return static_cast<uint32_t>(pimpl->count);
+    }
+
+    uint32_t buffer::byte_size() const
+    {
+        return static_cast<uint32_t>(pimpl->byte_size);
     }
 } // namespace sdl

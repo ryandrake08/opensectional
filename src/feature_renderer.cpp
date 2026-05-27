@@ -13,6 +13,7 @@
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
 #include <sdl/render_pass.hpp>
+#include <sdl/transfer_buffer.hpp>
 #include <sdl/types.hpp>
 
 namespace osect
@@ -211,7 +212,11 @@ namespace osect
             pimpl->fill_buffer.reset();
             if(!pimpl->fill_vertices.empty())
             {
-                auto buf = pass.create_and_upload_buffer(pimpl->dev, sdl::buffer_usage::vertex, pimpl->fill_vertices);
+                sdl::buffer buf(pimpl->dev, sdl::buffer_usage::vertex,
+                                static_cast<uint32_t>(pimpl->fill_vertices.size()),
+                                sizeof(sdl::vertex_t2f_c4ub_v3f));
+                sdl::transfer_buffer transfer(pimpl->dev, buf.byte_size());
+                pass.upload_buffer(transfer, buf, pimpl->fill_vertices);
                 pimpl->fill_buffer = std::make_unique<sdl::buffer>(std::move(buf));
             }
             pimpl->fill_needs_upload = false;

@@ -14,6 +14,7 @@
 #include <sdl/sampler.hpp>
 #include <sdl/surface.hpp>
 #include <sdl/texture.hpp>
+#include <sdl/transfer_buffer.hpp>
 #include <sdl/types.hpp>
 #include <string>
 #include <unordered_map>
@@ -213,6 +214,49 @@ namespace osect
             }
             return false;
         }
+
+        // A visible tile that has no direct GPU match but does have a usable
+        // ancestor — rendered via UV sub-rect on the ancestor's texture.
+        struct fallback_resolved
+        {
+            tile_key key;
+            float u0, v0, u1, v1;
+            std::shared_ptr<tile_gpu> ancestor_gpu;
+        };
+
+        // Plan one copy() call: resolve fallback ancestors for the current
+        // visible set and sum up every byte the transfer buffer will carry
+        // (vertex buffers + tile texture pixels + fallback vertex buffers).
+        std::pair<std::vector<fallback_resolved>, uint32_t> plan_uploads()
+        {
+            constexpr uint32_t vbuf_bytes = 6 * sizeof(sdl::vertex_t2f_c4ub_v3f);
+
+            std::vector<fallback_resolved> fallbacks;
+            fallbacks.reserve(visible_tiles.size());
+            for(const auto& key : visible_tiles)
+            {
+                auto it = tile_map.find(key);
+                if(it != tile_map.end() && !it->second.expired())
+                {
+                    continue;
+                }
+                fallback_resolved fr{key, 0.0F, 0.0F, 0.0F, 0.0F, nullptr};
+                if(!find_ancestor(key, fr.ancestor_gpu, fr.u0, fr.v0, fr.u1, fr.v1))
+                {
+                    continue;
+                }
+                fallbacks.push_back(std::move(fr));
+            }
+
+            uint32_t total_bytes = 0;
+            for(const auto& result : pending_results)
+            {
+                total_bytes += vbuf_bytes + result.surf->size();
+            }
+            total_bytes += static_cast<uint32_t>(fallbacks.size()) * vbuf_bytes;
+
+            return {std::move(fallbacks), total_bytes};
+        }
     };
 
     tile_renderer::tile_renderer(sdl::device& dev, const char* tile_path)
@@ -350,6 +394,17 @@ namespace osect
 
     void tile_renderer::copy(sdl::copy_pass& pass)
     {
+        pimpl->fallback_quads.clear();
+        pimpl->fallback_dirty = false;
+
+        auto [fallbacks, total_bytes] = pimpl->plan_uploads();
+        if(total_bytes == 0)
+        {
+            return;
+        }
+
+        sdl::transfer_buffer transfer(pimpl->dev, total_bytes);
+
         // Upload newly loaded tiles
         for(auto& result : pimpl->pending_results)
         {
@@ -359,10 +414,12 @@ namespace osect
             auto gpu = std::make_shared<tile_gpu>();
             gpu->key = result.key;
 
-            auto vbuf = pass.create_and_upload_buffer(pimpl->dev, sdl::buffer_usage::vertex, vertices);
+            sdl::buffer vbuf(pimpl->dev, sdl::buffer_usage::vertex, 6, sizeof(sdl::vertex_t2f_c4ub_v3f));
+            pass.upload_buffer(transfer, vbuf, vertices);
             gpu->vertex_buffer = std::make_unique<sdl::buffer>(std::move(vbuf));
 
-            auto tex = pass.create_and_upload_texture(pimpl->dev, *result.surf);
+            sdl::texture tex(pimpl->dev, *result.surf);
+            pass.upload_texture(transfer, tex, *result.surf);
             gpu->tex = std::make_unique<sdl::texture>(std::move(tex));
 
             pimpl->cache.put(gpu);
@@ -370,40 +427,19 @@ namespace osect
         }
         pimpl->pending_results.clear();
 
-        // Build fallback quads for visible tiles that don't have a direct
-        // match — find the best loaded ancestor and render with UV sub-rect
-        pimpl->fallback_quads.clear();
-        pimpl->fallback_dirty = false;
-
-        for(const auto& key : pimpl->visible_tiles)
+        for(auto& fr : fallbacks)
         {
-            // Skip tiles that have a direct match (rendered normally)
-            auto it = pimpl->tile_map.find(key);
-            if(it != pimpl->tile_map.end() && !it->second.expired())
-            {
-                continue;
-            }
-
-            auto u0 = 0.0F;
-            auto v0 = 0.0F;
-            auto u1 = 0.0F;
-            auto v1 = 0.0F;
-            auto ancestor_gpu = std::shared_ptr<tile_gpu>();
-            if(!pimpl->find_ancestor(key, ancestor_gpu, u0, v0, u1, v1))
-            {
-                continue;
-            }
-
-            pimpl->cache.get(ancestor_gpu);
+            pimpl->cache.get(fr.ancestor_gpu);
 
             auto verts = std::vector<sdl::vertex_t2f_c4ub_v3f>(6);
-            get_tile_vertices(key, u0, v0, u1, v1, verts.data());
+            get_tile_vertices(fr.key, fr.u0, fr.v0, fr.u1, fr.v1, verts.data());
 
-            auto vbuf = pass.create_and_upload_buffer(pimpl->dev, sdl::buffer_usage::vertex, verts);
+            sdl::buffer vbuf(pimpl->dev, sdl::buffer_usage::vertex, 6, sizeof(sdl::vertex_t2f_c4ub_v3f));
+            pass.upload_buffer(transfer, vbuf, verts);
 
             impl::fallback_quad quad;
             quad.vertex_buffer = std::make_unique<sdl::buffer>(std::move(vbuf));
-            quad.ancestor_gpu = ancestor_gpu;
+            quad.ancestor_gpu = std::move(fr.ancestor_gpu);
             pimpl->fallback_quads.push_back(std::move(quad));
         }
     }

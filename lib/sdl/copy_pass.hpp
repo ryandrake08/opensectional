@@ -11,13 +11,21 @@ namespace sdl
     class device;
     class surface;
     class texture;
+    class transfer_buffer;
 
     /**
      * RAII wrapper for SDL_GPUCopyPass
      *
      * Begins copy pass on construction, ends on destruction.
-     * Manages transfer buffers internally - each upload creates its own
-     * transfer buffer sized exactly to the data being uploaded.
+     *
+     * Two upload styles are supported:
+     *
+     *   1. upload_buffer / upload_texture take a caller-supplied transfer_buffer.
+     *      The caller is responsible for sizing and lifetime, which allows N
+     *      uploads to share a single SDL_GPUTransferBuffer allocation.
+     *
+     *   2. create_and_upload_* allocate a fresh transfer_buffer per call, owned
+     *      by this copy_pass. Convenient for one-shot uploads; costlier per call.
      */
     class copy_pass
     {
@@ -54,7 +62,47 @@ namespace sdl
         SDL_GPUCopyPass* get() const;
 
         /**
+         * Append @p dest.byte_size() bytes from @p data to @p tb and record an
+         * upload of the full destination buffer.
+         *
+         * The caller owns @p tb and must keep it alive at least until the
+         * enclosing command buffer is submitted. Sharing one transfer_buffer
+         * across multiple upload_* calls avoids per-upload allocations.
+         *
+         * @param tb   Caller-supplied transfer buffer (must have room for dest.byte_size())
+         * @param dest Destination GPU buffer
+         * @param data Pointer to source bytes (at least dest.byte_size() valid bytes)
+         */
+        void upload_buffer(transfer_buffer& tb, const buffer& dest, const void* data);
+
+        /**
+         * Vector overload of upload_buffer(). data.size() * sizeof(T) must
+         * equal dest.byte_size().
+         */
+        template <typename T>
+        void upload_buffer(transfer_buffer& tb, const buffer& dest, const std::vector<T>& data)
+        {
+            upload_buffer(tb, dest, data.data());
+        }
+
+        /**
+         * Append @p surf pixels to @p tb and record an upload into @p dest.
+         *
+         * Same lifetime rules as upload_buffer().
+         *
+         * @param tb   Caller-supplied transfer buffer (must have room for surf.size())
+         * @param dest Destination GPU texture (must match surf dimensions)
+         * @param surf Source surface (RGBA8888)
+         */
+        void upload_texture(transfer_buffer& tb, const texture& dest, const surface& surf);
+
+        /**
          * Create GPU buffer and upload data from vector.
+         *
+         * Allocates a fresh SDL_GPUTransferBuffer per call, kept alive by this
+         * copy_pass. For hot paths uploading many small buffers in one frame,
+         * prefer constructing the destination buffer at the call site and using
+         * upload_buffer() with a shared transfer_buffer.
          *
          * @param dev GPU device
          * @param usage Buffer usage flags
@@ -71,7 +119,10 @@ namespace sdl
         /**
          * Create GPU texture and upload surface data.
          *
-         * Creates a texture and uploads data via an internally managed transfer buffer.
+         * Allocates a fresh SDL_GPUTransferBuffer per call, kept alive by this
+         * copy_pass. For hot paths uploading many textures in one frame, prefer
+         * constructing the destination texture at the call site and using
+         * upload_texture() with a shared transfer_buffer.
          *
          * @param dev GPU device
          * @param surf Surface containing pixel data (RGBA8888 format)

@@ -54,6 +54,11 @@ namespace sdl
          * Get buffer size in number of objects (vertices or indices).
          */
         uint32_t count() const;
+
+        /**
+         * Get buffer size in bytes (num * size from construction).
+         */
+        uint32_t byte_size() const;
     };
 
 } // namespace sdl

@@ -13,6 +13,7 @@
 #include <sdl/sampler.hpp>
 #include <sdl/text.hpp>
 #include <sdl/text_engine.hpp>
+#include <sdl/transfer_buffer.hpp>
 #include <sdl/types.hpp>
 #include <vector>
 #include <NotoSans_Regular_ttf.h>
@@ -404,28 +405,59 @@ namespace osect
             return;
         }
 
-        // Upload outline buffers
         pimpl->outline_vertex_buffer.reset();
         pimpl->outline_index_buffer.reset();
-        if(!pimpl->outline_vertices.empty())
-        {
-            auto vbuf = pass.create_and_upload_buffer(dev, sdl::buffer_usage::vertex, pimpl->outline_vertices);
-            pimpl->outline_vertex_buffer = std::make_unique<sdl::buffer>(std::move(vbuf));
-
-            auto ibuf = pass.create_and_upload_buffer(dev, sdl::buffer_usage::index, pimpl->outline_indices);
-            pimpl->outline_index_buffer = std::make_unique<sdl::buffer>(std::move(ibuf));
-        }
-
-        // Upload fill buffers
         pimpl->fill_vertex_buffer.reset();
         pimpl->fill_index_buffer.reset();
-        if(!pimpl->fill_vertices.empty())
-        {
-            auto vbuf = pass.create_and_upload_buffer(dev, sdl::buffer_usage::vertex, pimpl->fill_vertices);
-            pimpl->fill_vertex_buffer = std::make_unique<sdl::buffer>(std::move(vbuf));
 
-            auto ibuf = pass.create_and_upload_buffer(dev, sdl::buffer_usage::index, pimpl->fill_indices);
-            pimpl->fill_index_buffer = std::make_unique<sdl::buffer>(std::move(ibuf));
+        constexpr uint32_t vsz = sizeof(sdl::vertex_t2f_c4ub_v3f);
+        constexpr uint32_t isz = sizeof(int);
+        auto outline_v_count = static_cast<uint32_t>(pimpl->outline_vertices.size());
+        auto outline_i_count = static_cast<uint32_t>(pimpl->outline_indices.size());
+        auto fill_v_count = static_cast<uint32_t>(pimpl->fill_vertices.size());
+        auto fill_i_count = static_cast<uint32_t>(pimpl->fill_indices.size());
+
+        // Build the destination buffers first so we can sum their byte sizes.
+        std::unique_ptr<sdl::buffer> outline_v;
+        std::unique_ptr<sdl::buffer> outline_i;
+        std::unique_ptr<sdl::buffer> fill_v;
+        std::unique_ptr<sdl::buffer> fill_i;
+        uint32_t total_bytes = 0;
+        if(outline_v_count != 0)
+        {
+            outline_v = std::make_unique<sdl::buffer>(dev, sdl::buffer_usage::vertex, outline_v_count, vsz);
+            outline_i = std::make_unique<sdl::buffer>(dev, sdl::buffer_usage::index, outline_i_count, isz);
+            total_bytes += outline_v->byte_size() + outline_i->byte_size();
+        }
+        if(fill_v_count != 0)
+        {
+            fill_v = std::make_unique<sdl::buffer>(dev, sdl::buffer_usage::vertex, fill_v_count, vsz);
+            fill_i = std::make_unique<sdl::buffer>(dev, sdl::buffer_usage::index, fill_i_count, isz);
+            total_bytes += fill_v->byte_size() + fill_i->byte_size();
+        }
+
+        if(total_bytes == 0)
+        {
+            pimpl->dirty = false;
+            return;
+        }
+
+        sdl::transfer_buffer transfer(dev, total_bytes);
+
+        if(outline_v)
+        {
+            pass.upload_buffer(transfer, *outline_v, pimpl->outline_vertices);
+            pass.upload_buffer(transfer, *outline_i, pimpl->outline_indices);
+            pimpl->outline_vertex_buffer = std::move(outline_v);
+            pimpl->outline_index_buffer = std::move(outline_i);
+        }
+
+        if(fill_v)
+        {
+            pass.upload_buffer(transfer, *fill_v, pimpl->fill_vertices);
+            pass.upload_buffer(transfer, *fill_i, pimpl->fill_indices);
+            pimpl->fill_vertex_buffer = std::move(fill_v);
+            pimpl->fill_index_buffer = std::move(fill_i);
         }
 
         pimpl->dirty = false;

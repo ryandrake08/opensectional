@@ -61,27 +61,45 @@ namespace sdl
         return pimpl->handle;
     }
 
-    texture copy_pass::create_and_upload_texture(const device& dev, const surface& surf)
+    void copy_pass::upload_buffer(transfer_buffer& tb, const buffer& dest, const void* data)
     {
-        texture tex(dev, surf);
+        uint32_t byte_size = dest.byte_size();
+        uint32_t offset = tb.append(data, byte_size);
 
-        uint32_t data_size = surf.size();
-        pimpl->transfers.emplace_back(dev, data_size);
-        transfer_buffer& transfer = pimpl->transfers.back();
-        uint32_t offset = transfer.append(surf.pixels(), data_size);
+        SDL_GPUTransferBufferLocation source = {};
+        source.transfer_buffer = tb.get();
+        source.offset = offset;
+
+        SDL_GPUBufferRegion destination = {};
+        destination.buffer = dest.get();
+        destination.offset = 0;
+        destination.size = byte_size;
+
+        SDL_UploadToGPUBuffer(pimpl->handle, &source, &destination, false);
+    }
+
+    void copy_pass::upload_texture(transfer_buffer& tb, const texture& dest, const surface& surf)
+    {
+        uint32_t offset = tb.append(surf.pixels(), surf.size());
 
         SDL_GPUTextureTransferInfo source = {};
-        source.transfer_buffer = transfer.get();
+        source.transfer_buffer = tb.get();
         source.offset = offset;
 
         SDL_GPUTextureRegion destination = {};
-        destination.texture = tex.get();
+        destination.texture = dest.get();
         destination.w = surf.width();
         destination.h = surf.height();
         destination.d = 1;
 
         SDL_UploadToGPUTexture(pimpl->handle, &source, &destination, false);
+    }
 
+    texture copy_pass::create_and_upload_texture(const device& dev, const surface& surf)
+    {
+        texture tex(dev, surf);
+        pimpl->transfers.emplace_back(dev, surf.size());
+        upload_texture(pimpl->transfers.back(), tex, surf);
         return tex;
     }
 
@@ -94,23 +112,8 @@ namespace sdl
         }
 
         buffer buf(dev, usage, count, element_size);
-
-        uint32_t byte_size = count * element_size;
-        pimpl->transfers.emplace_back(dev, byte_size);
-        transfer_buffer& transfer = pimpl->transfers.back();
-        uint32_t offset = transfer.append(data, byte_size);
-
-        SDL_GPUTransferBufferLocation source = {};
-        source.transfer_buffer = transfer.get();
-        source.offset = offset;
-
-        SDL_GPUBufferRegion destination = {};
-        destination.buffer = buf.get();
-        destination.offset = 0;
-        destination.size = byte_size;
-
-        SDL_UploadToGPUBuffer(pimpl->handle, &source, &destination, false);
-
+        pimpl->transfers.emplace_back(dev, buf.byte_size());
+        upload_buffer(pimpl->transfers.back(), buf, data);
         return buf;
     }
 

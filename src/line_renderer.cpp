@@ -4,6 +4,7 @@
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/render_pass.hpp>
+#include <sdl/transfer_buffer.hpp>
 #include <sdl/types.hpp>
 
 namespace osect
@@ -186,10 +187,16 @@ namespace osect
                 all_points.emplace_back(0.0F, 0.0F, 0.0F, 0.0F);
             }
 
-            auto pts = pass.create_and_upload_buffer(dev, sdl::buffer_usage::graphics_storage_read, all_points);
+            sdl::buffer pts(dev, sdl::buffer_usage::graphics_storage_read, static_cast<uint32_t>(all_points.size()),
+                            sizeof(glm::vec4));
+            sdl::buffer meta(dev, sdl::buffer_usage::graphics_storage_read, static_cast<uint32_t>(all_metadata.size()),
+                            sizeof(polyline_metadata_gpu));
+            sdl::transfer_buffer transfer(dev, pts.byte_size() + meta.byte_size());
+
+            pass.upload_buffer(transfer, pts, all_points);
             pimpl->packed_points = std::make_unique<sdl::buffer>(std::move(pts));
 
-            auto meta = pass.create_and_upload_buffer(dev, sdl::buffer_usage::graphics_storage_read, all_metadata);
+            pass.upload_buffer(transfer, meta, all_metadata);
             pimpl->metadata_buf = std::make_unique<sdl::buffer>(std::move(meta));
         }
         else
