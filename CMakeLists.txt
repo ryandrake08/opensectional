@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.12)
 project(osect C CXX)
 
 # Package metadata (used by CPack on both platforms and by the macOS bundle)
+set(APPLICATION_NAME "OpenSectional")
 set(MAJOR_VERSION "0")
 set(MINOR_VERSION "1")
 set(BUILD_VERSION "0")
@@ -9,6 +10,19 @@ set(APPLICATION_VERSION "${MAJOR_VERSION}.${MINOR_VERSION}.${BUILD_VERSION}")
 set(BUNDLE_IDENTIFIER "org.existens.opensectional")
 # Short application name — the user-directory segment on Linux/Windows.
 set(APP_SHORT_NAME "osect")
+
+# Inject the four OSECT_* string defines that every binary built from
+# src/ needs (bundle id and app-name for per-user paths; display name
+# and version for the startup banner and HTTP User-Agent). Applied to
+# the main target and to each test target that compiles a src/ TU
+# referencing one of these macros.
+function(osect_apply_app_definitions target)
+    target_compile_definitions(${target} PRIVATE
+        OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
+        OSECT_APP_NAME="${APP_SHORT_NAME}"
+        OSECT_APP_DISPLAY_NAME="${APPLICATION_NAME}"
+        OSECT_APP_VERSION="${APPLICATION_VERSION}")
+endfunction()
 
 # Export compile commands
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -282,10 +296,7 @@ add_executable(osect
     src/waypoint_session.cpp
     src/xnotam_parser.cpp
 )
-target_compile_definitions(osect PRIVATE
-    OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
-    OSECT_APP_NAME="${APP_SHORT_NAME}"
-)
+osect_apply_app_definitions(osect)
 
 # SDL C++ wrapper library
 add_library(sdl_wrapper STATIC
@@ -598,9 +609,9 @@ if(APPLE)
     # macOS: bundle + DragNDrop DMG
     # =========================================================================
     set_target_properties(osect PROPERTIES
-        OUTPUT_NAME "OpenSectional"
+        OUTPUT_NAME "${APPLICATION_NAME}"
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_BUNDLE_NAME "OpenSectional"
+        MACOSX_BUNDLE_BUNDLE_NAME "${APPLICATION_NAME}"
         MACOSX_BUNDLE_BUNDLE_VERSION "${APPLICATION_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${APPLICATION_VERSION}"
         MACOSX_BUNDLE_GUI_IDENTIFIER "${BUNDLE_IDENTIFIER}"
@@ -618,7 +629,7 @@ if(APPLE)
     install(TARGETS osect BUNDLE DESTINATION .)
 
     # Bundled assets go into Contents/Resources/ alongside the icon
-    set(_rsrc "OpenSectional.app/Contents/Resources")
+    set(_rsrc "${APPLICATION_NAME}.app/Contents/Resources")
     install(FILES "${BUNDLED_DB}"  DESTINATION "${_rsrc}")
     install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION "${_rsrc}")
 
@@ -643,7 +654,7 @@ if(APPLE)
         if(MOLTENVK_DYLIB AND EXISTS "${MOLTENVK_DYLIB}")
             message(STATUS "MoltenVK: bundling ${MOLTENVK_DYLIB}")
             install(FILES "${MOLTENVK_DYLIB}"
-                    DESTINATION "OpenSectional.app/Contents/Frameworks")
+                    DESTINATION "${APPLICATION_NAME}.app/Contents/Frameworks")
             # Apache-2.0 requires shipping the LICENSE alongside the binary.
             file(GLOB_RECURSE MOLTENVK_LICENSE
                 "${CMAKE_SOURCE_DIR}/thirdparty/MoltenVK/*/LICENSE")
@@ -670,7 +681,7 @@ if(APPLE)
     # kernel will launch the result on Apple Silicon.
     install(CODE "
         include(BundleUtilities)
-        set(_bundle \"\${CMAKE_INSTALL_PREFIX}/OpenSectional.app\")
+        set(_bundle \"\${CMAKE_INSTALL_PREFIX}/${APPLICATION_NAME}.app\")
         fixup_bundle(\"\${_bundle}\" \"\" \"/usr/local/lib;/opt/homebrew/lib\")
         execute_process(
             COMMAND codesign --force --deep --sign - \"\${_bundle}\"
@@ -681,12 +692,12 @@ if(APPLE)
     " COMPONENT applications)
 
     set(CPACK_GENERATOR "DragNDrop")
-    set(CPACK_PACKAGE_NAME "OpenSectional")
+    set(CPACK_PACKAGE_NAME "${APPLICATION_NAME}")
     set(CPACK_PACKAGE_VENDOR "existens.org")
     set(CPACK_PACKAGE_VERSION_MAJOR "${MAJOR_VERSION}")
     set(CPACK_PACKAGE_VERSION_MINOR "${MINOR_VERSION}")
     set(CPACK_PACKAGE_VERSION_PATCH "${BUILD_VERSION}")
-    set(CPACK_DMG_VOLUME_NAME "OpenSectional ${APPLICATION_VERSION}")
+    set(CPACK_DMG_VOLUME_NAME "${APPLICATION_NAME} ${APPLICATION_VERSION}")
     set(CPACK_DMG_FORMAT "UDZO")
     if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE")
         set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
@@ -729,19 +740,19 @@ elseif(WIN32)
     endforeach()
 
     set(CPACK_GENERATOR "NSIS")
-    set(CPACK_PACKAGE_NAME "OpenSectional")
+    set(CPACK_PACKAGE_NAME "${APPLICATION_NAME}")
     set(CPACK_PACKAGE_VENDOR "existens.org")
     set(CPACK_PACKAGE_VERSION_MAJOR "${MAJOR_VERSION}")
     set(CPACK_PACKAGE_VERSION_MINOR "${MINOR_VERSION}")
     set(CPACK_PACKAGE_VERSION_PATCH "${BUILD_VERSION}")
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "OpenSectional")
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "${APPLICATION_NAME}")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Open source chart viewer and flight planner")
     if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE")
         set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
     endif()
 
-    set(CPACK_NSIS_DISPLAY_NAME "OpenSectional")
-    set(CPACK_NSIS_PACKAGE_NAME "OpenSectional")
+    set(CPACK_NSIS_DISPLAY_NAME "${APPLICATION_NAME}")
+    set(CPACK_NSIS_PACKAGE_NAME "${APPLICATION_NAME}")
     set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
     set(CPACK_NSIS_MODIFY_PATH OFF)
     set(CPACK_NSIS_INSTALLED_ICON_NAME "osect.exe")
@@ -752,9 +763,9 @@ elseif(WIN32)
 
     # Start menu shortcut
     set(CPACK_NSIS_CREATE_ICONS_EXTRA
-        "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\OpenSectional.lnk' '$INSTDIR\\\\osect.exe'")
+        "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\${APPLICATION_NAME}.lnk' '$INSTDIR\\\\osect.exe'")
     set(CPACK_NSIS_DELETE_ICONS_EXTRA
-        "Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\OpenSectional.lnk'")
+        "Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\${APPLICATION_NAME}.lnk'")
 
     _require_asset("${BUNDLED_DB}")
     _require_asset("${BUNDLED_BASEMAP}")

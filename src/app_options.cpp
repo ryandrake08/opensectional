@@ -38,6 +38,8 @@ namespace osect
 
     parsed_options parse_cmdline(const std::vector<std::string>& cmdline)
     {
+        sdl::log_info(OSECT_APP_DISPLAY_NAME " " OSECT_APP_VERSION " (built " __DATE__ " " __TIME__ ")");
+
         parsed_options opts;
         const auto& prog = cmdline.empty() ? std::string{"osect"} : cmdline[0];
 
@@ -80,26 +82,32 @@ namespace osect
             else if(arg == "--vsync")
             {
                 opts.vsync = true;
+                sdl::log_info("Vsync enabled");
             }
             else if(arg == "--gpu_debug")
             {
                 opts.gpu_debug = true;
+                sdl::log_info("GPU debug/validation enabled");
             }
             else if(arg == "-b" || arg == "--basemap")
             {
                 opts.tile_path = need_value("--basemap");
+                sdl::log_info("Basemap directory: " + *opts.tile_path);
             }
             else if(arg == "-d" || arg == "--database")
             {
                 opts.db_path = need_value("--database");
+                sdl::log_info("Database: " + *opts.db_path);
             }
             else if(arg == "-c" || arg == "--conf")
             {
                 opts.conf_path = need_value("--conf");
+                sdl::log_info("Override INI: " + *opts.conf_path);
             }
             else if(arg == "--offline")
             {
                 opts.offline = true;
+                sdl::log_info("Running in offline mode");
             }
             else
             {

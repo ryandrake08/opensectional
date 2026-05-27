@@ -47,7 +47,7 @@ namespace osect
             // for the first request of a given resource.
             std::string if_none_match;
             std::chrono::seconds timeout{30};
-            std::string user_agent{"OpenSectional/0.1.0 (+https://existens.org)"};
+            std::string user_agent{OSECT_APP_DISPLAY_NAME "/" OSECT_APP_VERSION " (+https://existens.org)"};
         };
 
         struct response

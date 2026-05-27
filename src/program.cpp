@@ -87,7 +87,7 @@ namespace osect
               db_path(resolve_db_path(opts, cmdline.empty() ? std::string{"osect"} : cmdline[0])),
               tile_path(resolve_tile_path(opts)),
               sdl_ctx(opts.verbosity),
-              win(sdl_ctx, "OpenSectional", 1280, 1024,
+              win(sdl_ctx, OSECT_APP_DISPLAY_NAME, 1280, 1024,
                   sdl::window_flags::resizable | sdl::window_flags::high_pixel_density),
               dev(win, resolve_gpu_driver(opts).c_str(), opts.vsync, opts.gpu_debug),
               imgui_ctx(dev, win),

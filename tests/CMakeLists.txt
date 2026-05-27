@@ -45,16 +45,12 @@ add_osect_test(data_source     ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
 # ephemeral_database links the sqlite wrapper and sdl_wrapper (for log_warn).
 add_osect_test(ephemeral_database ${CMAKE_SOURCE_DIR}/src/ephemeral_database.cpp)
 target_link_libraries(test_ephemeral_database PRIVATE sqlite_wrapper sdl_wrapper)
-target_compile_definitions(test_ephemeral_database PRIVATE
-    OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
-    OSECT_APP_NAME="${APP_SHORT_NAME}")
+osect_apply_app_definitions(test_ephemeral_database)
 
 # user_database — same wiring as ephemeral_database.
 add_osect_test(user_database ${CMAKE_SOURCE_DIR}/src/user_database.cpp)
 target_link_libraries(test_user_database PRIVATE sqlite_wrapper sdl_wrapper)
-target_compile_definitions(test_user_database PRIVATE
-    OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
-    OSECT_APP_NAME="${APP_SHORT_NAME}")
+osect_apply_app_definitions(test_user_database)
 
 # xnotam_parser links the vendored pugixml lib; the test reads
 # fixture XMLs from nasr_data/tfr_data/ at the repo root via the
@@ -65,6 +61,7 @@ target_link_libraries(test_xnotam_parser PRIVATE pugixml sdl_wrapper)
 # http_client confirms that transport failures throw
 add_osect_test(http_client  ${CMAKE_SOURCE_DIR}/src/http_client.cpp)
 target_link_libraries(test_http_client PRIVATE CURL::libcurl)
+osect_apply_app_definitions(test_http_client)
 
 # flight_route pulls in the DB layer and needs the sqlite wrapper.
 # route_planner reads user.db, so user_database.cpp comes along too.
@@ -76,9 +73,7 @@ add_osect_test(flight_route
     ${CMAKE_SOURCE_DIR}/src/user_database.cpp
     ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
 target_link_libraries(test_flight_route PRIVATE sqlite_wrapper sdl_wrapper)
-target_compile_definitions(test_flight_route PRIVATE
-    OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
-    OSECT_APP_NAME="${APP_SHORT_NAME}")
+osect_apply_app_definitions(test_flight_route)
 
 add_osect_test(route_planner
     ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
@@ -90,9 +85,7 @@ add_osect_test(route_planner
     ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
     ${CMAKE_SOURCE_DIR}/src/user_database.cpp)
 target_link_libraries(test_route_planner PRIVATE sqlite_wrapper sdl_wrapper)
-target_compile_definitions(test_route_planner PRIVATE
-    OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
-    OSECT_APP_NAME="${APP_SHORT_NAME}")
+osect_apply_app_definitions(test_route_planner)
 
 # app_options — command-line parsing + asset/driver resolution.
 # build_ini pulls in ini_config; the resolve_* helpers and log_info
@@ -101,6 +94,4 @@ add_osect_test(app_options
     ${CMAKE_SOURCE_DIR}/src/app_options.cpp
     ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
 target_link_libraries(test_app_options PRIVATE sdl_wrapper)
-target_compile_definitions(test_app_options PRIVATE
-    OSECT_BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER}"
-    OSECT_APP_NAME="${APP_SHORT_NAME}")
+osect_apply_app_definitions(test_app_options)
