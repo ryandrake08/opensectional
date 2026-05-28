@@ -3,6 +3,7 @@
 #include "flight_route.hpp"
 #include "route_plan_options.hpp"
 #include <cstddef>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -37,8 +38,12 @@ namespace osect
 
         // Open the NASR database at `db_path` and build the
         // routable-waypoint catalog and airway adjacency by scanning
-        // APT_BASE / NAV_BASE / FIX_BASE / AWY_SEG.
+        // APT_BASE / NAV_BASE / FIX_BASE / AWY_SEG. The user-waypoint
+        // database opens at user_database::default_path(); the
+        // overload taking a user_db_path is for tests that need a
+        // disposable user.db.
         explicit route_planner(const char* db_path);
+        route_planner(const char* db_path, const std::filesystem::path& user_db_path);
         ~route_planner();
 
         route_planner(const route_planner&) = delete;
@@ -94,6 +99,7 @@ namespace osect
             airport,
             navaid,
             fix,
+            user,
         };
 
         struct node

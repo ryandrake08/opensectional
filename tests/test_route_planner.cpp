@@ -6,10 +6,12 @@
 #include "nasr_database.hpp"
 #include "route_plan_config.hpp"
 #include "route_planner.hpp"
+#include "user_database.hpp"
 
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <string>
 
 using namespace osect;
 
@@ -400,4 +402,173 @@ TEST_CASE("use_airways toggle changes path via fix-rejecting options")
     opts.use_airways = true;
     auto with    = p.expand_sigils("KSMF ? KBFL", opts);
     CHECK(without != with);
+}
+
+// ---- user waypoints ----
+
+namespace
+{
+    // Picks a unique temp directory, creates it, and deletes it on
+    // destruction. Mirrors test_user_database's helper.
+    struct tmp_user_db
+    {
+        std::filesystem::path dir;
+        std::filesystem::path db_file;
+        explicit tmp_user_db(const char* tag)
+        {
+            const auto base =
+                std::filesystem::temp_directory_path() / ("osect_planner_user_" + std::string(tag) + "_");
+            for(int i = 0; i < 1000; ++i)
+            {
+                const auto candidate = base.string() + std::to_string(i);
+                if(!std::filesystem::exists(candidate))
+                {
+                    dir = candidate;
+                    std::filesystem::create_directories(dir);
+                    db_file = dir / "user.db";
+                    return;
+                }
+            }
+            throw std::runtime_error("could not pick a tmp dir");
+        }
+        ~tmp_user_db()
+        {
+            std::error_code ec;
+            std::filesystem::remove_all(dir, ec);
+        }
+        tmp_user_db(const tmp_user_db&) = delete;
+        tmp_user_db& operator=(const tmp_user_db&) = delete;
+    };
+
+    // load_route_plan_options + force a single subtype to the given
+    // cost. The defaults from osect.ini set route_waypoint_user =
+    // PREFER, but tests are isolated from osect.ini, so we set the
+    // value explicitly.
+    route_planner::options user_opts(double user_cost)
+    {
+        route_planner::options o;
+        o.wp_cost[static_cast<std::size_t>(wp_subtype::user)] = user_cost;
+        return o;
+    }
+}
+
+TEST_CASE("user waypoint resolves by name through node_index after refresh")
+{
+    tmp_user_db tmp("resolve");
+    {
+        user_database udb(tmp.db_file);
+        auto w = udb.insert_waypoint(38.1, -121.0);
+        CHECK(w.name == "WPT1");
+    }
+    route_planner p("osect.db", tmp.db_file);
+    // The refresh that exposes user waypoints fires inside
+    // expand_sigils; node_index doesn't refresh on its own.
+    p.expand_sigils("KSMF KSAC", route_planner::options{});
+    auto idx = rpta::node_index(p, "WPT1");
+    REQUIRE(idx.has_value());
+    const auto& n = rpta::get_node(p, *idx);
+    CHECK(n.kind == rpta::node_kind::user);
+    CHECK(n.lat == 38.1);
+    CHECK(n.lon == -121.0);
+}
+
+TEST_CASE("expand_sigils routes through a preferred user waypoint")
+{
+    // KSMF (38.70, -121.59) → KMER (37.28, -120.51) is ~110 nm, so
+    // the default 80 nm max_leg short-circuit doesn't fire and A*
+    // has to find an intermediate. WPT1 at the midpoint sits ~50 nm
+    // from each airport. Origin and destination are passed to A* as
+    // synthetic endpoints, so their wp_cost isn't consulted — every
+    // NASR subtype can be REJECT'd to leave WPT1 the only viable
+    // intermediate.
+    tmp_user_db tmp("prefer");
+    {
+        user_database udb(tmp.db_file);
+        udb.insert_waypoint(37.99, -121.05);
+    }
+    route_planner p("osect.db", tmp.db_file);
+
+    auto opts = user_opts(cost_prefer);
+    for(std::size_t i = 0; i < opts.wp_cost.size(); ++i)
+    {
+        if(static_cast<wp_subtype>(i) != wp_subtype::user)
+        {
+            opts.wp_cost[i] = cost_reject;
+        }
+    }
+
+    auto out = p.expand_sigils("KSMF ? KMER", opts);
+    CHECK(out.find("WPT1") != std::string::npos);
+}
+
+TEST_CASE("expand_sigils ignores a rejected user waypoint")
+{
+    // Same midway waypoint, but with user=REJECT. The planner must
+    // pick some other intermediate.
+    tmp_user_db tmp("reject");
+    {
+        user_database udb(tmp.db_file);
+        udb.insert_waypoint(37.99, -121.05);
+    }
+    route_planner p("osect.db", tmp.db_file);
+
+    auto opts = user_opts(cost_reject);
+    auto out = p.expand_sigils("KSMF ? KMER", opts);
+    CHECK(out.find("WPT1") == std::string::npos);
+}
+
+TEST_CASE("user waypoint set refreshes between expand_sigils calls")
+{
+    tmp_user_db tmp("refresh");
+    route_planner p("osect.db", tmp.db_file);
+
+    // No waypoints yet — WPT1 must not resolve.
+    p.expand_sigils("KSMF KSAC", route_planner::options{});
+    CHECK_FALSE(rpta::node_index(p, "WPT1").has_value());
+
+    // Insert a waypoint and re-run expand_sigils to trigger refresh.
+    {
+        user_database udb(tmp.db_file);
+        udb.insert_waypoint(38.1, -121.0);
+    }
+    p.expand_sigils("KSMF KSAC", route_planner::options{});
+    CHECK(rpta::node_index(p, "WPT1").has_value());
+
+    // Delete it and refresh again — the node disappears from the catalog.
+    {
+        user_database udb(tmp.db_file);
+        auto wps = udb.load_waypoints();
+        REQUIRE(wps.size() == 1);
+        udb.delete_waypoint(wps[0].waypoint_id);
+    }
+    p.expand_sigils("KSMF KSAC", route_planner::options{});
+    CHECK_FALSE(rpta::node_index(p, "WPT1").has_value());
+}
+
+TEST_CASE("load_route_plan_options loads route_waypoint_user")
+{
+    auto path = (std::filesystem::temp_directory_path() /
+                 "osect_route_plan_test_user.ini").string();
+    {
+        std::ofstream out(path);
+        out << "[route_plan]\nroute_waypoint_user = AVOID\n";
+    }
+    ini_config ini(path);
+    auto opts = load_route_plan_options(ini);
+    CHECK(opts.wp_cost[static_cast<std::size_t>(wp_subtype::user)] == cost_avoid);
+    std::remove(path.c_str());
+}
+
+TEST_CASE("load_route_plan_options defaults route_waypoint_user to PREFER")
+{
+    auto path = (std::filesystem::temp_directory_path() /
+                 "osect_route_plan_test_user_default.ini").string();
+    {
+        std::ofstream out(path);
+        out << "[route_plan]\n";
+    }
+    ini_config ini(path);
+    auto opts = load_route_plan_options(ini);
+    CHECK(opts.wp_cost[static_cast<std::size_t>(wp_subtype::user)] == cost_prefer);
+    std::remove(path.c_str());
 }

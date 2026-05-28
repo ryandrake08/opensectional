@@ -617,7 +617,8 @@ namespace osect
         }
 
         // Resolve a release point to a route_waypoint: prefer the first
-        // airport/navaid/fix under the cursor; otherwise lat/lon at the click.
+        // airport/navaid/fix/user waypoint under the cursor; otherwise
+        // lat/lon at the click.
         route_waypoint resolve_release_waypoint()
         {
             auto pick = pick_at(cursor_ndc_x, cursor_ndc_y);
@@ -637,6 +638,11 @@ namespace osect
                 {
                     const auto& x = std::get<fix>(f);
                     return route_waypoint{waypoint_kind::fix, x.fix_id, x.lat, x.lon};
+                }
+                if(std::holds_alternative<user_waypoint>(f))
+                {
+                    const auto& w = std::get<user_waypoint>(f);
+                    return route_waypoint{waypoint_kind::user, w.name, w.lat, w.lon};
                 }
             }
             return route_waypoint{waypoint_kind::latlon, "", pick.lat, pick.lon};

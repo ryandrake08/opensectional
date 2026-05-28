@@ -49,6 +49,9 @@ namespace osect
         fix_mr,  // military reporting
         fix_vfr, // VFR waypoint
 
+        // User-defined persistent waypoint (USER_WAYPOINT)
+        user,
+
         count,
         unknown = count
     };

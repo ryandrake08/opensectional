@@ -332,8 +332,58 @@ namespace osect
         // construction still resolves in route text.
         const user_database udb;
 
-        explicit impl(const char* db_path) : db(db_path), udb(user_database::default_path())
+        // NASR-only catalog size. Indices [nasr_node_count,
+        // nodes.size()) hold user waypoints, refreshed per parse()
+        // via refresh_user_waypoints() since user.db is mutable at
+        // runtime.
+        std::size_t nasr_node_count = 0;
+
+        impl(const char* db_path, const std::filesystem::path& user_db_path) : db(db_path), udb(user_db_path)
         {
+        }
+
+        // Reload user waypoints from user.db and refresh the catalog,
+        // index, and spatial grid. Indices [0, nasr_node_count) stay
+        // pinned to the immutable NASR catalog; user waypoints occupy
+        // the tail. Single-threaded by contract (route_submitter owns
+        // the only thread that calls into the planner).
+        void refresh_user_waypoints()
+        {
+            // Drop existing user-waypoint entries from the indexes.
+            for(std::size_t i = nasr_node_count; i < nodes.size(); ++i)
+            {
+                const auto& id = nodes[i].id;
+                auto it = index_by_id.find(id);
+                if(it != index_by_id.end() && it->second == i)
+                {
+                    index_by_id.erase(it);
+                }
+            }
+            nodes.resize(nasr_node_count);
+            neighbors.resize(nasr_node_count);
+
+            // Rebuild the grid from the NASR catalog. Cheap relative
+            // to a parse() (~75k inserts vs. one SQLite query) and
+            // sidesteps the bookkeeping of selectively removing only
+            // user entries.
+            grid.reset();
+            for(std::size_t i = 0; i < nodes.size(); ++i)
+            {
+                grid.insert(i, nodes[i].lat, nodes[i].lon);
+            }
+
+            // Append the current user waypoints.
+            for(auto& w : udb.load_waypoints())
+            {
+                auto idx = nodes.size();
+                nodes.push_back({std::move(w.name), node_kind::user, wp_subtype::user, w.lat, w.lon});
+                const auto& nid = nodes.back().id;
+                // NASR wins on name collision — matches flight_route's
+                // resolve-order (NASR first, then user_waypoints).
+                index_by_id.emplace(nid, idx);
+                grid.insert(idx, w.lat, w.lon);
+            }
+            neighbors.resize(nodes.size());
         }
 
         std::size_t resolve_nearest(const std::string& id, double lat, double lon) const
@@ -360,7 +410,12 @@ namespace osect
         }
     };
 
-    route_planner::route_planner(const char* db_path) : pimpl(std::make_unique<impl>(db_path))
+    route_planner::route_planner(const char* db_path) : route_planner(db_path, user_database::default_path())
+    {
+    }
+
+    route_planner::route_planner(const char* db_path, const std::filesystem::path& user_db_path)
+        : pimpl(std::make_unique<impl>(db_path, user_db_path))
     {
         auto add_node = [&](std::string id, node_kind kind, wp_subtype sub, double lat, double lon)
         {
@@ -383,6 +438,7 @@ namespace osect
         {
             add_node(std::move(r.id), node_kind::fix, classify_fix_subtype(r.type_code), r.lat, r.lon);
         }
+        pimpl->nasr_node_count = pimpl->nodes.size();
 
         // Build the spatial grid once now that nodes are stable.
         pimpl->grid.reset();
@@ -751,6 +807,11 @@ namespace osect
 
     std::string route_planner::expand_sigils(const std::string& text, const options& opts) const
     {
+        // Pull the current user waypoints into the catalog and grid
+        // so A* and resolve_point can see them. User waypoints are
+        // mutable at runtime; the NASR catalog is not.
+        pimpl->refresh_user_waypoints();
+
         auto tokens = tokenize_with_sigils(text);
 
         std::vector<std::size_t> sigils;
@@ -957,9 +1018,10 @@ namespace osect
     flight_route route_planner::parse(const std::string& text, const options& opts) const
     {
         // User waypoints are runtime data — snapshot them per parse so
-        // a waypoint created since construction still resolves. They
-        // are plain route tokens here; routing A* through them is a
-        // separate feature.
+        // a waypoint created since construction still resolves.
+        // expand_sigils refreshes the planner's catalog with the same
+        // set so A* can route through them; flight_route's separate
+        // copy here gives the post-expansion resolver matching IDs.
         std::vector<route_waypoint> user_waypoints;
         for(const auto& w : pimpl->udb.load_waypoints())
         {
