@@ -1,8 +1,8 @@
 #pragma once
 
 #include "tile_key.hpp"
+#include <filesystem>
 #include <memory>
-#include <string>
 #include <vector>
 
 namespace sdl
@@ -36,7 +36,7 @@ namespace osect
 
         // Enqueue a tile for background loading.
         // Wakes the main loop when loading completes.
-        void request(const tile_key& key, const std::string& path);
+        void request(const tile_key& key, const std::filesystem::path& path);
 
         // Clear all queued requests (in-flight and completed are unaffected)
         void cancel();

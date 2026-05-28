@@ -346,7 +346,8 @@ namespace osect
         double cursor_last_x = 0;
         double cursor_last_y = 0;
 
-        impl(sdl::device& dev, const char* tile_path, const char* db_path, const ini_config& ini,
+        impl(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path,
+             const std::filesystem::path& db_path, const ini_config& ini,
              int viewport_width, int viewport_height)
             : dev(dev),
               linelist_pipeline(dev, load_shader(dev, shader_id::DEFAULT, sdl::shader_stage::vertex),
@@ -361,7 +362,7 @@ namespace osect
               line_sdf_pipeline(dev, load_shader(dev, shader_id::LINE, sdl::shader_stage::vertex, 0, 2),
                                 load_shader(dev, shader_id::LINE, sdl::shader_stage::fragment, 0, 2),
                                 sdl::primitive_type::triangle_list, sdl::texture_format_t(0), false),
-              tiles(tile_path ? std::make_unique<tile_renderer>(dev, tile_path) : nullptr),
+              tiles(tile_path ? std::make_unique<tile_renderer>(dev, *tile_path) : nullptr),
               features(dev, db_path, chart_style(ini)),
               labels(dev),
               pick_db(db_path),
@@ -1225,7 +1226,8 @@ namespace osect
         }
     };
 
-    map_widget::map_widget(sdl::device& dev, const char* tile_path, const char* db_path, const ini_config& ini,
+    map_widget::map_widget(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path,
+                           const std::filesystem::path& db_path, const ini_config& ini,
                            int viewport_width, int viewport_height)
         : pimpl(std::make_shared<impl>(dev, tile_path, db_path, ini, viewport_width, viewport_height))
     {

@@ -87,8 +87,8 @@ namespace osect
         // query_class_airspace_segments() without a per-row SQL subquery.
         std::unordered_set<int> shadowed_arsp_ids;
 
-        impl(const char* db_path)
-            : db(db_path)
+        impl(const std::filesystem::path& db_path)
+            : db(db_path.string().c_str())
 
               ,
               stmt_airports(prepare_checked(db, R"(
@@ -793,7 +793,7 @@ namespace osect
         }
     };
 
-    nasr_database::nasr_database(const char* db_path) : pimpl(std::make_unique<impl>(db_path))
+    nasr_database::nasr_database(const std::filesystem::path& db_path) : pimpl(std::make_unique<impl>(db_path))
     {
     }
 

@@ -2,6 +2,7 @@
 #include "program.hpp"
 #include <condition_variable>
 #include <deque>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <sdl/log.hpp>
@@ -17,7 +18,7 @@ namespace osect
         struct pending_request
         {
             tile_key key;
-            std::string path;
+            std::filesystem::path path;
         };
 
         mutable std::mutex mutex;
@@ -48,7 +49,7 @@ namespace osect
                 std::unique_ptr<sdl::surface> surf;
                 try
                 {
-                    surf = std::make_unique<sdl::surface>(req.path.c_str());
+                    surf = std::make_unique<sdl::surface>(req.path.string().c_str());
                 }
                 catch(const std::exception& e)
                 {
@@ -86,7 +87,7 @@ namespace osect
         pimpl->worker.join();
     }
 
-    void tile_loader::request(const tile_key& key, const std::string& path)
+    void tile_loader::request(const tile_key& key, const std::filesystem::path& path)
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);
         if(!pimpl->pending_set.count(key) && !pimpl->failed_set.count(key))

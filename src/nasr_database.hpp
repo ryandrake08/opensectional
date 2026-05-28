@@ -1,6 +1,7 @@
 #pragma once
 #include "data_source.hpp"
 #include "geo_types.hpp"
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -484,7 +485,7 @@ namespace osect
         std::unique_ptr<impl> pimpl;
 
     public:
-        nasr_database(const char* db_path);
+        explicit nasr_database(const std::filesystem::path& db_path);
         ~nasr_database();
 
         // Query features within a geographic bounding box (lon/lat degrees).

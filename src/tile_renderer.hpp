@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <filesystem>
 #include <memory>
 
 namespace sdl
@@ -20,7 +21,7 @@ namespace osect
         std::unique_ptr<impl> pimpl;
 
     public:
-        tile_renderer(sdl::device& dev, const char* tile_path);
+        tile_renderer(sdl::device& dev, const std::filesystem::path& tile_path);
         ~tile_renderer();
 
         // Recompute visible tiles and enqueue background loads

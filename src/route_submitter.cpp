@@ -16,7 +16,7 @@ namespace osect
         std::string error;
         std::uint64_t tag = 0;
 
-        explicit impl(const char* db_path) : planner(db_path)
+        explicit impl(const std::filesystem::path& db_path) : planner(db_path)
         {
         }
 
@@ -83,7 +83,7 @@ namespace osect
         }
     };
 
-    route_submitter::route_submitter(const char* db_path) : pimpl(std::make_unique<impl>(db_path))
+    route_submitter::route_submitter(const std::filesystem::path& db_path) : pimpl(std::make_unique<impl>(db_path))
     {
     }
 

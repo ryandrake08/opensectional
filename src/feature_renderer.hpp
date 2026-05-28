@@ -24,7 +24,7 @@ namespace osect
         std::unique_ptr<impl> pimpl;
 
     public:
-        feature_renderer(sdl::device& dev, const char* db_path, const chart_style& cs);
+        feature_renderer(sdl::device& dev, const std::filesystem::path& db_path, const chart_style& cs);
         ~feature_renderer();
 
         // Recompute visible features from database

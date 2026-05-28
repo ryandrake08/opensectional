@@ -100,7 +100,7 @@ ini_config::cache_type::const_iterator ini_config::find(const std::string& secti
     auto key_it(this->cache.find(section_dot_key));
     if(key_it == this->cache.end())
     {
-        throw std::runtime_error("ini_config: configuration file: " + filename +
+        throw std::runtime_error("ini_config: configuration file: " + filename.string() +
                                  " contains no key: " + section_dot_key);
     }
 
@@ -113,7 +113,7 @@ ini_config::cache_type::iterator ini_config::find(const std::string& section_dot
     auto key_it(this->cache.find(section_dot_key));
     if(key_it == this->cache.end())
     {
-        throw std::runtime_error("ini_config: configuration file: " + filename +
+        throw std::runtime_error("ini_config: configuration file: " + filename.string() +
                                  " contains no key: " + section_dot_key);
     }
 
@@ -126,18 +126,18 @@ ini_config::ini_config() : needs_sync(false)
 
 namespace
 {
-    std::ifstream open_or_throw(const std::string& filename)
+    std::ifstream open_or_throw(const std::filesystem::path& filename)
     {
         std::ifstream in(filename);
         if(!in.good())
         {
-            throw std::runtime_error("ini_config: cannot open " + filename);
+            throw std::runtime_error("ini_config: cannot open " + filename.string());
         }
         return in;
     }
 }
 
-ini_config::ini_config(const std::string& filename)
+ini_config::ini_config(const std::filesystem::path& filename)
     : filename(filename), cache(ini_config::parse(open_or_throw(filename))), needs_sync(false)
 {
 }

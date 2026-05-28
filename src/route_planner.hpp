@@ -42,8 +42,8 @@ namespace osect
         // database opens at user_database::default_path(); the
         // overload taking a user_db_path is for tests that need a
         // disposable user.db.
-        explicit route_planner(const char* db_path);
-        route_planner(const char* db_path, const std::filesystem::path& user_db_path);
+        explicit route_planner(const std::filesystem::path& db_path);
+        route_planner(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path);
         ~route_planner();
 
         route_planner(const route_planner&) = delete;

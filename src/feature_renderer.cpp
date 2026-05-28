@@ -59,7 +59,7 @@ namespace osect
         std::optional<route_id> drag_route_id;
         std::optional<flight_route> drag_route;
 
-        impl(sdl::device& dev, const char* db_path, const chart_style& styles)
+        impl(sdl::device& dev, const std::filesystem::path& db_path, const chart_style& styles)
             : dev(dev), builder(db_path, styles), half_extent_y(HALF_CIRCUMFERENCE), query_bbox{0, 0, 0, 0}
         {
         }
@@ -113,7 +113,7 @@ namespace osect
         }
     };
 
-    feature_renderer::feature_renderer(sdl::device& dev, const char* db_path, const chart_style& cs)
+    feature_renderer::feature_renderer(sdl::device& dev, const std::filesystem::path& db_path, const chart_style& cs)
         : pimpl(std::make_unique<impl>(dev, db_path, cs))
     {
     }

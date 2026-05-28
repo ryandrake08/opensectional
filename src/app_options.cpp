@@ -92,17 +92,17 @@ namespace osect
             else if(arg == "-b" || arg == "--basemap")
             {
                 opts.tile_path = need_value("--basemap");
-                sdl::log_info("Basemap directory: " + *opts.tile_path);
+                sdl::log_info("Basemap directory: " + opts.tile_path->string());
             }
             else if(arg == "-d" || arg == "--database")
             {
                 opts.db_path = need_value("--database");
-                sdl::log_info("Database: " + *opts.db_path);
+                sdl::log_info("Database: " + opts.db_path->string());
             }
             else if(arg == "-c" || arg == "--conf")
             {
                 opts.conf_path = need_value("--conf");
-                sdl::log_info("Override INI: " + *opts.conf_path);
+                sdl::log_info("Override INI: " + opts.conf_path->string());
             }
             else if(arg == "--offline")
             {
@@ -119,7 +119,7 @@ namespace osect
         return opts;
     }
 
-    std::string resolve_db_path(const parsed_options& opts, const std::string& prog)
+    std::filesystem::path resolve_db_path(const parsed_options& opts, const std::string& prog)
     {
         if(opts.db_path)
         {
@@ -135,14 +135,19 @@ namespace osect
         return resolved;
     }
 
-    std::string resolve_tile_path(const parsed_options& opts)
+    std::optional<std::filesystem::path> resolve_tile_path(const parsed_options& opts)
     {
         if(opts.tile_path)
         {
             return *opts.tile_path;
         }
-        // Tiles are optional — empty string means "no basemap".
-        return sdl::resolve_bundled_asset("basemap");
+        // Tiles are optional — nullopt means "no basemap".
+        auto bundled = sdl::resolve_bundled_asset("basemap");
+        if(bundled.empty())
+        {
+            return std::nullopt;
+        }
+        return std::filesystem::path{std::move(bundled)};
     }
 
     ini_config build_ini(const parsed_options& opts)
@@ -162,7 +167,7 @@ namespace osect
         }
         if(opts.conf_path)
         {
-            sdl::log_info("ini merge: --conf " + *opts.conf_path);
+            sdl::log_info("ini merge: --conf " + opts.conf_path->string());
             ini.merge(ini_config(*opts.conf_path));
         }
         return ini;

@@ -51,9 +51,10 @@ namespace osect
         parsed_options opts;
 
         // Resolved paths (filled from opts and bundled-asset lookup
-        // before subsystems are constructed).
-        std::string db_path;
-        std::string tile_path;
+        // before subsystems are constructed). `tile_path` is nullopt
+        // when no basemap is configured or bundled.
+        std::filesystem::path db_path;
+        std::optional<std::filesystem::path> tile_path;
 
         sdl::instance sdl_ctx;
         sdl::window win;
@@ -94,9 +95,9 @@ namespace osect
               tfrs(opts.offline ? nullptr : std::make_unique<tfr_refresher>(ephemeral_database::default_path())),
               ini(build_ini(opts)),
               udb(user_database::default_path()),
-              map(dev, tile_path.empty() ? nullptr : tile_path.c_str(), db_path.c_str(), ini, 1280, 1024),
+              map(dev, tile_path, db_path, ini, 1280, 1024),
               waypoints(map, udb),
-              routes(ui, map, udb, ini, db_path.c_str()),
+              routes(ui, map, udb, ini, db_path),
               prev_vis(ui.visibility())
         {
             event_mgr.set_raw_event_hook([this](const void* event) { imgui_ctx.process_event(event); });
@@ -111,8 +112,8 @@ namespace osect
             routes.restore_from_db();
 
             // Log info about the GPU driver
-            sdl::log_info("started: gpu=" + resolve_gpu_driver(opts) + " db=" + db_path +
-                          " basemap=" + (tile_path.empty() ? std::string("(none)") : tile_path) +
+            sdl::log_info("started: gpu=" + resolve_gpu_driver(opts) + " db=" + db_path.string() +
+                          " basemap=" + (tile_path ? tile_path->string() : std::string("(none)")) +
                           " offline=" + (opts.offline ? "true" : "false"));
         }
 
@@ -121,7 +122,7 @@ namespace osect
         // to each database per call is fine.
         void push_data_sources()
         {
-            auto merged = nasr_database(db_path.c_str()).list_data_sources();
+            auto merged = nasr_database(db_path).list_data_sources();
             auto eph = ephemeral_database(ephemeral_database::default_path()).list_data_sources();
             if(tfrs)
             {

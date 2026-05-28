@@ -37,7 +37,7 @@ namespace osect
         // submitting tab when the result arrives).
         std::uint64_t active_tab_id = 0;
 
-        impl(ui_overlay& ui, map_widget& map, user_database& udb, const ini_config& ini, const char* db_path)
+        impl(ui_overlay& ui, map_widget& map, user_database& udb, const ini_config& ini, const std::filesystem::path& db_path)
             : ui(ui), map(map), udb(udb), submitter(db_path), plan_options(load_route_plan_options(ini))
         {
             ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
@@ -349,7 +349,7 @@ namespace osect
     };
 
     route_session::route_session(ui_overlay& ui, map_widget& map, user_database& udb, const ini_config& ini,
-                                 const char* db_path)
+                                 const std::filesystem::path& db_path)
         : pimpl(std::make_unique<impl>(ui, map, udb, ini, db_path))
     {
     }

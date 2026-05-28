@@ -3,6 +3,7 @@
 #include "flight_route.hpp"
 #include "route_planner.hpp"
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -52,7 +53,7 @@ namespace osect
         // Constructs an internal route_planner against `db_path`. The
         // planner's database handle is distinct from the rendering
         // thread's so the worker doesn't contend on its mutex.
-        explicit route_submitter(const char* db_path);
+        explicit route_submitter(const std::filesystem::path& db_path);
         ~route_submitter();
 
         route_submitter(const route_submitter&) = delete;

@@ -34,14 +34,15 @@ namespace osect
         std::shared_ptr<impl> pimpl;
 
     public:
-        // `tile_path` may be null if no basemap is available.
+        // `tile_path` is nullopt when no basemap is available.
         // `ini` carries chart-style overrides; pass an empty ini_config{}
         // for code defaults only.
         // Feature build / pick paths open their own read-only
         // connections to the platform-default ephemeral.db, so
         // ephemeral data flows through SQLite rather than through
         // a passed-in facade.
-        map_widget(sdl::device& dev, const char* tile_path, const char* db_path, const ini_config& ini,
+        map_widget(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path,
+                   const std::filesystem::path& db_path, const ini_config& ini,
                    int viewport_width, int viewport_height);
         ~map_widget();
 

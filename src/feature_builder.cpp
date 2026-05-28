@@ -59,7 +59,7 @@ namespace osect
         std::array<polyline_data, layer_sdf_count> poly;
         std::vector<label_candidate> labels;
 
-        impl(const char* db_path, chart_style cs)
+        impl(const std::filesystem::path& db_path, chart_style cs)
             : db(db_path), eph_db(ephemeral_database::default_path()),
               udb(user_database::default_path()), styles(std::move(cs)), types(make_feature_types())
         {
@@ -164,7 +164,7 @@ namespace osect
         }
     };
 
-    feature_builder::feature_builder(const char* db_path, const chart_style& cs)
+    feature_builder::feature_builder(const std::filesystem::path& db_path, const chart_style& cs)
         : pimpl(std::make_unique<impl>(db_path, cs))
     {
         pimpl->worker = std::thread(&impl::worker_loop, pimpl.get());

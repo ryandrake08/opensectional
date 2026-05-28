@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <memory>
 
 class ini_config;
@@ -24,7 +25,7 @@ namespace osect
 
     public:
         route_session(ui_overlay& ui, map_widget& map, user_database& udb, const ini_config& ini,
-                       const char* db_path);
+                       const std::filesystem::path& db_path);
         ~route_session();
 
         route_session(const route_session&) = delete;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ini_config.hpp"
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -21,9 +22,9 @@ namespace osect
     {
         int verbosity = 0;
         std::optional<std::string> gpu_driver;
-        std::optional<std::string> tile_path;
-        std::optional<std::string> db_path;
-        std::optional<std::string> conf_path;
+        std::optional<std::filesystem::path> tile_path;
+        std::optional<std::filesystem::path> db_path;
+        std::optional<std::filesystem::path> conf_path;
         bool offline = false;
         bool vsync = false;
         bool gpu_debug = false;
@@ -40,12 +41,12 @@ namespace osect
     // otherwise the osect.db bundled next to the executable or in
     // the current directory. Throws std::runtime_error (after
     // printing usage to stderr) when neither is available.
-    std::string resolve_db_path(const parsed_options& opts, const std::string& prog);
+    std::filesystem::path resolve_db_path(const parsed_options& opts, const std::string& prog);
 
     // Resolve the basemap tile directory: opts.tile_path when given,
-    // otherwise the bundled basemap. An empty string means "no
-    // basemap" — tiles are optional.
-    std::string resolve_tile_path(const parsed_options& opts);
+    // otherwise the bundled basemap. nullopt means "no basemap" —
+    // tiles are optional.
+    std::optional<std::filesystem::path> resolve_tile_path(const parsed_options& opts);
 
     // Build the ini_config: bundled defaults, then the per-user
     // file, then the optional --conf override, each merged on top.

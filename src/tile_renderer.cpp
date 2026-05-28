@@ -116,7 +116,7 @@ namespace osect
     {
         sdl::device& dev;
         sdl::sampler sampler;
-        std::string tile_path;
+        std::filesystem::path tile_path;
         int max_zoom = 15;
 
         // Current visible tile set
@@ -152,7 +152,7 @@ namespace osect
         std::vector<fallback_quad> fallback_quads;
         bool fallback_dirty = false;
 
-        impl(sdl::device& dev, std::string tile_path)
+        impl(sdl::device& dev, std::filesystem::path tile_path)
             : dev(dev),
               sampler(dev, sdl::filter::linear, sdl::filter::linear, sdl::sampler_address_mode::clamp_to_edge),
               tile_path(std::move(tile_path)),
@@ -160,13 +160,12 @@ namespace osect
         {
         }
 
-        std::string tile_file_path(const tile_key& key) const
+        std::filesystem::path tile_file_path(const tile_key& key) const
         {
             // Wrap x into [0, n-1] for file path (tiles repeat horizontally)
             auto n = 1 << key.z;
             auto wx = ((key.x % n) + n) % n;
-            return tile_path + "/" + std::to_string(key.z) + "/" + std::to_string(wx) + "/" + std::to_string(key.y) +
-                   ".png";
+            return tile_path / std::to_string(key.z) / std::to_string(wx) / (std::to_string(key.y) + ".png");
         }
 
         // Request a tile for loading. If it previously failed, walk up
@@ -259,7 +258,7 @@ namespace osect
         }
     };
 
-    tile_renderer::tile_renderer(sdl::device& dev, const char* tile_path)
+    tile_renderer::tile_renderer(sdl::device& dev, const std::filesystem::path& tile_path)
         : pimpl(std::make_unique<impl>(dev, tile_path))
     {
     }

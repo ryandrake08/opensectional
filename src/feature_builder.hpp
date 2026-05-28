@@ -7,6 +7,7 @@
 #include "ui_overlay.hpp"
 #include <glm/glm.hpp>
 #include <array>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -154,7 +155,7 @@ namespace osect
         std::unique_ptr<impl> pimpl;
 
     public:
-        feature_builder(const char* db_path, const chart_style& cs);
+        feature_builder(const std::filesystem::path& db_path, const chart_style& cs);
         ~feature_builder();
 
         feature_builder(const feature_builder&) = delete;

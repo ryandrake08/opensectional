@@ -338,7 +338,7 @@ namespace osect
         // runtime.
         std::size_t nasr_node_count = 0;
 
-        impl(const char* db_path, const std::filesystem::path& user_db_path) : db(db_path), udb(user_db_path)
+        impl(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path) : db(db_path), udb(user_db_path)
         {
         }
 
@@ -410,11 +410,12 @@ namespace osect
         }
     };
 
-    route_planner::route_planner(const char* db_path) : route_planner(db_path, user_database::default_path())
+    route_planner::route_planner(const std::filesystem::path& db_path)
+        : route_planner(db_path, user_database::default_path())
     {
     }
 
-    route_planner::route_planner(const char* db_path, const std::filesystem::path& user_db_path)
+    route_planner::route_planner(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path)
         : pimpl(std::make_unique<impl>(db_path, user_db_path))
     {
         auto add_node = [&](std::string id, node_kind kind, wp_subtype sub, double lat, double lon)

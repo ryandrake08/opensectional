@@ -1,4 +1,5 @@
 #pragma once
+#include <filesystem>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -27,7 +28,7 @@ private:
     typedef std::unordered_map<std::string, value_data> cache_type;
 
     // backing store filename
-    std::string filename;
+    std::filesystem::path filename;
 
     // in-memory cache
     cache_type cache;
@@ -48,7 +49,7 @@ public:
     ini_config();
 
     // Load from disk. Throws if the file is unreadable.
-    explicit ini_config(const std::string& filename);
+    explicit ini_config(const std::filesystem::path& filename);
 
     // Overlay another config on top of this one. Keys present in
     // `other` overwrite keys here; keys absent in `other` are
