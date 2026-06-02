@@ -41,9 +41,14 @@ namespace sdl
         // The void* points to an SDL_Event.
         void set_raw_event_hook(std::function<void(const void*)> hook);
 
+        // Poll SDL events and dispatch to listeners without blocking.
+        // Returns true if a quit event was received. Used by frame-rate
+        // driven render loops that must run regardless of input activity.
+        bool poll_and_dispatch();
+
         // Block until at least one event arrives, then drain all pending
         // events before returning. Returns true if quit was requested.
-        bool dispatch_events();
+        bool wait_and_dispatch();
 
         // Push a quit event to terminate the event loop
         static void push_quit_event();
@@ -68,7 +73,7 @@ namespace sdl
 
         // Register a handler for a previously-registered event type.
         // The handler is invoked from the main thread inside
-        // dispatch_events when an event of that type is drained.
+        // the dispatch methods when an event of that type is drained.
         // Only one handler per type; later calls replace earlier
         // ones. Call from the main thread before any matching event
         // is pushed.

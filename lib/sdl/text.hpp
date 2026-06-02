@@ -135,6 +135,26 @@ namespace sdl
         void append_geometry(std::vector<vertex_t2f_c4ub_v3f>& vertices, std::vector<int>& indices,
                              const glm::vec3& center, float angle, unsigned char r, unsigned char g, unsigned char b,
                              unsigned char a) const;
+
+        /**
+         * Get text bounding box, normalizing font pixels by dividing by 800.0
+         * and applying @p scale. Provided for drawables that position text
+         * in [0,1] normalized space.
+         *
+         * @param scale Scale factor to apply after normalization
+         * @return Bounds in normalized scaled coordinates
+         */
+        text_bounds get_bounds_scaled(float scale) const;
+
+        /**
+         * Append text geometry with the same normalization-and-scale transform
+         * as get_bounds_scaled(): each font-pixel coordinate is multiplied by
+         * scale/800.0 before being added to @p position. Provided for drawables
+         * that position text in [0,1] normalized space.
+         */
+        void append_geometry_scaled(std::vector<vertex_t2f_c4ub_v3f>& vertices, std::vector<int>& indices,
+                                    const glm::vec3& position, float scale, unsigned char r, unsigned char g,
+                                    unsigned char b, unsigned char a) const;
     };
 
 } // namespace sdl

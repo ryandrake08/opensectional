@@ -132,7 +132,20 @@ namespace sdl
         this->pimpl->raw_event_hook = std::move(hook);
     }
 
-    bool event_manager::dispatch_events()
+    bool event_manager::poll_and_dispatch()
+    {
+        SDL_Event event;
+        while(SDL_PollEvent(&event))
+        {
+            if(pimpl->dispatch(event))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool event_manager::wait_and_dispatch()
     {
         SDL_Event event;
 

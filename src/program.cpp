@@ -341,7 +341,7 @@ namespace osect
 
             while(true)
             {
-                if(event_mgr.dispatch_events())
+                if(event_mgr.wait_and_dispatch())
                 {
                     sdl::log_info("shutting down");
                     break;

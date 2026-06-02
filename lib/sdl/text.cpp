@@ -172,4 +172,58 @@ namespace sdl
         }
     }
 
+    text_bounds text::get_bounds_scaled(float scale) const
+    {
+        text_bounds bounds = get_bounds();
+        float norm_scale = scale / 800.0F;
+        bounds.min_x *= norm_scale;
+        bounds.max_x *= norm_scale;
+        bounds.min_y *= norm_scale;
+        bounds.max_y *= norm_scale;
+        return bounds;
+    }
+
+    void text::append_geometry_scaled(std::vector<vertex_t2f_c4ub_v3f>& vertices, std::vector<int>& indices,
+                                      const glm::vec3& position, float scale, unsigned char r, unsigned char g,
+                                      unsigned char b, unsigned char a) const
+    {
+        TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(pimpl->handle);
+        if(!sequences)
+        {
+            return;
+        }
+
+        float norm_scale = scale / 800.0F;
+
+        for(TTF_GPUAtlasDrawSequence* seq = sequences; seq != nullptr; seq = seq->next)
+        {
+            if(seq->num_vertices == 0 || seq->num_indices == 0)
+            {
+                continue;
+            }
+
+            auto vertex_offset = static_cast<unsigned int>(vertices.size());
+
+            for(int i = 0; i < seq->num_vertices; i++)
+            {
+                vertex_t2f_c4ub_v3f vert{};
+                vert.s = seq->uv[i].x;
+                vert.t = seq->uv[i].y;
+                vert.r = r;
+                vert.g = g;
+                vert.b = b;
+                vert.a = a;
+                vert.x = position.x + seq->xy[i].x * norm_scale;
+                vert.y = position.y + seq->xy[i].y * norm_scale;
+                vert.z = position.z;
+                vertices.push_back(vert);
+            }
+
+            for(int i = 0; i < seq->num_indices; i++)
+            {
+                indices.push_back(seq->indices[i] + vertex_offset);
+            }
+        }
+    }
+
 } // namespace sdl

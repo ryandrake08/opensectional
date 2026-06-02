@@ -10,7 +10,7 @@ namespace sdl
     {
         SDL_Surface* handle; // Owning
 
-        static SDL_Surface* load_image(const char* file_path)
+        static SDL_Surface* load_image(const char* file_path, bool as_alpha_mask)
         {
             SDL_Surface* loaded_surface = IMG_Load(file_path);
             if(!loaded_surface)
@@ -18,14 +18,15 @@ namespace sdl
                 throw error(std::string("Failed to load image: ") + file_path);
             }
 
-            // Handle grayscale images (treat grayscale as alpha, RGB as white).
-            // Paletted images with a color palette are NOT grayscale — they
-            // should go through SDL_ConvertSurface to expand the palette.
-            bool is_indexed = SDL_ISPIXELFORMAT_INDEXED(loaded_surface->format);
-            bool has_palette = is_indexed && SDL_GetSurfacePalette(loaded_surface) != nullptr;
-            bool is_grayscale = is_indexed && !has_palette;
-
-            if(is_grayscale)
+            // When as_alpha_mask is set the caller is asserting the source is a
+            // single-channel mask; emit white RGB with the input byte as alpha.
+            // Otherwise paletted input goes through SDL_ConvertSurface, which
+            // looks up each pixel in the palette and writes the resulting
+            // opaque RGB into ABGR8888 — the correct path for color artwork.
+            // SDL3_image loads 8-bit grayscale PNGs and true paletted PNGs both
+            // as INDEX8 with a palette and they cannot be told apart on the
+            // SDL_Surface, so the caller picks via this flag.
+            if(as_alpha_mask && SDL_ISPIXELFORMAT_INDEXED(loaded_surface->format))
             {
                 SDL_Surface* rgba_surface =
                     SDL_CreateSurface(loaded_surface->w, loaded_surface->h, SDL_PIXELFORMAT_ABGR8888);
@@ -75,7 +76,7 @@ namespace sdl
             return loaded_surface;
         }
 
-        explicit impl(const char* file_path) : handle(load_image(file_path))
+        impl(const char* file_path, bool as_alpha_mask) : handle(load_image(file_path, as_alpha_mask))
         {
         }
 
@@ -93,7 +94,7 @@ namespace sdl
         impl& operator=(impl&&) = default;
     };
 
-    surface::surface(const char* file_path) : pimpl(new impl(file_path))
+    surface::surface(const char* file_path, bool as_alpha_mask) : pimpl(new impl(file_path, as_alpha_mask))
     {
     }
 

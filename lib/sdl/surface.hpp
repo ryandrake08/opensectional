@@ -20,14 +20,23 @@ namespace sdl
         /**
          * Load surface from image file.
          *
-         * Uses SDL3_image to load common image formats (PNG, JPEG, BMP, etc.).
-         * Automatically converts to RGBA8888 format for consistency.
-         * Handles grayscale images by treating grayscale as alpha with white RGB.
+         * Uses SDL3_image to load common image formats (PNG, JPEG, BMP, etc.)
+         * and converts the result to RGBA8888.
+         *
+         * SDL3 has no single-channel pixel format, so SDL3_image loads 8-bit
+         * grayscale PNGs as INDEX8 with a synthetic identity palette,
+         * indistinguishable on the SDL_Surface from a true paletted PNG.
+         * When @p as_alpha_mask is true the loader treats indexed input as a
+         * single-channel mask (white RGB, pixel value → alpha), which is what
+         * UI/text atlases authored as grayscale PNGs want. When false (the
+         * default) the loader expands paletted input through SDL_ConvertSurface,
+         * producing opaque RGB suitable for color artwork.
          *
          * @param file_path Path to image file
+         * @param as_alpha_mask Treat indexed/grayscale input as an alpha mask
          * @throws std::runtime_error if image loading or conversion fails
          */
-        explicit surface(const char* file_path);
+        explicit surface(const char* file_path, bool as_alpha_mask = false);
 
         /**
          * Destroy surface.
