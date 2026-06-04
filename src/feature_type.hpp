@@ -90,6 +90,21 @@ namespace osect
             return std::nullopt;
         }
 
+        // True for fill-polygon types (ARTCC, airspace, SUA, TFR,
+        // ADIZ, MAA, PJA) — features a click is hit-tested against by
+        // containment, not proximity. These blanket large regions
+        // (ARTCC tiles the whole country), so a click landing inside
+        // one is a location, not a selection. handle_pick excludes
+        // them from both single-click fast-paths: they are reachable
+        // only through the multi-pick selector, which keeps the WPT
+        // button (create user waypoint here) available everywhere.
+        // Line types (airways, MTRs, runways) are hit by proximity and
+        // stay false.
+        virtual bool fills_interior() const
+        {
+            return false;
+        }
+
         // Perpendicular distance, in nautical miles, from
         // (click_lon, click_lat) to feature `f`. Used by the exact-
         // pick short-circuit in map_widget::handle_pick: a click
@@ -97,12 +112,11 @@ namespace osect
         // bypasses the multi-pick selector. For point features the
         // default uses point_coord. Line types override with
         // perpendicular distance to the segment. Polygon types
-        // override with distance to the nearest boundary edge,
-        // regardless of inside/outside — so a click well inside an
-        // ARTCC doesn't fast-path the ARTCC, but a click on its
-        // boundary does. Returns infinity for features without a
-        // meaningful spatial distance (e.g. route picks, which are
-        // handled separately).
+        // override with distance to the nearest boundary edge; that
+        // distance still feeds the selector's candidate labels, but
+        // fill polygons (fills_interior()) never fast-path. Returns
+        // infinity for features without a meaningful spatial distance
+        // (e.g. route picks, which are handled separately).
         virtual double pick_distance_nm(const feature& f, double click_lon, double click_lat) const;
 
         // Anchor for the info popup. Default: snap to the feature's

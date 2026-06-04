@@ -550,6 +550,21 @@ namespace osect
         double pick_distance_nm(const feature& f, double click_lon, double click_lat) const override;                  \
     };
 
+// Like DECLARE_AREA_FEATURE_TYPE, but for fill polygons hit-tested by
+// containment. fills_interior() returns true so handle_pick keeps them
+// out of the single-click fast-paths (see feature_type::fills_interior).
+#define DECLARE_POLY_FEATURE_TYPE(Class, LBL, ID, TAG, FType)                                                          \
+    class Class : public feature_type                                                                                  \
+    {                                                                                                                  \
+    public:                                                                                                            \
+        FEATURE_TYPE_BODY(LBL, ID, TAG, FType)                                                                         \
+        double pick_distance_nm(const feature& f, double click_lon, double click_lat) const override;                  \
+        bool fills_interior() const override                                                                           \
+        {                                                                                                              \
+            return true;                                                                                               \
+        }                                                                                                              \
+    };
+
 #define DECLARE_POINT_FEATURE_TYPE(Class, LBL, ID, TAG, FType)                                                         \
     class Class : public feature_type                                                                                  \
     {                                                                                                                  \
@@ -567,19 +582,20 @@ namespace osect
         DECLARE_POINT_FEATURE_TYPE(fix_type, "Fixes", layer_fixes, "FIX", fix)
         DECLARE_AREA_FEATURE_TYPE(airway_type, "Airways", layer_airways, "AWY", airway_segment)
         DECLARE_AREA_FEATURE_TYPE(mtr_type, "MTRs", layer_mtrs, "MTR", mtr_segment)
-        DECLARE_AREA_FEATURE_TYPE(pja_type, "PJA", layer_pja, "PJA", pja)
-        DECLARE_AREA_FEATURE_TYPE(maa_type, "MAA", layer_maa, "MAA", maa)
-        DECLARE_AREA_FEATURE_TYPE(airspace_type, "Airspace", layer_airspace, "CLS", class_airspace)
-        DECLARE_AREA_FEATURE_TYPE(sua_type, "SUA", layer_sua, "SUA", sua)
-        DECLARE_AREA_FEATURE_TYPE(tfr_type, "TFRs", layer_tfr, "TFR", tfr)
-        DECLARE_AREA_FEATURE_TYPE(adiz_type, "ADIZ", layer_adiz, "ADIZ", adiz)
-        DECLARE_AREA_FEATURE_TYPE(artcc_type, "ARTCC", layer_artcc, "ARTCC", artcc)
+        DECLARE_POLY_FEATURE_TYPE(pja_type, "PJA", layer_pja, "PJA", pja)
+        DECLARE_POLY_FEATURE_TYPE(maa_type, "MAA", layer_maa, "MAA", maa)
+        DECLARE_POLY_FEATURE_TYPE(airspace_type, "Airspace", layer_airspace, "CLS", class_airspace)
+        DECLARE_POLY_FEATURE_TYPE(sua_type, "SUA", layer_sua, "SUA", sua)
+        DECLARE_POLY_FEATURE_TYPE(tfr_type, "TFRs", layer_tfr, "TFR", tfr)
+        DECLARE_POLY_FEATURE_TYPE(adiz_type, "ADIZ", layer_adiz, "ADIZ", adiz)
+        DECLARE_POLY_FEATURE_TYPE(artcc_type, "ARTCC", layer_artcc, "ARTCC", artcc)
         DECLARE_POINT_FEATURE_TYPE(obstacle_type, "Obstacles", layer_obstacles, "OBS", obstacle)
         DECLARE_POINT_FEATURE_TYPE(comm_outlet_type, "RCO", layer_rco, "COM", comm_outlet)
         DECLARE_POINT_FEATURE_TYPE(awos_type, "AWOS", layer_awos, "AWOS", awos)
         DECLARE_POINT_FEATURE_TYPE(user_waypoint_type, "User Waypoints", layer_user_waypoints, "WPT", user_waypoint)
 
 #undef DECLARE_AREA_FEATURE_TYPE
+#undef DECLARE_POLY_FEATURE_TYPE
 #undef DECLARE_POINT_FEATURE_TYPE
 #undef FEATURE_TYPE_BODY
 

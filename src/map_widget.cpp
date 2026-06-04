@@ -906,14 +906,15 @@ namespace osect
             // Exact-pick short-circuit: a precise click on a single
             // feature short-circuits the picker. For points, "exact"
             // is distance to the point; for lines, perpendicular
-            // distance to the segment; for polygons, distance to the
-            // nearest boundary edge — so a click well inside an ARTCC
-            // doesn't fast-path the ARTCC, but a click on its
-            // boundary (or on an airway / route crossing it) does.
-            // Routes participate the same way: a precise click on a
-            // route line activates/selects the route; clicking where
-            // the route overlaps another exact-eligible feature opens
-            // the picker so the user can choose.
+            // distance to the segment. Fill polygons (ARTCC, airspace,
+            // SUA, …) are excluded entirely — they blanket large
+            // regions, so a click landing inside one is a location,
+            // not a selection, and fast-pathing it would hide the
+            // selector's WPT button. They remain reachable through the
+            // selector below. Routes participate the same way: a
+            // precise click on a route line activates/selects the
+            // route; clicking where the route overlaps another exact-
+            // eligible feature opens the picker so the user can choose.
             {
                 // pick_radius_nm corresponds to PICK_BOX_SIZE_PIXELS/2;
                 // scale down to PICK_BOX_EXACT_SIZE_PIXELS.
@@ -923,7 +924,12 @@ namespace osect
                 const feature* exact_hit = nullptr;
                 for(const auto& f : result.features)
                 {
-                    auto d = find_feature_type(feature_types, f).pick_distance_nm(f, result.lon, result.lat);
+                    const auto& ft = find_feature_type(feature_types, f);
+                    if(ft.fills_interior())
+                    {
+                        continue;
+                    }
+                    auto d = ft.pick_distance_nm(f, result.lon, result.lat);
                     if(d <= exact_threshold_nm)
                     {
                         ++exact_count;
@@ -948,7 +954,10 @@ namespace osect
                 needs_update = true;
                 return;
             }
-            if(result.features.size() == 1)
+            // A lone proximity feature (point / line / route) fast-paths
+            // to its info popup; a lone fill polygon does not — it falls
+            // through to the selector so the WPT button stays reachable.
+            if(result.features.size() == 1 && !find_feature_type(feature_types, result.features[0]).fills_interior())
             {
                 act_on_pick(result.features[0], result.lon, result.lat);
                 return;
