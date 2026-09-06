@@ -1,7 +1,7 @@
 #include "tile_renderer.hpp"
-#include "lru_set.hpp"
 #include "map_view.hpp"
 #include "render_context.hpp"
+#include "tile_cache.hpp"
 #include "tile_key.hpp"
 #include "tile_loader.hpp"
 #include <algorithm>
@@ -17,7 +17,6 @@
 #include <sdl/transfer_buffer.hpp>
 #include <sdl/types.hpp>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace osect
@@ -28,33 +27,8 @@ namespace osect
         std::unique_ptr<sdl::buffer> vertex_buffer;
         std::unique_ptr<sdl::texture> tex;
 
-        bool operator==(const tile_gpu& other) const
-        {
-            return key == other.key;
-        }
     };
 } // namespace osect
-
-namespace std
-{
-    template <>
-    struct hash<std::shared_ptr<osect::tile_gpu>>
-    {
-        size_t operator()(const std::shared_ptr<osect::tile_gpu>& p) const
-        {
-            return std::hash<osect::tile_key>()(p->key);
-        }
-    };
-
-    template <>
-    struct equal_to<std::shared_ptr<osect::tile_gpu>>
-    {
-        bool operator()(const std::shared_ptr<osect::tile_gpu>& a, const std::shared_ptr<osect::tile_gpu>& b) const
-        {
-            return a->key == b->key;
-        }
-    };
-} // namespace std
 
 namespace osect
 {
@@ -86,56 +60,12 @@ namespace osect
         verts[5] = {u1, v0, r, g, b, a, x1, y1, 0.0F};
     }
 
-    // Compute the parent tile at a lower zoom and the UV sub-rect within it
-    // that corresponds to the display tile.
-    static tile_key ancestor_uv(const tile_key& display_tile, int ancestor_zoom, float& u0, float& v0, float& u1,
-                                float& v1)
-    {
-        auto dz = display_tile.z - ancestor_zoom;
-        auto scale = 1 << dz;
-
-        // Wrap x into valid range for the display zoom
-        auto n_display = 1 << display_tile.z;
-        auto wx = ((display_tile.x % n_display) + n_display) % n_display;
-
-        auto ancestor = tile_key{};
-        ancestor.z = ancestor_zoom;
-        ancestor.x = wx >> dz;
-        ancestor.y = display_tile.y >> dz;
-
-        auto inv_scale = 1.0 / scale;
-        u0 = static_cast<float>((wx % scale) * inv_scale);
-        v0 = static_cast<float>((display_tile.y % scale) * inv_scale);
-        u1 = static_cast<float>(u0 + inv_scale);
-        v1 = static_cast<float>(v0 + inv_scale);
-
-        return ancestor;
-    }
-
     struct tile_renderer::impl
     {
         sdl::device& dev;
         sdl::sampler sampler;
         std::filesystem::path tile_path;
-        int max_zoom = 15;
-
-        // Current visible tile set
-        std::vector<tile_key> visible_tiles;
-        int current_zoom = 0;
-
-        // Cached tile range to avoid redundant cancel+re-request
-        int cached_zoom = -1;
-        int cached_tx_min = 0;
-        int cached_tx_max = 0;
-        int cached_ty_min = 0;
-        int cached_ty_max = 0;
-        bool has_cached_range = false;
-
-        // Cache: tile_key -> weak_ptr to GPU resources
-        std::unordered_map<tile_key, std::weak_ptr<tile_gpu>> tile_map;
-
-        // LRU cache owns the shared_ptrs, eviction frees GPU resources
-        lru_set<std::shared_ptr<tile_gpu>> cache;
+        tile_cache<tile_gpu> cache;
 
         // Background tile loader
         tile_loader loader;
@@ -156,7 +86,7 @@ namespace osect
             : dev(dev),
               sampler(dev, sdl::filter::linear, sdl::filter::linear, sdl::sampler_address_mode::clamp_to_edge),
               tile_path(std::move(tile_path)),
-              cache(1024)
+              cache(15, 1024)
         {
         }
 
@@ -172,8 +102,7 @@ namespace osect
         // the zoom tree and request the nearest untried ancestor.
         void request_tile(const tile_key& key)
         {
-            auto it = tile_map.find(key);
-            if(it != tile_map.end() && !it->second.expired())
+            if(cache.find(key))
             {
                 return;
             }
@@ -193,58 +122,27 @@ namespace osect
             }
         }
 
-        // Find the best loaded ancestor for a tile. Returns true if found,
-        // with the ancestor's GPU resources and UV sub-rect.
-        bool find_ancestor(const tile_key& key, std::shared_ptr<tile_gpu>& gpu, float& u0, float& v0, float& u1,
-                           float& v1)
-        {
-            for(int az = key.z - 1; az >= 0; az--)
-            {
-                auto ancestor = ancestor_uv(key, az, u0, v0, u1, v1);
-                auto it = tile_map.find(ancestor);
-                if(it != tile_map.end())
-                {
-                    gpu = it->second.lock();
-                    if(gpu)
-                    {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        // A visible tile that has no direct GPU match but does have a usable
-        // ancestor — rendered via UV sub-rect on the ancestor's texture.
-        struct fallback_resolved
-        {
-            tile_key key;
-            float u0, v0, u1, v1;
-            std::shared_ptr<tile_gpu> ancestor_gpu;
-        };
-
         // Plan one copy() call: resolve fallback ancestors for the current
         // visible set and sum up every byte the transfer buffer will carry
         // (vertex buffers + tile texture pixels + fallback vertex buffers).
-        std::pair<std::vector<fallback_resolved>, uint32_t> plan_uploads()
+        std::pair<std::vector<typename tile_cache<tile_gpu>::fallback>, uint32_t> plan_uploads()
         {
             constexpr uint32_t vbuf_bytes = 6 * sizeof(sdl::vertex_t2f_c4ub_v3f);
 
-            std::vector<fallback_resolved> fallbacks;
-            fallbacks.reserve(visible_tiles.size());
-            for(const auto& key : visible_tiles)
+            std::vector<typename tile_cache<tile_gpu>::fallback> fallbacks;
+            fallbacks.reserve(cache.visible_tiles().size());
+            for(const auto& key : cache.visible_tiles())
             {
-                auto it = tile_map.find(key);
-                if(it != tile_map.end() && !it->second.expired())
+                if(cache.find(key))
                 {
                     continue;
                 }
-                fallback_resolved fr{key, 0.0F, 0.0F, 0.0F, 0.0F, nullptr};
-                if(!find_ancestor(key, fr.ancestor_gpu, fr.u0, fr.v0, fr.u1, fr.v1))
+                typename tile_cache<tile_gpu>::fallback fallback{};
+                if(!cache.find_ancestor(key, fallback))
                 {
                     continue;
                 }
-                fallbacks.push_back(std::move(fr));
+                fallbacks.push_back(std::move(fallback));
             }
 
             uint32_t total_bytes = 0;
@@ -268,109 +166,13 @@ namespace osect
     void tile_renderer::update(double vx_min, double vy_min, double vx_max, double vy_max, double /*half_extent_y*/,
                                int viewport_height, double /*aspect_ratio*/)
     {
-        // Compute ideal zoom level
-        auto meters_per_pixel = (vy_max - vy_min) / viewport_height;
-        auto world_size = 2.0 * HALF_CIRCUMFERENCE;
-        auto ideal_zoom = std::log2(world_size / (256.0 * meters_per_pixel));
-        auto zoom = std::max(0, std::min(pimpl->max_zoom, static_cast<int>(std::round(ideal_zoom))));
-        pimpl->current_zoom = zoom;
-
-        // Compute visible tile range
-        auto n = 1 << zoom;
-        auto tile_size = world_size / n;
-        auto tx_min = static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tile_size));
-        auto tx_max = static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tile_size));
-        auto ty_min = static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tile_size));
-        auto ty_max = static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tile_size));
-
-        // tx is unbounded (wraps around the antimeridian); ty clamps to valid range
-        ty_min = std::max(0, ty_min);
-        ty_max = std::min(n - 1, ty_max);
-
-        // Always rebuild visible_tiles (render needs it)
-        pimpl->visible_tiles.clear();
-        for(int ty = ty_min; ty <= ty_max; ty++)
-        {
-            for(int tx = tx_min; tx <= tx_max; tx++)
-            {
-                pimpl->visible_tiles.push_back({zoom, tx, ty});
-            }
-        }
-
-        // Skip cancel+re-request if tile range hasn't changed
-        if(pimpl->has_cached_range && zoom == pimpl->cached_zoom && tx_min == pimpl->cached_tx_min &&
-           tx_max == pimpl->cached_tx_max && ty_min == pimpl->cached_ty_min && ty_max == pimpl->cached_ty_max)
-        {
-            return;
-        }
-
-        pimpl->cached_zoom = zoom;
-        pimpl->cached_tx_min = tx_min;
-        pimpl->cached_tx_max = tx_max;
-        pimpl->cached_ty_min = ty_min;
-        pimpl->cached_ty_max = ty_max;
-        pimpl->has_cached_range = true;
-        pimpl->fallback_dirty = true;
-
-        pimpl->loader.cancel();
-
-        // Request visible tiles (walks up to ancestors for failed tiles)
-        for(const auto& key : pimpl->visible_tiles)
-        {
-            pimpl->request_tile(key);
-        }
-
-        // Prefetch: 1-tile border around visible area at current zoom
-        auto border_tx_min = tx_min - 1;
-        auto border_tx_max = tx_max + 1;
-        auto border_ty_min = std::max(0, ty_min - 1);
-        auto border_ty_max = std::min(n - 1, ty_max + 1);
-
-        for(int ty = border_ty_min; ty <= border_ty_max; ty++)
-        {
-            for(int tx = border_tx_min; tx <= border_tx_max; tx++)
-            {
-                pimpl->request_tile({zoom, tx, ty});
-            }
-        }
-
-        // Prefetch: zoom +1 tiles overlapping viewport
-        if(zoom + 1 <= pimpl->max_zoom)
-        {
-            auto nz = 1 << (zoom + 1);
-            auto tsz = world_size / nz;
-            auto ztx_min = static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tsz));
-            auto ztx_max = static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tsz));
-            auto zty_min = std::max(0, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tsz)));
-            auto zty_max = std::min(nz - 1, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tsz)));
-
-            for(int ty = zty_min; ty <= zty_max; ty++)
-            {
-                for(int tx = ztx_min; tx <= ztx_max; tx++)
-                {
-                    pimpl->request_tile({zoom + 1, tx, ty});
-                }
-            }
-        }
-
-        // Prefetch: zoom -1 tiles overlapping viewport
-        if(zoom - 1 >= 0)
-        {
-            auto nz = 1 << (zoom - 1);
-            auto tsz = world_size / nz;
-            auto ztx_min = static_cast<int>(std::floor((vx_min + HALF_CIRCUMFERENCE) / tsz));
-            auto ztx_max = static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tsz));
-            auto zty_min = std::max(0, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tsz)));
-            auto zty_max = std::min(nz - 1, static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tsz)));
-
-            for(int ty = zty_min; ty <= zty_max; ty++)
-            {
-                for(int tx = ztx_min; tx <= ztx_max; tx++)
-                {
-                    pimpl->request_tile({zoom - 1, tx, ty});
-                }
-            }
-        }
+        pimpl->cache.update(vx_min, vy_min, vx_max, vy_max, viewport_height,
+                            [this]
+                            {
+                                pimpl->fallback_dirty = true;
+                                pimpl->loader.cancel();
+                            },
+                            [this](const tile_key& key) { pimpl->request_tile(key); });
     }
 
     void tile_renderer::drain()
@@ -421,24 +223,21 @@ namespace osect
             pass.upload_texture(transfer, tex, *result.surf);
             gpu->tex = std::make_unique<sdl::texture>(std::move(tex));
 
-            pimpl->cache.put(gpu);
-            pimpl->tile_map[result.key] = gpu;
+            pimpl->cache.put(result.key, gpu);
         }
         pimpl->pending_results.clear();
 
-        for(auto& fr : fallbacks)
+        for(auto& fallback : fallbacks)
         {
-            pimpl->cache.get(fr.ancestor_gpu);
-
             auto verts = std::vector<sdl::vertex_t2f_c4ub_v3f>(6);
-            get_tile_vertices(fr.key, fr.u0, fr.v0, fr.u1, fr.v1, verts.data());
+            get_tile_vertices(fallback.key, fallback.u0, fallback.v0, fallback.u1, fallback.v1, verts.data());
 
             sdl::buffer vbuf(pimpl->dev, sdl::buffer_usage::vertex, 6, sizeof(sdl::vertex_t2f_c4ub_v3f));
             pass.upload_buffer(transfer, vbuf, verts);
 
             impl::fallback_quad quad;
             quad.vertex_buffer = std::make_unique<sdl::buffer>(std::move(vbuf));
-            quad.ancestor_gpu = std::move(fr.ancestor_gpu);
+            quad.ancestor_gpu = std::move(fallback.resource);
             pimpl->fallback_quads.push_back(std::move(quad));
         }
     }
@@ -455,20 +254,13 @@ namespace osect
         uniforms.view_matrix = view_matrix;
 
         // Render direct-match tiles
-        for(const auto& key : pimpl->visible_tiles)
+        for(const auto& key : pimpl->cache.visible_tiles())
         {
-            auto it = pimpl->tile_map.find(key);
-            if(it == pimpl->tile_map.end())
-            {
-                continue;
-            }
-            auto gpu = it->second.lock();
+            auto gpu = pimpl->cache.find(key);
             if(!gpu)
             {
                 continue;
             }
-
-            pimpl->cache.get(gpu);
 
             pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
             pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));

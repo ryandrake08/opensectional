@@ -30,6 +30,7 @@ endfunction()
 # Pure-header tests (no extra sources needed)
 add_osect_test(lru_set)
 add_osect_test(altitude_filter)
+add_osect_test(tile_cache)
 
 # chart_type rules — pure functions of input fields, no DB needed.
 add_osect_test(chart_membership ${CMAKE_SOURCE_DIR}/src/chart_type.cpp)
