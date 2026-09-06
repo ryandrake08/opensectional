@@ -31,6 +31,8 @@ endfunction()
 add_osect_test(lru_set)
 add_osect_test(altitude_filter)
 add_osect_test(tile_cache)
+add_osect_test(texture_format)
+target_link_libraries(test_texture_format PRIVATE sdl_wrapper)
 
 # chart_type rules — pure functions of input fields, no DB needed.
 add_osect_test(chart_membership ${CMAKE_SOURCE_DIR}/src/chart_type.cpp)

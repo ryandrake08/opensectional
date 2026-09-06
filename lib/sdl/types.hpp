@@ -138,6 +138,14 @@ namespace sdl
 
     namespace texture_format
     {
+        extern const texture_format_t r8_unorm;
+        extern const texture_format_t r8g8_unorm;
+        extern const texture_format_t r8g8b8a8_unorm;
+        extern const texture_format_t r16_unorm;
+        extern const texture_format_t r16g16_unorm;
+        extern const texture_format_t r16g16b16a16_unorm;
+        extern const texture_format_t r10g10b10a2_unorm;
+        extern const texture_format_t r8g8b8a8_unorm_srgb;
         extern const texture_format_t d16_unorm;
         extern const texture_format_t d24_unorm;
         extern const texture_format_t d32_float;

@@ -77,11 +77,19 @@ namespace sdl
     }
 
     // ========================================================================
-    // GPU Texture Format (depth formats)
+    // GPU Texture Format
     // ========================================================================
 
     namespace texture_format
     {
+        const texture_format_t r8_unorm(SDL_GPU_TEXTUREFORMAT_R8_UNORM);
+        const texture_format_t r8g8_unorm(SDL_GPU_TEXTUREFORMAT_R8G8_UNORM);
+        const texture_format_t r8g8b8a8_unorm(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM);
+        const texture_format_t r16_unorm(SDL_GPU_TEXTUREFORMAT_R16_UNORM);
+        const texture_format_t r16g16_unorm(SDL_GPU_TEXTUREFORMAT_R16G16_UNORM);
+        const texture_format_t r16g16b16a16_unorm(SDL_GPU_TEXTUREFORMAT_R16G16B16A16_UNORM);
+        const texture_format_t r10g10b10a2_unorm(SDL_GPU_TEXTUREFORMAT_R10G10B10A2_UNORM);
+        const texture_format_t r8g8b8a8_unorm_srgb(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB);
         const texture_format_t d16_unorm(SDL_GPU_TEXTUREFORMAT_D16_UNORM);
         const texture_format_t d24_unorm(SDL_GPU_TEXTUREFORMAT_D24_UNORM);
         const texture_format_t d32_float(SDL_GPU_TEXTUREFORMAT_D32_FLOAT);

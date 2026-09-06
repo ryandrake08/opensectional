@@ -97,6 +97,14 @@ namespace sdl
         void upload_texture(transfer_buffer& tb, const texture& dest, const surface& surf);
 
         /**
+         * Append tightly packed pixels to @p tb and upload them to @p dest.
+         *
+         * @p byte_size must match the pixel format and dimensions of @p dest.
+         */
+        void upload_texture(transfer_buffer& tb, const texture& dest, const void* pixels, uint32_t width,
+                            uint32_t height, uint32_t byte_size);
+
+        /**
          * Create GPU buffer and upload data from vector.
          *
          * Allocates a fresh SDL_GPUTransferBuffer per call, kept alive by this

@@ -25,6 +25,21 @@ namespace sdl
             SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Texture created: %ux%u", info.width, info.height);
         }
 
+        static SDL_GPUTextureCreateInfo sampled_texture_create_info(unsigned width, unsigned height,
+                                                                     texture_format_t format)
+        {
+            SDL_GPUTextureCreateInfo info = {};
+            info.type = SDL_GPU_TEXTURETYPE_2D;
+            info.format = static_cast<SDL_GPUTextureFormat>(format.value);
+            info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+            info.width = static_cast<Uint32>(width);
+            info.height = static_cast<Uint32>(height);
+            info.layer_count_or_depth = 1;
+            info.num_levels = 1;
+            info.sample_count = SDL_GPU_SAMPLECOUNT_1;
+            return info;
+        }
+
         // Non-owning constructor - wraps existing texture
         impl(SDL_GPUTexture* existing_texture) : device(nullptr), handle(existing_texture)
         {
@@ -57,7 +72,13 @@ namespace sdl
         impl& operator=(impl&&) = default;
     };
 
-    texture::texture(const device& dev, const surface& surf) : pimpl(new impl(dev.get(), surf.texture_create_info()))
+    texture::texture(const device& dev, const surface& surf)
+        : pimpl(new impl(dev.get(), surf.texture_create_info()))
+    {
+    }
+
+    texture::texture(const device& dev, unsigned width, unsigned height, texture_format_t format)
+        : pimpl(new impl(dev.get(), impl::sampled_texture_create_info(width, height, format)))
     {
     }
 

@@ -80,7 +80,23 @@ namespace sdl
 
     void copy_pass::upload_texture(transfer_buffer& tb, const texture& dest, const surface& surf)
     {
-        uint32_t offset = tb.append(surf.pixels(), surf.size());
+        upload_texture(tb, dest, surf.pixels(), static_cast<uint32_t>(surf.width()), static_cast<uint32_t>(surf.height()),
+                       surf.size());
+    }
+
+    void copy_pass::upload_texture(transfer_buffer& tb, const texture& dest, const void* pixels, uint32_t width,
+                                   uint32_t height, uint32_t byte_size)
+    {
+        if(!pixels)
+        {
+            throw error("Cannot upload texture from null pixels");
+        }
+        if(width == 0 || height == 0)
+        {
+            throw error("Cannot upload texture with zero dimensions");
+        }
+
+        uint32_t offset = tb.append(pixels, byte_size);
 
         SDL_GPUTextureTransferInfo source = {};
         source.transfer_buffer = tb.get();
@@ -88,8 +104,8 @@ namespace sdl
 
         SDL_GPUTextureRegion destination = {};
         destination.texture = dest.get();
-        destination.w = surf.width();
-        destination.h = surf.height();
+        destination.w = width;
+        destination.h = height;
         destination.d = 1;
 
         SDL_UploadToGPUTexture(pimpl->handle, &source, &destination, false);

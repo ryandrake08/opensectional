@@ -34,6 +34,13 @@ namespace sdl
         texture(const device& dev, const surface& surf);
 
         /**
+         * Create a sampled 2D texture with an explicit format and size.
+         *
+         * The texture is created but not uploaded; use copy_pass for upload.
+         */
+        texture(const device& dev, unsigned width, unsigned height, texture_format_t format);
+
+        /**
          * Wrap existing GPU texture (non-owning).
          *
          * Creates a non-owning wrapper around an existing SDL_GPUTexture.
