@@ -3,6 +3,7 @@
 
 #include "flight_route.hpp"
 #include "route_planner.hpp"
+#include "tmp_user_db.hpp"
 
 #include <cmath>
 #include <string>
@@ -20,7 +21,8 @@ static const nasr_database& test_db()
 
 static const route_planner& test_planner()
 {
-    static route_planner planner("osect.db");
+    static test::tmp_user_db user_db("flight_route_shared");
+    static route_planner planner("osect.db", user_db.db_file);
     return planner;
 }
 

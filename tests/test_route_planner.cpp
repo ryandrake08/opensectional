@@ -6,6 +6,7 @@
 #include "nasr_database.hpp"
 #include "route_plan_config.hpp"
 #include "route_planner.hpp"
+#include "tmp_user_db.hpp"
 #include "user_database.hpp"
 
 #include <cstdio>
@@ -25,7 +26,8 @@ static const nasr_database& test_db()
 
 static const route_planner& test_planner()
 {
-    static route_planner planner("osect.db");
+    static test::tmp_user_db user_db("planner_shared");
+    static route_planner planner("osect.db", user_db.db_file);
     return planner;
 }
 
@@ -408,38 +410,6 @@ TEST_CASE("use_airways toggle changes path via fix-rejecting options")
 
 namespace
 {
-    // Picks a unique temp directory, creates it, and deletes it on
-    // destruction. Mirrors test_user_database's helper.
-    struct tmp_user_db
-    {
-        std::filesystem::path dir;
-        std::filesystem::path db_file;
-        explicit tmp_user_db(const char* tag)
-        {
-            const auto base =
-                std::filesystem::temp_directory_path() / ("osect_planner_user_" + std::string(tag) + "_");
-            for(int i = 0; i < 1000; ++i)
-            {
-                const auto candidate = base.string() + std::to_string(i);
-                if(!std::filesystem::exists(candidate))
-                {
-                    dir = candidate;
-                    std::filesystem::create_directories(dir);
-                    db_file = dir / "user.db";
-                    return;
-                }
-            }
-            throw std::runtime_error("could not pick a tmp dir");
-        }
-        ~tmp_user_db()
-        {
-            std::error_code ec;
-            std::filesystem::remove_all(dir, ec);
-        }
-        tmp_user_db(const tmp_user_db&) = delete;
-        tmp_user_db& operator=(const tmp_user_db&) = delete;
-    };
-
     // load_route_plan_options + force a single subtype to the given
     // cost. The defaults from osect.ini set route_waypoint_user =
     // PREFER, but tests are isolated from osect.ini, so we set the
@@ -454,7 +424,7 @@ namespace
 
 TEST_CASE("user waypoint resolves by name through node_index after refresh")
 {
-    tmp_user_db tmp("resolve");
+    test::tmp_user_db tmp("resolve");
     {
         user_database udb(tmp.db_file);
         auto w = udb.insert_waypoint(38.1, -121.0);
@@ -481,7 +451,7 @@ TEST_CASE("expand_sigils routes through a preferred user waypoint")
     // synthetic endpoints, so their wp_cost isn't consulted — every
     // NASR subtype can be REJECT'd to leave WPT1 the only viable
     // intermediate.
-    tmp_user_db tmp("prefer");
+    test::tmp_user_db tmp("prefer");
     {
         user_database udb(tmp.db_file);
         udb.insert_waypoint(37.99, -121.05);
@@ -505,7 +475,7 @@ TEST_CASE("expand_sigils ignores a rejected user waypoint")
 {
     // Same midway waypoint, but with user=REJECT. The planner must
     // pick some other intermediate.
-    tmp_user_db tmp("reject");
+    test::tmp_user_db tmp("reject");
     {
         user_database udb(tmp.db_file);
         udb.insert_waypoint(37.99, -121.05);
@@ -519,7 +489,7 @@ TEST_CASE("expand_sigils ignores a rejected user waypoint")
 
 TEST_CASE("user waypoint set refreshes between expand_sigils calls")
 {
-    tmp_user_db tmp("refresh");
+    test::tmp_user_db tmp("refresh");
     route_planner p("osect.db", tmp.db_file);
 
     // No waypoints yet — WPT1 must not resolve.

@@ -63,29 +63,34 @@ add_osect_test(http_client  ${CMAKE_SOURCE_DIR}/src/http_client.cpp)
 target_link_libraries(test_http_client PRIVATE CURL::libcurl)
 osect_apply_app_definitions(test_http_client)
 
-# flight_route pulls in the DB layer and needs the sqlite wrapper.
-# route_planner reads user.db, so user_database.cpp comes along too.
-add_osect_test(flight_route
-    ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
-    ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
-    ${CMAKE_SOURCE_DIR}/src/data_source.cpp
-    ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
-    ${CMAKE_SOURCE_DIR}/src/user_database.cpp
-    ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
-target_link_libraries(test_flight_route PRIVATE sqlite_wrapper sdl_wrapper)
-osect_apply_app_definitions(test_flight_route)
+# flight_route and route_planner query the generated NASR database. They are
+# integration tests, enabled only when data preparation has produced osect.db.
+if(EXISTS "${CMAKE_SOURCE_DIR}/osect.db")
+    # route_planner reads user.db, so user_database.cpp comes along too.
+    add_osect_test(flight_route
+        ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
+        ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
+        ${CMAKE_SOURCE_DIR}/src/data_source.cpp
+        ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
+        ${CMAKE_SOURCE_DIR}/src/user_database.cpp
+        ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
+    target_link_libraries(test_flight_route PRIVATE sqlite_wrapper sdl_wrapper)
+    osect_apply_app_definitions(test_flight_route)
 
-add_osect_test(route_planner
-    ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
-    ${CMAKE_SOURCE_DIR}/src/route_plan_config.cpp
-    ${CMAKE_SOURCE_DIR}/src/ini_config.cpp
-    ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
-    ${CMAKE_SOURCE_DIR}/src/data_source.cpp
-    ${CMAKE_SOURCE_DIR}/src/geo_math.cpp
-    ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
-    ${CMAKE_SOURCE_DIR}/src/user_database.cpp)
-target_link_libraries(test_route_planner PRIVATE sqlite_wrapper sdl_wrapper)
-osect_apply_app_definitions(test_route_planner)
+    add_osect_test(route_planner
+        ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
+        ${CMAKE_SOURCE_DIR}/src/route_plan_config.cpp
+        ${CMAKE_SOURCE_DIR}/src/ini_config.cpp
+        ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
+        ${CMAKE_SOURCE_DIR}/src/data_source.cpp
+        ${CMAKE_SOURCE_DIR}/src/geo_math.cpp
+        ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
+        ${CMAKE_SOURCE_DIR}/src/user_database.cpp)
+    target_link_libraries(test_route_planner PRIVATE sqlite_wrapper sdl_wrapper)
+    osect_apply_app_definitions(test_route_planner)
+else()
+    message(STATUS "Skipping NASR integration tests: osect.db is missing")
+endif()
 
 # app_options — command-line parsing + asset/driver resolution.
 # build_ini pulls in ini_config; the resolve_* helpers and log_info

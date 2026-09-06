@@ -566,6 +566,9 @@ tools/
 # C++ unit tests (doctest, registered with ctest)
 ctest --test-dir build --output-on-failure
 
+# The flight_route and route_planner integration suites require the generated
+# osect.db at the repository root. CMake skips them when it is absent.
+
 # Database query tests (requires a built osect.db)
 tools/env/bin/python3 tools/test_nasr_queries.py osect.db
 ```
