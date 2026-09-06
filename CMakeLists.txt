@@ -221,15 +221,9 @@ else()
     find_package(SDL3_ttf       REQUIRED CONFIG)
     find_package(CURL           REQUIRED)
     find_package(ZLIB           REQUIRED)
-    find_package(SQLite3        REQUIRED)
-    # vcpkg's sqlite3 port exports SQLite3::SQLite3 and deprecates the
-    # SQLite::SQLite3 alias; standard CMake's FindSQLite3 only exports the
-    # latter. Prefer the new name where available.
-    if(TARGET SQLite3::SQLite3)
-        set(SQLITE3_TARGET SQLite3::SQLite3)
-    else()
-        set(SQLITE3_TARGET SQLite::SQLite3)
-    endif()
+    find_package(PkgConfig      REQUIRED)
+    pkg_check_modules(SQLITE3 REQUIRED IMPORTED_TARGET sqlite3)
+    set(SQLITE3_TARGET PkgConfig::SQLITE3)
 endif()
 
 # Third-party libraries (header-only / single-source vendored)
