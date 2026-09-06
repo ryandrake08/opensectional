@@ -50,7 +50,7 @@ tools/env/bin/python3 tools/render_basemap.py mapdata/natural_earth_vector.gpkg.
 Two paths exist:
 
 - **Contributor build (default).** Dependencies come from your system package manager. Fast configure, fast build, dynamic linkage. This is the path described below.
-- **Release/installer build.** Dependencies are pinned via in-tree submodules and built statically into a self-contained binary. Triggered by the per-platform scripts under `tools/build-*-package.sh`. See [Cutting a release](#cutting-a-release).
+- **Release/installer build.** Dependencies are pinned via in-tree submodules and built statically into a self-contained binary. The per-platform scripts under `tools/build-*-package.sh` enable both vendored dependencies and installer packaging. See [Cutting a release](#cutting-a-release).
 
 `git clone` the repo without `--recurse-submodules` — the submodules under `thirdparty/SDL`, `thirdparty/SDL_image`, `thirdparty/SDL_ttf`, `thirdparty/zlib`, and `thirdparty/curl` are only needed for release builds and stay un-initialized otherwise.
 
@@ -141,11 +141,20 @@ cmake --build build-debug -j
 ctest --test-dir build --output-on-failure
 ```
 
+The default contributor build produces `build/osect` on macOS and Linux, or
+`build/osect.exe` on Windows. It does not configure an installer, copy
+`osect.db` or `basemap/`, generate platform installer icons, or bundle runtime
+libraries. Run it from the repository root so the default asset lookup can find
+`osect.db` and `basemap/`, or pass their paths with `--database` and
+`--basemap`. On macOS it is a plain executable rather than an application
+bundle, and requires a system-provided MoltenVK when using the Vulkan backend.
+The release scripts below produce the self-contained platform packages instead.
+
 ## Cutting a release
 
 The macOS DMG and Windows NSIS installers ship a self-contained binary with all C/C++ dependencies (SDL3, SDL3_image, SDL3_ttf, libcurl, zlib, SQLite3) built from pinned submodules and linked statically. TLS comes from the OS-native backend on each platform (SecureTransport on macOS, Schannel on Windows).
 
-Both package scripts initialize the dependency submodules, download the SQLite amalgamation (sha256-verified), configure CMake with `-DOSECT_VENDOR_DEPS=ON`, build, run `cpack`, and then **restore `thirdparty/` to its pre-build state by default** — submodules deinitialized, tarball-extracted directories and `.cache/` removed. Pass `--no-clean` to keep the build state in place when iterating on the installer (faster re-runs since submodules don't need to re-init).
+Both package scripts initialize the dependency submodules, download the SQLite amalgamation (sha256-verified), configure CMake with `-DOSECT_VENDOR_DEPS=ON -DOSECT_ENABLE_PACKAGING=ON`, build, run `cpack`, and then **restore `thirdparty/` to its pre-build state by default** — submodules deinitialized, tarball-extracted directories and `.cache/` removed. Pass `--no-clean` to keep the build state in place when iterating on the installer (faster re-runs since submodules don't need to re-init).
 
 ### macOS DMG
 
@@ -230,13 +239,13 @@ The package scripts run `cpack` against pre-generated runtime assets that aren't
 - `osect.db` — built from FAA NASR data (see [Data Preparation](#data-preparation))
 - `basemap/` — rendered from Natural Earth (see [Data Preparation](#data-preparation))
 
-`cpack` aborts with `Installer asset missing: ...` until those exist. The macOS bundle additionally needs `osect.png` for icon generation (via `sips` + `iconutil`); the Windows installer uses the same PNG via ImageMagick `magick`. If the icon-generation tool is missing the installer still builds, just without a custom icon.
+Packaging configuration aborts with `Installer asset missing: ...` until those exist. The macOS bundle additionally needs `osect.png` for icon generation (via `sips` + `iconutil`); the Windows installer uses the same PNG via ImageMagick `magick`. If the icon-generation tool is missing the installer still builds, just without a custom icon.
 
 ### GPU Backend
 
-OpenSectional defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` to override on macOS. The shader format is selected at runtime based on the active backend. On macOS, MoltenVK is bundled into `OpenSectional.app/Contents/Frameworks/`, so the .app runs out of the box without requiring the user to install Vulkan SDK or Homebrew.
+OpenSectional defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` to override on macOS. The shader format is selected at runtime based on the active backend. The packaged macOS build includes MoltenVK in `OpenSectional.app/Contents/Frameworks/`, so the .app runs out of the box without requiring the user to install Vulkan SDK or Homebrew.
 
-**Vulkan on macOS for development.** The bundled MoltenVK only lands in packaged builds (`OSECT_VENDOR_DEPS=ON`); a regular `cmake -B build` dev build relies on whatever MoltenVK is installed system-wide and will fail to start with `--gpu vulkan` if none is present. The simplest fix is `brew install molten-vk`, which drops `libMoltenVK.dylib` where `DYLD_FALLBACK_LIBRARY_PATH` finds it. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) is an alternative — its main developer benefit on macOS is the Khronos validation layer (enable by passing `debug_mode=true` to `SDL_CreateGPUDevice`); the shader-compile tools it ships (`glslangValidator`, `spirv-cross`) are already covered by Homebrew/MacPorts. None of this applies to Metal — `--gpu metal` links against Apple system frameworks with no extra deps and is the path of least resistance for day-to-day macOS dev.
+**Vulkan on macOS for development.** The bundled MoltenVK only lands in packaged builds (`OSECT_ENABLE_PACKAGING=ON`); a regular `cmake -B build` dev build relies on whatever MoltenVK is installed system-wide and will fail to start with `--gpu vulkan` if none is present. The simplest fix is `brew install molten-vk`, which drops `libMoltenVK.dylib` where `DYLD_FALLBACK_LIBRARY_PATH` finds it. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) is an alternative — its main developer benefit on macOS is the Khronos validation layer (enable by passing `debug_mode=true` to `SDL_CreateGPUDevice`); the shader-compile tools it ships (`glslangValidator`, `spirv-cross`) are already covered by Homebrew/MacPorts. None of this applies to Metal — `--gpu metal` links against Apple system frameworks with no extra deps and is the path of least resistance for day-to-day macOS dev.
 
 If you install the Vulkan SDK, leave the installer's "System Install" component on (it puts a working MoltenVK and Vulkan loader at `/usr/local/lib`, reachable via `DYLD_FALLBACK_LIBRARY_PATH`) but **do not also source `setup-env.sh`** — it exports `DYLD_LIBRARY_PATH=$VULKAN_SDK/lib` which intercepts every leaf-name `dlopen` and silently breaks SDL's loader search (SDL falls through to MoltenVK directly, the layer chain is never inserted, and validation never activates). System Install on and `setup-env.sh` *not* sourced is the only configuration where validation works without per-binary overrides.
 

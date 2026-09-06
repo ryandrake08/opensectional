@@ -5,7 +5,8 @@
 #   cmake -B build-macos-package \
 #         -DCMAKE_TOOLCHAIN_FILE=cmake/macos-toolchain.cmake \
 #         -DCMAKE_BUILD_TYPE=Release \
-#         -DOSECT_VENDOR_DEPS=ON
+#         -DOSECT_VENDOR_DEPS=ON \
+#         -DOSECT_ENABLE_PACKAGING=ON
 # Native dev uses the default `cmake -B build` flow with Homebrew SDL3/curl.
 
 # FORCE into the cache so the toolchain wins over any value CMake's Apple

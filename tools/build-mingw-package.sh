@@ -3,10 +3,10 @@
 # MinGW-w64 cross-compile.
 #
 # Pulls all dependency submodules, downloads the SQLite amalgamation,
-# configures CMake with OSECT_VENDOR_DEPS=ON so SDL3 / SDL3_image /
-# SDL3_ttf / curl / zlib / sqlite are all built from in-tree sources,
-# builds osect.exe with Schannel TLS, and runs cpack to produce an
-# NSIS installer.
+# configures CMake with OSECT_VENDOR_DEPS=ON and
+# OSECT_ENABLE_PACKAGING=ON so dependencies are built from in-tree sources
+# and the NSIS installer is configured, builds osect.exe with Schannel TLS,
+# and runs cpack.
 #
 # Run on a Linux/macOS host that has the MinGW-w64 cross-toolchain
 # installed (Ubuntu: mingw-w64; macOS: brew install mingw-w64). Also
@@ -98,11 +98,12 @@ if [ ! -f "${THIRDPARTY}/sqlite/sqlite3.c" ]; then
     download_verify_extract "${SQLITE_URL}" "${SQLITE_SHA256}" "${THIRDPARTY}/sqlite"
 fi
 
-echo "=== Configuring (MinGW-w64 cross, OSECT_VENDOR_DEPS=ON) ==="
+echo "=== Configuring (MinGW-w64 cross, vendored dependencies, packaging enabled) ==="
 cmake -B "${BUILDDIR}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE="${PROJECTDIR}/cmake/mingw-w64-toolchain.cmake" \
-    -DOSECT_VENDOR_DEPS=ON
+    -DOSECT_VENDOR_DEPS=ON \
+    -DOSECT_ENABLE_PACKAGING=ON
 
 echo "=== Building ==="
 cmake --build "${BUILDDIR}" -j"${JOBS}"

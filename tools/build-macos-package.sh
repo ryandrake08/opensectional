@@ -3,9 +3,9 @@
 #
 # Pulls all dependency submodules, downloads the SQLite amalgamation
 # and a precompiled MoltenVK dylib, configures CMake with
-# OSECT_VENDOR_DEPS=ON so SDL3 / SDL3_image / SDL3_ttf / curl / zlib /
-# sqlite are all built from in-tree sources, builds a universal
-# (arm64+x86_64) binary, and runs cpack to produce a DragNDrop DMG.
+# OSECT_VENDOR_DEPS=ON and OSECT_ENABLE_PACKAGING=ON so dependencies are
+# built from in-tree sources and the installer is configured, builds a
+# universal (arm64+x86_64) binary, and runs cpack to produce a DragNDrop DMG.
 #
 # After a successful cpack the script restores thirdparty/ to its
 # pre-build state (deinits the dependency submodules, removes the
@@ -96,11 +96,12 @@ if [ ! -f "${THIRDPARTY}/MoltenVK/.fetched" ]; then
     touch "${THIRDPARTY}/MoltenVK/.fetched"
 fi
 
-echo "=== Configuring (universal, OSECT_VENDOR_DEPS=ON) ==="
+echo "=== Configuring (universal, vendored dependencies, packaging enabled) ==="
 cmake -B "${BUILDDIR}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE="${PROJECTDIR}/cmake/macos-toolchain.cmake" \
-    -DOSECT_VENDOR_DEPS=ON
+    -DOSECT_VENDOR_DEPS=ON \
+    -DOSECT_ENABLE_PACKAGING=ON
 
 echo "=== Building ==="
 cmake --build "${BUILDDIR}" -j"$(sysctl -n hw.ncpu)"

@@ -41,17 +41,21 @@ endif()
 
 find_package(Threads REQUIRED)
 
-# OSECT_VENDOR_DEPS — when ON, every dependency is built from the
-# in-tree submodules + amalgamation tarballs under thirdparty/. When
-# OFF (the default for contributor builds), each dep is resolved
-# against system packages via find_package, and the submodules can
-# stay un-initialized. The per-platform package scripts in tools/
-# (build-macos-package.sh, build-mingw-package.sh) flip this ON for
-# release builds where we ship a self-contained binary.
+# OSECT_VENDOR_DEPS controls dependency sources only. OSECT_ENABLE_PACKAGING
+# controls installer configuration; package builds require vendored
+# dependencies so their output is self-contained. Both default OFF for the
+# contributor build.
 option(OSECT_VENDOR_DEPS "Build dependencies from vendored submodules instead of using system packages" OFF)
+option(OSECT_ENABLE_PACKAGING "Configure platform installer packaging" OFF)
+
+if(OSECT_ENABLE_PACKAGING AND NOT OSECT_VENDOR_DEPS)
+    message(FATAL_ERROR
+        "OSECT_ENABLE_PACKAGING requires OSECT_VENDOR_DEPS=ON. "
+        "Use the appropriate tools/build-<platform>-package.sh script.")
+endif()
 
 if(OSECT_VENDOR_DEPS)
-    # Vendored mode is only used by the macOS and MinGW package scripts.
+    # Vendored mode is supported on macOS and MinGW.
     # On Linux native, curl's OpenSSL probe fails inside CMake try_compile
     # because our ZLIB::ZLIB ALIAS target cannot be reproduced in the
     # sub-build (the underlying non-imported zlibstatic target isn't
@@ -538,7 +542,7 @@ set(INSTALLER_ICON_ICO  "${CMAKE_BINARY_DIR}/osect.ico")
 # Platform-specific icon generation from the master PNG. Skipped silently
 # if the required tool is missing — installer blocks below make the icon
 # optional.
-if(APPLE AND EXISTS "${ICON_PNG}")
+if(APPLE AND OSECT_ENABLE_PACKAGING AND EXISTS "${ICON_PNG}")
     # tools/build_macos_icon.sh takes the raw PNG all the way to a .icns
     # (shape → iconset slicing → icns packaging). CMake just locates the
     # tools the script depends on and invokes it.
@@ -560,7 +564,7 @@ if(APPLE AND EXISTS "${ICON_PNG}")
     endif()
 endif()
 
-if(WIN32 AND EXISTS "${ICON_PNG}")
+if(WIN32 AND OSECT_ENABLE_PACKAGING AND EXISTS "${ICON_PNG}")
     # tools/build_windows_icon.sh takes the raw PNG all the way to a .ico
     # (circle mask → multi-size .ico packaging). CMake just locates the
     # tools the script depends on and invokes it.
@@ -604,7 +608,7 @@ function(_require_asset path)
     endif()
 endfunction()
 
-if(APPLE)
+if(APPLE AND OSECT_ENABLE_PACKAGING)
     # =========================================================================
     # macOS: bundle + DragNDrop DMG
     # =========================================================================
@@ -644,34 +648,29 @@ if(APPLE)
     # dynamic/dylib/macOS/), so glob for the dylib rather than hard-code
     # a path. file(GLOB) re-runs each configure, picking up a newer
     # release if the package script updates the pin.
-    # Gated on OSECT_VENDOR_DEPS — dev builds use Homebrew/MacPorts
-    # MoltenVK (or the runtime Vulkan loader); only the package flow
-    # extracts the MoltenVK tarball into thirdparty/MoltenVK/.
-    if(OSECT_VENDOR_DEPS)
-        file(GLOB_RECURSE MOLTENVK_DYLIB
-            "${CMAKE_SOURCE_DIR}/thirdparty/MoltenVK/*/libMoltenVK.dylib")
-        list(GET MOLTENVK_DYLIB 0 MOLTENVK_DYLIB)
-        if(MOLTENVK_DYLIB AND EXISTS "${MOLTENVK_DYLIB}")
-            message(STATUS "MoltenVK: bundling ${MOLTENVK_DYLIB}")
-            install(FILES "${MOLTENVK_DYLIB}"
-                    DESTINATION "${APPLICATION_NAME}.app/Contents/Frameworks")
-            # Apache-2.0 requires shipping the LICENSE alongside the binary.
-            file(GLOB_RECURSE MOLTENVK_LICENSE
-                "${CMAKE_SOURCE_DIR}/thirdparty/MoltenVK/*/LICENSE")
-            list(GET MOLTENVK_LICENSE 0 MOLTENVK_LICENSE)
-            if(MOLTENVK_LICENSE AND EXISTS "${MOLTENVK_LICENSE}")
-                install(FILES "${MOLTENVK_LICENSE}"
-                        DESTINATION "${_rsrc}"
-                        RENAME "LICENSE-MoltenVK.txt")
-            else()
-                message(WARNING "MoltenVK LICENSE not found alongside the dylib in "
-                    "thirdparty/MoltenVK/. Apache-2.0 requires shipping it.")
-            endif()
+    file(GLOB_RECURSE MOLTENVK_DYLIB
+        "${CMAKE_SOURCE_DIR}/thirdparty/MoltenVK/*/libMoltenVK.dylib")
+    list(GET MOLTENVK_DYLIB 0 MOLTENVK_DYLIB)
+    if(MOLTENVK_DYLIB AND EXISTS "${MOLTENVK_DYLIB}")
+        message(STATUS "MoltenVK: bundling ${MOLTENVK_DYLIB}")
+        install(FILES "${MOLTENVK_DYLIB}"
+                DESTINATION "${APPLICATION_NAME}.app/Contents/Frameworks")
+        # Apache-2.0 requires shipping the LICENSE alongside the binary.
+        file(GLOB_RECURSE MOLTENVK_LICENSE
+            "${CMAKE_SOURCE_DIR}/thirdparty/MoltenVK/*/LICENSE")
+        list(GET MOLTENVK_LICENSE 0 MOLTENVK_LICENSE)
+        if(MOLTENVK_LICENSE AND EXISTS "${MOLTENVK_LICENSE}")
+            install(FILES "${MOLTENVK_LICENSE}"
+                    DESTINATION "${_rsrc}"
+                    RENAME "LICENSE-MoltenVK.txt")
         else()
-            message(FATAL_ERROR "MoltenVK dylib missing from thirdparty/MoltenVK/. "
-                "Run tools/build-macos-package.sh, which downloads it as part "
-                "of the packaging flow.")
+            message(WARNING "MoltenVK LICENSE not found alongside the dylib in "
+                "thirdparty/MoltenVK/. Apache-2.0 requires shipping it.")
         endif()
+    else()
+        message(FATAL_ERROR "MoltenVK dylib missing from thirdparty/MoltenVK/. "
+            "Run tools/build-macos-package.sh, which downloads it as part "
+            "of the packaging flow.")
     endif()
 
     # Bundle brew-installed SDL dylibs into the .app via fixup_bundle at
@@ -707,7 +706,7 @@ if(APPLE)
     _require_asset("${BUNDLED_BASEMAP}")
     include(CPack)
 
-elseif(WIN32)
+elseif(WIN32 AND OSECT_ENABLE_PACKAGING)
     # =========================================================================
     # Windows: flat install tree + NSIS installer
     # =========================================================================

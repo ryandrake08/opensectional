@@ -5,7 +5,8 @@
 #   cmake -B build-mingw-package \
 #         -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-toolchain.cmake \
 #         -DCMAKE_BUILD_TYPE=Release \
-#         -DOSECT_VENDOR_DEPS=ON
+#         -DOSECT_VENDOR_DEPS=ON \
+#         -DOSECT_ENABLE_PACKAGING=ON
 # MSYS2 contributors building locally use the default `cmake -B build` flow
 # with mingw-w64-x86_64-SDL3* / mingw-w64-x86_64-curl pacman packages.
 
