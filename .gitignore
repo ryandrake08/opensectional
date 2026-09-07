@@ -8,10 +8,14 @@ __pycache__
 /thirdparty/sqlite
 /thirdparty/MoltenVK
 tools/env*
+tools/proj_grids
 nasr_data
 osect.db
 basemap
 vfr
+terrain
+terrain_source
 *_PLAN.md
+/elevation_plan
 REQUIREMENTS.md
 *.trace

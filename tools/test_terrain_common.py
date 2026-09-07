@@ -91,7 +91,7 @@ def test_invalid_precision_rejected():
             (encode_elevation_array, (np.zeros((2, 2)), bad)),
         ):
             try:
-                fn(*args)
+                fn(*args)  # type: ignore  # deliberately passes invalid precision values
                 assert False, f"expected ValueError for vertical_precision_m={bad!r}"
             except (ValueError, TypeError):
                 pass

@@ -13,7 +13,6 @@ the preprocessed file automatically.
 """
 
 import argparse
-import math
 import multiprocessing
 import os
 import sys
@@ -26,6 +25,8 @@ from pyproj import Transformer
 from shapely import STRtree
 from shapely.geometry import box, mapping, shape
 from shapely.ops import transform as shapely_transform
+
+from tile_math import parse_zoom_range, tile_bounds_3857
 
 # ---------------------------------------------------------------------------
 # Style configuration
@@ -298,16 +299,6 @@ def ensure_3857_gpkg(input_path):
 # ---------------------------------------------------------------------------
 # Tile math
 # ---------------------------------------------------------------------------
-
-def tile_bounds_3857(z, x, y):
-    """Return (xmin, ymin, xmax, ymax) in EPSG:3857 for tile z/x/y."""
-    n = 2 ** z
-    xmin = (x / n - 0.5) * 2 * math.pi * 6378137
-    xmax = ((x + 1) / n - 0.5) * 2 * math.pi * 6378137
-    ymax = (0.5 - y / n) * 2 * math.pi * 6378137
-    ymin = (0.5 - (y + 1) / n) * 2 * math.pi * 6378137
-    return (xmin, ymin, xmax, ymax)
-
 
 def lookup_by_zoom(table, zoom):
     """Look up a value from a {zoom: value} dict, using the highest key <= zoom."""
@@ -802,15 +793,6 @@ def _render_and_save(args):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-
-def parse_zoom_range(s):
-    """Parse a zoom range like '0-8' or '5' into (min_zoom, max_zoom)."""
-    if '-' in s:
-        parts = s.split('-', 1)
-        return int(parts[0]), int(parts[1])
-    z = int(s)
-    return z, z
-
 
 # Resolution tier boundaries
 _TIER_RANGES = {
