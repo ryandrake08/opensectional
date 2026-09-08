@@ -1,0 +1,23 @@
+# Ruff config for the tools/ Python. Rule families are selected explicitly
+# rather than relying on ruff's default set. Start conservative; widen the
+# select as the code is brought into line with more families.
+
+target-version = "py313"
+
+# tools/ modules import each other as flat siblings on sys.path (no package).
+# Tell ruff that so import sorting classifies them first-party, not third-party.
+src = ["tools"]
+
+[lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import sorting
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",  # line length is not capped (matches the C++ side)
+]
+
+[lint.isort]
+combine-as-imports = true

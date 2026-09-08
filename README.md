@@ -729,6 +729,7 @@ tools/
   build_macos_icon.sh     PNG → .icns app icon (sips + iconutil)
   build_windows_icon.sh   PNG → .ico installer icon (ImageMagick)
   test_nasr_queries.py    Database query correctness and performance tests
+  check-all.sh            Static checks for tools/ (ruff + basedpyright)
 ```
 
 ## Testing
@@ -743,6 +744,21 @@ ctest --preset release
 # Database query tests (requires a built osect.db)
 tools/env/bin/python3 tools/test_nasr_queries.py osect.db
 ```
+
+### Python tool checks
+
+```bash
+source tools/env/bin/activate   # any venv built from tools/requirements.txt
+tools/check-all.sh
+```
+
+Runs ruff (lint, `ruff.toml`) and basedpyright (types, "standard" mode,
+`pyrightconfig.json`) over `tools/` using the active venv. basedpyright is the
+pyright type-checker engine — the same one behind VS Code's Pylance. Both come
+from `tools/requirements.txt`; basedpyright bundles its own Node runtime.
+
+The per-tool `test_*.py` suites are standalone scripts — run one directly with
+the venv interpreter (`tools/env/bin/python3 tools/test_terrain_datasets.py`).
 
 ## Third-Party Components
 

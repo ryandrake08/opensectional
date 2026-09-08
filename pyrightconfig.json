@@ -1,0 +1,9 @@
+{
+  "include": ["tools"],
+  "exclude": ["**/__pycache__", "tools/env", "tools/env-linux", "tools/proj_grids"],
+  "typeCheckingMode": "standard",
+  "pythonVersion": "3.13",
+  "executionEnvironments": [
+    { "root": "tools" }
+  ]
+}
