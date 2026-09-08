@@ -439,24 +439,20 @@ or in the working directory: either a tile tree directly, or a single
 dataset subdirectory inside it (so `terrain/gmted2010-30/` is found
 automatically).
 
-| `--dataset` | Coverage | Post spacing | Model | Licence | Download | Max `--zoom` |
+| `--dataset` | Coverage | Post spacing | Model | Licence | Source download | Max `--zoom` |
 |---|---|---|---|---|---|---|
-| `gmted2010-30` | Global | ~925 m (30") | DSM | Public domain | One 0.25 GB archive | z8 |
-| `gmted2010-15` | Global | ~460 m (15") | DSM | Public domain | One 0.9 GB archive | z9 |
-| `gmted2010-75` | Global | ~230 m (7.5") | DSM | Public domain | One 3.0 GB archive | z10 |
-| `copernicus-glo90` | Global land | ~90 m (3") | DSM | Attribution required | ~4 MB per 1° land tile (~5 GB for CONUS) | z11 |
-| `copernicus-glo30` | Global land | ~30 m (1") | DSM | Attribution required | ~35 MB per 1° land tile (~40 GB for CONUS) | z13 |
+| `gmted2010-30` | Global | ~925 m (30") | DSM | Public domain | one 0.25 GB archive | z8 |
+| `gmted2010-15` | Global | ~460 m (15") | DSM | Public domain | one 0.9 GB archive | z9 |
+| `gmted2010-75` | Global | ~230 m (7.5") | DSM | Public domain | one 3.0 GB archive | z10 |
+| `copernicus-glo90` | Global land | ~90 m (3") | DSM | Attribution required | ~4 MB per 1° land tile | z11 |
+| `copernicus-glo30` | Global land | ~30 m (1") | DSM | Attribution required | ~25 MB per 1° land tile | z13 |
 
 The max `--zoom` is where output pixels reach half the native post
 spacing; `build_terrain.py` refuses a finer zoom rather than
 interpolating a coarser source upward.
 
-`gmted2010*` fetch a single whole-globe file. Copernicus is one Cloud
-Optimized GeoTIFF per 1° land tile on AWS Open Data; restrict the
-download to an area with `--bbox` (west,south,east,north degrees,
-attached with `=` so a negative longitude is not read as a flag).
-Transient S3 connection resets are retried automatically; `--jobs`
-higher than the default 4 finishes faster but trips those resets sooner.
+`gmted2010*` is one whole-globe file. Copernicus is one Cloud Optimized
+GeoTIFF per 1° land tile on AWS Open Data.
 
 ```bash
 tools/env/bin/python3 tools/download_terrain.py --dataset copernicus-glo90 \
@@ -657,6 +653,12 @@ tools/
   build_basemap.py        Natural Earth basemap tile renderer
   download_terrain.py     DEM source downloader (--dataset NAME, optional --bbox / --jobs)
   build_terrain.py        DEM source → Terrarium z/x/y.png tree + manifest.json (--dataset NAME)
+  terrain_datasets.py     Per-dataset adapter registry (gmted2010-*, copernicus-glo*)
+  terrain_common.py       Terrarium RGB codec, skirt geometry, tile PNG I/O
+  terrain_datum.py        Vertical datum conversion to EGM2008 via PROJ grids
+  terrain_manifest.py     manifest.json builder (the ingester↔client contract)
+  tile_math.py            Web Mercator tile-bounds math, zoom-range parsing
+  http_retry.py           Backoff wrapper for the terrain HTTP fetches
   build-macos-package.sh  Vendored universal-binary build → DMG installer (cleans thirdparty/ on success unless --no-clean)
   build-mingw-package.sh  Vendored MinGW-w64 cross build → NSIS installer  (cleans thirdparty/ on success unless --no-clean)
   build_macos_icon.sh     PNG → .icns app icon (sips + iconutil)
