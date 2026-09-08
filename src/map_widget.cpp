@@ -12,6 +12,7 @@
 #include "render_context.hpp"
 #include "tile_renderer.hpp"
 #include "terrain_renderer.hpp"
+#include "terrain_style.hpp"
 #include "ui_overlay.hpp"
 #include "ui_popup_manager.hpp"
 #include "user_database.hpp"
@@ -387,13 +388,14 @@ namespace osect
                                 load_shader(dev, shader_id::TEXTURED, sdl::shader_stage::fragment, 1),
                                 sdl::primitive_type::triangle_list),
               terrain_pipeline(dev, load_shader(dev, shader_id::TERRAIN, sdl::shader_stage::vertex),
-                               load_shader(dev, shader_id::TERRAIN, sdl::shader_stage::fragment, 1),
+                               load_shader(dev, shader_id::TERRAIN, sdl::shader_stage::fragment, 2),
                                sdl::primitive_type::triangle_list),
               line_sdf_pipeline(dev, load_shader(dev, shader_id::LINE, sdl::shader_stage::vertex, 0, 2),
                                 load_shader(dev, shader_id::LINE, sdl::shader_stage::fragment, 0, 2),
                                 sdl::primitive_type::triangle_list, sdl::texture_format_t(0), false),
               tiles(tile_path ? std::make_unique<tile_renderer>(dev, *tile_path) : nullptr),
-              terrain(terrain_source.available() ? std::make_unique<terrain_renderer>(dev, terrain_source) : nullptr),
+              terrain(terrain_source.available() ? std::make_unique<terrain_renderer>(dev, terrain_source, terrain_style(ini))
+                                                 : nullptr),
               features(dev, db_path, chart_style(ini)),
               labels(dev),
               pick_db(db_path),

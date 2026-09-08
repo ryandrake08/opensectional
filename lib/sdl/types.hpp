@@ -225,7 +225,7 @@ namespace sdl
     // All shaders accept this structure but only use the fields they need.
     // This eliminates the need for multiple uniform structures and simplifies
     // shader switching without changing uniform layout.
-    // Total size: 352 bytes (naturally aligned)
+    // Total size: 400 bytes (naturally aligned)
     struct uniform_buffer
     {
         // Core transformation matrices (used by ALL shaders)
@@ -243,6 +243,20 @@ namespace sdl
         float y_min; // 4 bytes, offset 344 - Minimum Y for clip test
         float y_max; // 4 bytes, offset 348 - Maximum Y for clip test
 
+        // Terrain hillshade parameters (used by terrain shader)
+        float sun_azimuth;           // 4 bytes, offset 352 - radians, clockwise from north
+        float sun_altitude;          // 4 bytes, offset 356 - radians above the horizon
+        float vertical_exaggeration; // 4 bytes, offset 360 - slope multiplier
+        float terrain_opacity;       // 4 bytes, offset 364 - layer alpha, 0..1
+        float terrain_texel_m;       // 4 bytes, offset 368 - Web Mercator metres per height texel
+        int terrain_mode;            // 4 bytes, offset 372 - 0 hillshade, 1 hypsometric, 2 relative-to-cruise
+        float hypso_min_m;           // 4 bytes, offset 376 - elevation mapped to the ramp start
+        float hypso_max_m;           // 4 bytes, offset 380 - elevation mapped to the ramp end
+        float taws_cruise_m;         // 4 bytes, offset 384 - cruise altitude, relative-to-cruise mode
+        float taws_warning_m;        // 4 bytes, offset 388 - metres below cruise for the warning band
+        float taws_caution_m;        // 4 bytes, offset 392 - metres below cruise for the caution band
+        float taws_clear_m;          // 4 bytes, offset 396 - metres below cruise where terrain stops drawing
+
         // Default constructor: Initialize all fields to safe defaults
         uniform_buffer()
             : projection_matrix(1.0F), // Identity matrix
@@ -253,7 +267,19 @@ namespace sdl
               outline_color(0.0F),     // Transparent black
               texture_size(0),         // Zero size
               y_min(-1e9F),            // Default min far below (effectively disabled)
-              y_max(1e9F)              // Default max far above (effectively disabled)
+              y_max(1e9F),             // Default max far above (effectively disabled)
+              sun_azimuth(0.0F),
+              sun_altitude(0.0F),
+              vertical_exaggeration(1.0F),
+              terrain_opacity(1.0F),
+              terrain_texel_m(0.0F),
+              terrain_mode(0),
+              hypso_min_m(0.0F),
+              hypso_max_m(4500.0F),
+              taws_cruise_m(0.0F),
+              taws_warning_m(152.0F),
+              taws_caution_m(305.0F),
+              taws_clear_m(610.0F)
         {
         }
     };

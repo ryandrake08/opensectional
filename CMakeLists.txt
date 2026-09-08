@@ -286,6 +286,7 @@ add_executable(osect
     src/elevation_source.cpp
     src/elevation_tile.cpp
     src/terrain_renderer.cpp
+    src/terrain_style.cpp
     src/ephemeral_database.cpp
     src/ephemeral_source.cpp
     src/http_client.cpp

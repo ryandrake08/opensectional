@@ -8,6 +8,9 @@
 #include "tile_cache.hpp"
 #include "tile_key.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -195,12 +198,44 @@ namespace osect
             std::unique_ptr<sdl::buffer> vertices;
             std::unique_ptr<sdl::texture> heights;
         };
+
+        constexpr uint32_t ramp_width = 256;
+
+        // Rasterises the hypsometric ramp into an RGBA row, walking elevation
+        // linearly from the first stop to the last.
+        std::vector<uint8_t> ramp_to_rgba(const std::vector<hypsometric_stop>& stops)
+        {
+            const float lo = stops.front().elevation_m;
+            const float hi = stops.back().elevation_m;
+            std::vector<uint8_t> pixels(static_cast<size_t>(ramp_width) * 4);
+            size_t seg = 0;
+            for(uint32_t x = 0; x < ramp_width; x++)
+            {
+                const float e = lo + (hi - lo) * (static_cast<float>(x) / (ramp_width - 1));
+                while(seg + 2 < stops.size() && stops[seg + 1].elevation_m < e)
+                {
+                    seg++;
+                }
+                const hypsometric_stop& a = stops[seg];
+                const hypsometric_stop& b = stops[seg + 1];
+                const float span = b.elevation_m - a.elevation_m;
+                const float f = span > 0.0F ? std::clamp((e - a.elevation_m) / span, 0.0F, 1.0F) : 0.0F;
+                const auto channel = [f](float c0, float c1)
+                { return static_cast<uint8_t>(std::lround((c0 + f * (c1 - c0)) * 255.0F)); };
+                pixels[x * 4 + 0] = channel(a.r, b.r);
+                pixels[x * 4 + 1] = channel(a.g, b.g);
+                pixels[x * 4 + 2] = channel(a.b, b.b);
+                pixels[x * 4 + 3] = 255;
+            }
+            return pixels;
+        }
     }
 
     struct terrain_renderer::impl
     {
         sdl::device& dev;
         const elevation_source& source;
+        terrain_style style;
         sdl::sampler sampler;
         tile_cache<terrain_gpu> cache;
         terrain_loader loader;
@@ -210,15 +245,21 @@ namespace osect
         {
             std::unique_ptr<sdl::buffer> vertices;
             std::shared_ptr<terrain_gpu> ancestor;
+            float texel_m = 0.0F;
         };
         std::vector<fallback_quad> fallbacks;
         bool fallback_dirty = false;
 
-        impl(sdl::device& dev, const elevation_source& source)
+        std::unique_ptr<sdl::texture> ramp;
+        bool ramp_uploaded = false;
+
+        impl(sdl::device& dev, const elevation_source& source, terrain_style style)
             : dev(dev),
               source(source),
+              style(std::move(style)),
               sampler(dev, sdl::filter::linear, sdl::filter::linear, sdl::sampler_address_mode::clamp_to_edge),
-              cache(source.max_zoom(), 128)
+              cache(source.max_zoom(), static_cast<std::size_t>(this->style.gpu_tile_cache)),
+              ramp(std::make_unique<sdl::texture>(dev, ramp_width, 1U, sdl::texture_format::r8g8b8a8_unorm))
         {
         }
 
@@ -227,6 +268,12 @@ namespace osect
             const int count = 1 << key.z;
             const int x = (key.x % count + count) % count;
             return source.path() / std::to_string(key.z) / std::to_string(x) / (std::to_string(key.y) + ".png");
+        }
+
+        float texel_meters(const tile_key& key) const
+        {
+            const auto bounds = tile_bounds_meters(key.x, key.y, key.z);
+            return static_cast<float>((bounds.x_max - bounds.x_min) / source.tile_size());
         }
 
         float texture_offset() const
@@ -259,8 +306,8 @@ namespace osect
         }
     };
 
-    terrain_renderer::terrain_renderer(sdl::device& dev, const elevation_source& source)
-        : pimpl(std::make_unique<impl>(dev, source))
+    terrain_renderer::terrain_renderer(sdl::device& dev, const elevation_source& source, terrain_style style)
+        : pimpl(std::make_unique<impl>(dev, source, std::move(style)))
     {
     }
 
@@ -298,7 +345,7 @@ namespace osect
 
     bool terrain_renderer::needs_upload() const
     {
-        return !pimpl->pending.empty() || pimpl->fallback_dirty;
+        return !pimpl->pending.empty() || pimpl->fallback_dirty || !pimpl->ramp_uploaded;
     }
 
     void terrain_renderer::copy(sdl::copy_pass& pass)
@@ -325,12 +372,23 @@ namespace osect
                 bytes += vertex_bytes;
             }
         }
+        const bool upload_ramp = !pimpl->ramp_uploaded;
+        if(upload_ramp)
+        {
+            bytes += ramp_width * 4;
+        }
         if(bytes == 0)
         {
             return;
         }
 
         sdl::transfer_buffer transfer(pimpl->dev, bytes);
+        if(upload_ramp)
+        {
+            const auto pixels = ramp_to_rgba(pimpl->style.ramp);
+            pass.upload_texture(transfer, *pimpl->ramp, pixels.data(), ramp_width, 1, ramp_width * 4);
+            pimpl->ramp_uploaded = true;
+        }
         for(auto& result : pimpl->pending)
         {
             sdl::buffer vertices(pimpl->dev, sdl::buffer_usage::vertex, 6, sizeof(sdl::vertex_t2f_c4ub_v3f));
@@ -357,7 +415,11 @@ namespace osect
             tile_vertices(fallback.key, fallback.u0, fallback.v0, fallback.u1, fallback.v1, pimpl->texture_offset(),
                           pimpl->texture_scale(), quad.data());
             pass.upload_buffer(transfer, vertices, quad);
-            pimpl->fallbacks.push_back({std::make_unique<sdl::buffer>(std::move(vertices)), std::move(fallback.resource)});
+            // fallback.key is the display tile; its texels span (u1-u0) of an
+            // ancestor texel, so scale up to the ancestor's ground resolution.
+            const float texel_m = pimpl->texel_meters(fallback.key) / (fallback.u1 - fallback.u0);
+            pimpl->fallbacks.push_back(
+                {std::make_unique<sdl::buffer>(std::move(vertices)), std::move(fallback.resource), texel_m});
         }
     }
 
@@ -366,24 +428,44 @@ namespace osect
         sdl::uniform_buffer uniforms;
         uniforms.projection_matrix = ctx.projection_matrix;
         uniforms.view_matrix = view_matrix;
-        const auto draw = [&pass, &uniforms, this](const terrain_gpu& gpu, const sdl::buffer& vertices)
+        const int dim = pimpl->source.tile_size() + 2 * pimpl->source.skirt();
+        uniforms.texture_size = glm::ivec2(dim, dim);
+
+        // Shading parameters come from [terrain]. taws_cruise_m stays at its
+        // default until a cruise altitude exists; the shading-mode UI is 3.8.
+        const terrain_style& style = pimpl->style;
+        constexpr float ft_to_m = 0.3048F;
+        uniforms.sun_azimuth = glm::radians(style.sun_azimuth_deg);
+        uniforms.sun_altitude = glm::radians(style.sun_altitude_deg);
+        uniforms.vertical_exaggeration = style.vertical_exaggeration;
+        uniforms.terrain_opacity = style.opacity;
+        uniforms.terrain_mode = static_cast<int>(style.mode);
+        uniforms.hypso_min_m = style.ramp.front().elevation_m;
+        uniforms.hypso_max_m = style.ramp.back().elevation_m;
+        uniforms.taws_warning_m = style.cruise_warning_ft * ft_to_m;
+        uniforms.taws_caution_m = style.cruise_caution_ft * ft_to_m;
+        uniforms.taws_clear_m = style.cruise_clear_ft * ft_to_m;
+
+        const auto draw = [&pass, &uniforms, this](const terrain_gpu& gpu, const sdl::buffer& vertices, float texel_m)
         {
+            uniforms.terrain_texel_m = texel_m;
             pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
             pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
             pass.bind_vertex_buffer(vertices);
             pass.bind_fragment_texture_sampler(0, *gpu.heights, pimpl->sampler);
+            pass.bind_fragment_texture_sampler(1, *pimpl->ramp, pimpl->sampler);
             pass.draw(6);
         };
         for(const auto& key : pimpl->cache.visible_tiles())
         {
             if(const auto gpu = pimpl->cache.find(key))
             {
-                draw(*gpu, *gpu->vertices);
+                draw(*gpu, *gpu->vertices, pimpl->texel_meters(key));
             }
         }
         for(const auto& fallback : pimpl->fallbacks)
         {
-            draw(*fallback.ancestor, *fallback.vertices);
+            draw(*fallback.ancestor, *fallback.vertices, fallback.texel_m);
         }
     }
 } // namespace osect

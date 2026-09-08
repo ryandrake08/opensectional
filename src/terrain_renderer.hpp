@@ -1,5 +1,7 @@
 #pragma once
 
+#include "terrain_style.hpp"
+
 #include <glm/glm.hpp>
 #include <memory>
 
@@ -21,7 +23,7 @@ namespace osect
         std::unique_ptr<impl> pimpl;
 
     public:
-        terrain_renderer(sdl::device& dev, const elevation_source& source);
+        terrain_renderer(sdl::device& dev, const elevation_source& source, terrain_style style);
         ~terrain_renderer();
 
         void update(double view_x_min, double view_y_min, double view_x_max, double view_y_max, int viewport_height);

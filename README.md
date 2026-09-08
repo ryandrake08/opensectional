@@ -425,6 +425,12 @@ tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010 --zoom 0-6 \
     terrain_source/gmted2010 terrain/gmted2010
 ```
 
+The `[terrain]` section of the ini controls how the relief is drawn:
+shading `mode` (`hillshade` / `hypsometric` / `cruise_relative`),
+`opacity`, sun `sun_azimuth` / `sun_altitude`, `exaggeration`, the
+hypsometric colour `ramp`, and the `cruise_relative` band edges. See the
+commented block in `osect.ini` for the full list and defaults.
+
 Larger, finer sets are downloaded and built with the same two tools by
 passing a different `--dataset` and `--zoom` range, then pointed at with
 `-t <path>` or `[terrain] path` in the ini. GMTED2010 also ships 15
