@@ -3,6 +3,8 @@
 
 #include "app_options.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 
@@ -14,6 +16,7 @@ TEST_CASE("parse_cmdline: no options yields defaults")
     CHECK(o.verbosity == 0);
     CHECK(!o.gpu_driver);
     CHECK(!o.tile_path);
+    CHECK(!o.terrain_path);
     CHECK(!o.db_path);
     CHECK(!o.conf_path);
     CHECK(!o.offline);
@@ -41,23 +44,26 @@ TEST_CASE("parse_cmdline: verbosity counts the v's")
 
 TEST_CASE("parse_cmdline: value-taking flags capture their argument")
 {
-    auto o = parse_cmdline({"osect", "-g", "metal", "-d", "x.db", "-b", "tiles", "-c", "y.ini"});
+    auto o = parse_cmdline({"osect", "-g", "metal", "-d", "x.db", "-b", "tiles", "-t", "terrain", "-c", "y.ini"});
     REQUIRE(o.gpu_driver);
     CHECK(*o.gpu_driver == "metal");
     REQUIRE(o.db_path);
     CHECK(*o.db_path == "x.db");
     REQUIRE(o.tile_path);
     CHECK(*o.tile_path == "tiles");
+    REQUIRE(o.terrain_path);
+    CHECK(*o.terrain_path == "terrain");
     REQUIRE(o.conf_path);
     CHECK(*o.conf_path == "y.ini");
 }
 
 TEST_CASE("parse_cmdline: long flag names are accepted")
 {
-    auto o = parse_cmdline({"osect", "--gpu", "vulkan", "--database", "x.db", "--basemap", "t", "--conf", "c.ini"});
+    auto o = parse_cmdline({"osect", "--gpu", "vulkan", "--database", "x.db", "--basemap", "t", "--terrain", "terrain", "--conf", "c.ini"});
     CHECK(*o.gpu_driver == "vulkan");
     CHECK(*o.db_path == "x.db");
     CHECK(*o.tile_path == "t");
+    CHECK(*o.terrain_path == "terrain");
     CHECK(*o.conf_path == "c.ini");
 }
 
@@ -99,4 +105,26 @@ TEST_CASE("resolve_gpu_driver: an unrecognized driver throws")
     parsed_options o;
     o.gpu_driver = "softpipe";
     CHECK_THROWS_AS(resolve_gpu_driver(o), std::runtime_error);
+}
+
+TEST_CASE("resolve_terrain_path: command line overrides INI")
+{
+    const std::filesystem::path config_path = std::filesystem::temp_directory_path() / "osect-terrain.ini";
+    std::ofstream(config_path) << "[terrain]\npath = configured-terrain\n";
+    const ini_config ini(config_path);
+    parsed_options options;
+    options.terrain_path = "command-line-terrain";
+
+    CHECK(resolve_terrain_path(options, ini) == std::filesystem::path("command-line-terrain"));
+    std::filesystem::remove(config_path);
+}
+
+TEST_CASE("resolve_terrain_path: uses the INI path")
+{
+    const std::filesystem::path config_path = std::filesystem::temp_directory_path() / "osect-terrain.ini";
+    std::ofstream(config_path) << "[terrain]\npath = configured-terrain\n";
+    const ini_config ini(config_path);
+
+    CHECK(resolve_terrain_path(parsed_options{}, ini) == std::filesystem::path("configured-terrain"));
+    std::filesystem::remove(config_path);
 }

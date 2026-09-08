@@ -33,6 +33,14 @@ add_osect_test(altitude_filter)
 add_osect_test(tile_cache)
 add_osect_test(texture_format)
 target_link_libraries(test_texture_format PRIVATE sdl_wrapper)
+add_osect_test(elevation_tile ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp)
+target_link_libraries(test_elevation_tile PRIVATE sdl_wrapper)
+add_osect_test(elevation_address)
+add_osect_test(elevation_source
+    ${CMAKE_SOURCE_DIR}/src/elevation_source.cpp
+    ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp
+    ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
+target_link_libraries(test_elevation_source PRIVATE sdl_wrapper)
 
 # chart_type rules — pure functions of input fields, no DB needed.
 add_osect_test(chart_membership ${CMAKE_SOURCE_DIR}/src/chart_type.cpp)

@@ -6,6 +6,7 @@
 set(SHADERS
     default
     line
+    terrain
     textured
 )
 

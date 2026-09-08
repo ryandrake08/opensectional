@@ -25,7 +25,8 @@ namespace osect
                 << "  --vsync                    Enable vsync (default: off, lowest latency)\n"
                 << "  --gpu_debug                Enable GPU debug/validation (Vulkan: requires LunarG SDK)\n"
                 << "  -b, --basemap <path>       Basemap tile directory\n"
-                << "  -d, --database <osect.db>   NASR SQLite database\n"
+                << "  -t, --terrain <path>       Terrain tile directory\n"
+                << "  -d, --database <osect.db>  NASR SQLite database\n"
                 << "  -c, --conf <osect.ini>     Override INI (optional; layered over defaults)\n"
                 << "  --offline                  Skip all network fetches; use cached ephemeral data only\n"
                 << "\n"
@@ -94,6 +95,11 @@ namespace osect
                 opts.tile_path = need_value("--basemap");
                 sdl::log_info("Basemap directory: " + opts.tile_path->string());
             }
+            else if(arg == "-t" || arg == "--terrain")
+            {
+                opts.terrain_path = need_value("--terrain");
+                sdl::log_info("Terrain directory: " + opts.terrain_path->string());
+            }
             else if(arg == "-d" || arg == "--database")
             {
                 opts.db_path = need_value("--database");
@@ -148,6 +154,43 @@ namespace osect
             return std::nullopt;
         }
         return std::filesystem::path{std::move(bundled)};
+    }
+
+    std::optional<std::filesystem::path> resolve_terrain_path(const parsed_options& opts, const ini_config& ini)
+    {
+        if(opts.terrain_path)
+        {
+            return *opts.terrain_path;
+        }
+        if(ini.exists("terrain.path"))
+        {
+            return ini.get<std::string>("terrain.path");
+        }
+        auto bundled = sdl::resolve_bundled_asset("terrain");
+        if(bundled.empty())
+        {
+            return std::nullopt;
+        }
+        const std::filesystem::path root{std::move(bundled)};
+        if(std::filesystem::exists(root / "manifest.json"))
+        {
+            return root;
+        }
+
+        std::optional<std::filesystem::path> dataset;
+        for(const auto& entry : std::filesystem::directory_iterator(root))
+        {
+            if(!entry.is_directory() || !std::filesystem::exists(entry.path() / "manifest.json"))
+            {
+                continue;
+            }
+            if(dataset)
+            {
+                return std::nullopt;
+            }
+            dataset = entry.path();
+        }
+        return dataset;
     }
 
     ini_config build_ini(const parsed_options& opts)

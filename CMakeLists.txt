@@ -283,6 +283,9 @@ add_executable(osect
     src/chart_style.cpp
     src/chart_type.cpp
     src/data_source.cpp
+    src/elevation_source.cpp
+    src/elevation_tile.cpp
+    src/terrain_renderer.cpp
     src/ephemeral_database.cpp
     src/ephemeral_source.cpp
     src/http_client.cpp

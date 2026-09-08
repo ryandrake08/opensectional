@@ -23,6 +23,7 @@ namespace osect
         int verbosity = 0;
         std::optional<std::string> gpu_driver;
         std::optional<std::filesystem::path> tile_path;
+        std::optional<std::filesystem::path> terrain_path;
         std::optional<std::filesystem::path> db_path;
         std::optional<std::filesystem::path> conf_path;
         bool offline = false;
@@ -47,6 +48,9 @@ namespace osect
     // otherwise the bundled basemap. nullopt means "no basemap" —
     // tiles are optional.
     std::optional<std::filesystem::path> resolve_tile_path(const parsed_options& opts);
+
+    // Resolve the terrain tile directory
+    std::optional<std::filesystem::path> resolve_terrain_path(const parsed_options& opts, const ini_config& ini);
 
     // Build the ini_config: bundled defaults, then the per-user
     // file, then the optional --conf override, each merged on top.

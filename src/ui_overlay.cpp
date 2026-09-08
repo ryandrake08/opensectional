@@ -229,8 +229,8 @@ namespace osect
         return pimpl->vis;
     }
 
-    ui_overlay_result ui_overlay::draw(float last_render_ms,
-                                       const std::vector<std::unique_ptr<feature_type>>& feature_types)
+    ui_overlay_result ui_overlay::draw(float last_render_ms, const std::vector<std::unique_ptr<feature_type>>& feature_types,
+                                       bool terrain_available)
     {
         auto& io = ImGui::GetIO();
         auto result = ui_overlay_result{};
@@ -263,13 +263,15 @@ namespace osect
             {
                 const char* label;
                 int id;
+                bool available;
             };
             std::vector<row> rows;
-            rows.reserve(feature_types.size() + 1);
-            rows.push_back({"Basemap", layer_basemap});
+            rows.reserve(feature_types.size() + 2);
+            rows.push_back({"Basemap", layer_basemap, true});
+            rows.push_back({"Terrain", layer_terrain, terrain_available});
             for(const auto& obj : feature_types)
             {
-                rows.push_back({obj->label(), obj->layer_id()});
+                rows.push_back({obj->label(), obj->layer_id(), true});
             }
 
             auto max_label_w = 0.0F;
@@ -291,9 +293,15 @@ namespace osect
                 ImGui::SameLine(0, spacing);
 
                 ImGui::PushID(r.id);
+                ImGui::BeginDisabled(!r.available);
                 if(ImGui::Checkbox("", &d.vis[r.id]))
                 {
                     changed = true;
+                }
+                ImGui::EndDisabled();
+                if(!r.available && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                {
+                    ImGui::SetTooltip("Terrain data is unavailable");
                 }
                 ImGui::PopID();
             }
@@ -642,7 +650,7 @@ namespace osect
                 ImGui::Text("[%s]", tag);
                 ImGui::PopStyleColor();
                 ImGui::SameLine();
-                ImGui::Text("%-6s %s", s.name.c_str(), s.info.c_str());
+                ImGui::Text("%-7s %s", s.name.c_str(), s.info.c_str());
             }
         }
 

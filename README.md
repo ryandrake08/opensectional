@@ -36,7 +36,7 @@ tools/env/bin/python3 tools/render_basemap.py mapdata/natural_earth_vector.gpkg.
 ./build/osect
 
 # Override any asset path explicitly:
-./build/osect -d osect.db -b basemap -c osect.ini
+./build/osect -d osect.db -b basemap -t terrain/gmted2010 -c osect.ini
 
 # Verbosity: -v (warnings), -vv (info), -vvv (debug)
 ./build/osect -vv
@@ -474,6 +474,7 @@ The repo's [`osect.ini`](osect.ini) at the source root is a worked example of ev
 | `-g direct3d12`, `--gpu direct3d12` | Force Direct3D 12 backend (Windows only) |
 | `--gpu_debug` | Enable GPU debug + validation layers (Vulkan needs the SDK loader — see [GPU Backend](#gpu-backend)) |
 | `-b <path>`, `--basemap <path>` | XYZ tile directory for the basemap layer |
+| `-t <path>`, `--terrain <path>` | Terrain tile directory containing `manifest.json` |
 | `-d <path>`, `--database <path>` | NASR SQLite database |
 | `-c <path>`, `--conf <path>` | Override INI layered last over the default cascade (see [Configuration](#configuration)). Errors if the path does not exist. |
 | `--offline` | Skip every network fetch on startup and during refresh; render whatever's in the on-disk ephemeral cache |

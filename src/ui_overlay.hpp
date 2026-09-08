@@ -43,6 +43,7 @@ namespace osect
 
         // Non-SDF layers
         layer_basemap = layer_sdf_count,
+        layer_terrain,
         layer_count
     };
 
@@ -190,9 +191,10 @@ namespace osect
 
         // Draw FPS display, layer checkboxes, search box, route panel,
         // and (when populated) the data-status panel. `feature_types`
-        // supplies the labels+ids for the feature-layer checkboxes
-        // (the basemap row is always prepended).
-        ui_overlay_result draw(float last_render_ms, const std::vector<std::unique_ptr<feature_type>>& feature_types);
+        // supplies the feature-layer checkboxes; basemap and terrain
+        // rows are prepended.
+        ui_overlay_result draw(float last_render_ms, const std::vector<std::unique_ptr<feature_type>>& feature_types,
+                               bool terrain_available);
 
         // Access the list of visible/invisible layers
         const layer_visibility& visibility() const;

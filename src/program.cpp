@@ -2,6 +2,7 @@
 #include "app_options.hpp"
 #include "ephemeral_database.hpp"
 #include "ephemeral_source.hpp"
+#include "elevation_source.hpp"
 #include "feature_type.hpp"
 #include "ini_config.hpp"
 #include "map_widget.hpp"
@@ -65,6 +66,8 @@ namespace osect
         // indicator via is_refreshing().
         std::unique_ptr<tfr_refresher> tfrs;
         ini_config ini;
+        std::optional<std::filesystem::path> terrain_path;
+        elevation_source terrain;
         // Read-write user.db handle. waypoint_session and route_session
         // write user edits — created/renamed/deleted waypoints, saved
         // routes — through it; it is the source of truth for saved
@@ -94,8 +97,10 @@ namespace osect
               imgui_ctx(dev, win),
               tfrs(opts.offline ? nullptr : std::make_unique<tfr_refresher>(ephemeral_database::default_path())),
               ini(build_ini(opts)),
+              terrain_path(resolve_terrain_path(opts, ini)),
+              terrain(terrain_path ? *terrain_path : std::filesystem::path{}),
               udb(user_database::default_path()),
-              map(dev, tile_path, db_path, ini, 1280, 1024),
+              map(dev, tile_path, terrain, db_path, ini, 1280, 1024),
               waypoints(map, udb),
               routes(ui, map, udb, ini, db_path),
               prev_vis(ui.visibility())
@@ -114,6 +119,7 @@ namespace osect
             // Log info about the GPU driver
             sdl::log_info("started: gpu=" + resolve_gpu_driver(opts) + " db=" + db_path.string() +
                           " basemap=" + (tile_path ? tile_path->string() : std::string("(none)")) +
+                          " terrain=" + (terrain_path ? terrain_path->string() : std::string("(none)")) +
                           " offline=" + (opts.offline ? "true" : "false"));
         }
 
@@ -124,6 +130,7 @@ namespace osect
         {
             auto merged = nasr_database(db_path).list_data_sources();
             auto eph = ephemeral_database(ephemeral_database::default_path()).list_data_sources();
+            merged.push_back(terrain.data_source_row());
             if(tfrs)
             {
                 const bool updating = tfrs->is_refreshing();
@@ -294,7 +301,7 @@ namespace osect
                 needs_render |= waypoints.process();
 
                 imgui_ctx.new_frame();
-                ui_result = ui.draw(last_render_ms, map.feature_types());
+                ui_result = ui.draw(last_render_ms, map.feature_types(), terrain.available());
                 needs_render |= map.draw_imgui();
                 imgui_ctx.end_frame();
 

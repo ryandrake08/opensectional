@@ -23,6 +23,7 @@ namespace osect
 {
     struct layer_visibility;
     struct search_hit;
+    class elevation_source;
     class feature_type;
 
     // The main map widget: owns the tile renderer, feature renderer, label
@@ -41,7 +42,7 @@ namespace osect
         // connections to the platform-default ephemeral.db, so
         // ephemeral data flows through SQLite rather than through
         // a passed-in facade.
-        map_widget(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path,
+        map_widget(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path, const elevation_source& terrain,
                    const std::filesystem::path& db_path, const ini_config& ini,
                    int viewport_width, int viewport_height);
         ~map_widget();

@@ -1,6 +1,7 @@
 #include "map_widget.hpp"
 #include "chart_style.hpp"
 #include "ephemeral_database.hpp"
+#include "elevation_source.hpp"
 #include "feature_renderer.hpp"
 #include "feature_type.hpp"
 #include "ini_config.hpp"
@@ -10,6 +11,7 @@
 #include "pick_result.hpp"
 #include "render_context.hpp"
 #include "tile_renderer.hpp"
+#include "terrain_renderer.hpp"
 #include "ui_overlay.hpp"
 #include "ui_popup_manager.hpp"
 #include "user_database.hpp"
@@ -44,6 +46,8 @@
 #include <line_vert_spv.h>
 #include <textured_frag_spv.h>
 #include <textured_vert_spv.h>
+#include <terrain_frag_spv.h>
+#include <terrain_vert_spv.h>
 #ifdef __APPLE__
 #include <default_frag_metal.h>
 #include <default_vert_metal.h>
@@ -51,11 +55,14 @@
 #include <line_vert_metal.h>
 #include <textured_frag_metal.h>
 #include <textured_vert_metal.h>
+#include <terrain_frag_metal.h>
+#include <terrain_vert_metal.h>
 #endif
 #ifdef OSECT_HAVE_METALLIB
 #include <default_metallib.h>
 #include <line_metallib.h>
 #include <textured_metallib.h>
+#include <terrain_metallib.h>
 #endif
 #ifdef OSECT_HAVE_DXIL
 #include <default_frag_dxil.h>
@@ -64,6 +71,8 @@
 #include <line_vert_dxil.h>
 #include <textured_frag_dxil.h>
 #include <textured_vert_dxil.h>
+#include <terrain_frag_dxil.h>
+#include <terrain_vert_dxil.h>
 #endif
 
 namespace
@@ -73,6 +82,7 @@ namespace
     {
         DEFAULT,
         LINE,
+        TERRAIN,
         TEXTURED
     };
 
@@ -95,6 +105,8 @@ namespace
                 return {default_vert_spv, default_vert_spv_len};
             case shader_id::LINE:
                 return {line_vert_spv, line_vert_spv_len};
+            case shader_id::TERRAIN:
+                return {terrain_vert_spv, terrain_vert_spv_len};
             case shader_id::TEXTURED:
                 return {textured_vert_spv, textured_vert_spv_len};
             }
@@ -107,6 +119,8 @@ namespace
                 return {default_frag_spv, default_frag_spv_len};
             case shader_id::LINE:
                 return {line_frag_spv, line_frag_spv_len};
+            case shader_id::TERRAIN:
+                return {terrain_frag_spv, terrain_frag_spv_len};
             case shader_id::TEXTURED:
                 return {textured_frag_spv, textured_frag_spv_len};
             }
@@ -125,6 +139,8 @@ namespace
                 return {default_vert_dxil, default_vert_dxil_len};
             case shader_id::LINE:
                 return {line_vert_dxil, line_vert_dxil_len};
+            case shader_id::TERRAIN:
+                return {terrain_vert_dxil, terrain_vert_dxil_len};
             case shader_id::TEXTURED:
                 return {textured_vert_dxil, textured_vert_dxil_len};
             }
@@ -137,6 +153,8 @@ namespace
                 return {default_frag_dxil, default_frag_dxil_len};
             case shader_id::LINE:
                 return {line_frag_dxil, line_frag_dxil_len};
+            case shader_id::TERRAIN:
+                return {terrain_frag_dxil, terrain_frag_dxil_len};
             case shader_id::TEXTURED:
                 return {textured_frag_dxil, textured_frag_dxil_len};
             }
@@ -156,6 +174,8 @@ namespace
                 return {default_vert_metal, default_vert_metal_len};
             case shader_id::LINE:
                 return {line_vert_metal, line_vert_metal_len};
+            case shader_id::TERRAIN:
+                return {terrain_vert_metal, terrain_vert_metal_len};
             case shader_id::TEXTURED:
                 return {textured_vert_metal, textured_vert_metal_len};
             }
@@ -168,6 +188,8 @@ namespace
                 return {default_frag_metal, default_frag_metal_len};
             case shader_id::LINE:
                 return {line_frag_metal, line_frag_metal_len};
+            case shader_id::TERRAIN:
+                return {terrain_frag_metal, terrain_frag_metal_len};
             case shader_id::TEXTURED:
                 return {textured_frag_metal, textured_frag_metal_len};
             }
@@ -185,6 +207,8 @@ namespace
             return {default_metallib, default_metallib_len};
         case shader_id::LINE:
             return {line_metallib, line_metallib_len};
+        case shader_id::TERRAIN:
+            return {terrain_metallib, terrain_metallib_len};
         case shader_id::TEXTURED:
             return {textured_metallib, textured_metallib_len};
         }
@@ -247,15 +271,18 @@ namespace osect
         sdl::device& dev;
         bool needs_update = true;
         bool show_tiles = true;
+        bool show_terrain = true;
 
         // GPU pipelines (created once at construction)
         sdl::pipeline linelist_pipeline;
         sdl::pipeline trianglelist_pipeline;
         sdl::pipeline textured_pipeline;
+        sdl::pipeline terrain_pipeline;
         sdl::pipeline line_sdf_pipeline;
 
         // Tile renderer for raster basemap (null if no basemap was provided)
         std::unique_ptr<tile_renderer> tiles;
+        std::unique_ptr<terrain_renderer> terrain;
 
         // Vector feature renderer
         feature_renderer features;
@@ -346,7 +373,7 @@ namespace osect
         double cursor_last_x = 0;
         double cursor_last_y = 0;
 
-        impl(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path,
+        impl(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path, const elevation_source& terrain_source,
              const std::filesystem::path& db_path, const ini_config& ini,
              int viewport_width, int viewport_height)
             : dev(dev),
@@ -359,10 +386,14 @@ namespace osect
               textured_pipeline(dev, load_shader(dev, shader_id::TEXTURED, sdl::shader_stage::vertex),
                                 load_shader(dev, shader_id::TEXTURED, sdl::shader_stage::fragment, 1),
                                 sdl::primitive_type::triangle_list),
+              terrain_pipeline(dev, load_shader(dev, shader_id::TERRAIN, sdl::shader_stage::vertex),
+                               load_shader(dev, shader_id::TERRAIN, sdl::shader_stage::fragment, 1),
+                               sdl::primitive_type::triangle_list),
               line_sdf_pipeline(dev, load_shader(dev, shader_id::LINE, sdl::shader_stage::vertex, 0, 2),
                                 load_shader(dev, shader_id::LINE, sdl::shader_stage::fragment, 0, 2),
                                 sdl::primitive_type::triangle_list, sdl::texture_format_t(0), false),
               tiles(tile_path ? std::make_unique<tile_renderer>(dev, *tile_path) : nullptr),
+              terrain(terrain_source.available() ? std::make_unique<terrain_renderer>(dev, terrain_source) : nullptr),
               features(dev, db_path, chart_style(ini)),
               labels(dev),
               pick_db(db_path),
@@ -460,6 +491,11 @@ namespace osect
             {
                 tiles->update(view.view_x_min(), view.view_y_min(), view.view_x_max(), view.view_y_max(),
                               view.half_extent_y, view.viewport_height, view.aspect_ratio());
+            }
+            if(terrain)
+            {
+                terrain->update(view.view_x_min(), view.view_y_min(), view.view_x_max(), view.view_y_max(),
+                                view.viewport_height);
             }
             features.update(view.view_x_min(), view.view_y_min(), view.view_x_max(), view.view_y_max(),
                             view.half_extent_y, view.viewport_height, view.aspect_ratio());
@@ -1236,9 +1272,10 @@ namespace osect
     };
 
     map_widget::map_widget(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path,
+                           const elevation_source& terrain,
                            const std::filesystem::path& db_path, const ini_config& ini,
                            int viewport_width, int viewport_height)
-        : pimpl(std::make_shared<impl>(dev, tile_path, db_path, ini, viewport_width, viewport_height))
+        : pimpl(std::make_shared<impl>(dev, tile_path, terrain, db_path, ini, viewport_width, viewport_height))
     {
     }
 
@@ -1247,6 +1284,7 @@ namespace osect
     void map_widget::set_visibility(const layer_visibility& vis)
     {
         pimpl->show_tiles = vis[layer_basemap];
+        pimpl->show_terrain = vis[layer_terrain];
         pimpl->vis = vis;
         pimpl->features.set_visibility(vis);
         pimpl->needs_update = true;
@@ -1367,6 +1405,10 @@ namespace osect
         {
             pimpl->tiles->drain();
         }
+        if(pimpl->terrain)
+        {
+            pimpl->terrain->drain();
+        }
 
         auto new_candidates = pimpl->features.drain();
         if(new_candidates)
@@ -1382,6 +1424,7 @@ namespace osect
         }
 
         auto result = pimpl->needs_update || (pimpl->tiles && pimpl->tiles->needs_upload()) ||
+                      (pimpl->terrain && pimpl->terrain->needs_upload()) ||
                       pimpl->features.needs_upload() || pimpl->labels.needs_upload();
 
         if(result)
@@ -1614,6 +1657,10 @@ namespace osect
             {
                 d.tiles->copy(copy);
             }
+            if(d.terrain)
+            {
+                d.terrain->copy(copy);
+            }
             d.features.copy(copy);
             d.labels.copy(copy, d.dev);
         }
@@ -1627,6 +1674,12 @@ namespace osect
         if(d.show_tiles && d.tiles)
         {
             d.tiles->render(pass, ctx, view_matrix);
+        }
+
+        if(d.show_terrain && d.terrain)
+        {
+            pass.bind_pipeline(d.terrain_pipeline);
+            d.terrain->render(pass, ctx, view_matrix);
         }
 
         // Polygon fills (airspace/SUA selection highlights)
