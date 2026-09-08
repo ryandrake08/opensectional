@@ -147,7 +147,8 @@ The default contributor build produces `build/osect` on macOS and Linux, or
 libraries. Run it from the repository root so the default asset lookup can find
 `osect.db` and `basemap/`, or pass their paths with `--database` and
 `--basemap`. On macOS it is a plain executable rather than an application
-bundle, and requires a system-provided MoltenVK when using the Vulkan backend.
+bundle, and needs a separately installed MoltenVK plus `SDL_VULKAN_LIBRARY` to
+use the Vulkan backend (see [GPU Backend](#gpu-backend)).
 The release scripts below produce the self-contained platform packages instead.
 
 ## Cutting a release
@@ -245,9 +246,30 @@ Packaging configuration aborts with `Installer asset missing: ...` until those e
 
 OpenSectional defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` to override on macOS. The shader format is selected at runtime based on the active backend. The packaged macOS build includes MoltenVK in `OpenSectional.app/Contents/Frameworks/`, so the .app runs out of the box without requiring the user to install Vulkan SDK or Homebrew.
 
-**Vulkan on macOS for development.** The bundled MoltenVK only lands in packaged builds (`OSECT_ENABLE_PACKAGING=ON`); a regular `cmake -B build` dev build relies on whatever MoltenVK is installed system-wide and will fail to start with `--gpu vulkan` if none is present. The simplest fix is `brew install molten-vk`, which drops `libMoltenVK.dylib` where `DYLD_FALLBACK_LIBRARY_PATH` finds it. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) is an alternative — its main developer benefit on macOS is the Khronos validation layer (enable by passing `debug_mode=true` to `SDL_CreateGPUDevice`); the shader-compile tools it ships (`glslangValidator`, `spirv-cross`) are already covered by Homebrew/MacPorts. None of this applies to Metal — `--gpu metal` links against Apple system frameworks with no extra deps and is the path of least resistance for day-to-day macOS dev.
+**Vulkan on macOS for development.** The bundled MoltenVK only lands in packaged builds (`OSECT_ENABLE_PACKAGING=ON`); a regular `cmake -B build` dev build carries no MoltenVK of its own and needs one installed elsewhere:
 
-If you install the Vulkan SDK, leave the installer's "System Install" component on (it puts a working MoltenVK and Vulkan loader at `/usr/local/lib`, reachable via `DYLD_FALLBACK_LIBRARY_PATH`) but **do not also source `setup-env.sh`** — it exports `DYLD_LIBRARY_PATH=$VULKAN_SDK/lib` which intercepts every leaf-name `dlopen` and silently breaks SDL's loader search (SDL falls through to MoltenVK directly, the layer chain is never inserted, and validation never activates). System Install on and `setup-env.sh` *not* sourced is the only configuration where validation works without per-binary overrides.
+- **MacPorts**: `sudo port install MoltenVK` → `/opt/local/lib/libMoltenVK.dylib`
+- **Homebrew**: `brew install molten-vk` → `$(brew --prefix)/lib/libMoltenVK.dylib`
+
+Installing it is not enough — you must also point SDL at it by absolute path:
+
+```sh
+export SDL_VULKAN_LIBRARY=/opt/local/lib/libMoltenVK.dylib   # MacPorts; adjust for Homebrew
+./build/osect --gpu vulkan
+```
+
+`SDL_VULKAN_LIBRARY` (SDL's `SDL_HINT_VULKAN_LIBRARY`) is the full path to the dylib SDL should `dlopen` for its Vulkan backend. It is required because current macOS resolves a bare leaf-name `dlopen` (`libvulkan.1.dylib`, `libMoltenVK.dylib`) only against `/usr/lib` and the dyld shared cache — **not** `/usr/local/lib`, `/opt/local/lib`, `/opt/homebrew/lib`, or `$HOME/lib`. Without the hint, SDL finds no Vulkan library and `--gpu vulkan` aborts at startup with `SDL_HINT_GPU_DRIVER vulkan unsupported!`. Unlike `DYLD_LIBRARY_PATH` the hint is surgical: it affects only SDL's Vulkan load, nothing else in the process.
+
+None of this applies to Metal — `--gpu metal` links against Apple system frameworks with no extra deps and is the path of least resistance for day-to-day macOS dev.
+
+**Validation layers (`--gpu_debug`).** Pointing `SDL_VULKAN_LIBRARY` straight at `libMoltenVK.dylib` loads MoltenVK with no Vulkan loader in the chain, so there are no layers for `--gpu_debug` to enable. For validation, install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (keep its "System Install" component, which copies a loader to `/usr/local/lib`) and point the hint at the *loader* instead:
+
+```sh
+export SDL_VULKAN_LIBRARY=/usr/local/lib/libvulkan.1.dylib
+./build/osect --gpu vulkan --gpu_debug
+```
+
+The loader finds MoltenVK and the Khronos validation layer through the SDK's own ICD / layer manifests. Do **not** also `source setup-env.sh` from the SDK — it exports `DYLD_LIBRARY_PATH=$VULKAN_SDK/lib`, which intercepts every leaf-name `dlopen` in the process. Installing both the Vulkan SDK and a package-manager MoltenVK is redundant (the SDK also ships `glslangValidator` / `spirv-cross`, already covered by Homebrew/MacPorts) — pick one, and use the SDK only if you want the validation layer.
 
 A D3D12 backend is available on Windows but is **experimental** — Vulkan has shown better performance in testing and is the recommended Windows backend. The D3D12 path is built whenever `dxc` is available at configure time; pass `-DOSECT_ENABLE_D3D12=OFF` (or omit `dxc` from the toolchain) to skip it. Builds without DXIL reject `--gpu direct3d12` at startup with a descriptive error.
 
@@ -450,6 +472,7 @@ The repo's [`osect.ini`](osect.ini) at the source root is a worked example of ev
 | `-g vulkan`, `--gpu vulkan` | Force Vulkan backend (default on all platforms) |
 | `-g metal`, `--gpu metal` | Force Metal backend (macOS only) |
 | `-g direct3d12`, `--gpu direct3d12` | Force Direct3D 12 backend (Windows only) |
+| `--gpu_debug` | Enable GPU debug + validation layers (Vulkan needs the SDK loader — see [GPU Backend](#gpu-backend)) |
 | `-b <path>`, `--basemap <path>` | XYZ tile directory for the basemap layer |
 | `-d <path>`, `--database <path>` | NASR SQLite database |
 | `-c <path>`, `--conf <path>` | Override INI layered last over the default cascade (see [Configuration](#configuration)). Errors if the path does not exist. |
