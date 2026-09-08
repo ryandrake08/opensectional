@@ -10,7 +10,6 @@ import os
 import re
 import sqlite3
 
-
 # Sentinel for "unlimited" altitude. Any real altitude compared against
 # this will register as below it. Stored as an INT in the DB.
 ALT_UNLIMITED_FT = 99999
@@ -323,7 +322,7 @@ def write_meta(conn, name, *, kind="static",
             info TEXT
         )
     """)
-    last_updated = (datetime.datetime.now(datetime.timezone.utc)
+    last_updated = (datetime.datetime.now(datetime.UTC)
                     .replace(microsecond=0).isoformat())
     conn.execute(
         "INSERT OR REPLACE INTO META "

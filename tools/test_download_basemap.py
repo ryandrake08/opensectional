@@ -11,8 +11,7 @@ import threading
 import urllib.error
 
 import download_basemap
-from download_basemap import download
-from download_basemap import main as run_download_basemap
+from download_basemap import download, main as run_download_basemap
 
 
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):

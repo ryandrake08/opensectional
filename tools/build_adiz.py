@@ -148,7 +148,7 @@ def build_adiz(conn, geojson_path):
     # provided the row exists).
     try:
         mtime = datetime.datetime.fromtimestamp(
-            os.path.getmtime(geojson_path), tz=datetime.timezone.utc)
+            os.path.getmtime(geojson_path), tz=datetime.UTC)
         eff_iso = mtime.date().isoformat()
         info_text = f"ADIZ {mtime.strftime('%d %b %Y')}"
     except OSError:

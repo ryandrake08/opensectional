@@ -8,7 +8,12 @@ import tempfile
 
 import terrain_common
 from terrain_datasets import DatasetAdapter
-from terrain_manifest import MANIFEST_FILENAME, build_manifest, read_manifest, write_manifest
+from terrain_manifest import (
+    MANIFEST_FILENAME,
+    build_manifest,
+    read_manifest,
+    write_manifest,
+)
 
 
 class _FakeAdapter(DatasetAdapter):

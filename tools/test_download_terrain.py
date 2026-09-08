@@ -10,8 +10,7 @@ import tempfile
 import threading
 import urllib.error
 
-from download_terrain import download_tile
-from download_terrain import main as run_download_terrain
+from download_terrain import download_tile, main as run_download_terrain
 from terrain_datasets import Gmted2010Adapter, SourceTile, get_adapter
 
 

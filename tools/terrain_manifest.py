@@ -25,7 +25,7 @@ def build_manifest(adapter, min_zoom, max_zoom, bbox):
         "min_zoom": min_zoom,
         "max_zoom": max_zoom,
         "bbox": list(bbox),
-        "last_updated": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat(),
+        "last_updated": datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat(),
     }
 
 

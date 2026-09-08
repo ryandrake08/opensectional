@@ -14,7 +14,6 @@ import contextlib
 import math
 import multiprocessing
 import os
-import sys
 import time
 
 import numpy as np
@@ -27,7 +26,12 @@ import terrain_common
 import terrain_datum
 import terrain_manifest
 from terrain_datasets import get_adapter
-from tile_math import EARTH_RADIUS_M, WORLD_CIRCUMFERENCE_M, parse_zoom_range, tile_bounds_3857
+from tile_math import (
+    EARTH_RADIUS_M,
+    WORLD_CIRCUMFERENCE_M,
+    parse_zoom_range,
+    tile_bounds_3857,
+)
 
 MERCATOR_MAX_LAT = 85.0511287798066  # where Web Mercator's y projection diverges
 

@@ -5,7 +5,6 @@ import sqlite3
 import sys
 import time
 
-
 # --- Spatial query functions (used by both correctness and performance tests) ---
 
 def query_airports(conn, lon_min, lat_min, lon_max, lat_max):

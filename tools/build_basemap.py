@@ -761,7 +761,7 @@ class FontCache:
         if size not in self._fonts:
             try:
                 self._fonts[size] = ImageFont.truetype(self._font_path, size)
-            except (OSError, IOError):
+            except OSError:
                 self._fonts[size] = ImageFont.load_default()
         return self._fonts[size]
 

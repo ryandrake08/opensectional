@@ -12,7 +12,10 @@ import sys
 import zipfile
 
 from build_common import (
-    _parse_date_loose, normalize_iso_date, open_output_db, write_meta,
+    _parse_date_loose,
+    normalize_iso_date,
+    open_output_db,
+    write_meta,
 )
 
 

@@ -19,8 +19,12 @@ import zipfile
 from collections import defaultdict
 
 from build_common import (
-    _parse_date_loose, handle_antimeridian, normalize_date_column,
-    open_output_db, subdivide_ring, write_meta,
+    _parse_date_loose,
+    handle_antimeridian,
+    normalize_date_column,
+    open_output_db,
+    subdivide_ring,
+    write_meta,
 )
 
 

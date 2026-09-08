@@ -17,10 +17,15 @@ import zipfile
 from collections import defaultdict
 
 from build_common import (
-    ALT_UNLIMITED_FT, handle_antimeridian, open_output_db, parse_altitude,
-    read_meta, simplify_ring, subdivide_ring, write_meta,
+    ALT_UNLIMITED_FT,
+    handle_antimeridian,
+    open_output_db,
+    parse_altitude,
+    read_meta,
+    simplify_ring,
+    subdivide_ring,
+    write_meta,
 )
-
 
 # Per-SUA instrumentation for the geometry cleanup filters. Each key is
 # a filter name; each value is a Counter {designator: hits}. Collected
@@ -448,11 +453,13 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
     # altitude restriction AND creates bogus topology where the strata
     # don't share ring vertices. Components sharing an altitude band are
     # still unioned together (disjoint islands, edge-adjacent annex lobes).
-    from shapely.geometry import Polygon as ShapelyPolygon
-    from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
+    from shapely import set_precision
+    from shapely.geometry import (
+        MultiPolygon as ShapelyMultiPolygon,
+        Polygon as ShapelyPolygon,
+    )
     from shapely.ops import unary_union
     from shapely.validation import make_valid
-    from shapely import set_precision
     # Snap to ~1 m grid so polygons that share edges (sampled with slightly
     # different floating-point vertices) produce a clean union instead of
     # sliver holes. Airspace boundaries are not defined to sub-meter

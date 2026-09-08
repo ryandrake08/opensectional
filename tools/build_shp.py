@@ -12,8 +12,12 @@ import sys
 import zipfile
 
 from build_common import (
-    handle_antimeridian, open_output_db, read_meta, simplify_ring,
-    subdivide_ring, write_meta,
+    handle_antimeridian,
+    open_output_db,
+    read_meta,
+    simplify_ring,
+    subdivide_ring,
+    write_meta,
 )
 
 
@@ -26,7 +30,7 @@ def read_dbf(f):
     f.read(3)  # date
     nrec = struct.unpack("<I", f.read(4))[0]
     hdr_size = struct.unpack("<H", f.read(2))[0]
-    rec_size = struct.unpack("<H", f.read(2))[0]
+    f.read(2)  # record size
     f.read(20)  # reserved
 
     fields = []
@@ -35,7 +39,7 @@ def read_dbf(f):
         if peek == b"\r":
             break
         name = (peek + f.read(10)).rstrip(b"\x00").decode("ascii")
-        ftype = f.read(1).decode("ascii")
+        f.read(1)  # field type
         f.read(4)  # reserved
         flen = struct.unpack("B", f.read(1))[0]
         f.read(15)  # reserved
