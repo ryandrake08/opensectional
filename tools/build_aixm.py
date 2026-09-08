@@ -615,17 +615,18 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
                 polys_ = list(clipped.geoms)
             elif isinstance(clipped, ShapelyPolygon):
                 polys_ = [clipped]
-            elif hasattr(clipped, "geoms"):
-                polys_ = [g for g in clipped.geoms
+            else:
+                sub_geoms = getattr(clipped, "geoms", None)
+                if sub_geoms is None:
+                    print(f"  WARN: {designator}: SUBTR intersection yielded "
+                          f"{type(clipped).__name__}, skipping", file=sys.stderr)
+                    continue
+                polys_ = [g for g in sub_geoms
                           if isinstance(g, ShapelyPolygon) and not g.is_empty]
                 if not polys_:
                     print(f"  NOTE: {designator}: SUBTR clip produced no "
                           f"polygonal bits, skipping", file=sys.stderr)
                     continue
-            else:
-                print(f"  WARN: {designator}: SUBTR intersection yielded "
-                      f"{type(clipped).__name__}, skipping", file=sys.stderr)
-                continue
             unioned = (unary_union(polys_) if len(polys_) > 1 else polys_[0])
             # Snap the clipped SUBTR to the same grid BASE polys use so
             # subsequent face-overlay intersections land exactly on
@@ -910,11 +911,12 @@ def _parse_one_airspace(airspace, airspace_lookup=None):
                 polys_ = [g for g in clipped.geoms if not g.is_empty]
             elif isinstance(clipped, ShapelyPolygon):
                 polys_ = [clipped]
-            elif hasattr(clipped, "geoms"):
-                polys_ = [g for g in clipped.geoms
-                          if isinstance(g, ShapelyPolygon) and not g.is_empty]
             else:
-                continue
+                sub_geoms = getattr(clipped, "geoms", None)
+                if sub_geoms is None:
+                    continue
+                polys_ = [g for g in sub_geoms
+                          if isinstance(g, ShapelyPolygon) and not g.is_empty]
             stratum_parts = []
             for p in polys_:
                 if p.is_empty or p.area < 1e-6:

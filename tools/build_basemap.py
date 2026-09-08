@@ -17,6 +17,7 @@ import multiprocessing
 import os
 import sys
 import time
+from typing import cast
 
 import fiona
 from fiona.crs import CRS
@@ -231,9 +232,11 @@ def preprocess_to_3857(fiona_source, target_path):
         count = 0
 
         with fiona.open(fiona_source, layer=layer_name) as src:
+            if src.schema is None:
+                raise ValueError(f"{fiona_source}: layer {layer_name!r} has no schema")
             # Use "Unknown" geometry type to accept both Polygon and
             # MultiPolygon (Fiona is strict about type matching).
-            out_schema = src.schema.copy()
+            out_schema = dict(src.schema)
             out_schema['geometry'] = 'Unknown'
 
             with fiona.open(target_path, 'w', driver='GPKG',
@@ -736,7 +739,7 @@ def render_tile(z, x, y, cache, font_cache):
                 if name:
                     draw_label(draw, name, px, py, font)
 
-    return img.convert('P', palette=Image.ADAPTIVE, colors=256)
+    return img.convert('P', palette=Image.Palette.ADAPTIVE, colors=256)
 
 
 # ---------------------------------------------------------------------------
@@ -815,11 +818,14 @@ def _get_tier(z):
 def is_solid_color(img_path):
     """Check if a PNG tile is a single solid color."""
     with Image.open(img_path) as img:
-        # Convert to RGB so extrema is always per-channel tuples,
-        # regardless of whether the source is palette or RGB mode.
+        # Convert to RGB so extrema is always a per-channel (min, max)
+        # tuple, regardless of whether the source is palette or RGB mode.
         # Go via RGBA first so palette transparency bytes are handled
         # cleanly (avoids PIL UserWarning).
-        extrema = img.convert('RGBA').convert('RGB').getextrema()
+        extrema = cast(
+            "tuple[tuple[int, int], ...]",
+            img.convert('RGBA').convert('RGB').getextrema(),
+        )
         return all(lo == hi for lo, hi in extrema)
 
 
@@ -967,20 +973,20 @@ def main():
         # Use single-process path when workers=1 (easier debugging)
         if num_workers == 1:
             _worker_init(args.font)
-            z_start = time.time()
-            current_z = tile_args[0][0] if tile_args else None
-            for ta in tile_args:
-                if ta[0] != current_z:
-                    z_elapsed = time.time() - z_start
-                    z_count = 2 ** (2 * current_z)
-                    tiles_per_sec = z_count / z_elapsed if z_elapsed > 0 else 0
-                    print(f"    z{current_z}: {z_count:,} tiles in "
-                          f"{z_elapsed:.1f}s ({tiles_per_sec:.1f} tiles/s)")
-                    current_z = ta[0]
-                    z_start = time.time()
-                _render_and_save(ta)
-                rendered += 1
-            if current_z is not None:
+            if tile_args:
+                z_start = time.time()
+                current_z = tile_args[0][0]
+                for ta in tile_args:
+                    if ta[0] != current_z:
+                        z_elapsed = time.time() - z_start
+                        z_count = 2 ** (2 * current_z)
+                        tiles_per_sec = z_count / z_elapsed if z_elapsed > 0 else 0
+                        print(f"    z{current_z}: {z_count:,} tiles in "
+                              f"{z_elapsed:.1f}s ({tiles_per_sec:.1f} tiles/s)")
+                        current_z = ta[0]
+                        z_start = time.time()
+                    _render_and_save(ta)
+                    rendered += 1
                 z_elapsed = time.time() - z_start
                 z_count = 2 ** (2 * current_z)
                 tiles_per_sec = z_count / z_elapsed if z_elapsed > 0 else 0
