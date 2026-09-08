@@ -211,6 +211,8 @@ namespace osect
                 if(tag == active_tab_id)
                 {
                     map.set_active_route(rid);
+                    const auto altitude = ui.cruise_altitude_ft(tag);
+                    map.set_cruise_altitude_ft(altitude ? std::optional<float>(static_cast<float>(*altitude)) : std::nullopt);
                     map.select_route(rid);
                     map.fit_view_to_route(rid);
                 }
@@ -266,10 +268,23 @@ namespace osect
             auto it = tab_to_route.find(active_tab_id);
             auto rid = it != tab_to_route.end() ? std::optional<route_id>(it->second) : std::optional<route_id>{};
             map.set_active_route(rid);
+            const auto altitude = ui.cruise_altitude_ft(active_tab_id);
+            map.set_cruise_altitude_ft(altitude ? std::optional<float>(static_cast<float>(*altitude)) : std::nullopt);
             // Tab switch is the user's intentional focus gesture, so
             // align selection with the new tab's route. They can
             // diverge again by clicking a different route on the map.
             map.select_route(rid);
+            return true;
+        }
+
+        bool handle_cruise_altitude_changed(const ui_overlay_result& r)
+        {
+            if(!r.cruise_altitude_changed || r.cruise_altitude_changed->first != active_tab_id)
+            {
+                return false;
+            }
+            const auto altitude = r.cruise_altitude_changed->second;
+            map.set_cruise_altitude_ft(altitude ? std::optional<float>(static_cast<float>(*altitude)) : std::nullopt);
             return true;
         }
 
@@ -343,6 +358,8 @@ namespace osect
             ui.set_active_tab(*tab);
             active_tab_id = *tab;
             map.set_active_route(*rid);
+            const auto altitude = ui.cruise_altitude_ft(*tab);
+            map.set_cruise_altitude_ft(altitude ? std::optional<float>(static_cast<float>(*altitude)) : std::nullopt);
             map.select_route(*rid);
             return true;
         }
@@ -366,6 +383,7 @@ namespace osect
         bool changed = false;
         changed |= pimpl->handle_tab_closed(r);
         changed |= pimpl->handle_active_tab_changed(r);
+        changed |= pimpl->handle_cruise_altitude_changed(r);
         changed |= pimpl->handle_route_request(r);
         changed |= pimpl->handle_route_status();
         changed |= pimpl->handle_route_dirty();

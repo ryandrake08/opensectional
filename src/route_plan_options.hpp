@@ -14,7 +14,7 @@ namespace osect
     inline constexpr double cost_avoid = 1.25;
     inline constexpr double cost_reject = 1000.0;
 
-    // Startup defaults for the two GUI-driven planner knobs, shared
+    // Startup defaults for the GUI-driven route-panel knobs, shared
     // by the route_plan_options struct defaults, the ini loader
     // fallback, and the GUI route panel so the literals live in one
     // place. max_leg matches g3xfplan.

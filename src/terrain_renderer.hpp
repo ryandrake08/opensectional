@@ -30,6 +30,8 @@ namespace osect
         void drain();
         bool needs_upload() const;
         void copy(sdl::copy_pass& pass);
+        void set_cruise_altitude_ft(float altitude_ft);
+        void set_shading_mode(terrain_shading mode);
         void render(sdl::render_pass& pass, const render_context& ctx, const glm::mat4& view_matrix) const;
     };
 } // namespace osect

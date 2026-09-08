@@ -360,7 +360,8 @@ TEST_CASE("load_route_plan_options rejects unknown preference values")
 
 TEST_CASE("validate_route_plan_options accepts default options")
 {
-    CHECK(validate_route_plan_options(route_planner::options{}).empty());
+    const route_planner::options options;
+    CHECK(validate_route_plan_options(options).empty());
 }
 
 TEST_CASE("validate_route_plan_options rejects non-positive max_leg_length_nm")

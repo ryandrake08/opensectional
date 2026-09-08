@@ -236,6 +236,7 @@ namespace osect
         sdl::device& dev;
         const elevation_source& source;
         terrain_style style;
+        float cruise_altitude_ft = 0.0F;
         sdl::sampler sampler;
         tile_cache<terrain_gpu> cache;
         terrain_loader loader;
@@ -326,6 +327,16 @@ namespace osect
         {
             pimpl->request(key);
         }
+    }
+
+    void terrain_renderer::set_cruise_altitude_ft(float altitude_ft)
+    {
+        pimpl->cruise_altitude_ft = altitude_ft;
+    }
+
+    void terrain_renderer::set_shading_mode(terrain_shading mode)
+    {
+        pimpl->style.mode = mode;
     }
 
     void terrain_renderer::drain()
@@ -431,8 +442,7 @@ namespace osect
         const int dim = pimpl->source.tile_size() + 2 * pimpl->source.skirt();
         uniforms.texture_size = glm::ivec2(dim, dim);
 
-        // Shading parameters come from [terrain]. taws_cruise_m stays at its
-        // default until a cruise altitude exists; the shading-mode UI is 3.8.
+        // Shading parameters come from [terrain] and the active route tab.
         const terrain_style& style = pimpl->style;
         constexpr float ft_to_m = 0.3048F;
         uniforms.sun_azimuth = glm::radians(style.sun_azimuth_deg);
@@ -445,6 +455,7 @@ namespace osect
         uniforms.taws_warning_m = style.cruise_warning_ft * ft_to_m;
         uniforms.taws_caution_m = style.cruise_caution_ft * ft_to_m;
         uniforms.taws_clear_m = style.cruise_clear_ft * ft_to_m;
+        uniforms.taws_cruise_m = pimpl->cruise_altitude_ft * ft_to_m;
 
         const auto draw = [&pass, &uniforms, this](const terrain_gpu& gpu, const sdl::buffer& vertices, float texel_m)
         {

@@ -429,8 +429,15 @@ tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010-30 --zoom 0-6 \
 The `[terrain]` section of the ini controls how the relief is drawn:
 shading `mode` (`hillshade` / `hypsometric` / `cruise_relative`),
 `opacity`, sun `sun_azimuth` / `sun_altitude`, `exaggeration`, the
-hypsometric colour `ramp`, and the `cruise_relative` band edges. See the
-commented block in `osect.ini` for the full list and defaults.
+hypsometric colour `ramp`, and the `cruise_relative` band edges. The Route
+panel's per-tab **Cruise altitude (ft)** field is blank until entered and
+drives `cruise_relative` shading for the active tab only; it does not yet
+affect route planning. See the commented
+block in `osect.ini` for the full list and defaults. The layer panel's
+**Terrain shading** radio group switches among the three modes for the current
+session without changing the ini file. Cruise-relative shading falls back to
+hypsometric terrain while no route is active, without changing the selected
+radio mode.
 
 Larger, finer sets are downloaded and built with the same two tools by
 passing a different `--dataset` and `--zoom` range, then pointed at with

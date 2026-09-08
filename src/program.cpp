@@ -111,6 +111,7 @@ namespace osect
                                         [this](int code) { on_ephemeral_refresh(code); });
 
             push_data_sources();
+            ui.set_terrain_shading(map.terrain_shading_mode());
 
             // Restore the routes persisted in user.db into map_widget
             // and the route panel.
@@ -235,6 +236,16 @@ namespace osect
             return true;
         }
 
+        bool handle_terrain_shading(const ui_overlay_result& r)
+        {
+            if(!r.terrain_shading_changed)
+            {
+                return false;
+            }
+            map.set_terrain_shading_mode(*r.terrain_shading_changed);
+            return true;
+        }
+
         bool handle_search_selection(const ui_overlay_result& r)
         {
             if(!r.selected_hit_index)
@@ -295,6 +306,7 @@ namespace osect
             while(true)
             {
                 needs_render |= handle_visibility(ui_result);
+                needs_render |= handle_terrain_shading(ui_result);
                 needs_render |= handle_search_selection(ui_result);
                 needs_render |= handle_search_query(ui_result);
                 needs_render |= routes.process(ui_result);

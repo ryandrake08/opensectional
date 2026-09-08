@@ -284,6 +284,8 @@ namespace osect
         // Tile renderer for raster basemap (null if no basemap was provided)
         std::unique_ptr<tile_renderer> tiles;
         const elevation_source& elevation;
+        terrain_style terrain_config;
+        std::optional<float> cruise_altitude_ft;
         std::unique_ptr<terrain_renderer> terrain;
 
         // Vector feature renderer
@@ -367,6 +369,23 @@ namespace osect
         std::optional<route_id> selected_route_cache_id;
         std::optional<flight_route> selected_route_cache;
 
+        terrain_shading effective_terrain_shading() const
+        {
+            if(terrain_config.mode == terrain_shading::cruise_relative && (!active_route_id || !cruise_altitude_ft))
+            {
+                return terrain_shading::hypsometric;
+            }
+            return terrain_config.mode;
+        }
+
+        void update_terrain_shading()
+        {
+            if(terrain)
+            {
+                terrain->set_shading_mode(effective_terrain_shading());
+            }
+        }
+
         // Event dispatch state
         glm::mat4 projection_matrix{1.0F};
         float normalized_viewport_width = 1.0F;
@@ -396,7 +415,8 @@ namespace osect
                                 sdl::primitive_type::triangle_list, sdl::texture_format_t(0), false),
               tiles(tile_path ? std::make_unique<tile_renderer>(dev, *tile_path) : nullptr),
               elevation(terrain_source),
-              terrain(terrain_source.available() ? std::make_unique<terrain_renderer>(dev, terrain_source, terrain_style(ini))
+              terrain_config(ini),
+              terrain(terrain_source.available() ? std::make_unique<terrain_renderer>(dev, terrain_source, terrain_config)
                                                  : nullptr),
               features(dev, db_path, chart_style(ini)),
               labels(dev),
@@ -406,6 +426,7 @@ namespace osect
               styles(ini),
               feature_types(make_feature_types())
         {
+            update_terrain_shading();
             set_viewport(viewport_width, viewport_height);
         }
 
@@ -886,6 +907,7 @@ namespace osect
                 selected_route_cache_id.reset();
             }
             features.set_active_route_id(active_route_id);
+            update_terrain_shading();
             features.invalidate();
             needs_update = true;
         }
@@ -1305,6 +1327,32 @@ namespace osect
         // otherwise nothing re-runs until the next input event.
     }
 
+    void map_widget::set_cruise_altitude_ft(std::optional<float> altitude_ft)
+    {
+        pimpl->cruise_altitude_ft = altitude_ft;
+        if(pimpl->terrain)
+        {
+            pimpl->terrain->set_cruise_altitude_ft(altitude_ft.value_or(0.0F));
+            pimpl->update_terrain_shading();
+            pimpl->needs_update = true;
+        }
+    }
+
+    terrain_shading map_widget::terrain_shading_mode() const
+    {
+        return pimpl->terrain_config.mode;
+    }
+
+    void map_widget::set_terrain_shading_mode(terrain_shading mode)
+    {
+        pimpl->terrain_config.mode = mode;
+        if(pimpl->terrain)
+        {
+            pimpl->update_terrain_shading();
+            pimpl->needs_update = true;
+        }
+    }
+
     void map_widget::focus_on_hit(const search_hit& hit)
     {
         std::optional<geo_bbox> bbox;
@@ -1564,6 +1612,7 @@ namespace osect
         }
         pimpl->active_route_id = id;
         pimpl->features.set_active_route_id(id);
+        pimpl->update_terrain_shading();
         pimpl->needs_update = true;
     }
 

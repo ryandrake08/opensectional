@@ -5,11 +5,13 @@
 #include "data_source.hpp"
 #include "flight_route.hpp"
 #include "nasr_database.hpp" // for search_hit (POD struct, not the class)
+#include "terrain_style.hpp"
 #include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace osect
@@ -95,6 +97,12 @@ namespace osect
         };
         std::optional<route_submit_request> route_submit;
 
+        // Per-tab cruise altitude changed this frame. nullopt means the user
+        // cleared the field. The active tab's value drives relative-to-cruise
+        // terrain shading only.
+        std::optional<std::pair<std::uint64_t, std::optional<double>>> cruise_altitude_changed;
+        std::optional<terrain_shading> terrain_shading_changed;
+
         // The id of a tab the user just closed via its X button.
         // ui_overlay has already removed the panel; the caller is
         // responsible for removing the tab's route from map_widget
@@ -112,7 +120,8 @@ namespace osect
         bool any() const
         {
             return visibility_changed || search_query.has_value() ||
-                   selected_hit_index.has_value() || route_submit.has_value() ||
+                   selected_hit_index.has_value() || route_submit.has_value() || cruise_altitude_changed.has_value() ||
+                   terrain_shading_changed.has_value() ||
                    tab_closed.has_value() || active_tab_changed.has_value();
         }
     };
@@ -184,6 +193,8 @@ namespace osect
         // values loaded from ini. Existing panels keep whatever
         // values their user already set.
         void set_route_planner_defaults(double max_leg_nm, bool use_airways);
+        std::optional<double> cruise_altitude_ft(std::uint64_t tab_id) const;
+        void set_terrain_shading(terrain_shading mode);
 
         // Seed the data-status panel with the per-source freshness
         // records. Typically called once at startup; ephemeral sources

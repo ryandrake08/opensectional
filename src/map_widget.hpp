@@ -25,6 +25,7 @@ namespace osect
     struct search_hit;
     class elevation_source;
     class feature_type;
+    enum class terrain_shading;
 
     // The main map widget: owns the tile renderer, feature renderer, label
     // renderer, pick/info popups, GPU pipelines, and map view (pan/zoom).
@@ -49,6 +50,11 @@ namespace osect
 
         // Apply per-layer and altitude-band visibility from the UI overlay.
         void set_visibility(const layer_visibility& vis);
+
+        // Update the active route tab's optional altitude for relative-to-cruise shading.
+        void set_cruise_altitude_ft(std::optional<float> altitude_ft);
+        terrain_shading terrain_shading_mode() const;
+        void set_terrain_shading_mode(terrain_shading mode);
 
         // Recenter the map on a search hit and zoom to fit.
         void focus_on_hit(const search_hit& hit);

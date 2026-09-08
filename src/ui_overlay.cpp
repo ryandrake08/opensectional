@@ -6,6 +6,7 @@
 #include <imgui/scoped.hpp>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <misc/cpp/imgui_stdlib.h>
@@ -32,6 +33,8 @@ namespace osect
         // Per-tab planner knobs.
         double max_leg_nm = default_max_leg_length_nm;
         bool use_airways = default_use_airways;
+        std::string cruise_altitude_text;
+        std::optional<double> cruise_altitude_ft;
     };
 
     struct ui_overlay::impl
@@ -43,6 +46,7 @@ namespace osect
         // is unchanged, so callers don't re-run the FTS query at frame rate.
         std::string last_search_query;
         std::vector<search_hit> hits;
+        terrain_shading terrain_mode = terrain_shading::hypsometric;
 
         // Route panel tabs. Always at least one — closing the last
         // re-creates a fresh empty panel so the panel UI never
@@ -209,6 +213,21 @@ namespace osect
         }
     }
 
+    std::optional<double> ui_overlay::cruise_altitude_ft(std::uint64_t tab_id) const
+    {
+        const auto i = pimpl->find_panel(tab_id);
+        if(i >= pimpl->panels.size())
+        {
+            return std::nullopt;
+        }
+        return pimpl->panels[i].cruise_altitude_ft;
+    }
+
+    void ui_overlay::set_terrain_shading(terrain_shading mode)
+    {
+        pimpl->terrain_mode = mode;
+    }
+
     void ui_overlay::set_data_sources(std::vector<data_source> sources)
     {
         pimpl->sources = std::move(sources);
@@ -251,7 +270,7 @@ namespace osect
         // Layer checkboxes in the top-right corner
         ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x, 0), ImGuiCond_Always, ImVec2(1.0F, 0.0F));
         ImGui::SetNextWindowBgAlpha(0.6F);
-        std::size_t row_count = 0;
+        float layers_height = 0.0F;
         {
             imgui::scoped_window window("##layers", ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                                                         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
@@ -306,13 +325,14 @@ namespace osect
                 ImGui::PopID();
             }
 
-            row_count = rows.size();
+            layers_height = ImGui::GetWindowSize().y;
         }
 
         // Altitude band filter beneath the layer checkboxes.
-        const auto altitude_y = ImGui::GetFrameHeightWithSpacing() * static_cast<float>(row_count + 1) + 16.0F;
+        const auto altitude_y = layers_height + 16.0F;
         ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x, altitude_y), ImGuiCond_Always, ImVec2(1.0F, 0.0F));
         ImGui::SetNextWindowBgAlpha(0.6F);
+        float altitude_height = 0.0F;
         {
             imgui::scoped_window window("Altitude", ImGuiWindowFlags_AlwaysAutoResize |
                                                         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
@@ -341,10 +361,42 @@ namespace osect
                 d.vis.altitude.show_unlimited = true;
                 changed = true;
             }
+            altitude_height = ImGui::GetWindowSize().y;
         }
 
-        // Chart-type filter beneath the altitude window. Three radios + title bar.
-        const auto chart_y = altitude_y + ImGui::GetFrameHeightWithSpacing() * 4.0F + 16.0F;
+        // Terrain shading control beneath the altitude window.
+        const auto terrain_shading_y = altitude_y + altitude_height + 16.0F;
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x, terrain_shading_y), ImGuiCond_Always, ImVec2(1.0F, 0.0F));
+        ImGui::SetNextWindowBgAlpha(0.6F);
+        float terrain_shading_height = 0.0F;
+        {
+            imgui::scoped_window window("Terrain shading", ImGuiWindowFlags_AlwaysAutoResize |
+                                                               ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+                                                               ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                                                               ImGuiWindowFlags_NoSavedSettings);
+
+            ImGui::BeginDisabled(!terrain_available);
+            if(ImGui::RadioButton("Hillshade", d.terrain_mode == terrain_shading::hillshade))
+            {
+                d.terrain_mode = terrain_shading::hillshade;
+                result.terrain_shading_changed = d.terrain_mode;
+            }
+            if(ImGui::RadioButton("Hypsometric", d.terrain_mode == terrain_shading::hypsometric))
+            {
+                d.terrain_mode = terrain_shading::hypsometric;
+                result.terrain_shading_changed = d.terrain_mode;
+            }
+            if(ImGui::RadioButton("Cruise-relative", d.terrain_mode == terrain_shading::cruise_relative))
+            {
+                d.terrain_mode = terrain_shading::cruise_relative;
+                result.terrain_shading_changed = d.terrain_mode;
+            }
+            ImGui::EndDisabled();
+            terrain_shading_height = ImGui::GetWindowSize().y;
+        }
+
+        // Chart-type filter beneath the terrain-shading window.
+        const auto chart_y = terrain_shading_y + terrain_shading_height + 16.0F;
         ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x, chart_y), ImGuiCond_Always, ImVec2(1.0F, 0.0F));
         ImGui::SetNextWindowBgAlpha(0.6F);
         {
@@ -512,6 +564,33 @@ namespace osect
                         ImGui::SameLine();
                         ImGui::SetNextItemWidth(90.0F);
                         ImGui::InputDouble("Max leg (nm)", &p.max_leg_nm, 0.0, 0.0, "%.0f");
+                        ImGui::SetNextItemWidth(120.0F);
+                        const auto altitude_text_before = p.cruise_altitude_text;
+                        if(ImGui::InputText("Cruise altitude (ft)", &p.cruise_altitude_text))
+                        {
+                            if(p.cruise_altitude_text.empty())
+                            {
+                                p.cruise_altitude_ft.reset();
+                            }
+                            else
+                            {
+                                try
+                                {
+                                    std::size_t consumed = 0;
+                                    const auto altitude = std::stod(p.cruise_altitude_text, &consumed);
+                                    if(consumed != p.cruise_altitude_text.size() || !std::isfinite(altitude) || altitude < 0.0)
+                                    {
+                                        throw std::invalid_argument("invalid cruise altitude");
+                                    }
+                                    p.cruise_altitude_ft = altitude;
+                                }
+                                catch(const std::exception&)
+                                {
+                                    p.cruise_altitude_text = altitude_text_before;
+                                }
+                            }
+                            result.cruise_altitude_changed = std::pair{p.id, p.cruise_altitude_ft};
+                        }
                         ImGui::EndDisabled();
 
                         if(submit && !p.planning)
@@ -567,6 +646,8 @@ namespace osect
                     // tabs carries the user's last-used settings.
                     p.max_leg_nm = d.panels[d.active_panel_index].max_leg_nm;
                     p.use_airways = d.panels[d.active_panel_index].use_airways;
+                    p.cruise_altitude_text = d.panels[d.active_panel_index].cruise_altitude_text;
+                    p.cruise_altitude_ft = d.panels[d.active_panel_index].cruise_altitude_ft;
                     d.panels.push_back(std::move(p));
                     // BeginTabBar's AutoSelectNewTabs flag will switch
                     // focus to the new panel on the next frame; record
