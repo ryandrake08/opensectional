@@ -2,7 +2,7 @@
 """Download source rasters for terrain builds.
 
 Usage:
-    python3 tools/download_terrain.py --dataset gmted2010 terrain_source/gmted2010
+    python3 tools/download_terrain.py --dataset gmted2010 output_dir
 """
 
 import argparse

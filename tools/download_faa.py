@@ -17,7 +17,7 @@ the FAA subscription page and its Current/Preview cycle split;
 dof and adiz are independent.
 
 Usage:
-    python3 tools/download_all.py [--preview] [--only NAMES ...] [output_dir]
+    python3 tools/download_faa.py [--preview] [--only NAMES ...] [output_dir]
 """
 
 import argparse
@@ -235,7 +235,7 @@ def main():
     print(f"\nDownloaded to {output_dir}/")
     print("\nTo rebuild:")
     if wanted == set(SOURCES):
-        print(f"  python3 tools/build_all.py "
+        print(f"  python3 tools/build_faa.py "
               f"{paths['nasr']} {paths['shp']} {paths['aixm']} "
               f"{paths['dof']} {paths['adiz']} osect.db")
     else:

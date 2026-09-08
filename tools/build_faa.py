@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Full NASR DB build: runs every per-source ingester plus the search index.
+"""Full aviation DB build: runs every per-source FAA ingester plus the search index.
 
 Usage:
-    python tools/build_all.py <csv.zip> <shapefile.zip> <aixm.zip> \\
+    python tools/build_faa.py <csv.zip> <shapefile.zip> <aixm.zip> \\
                               <dof.zip> <adiz.geojson> <output.db>
 """
 

@@ -336,7 +336,7 @@ def open_output_db(path, fresh=False):
     """Open the output SQLite DB with the ingestion PRAGMAs.
 
     If `fresh` is True, any existing file at `path` is removed first — only
-    the orchestrator (build_all) passes this. Per-source scripts always open
+    the orchestrator (build_faa) passes this. Per-source scripts always open
     with fresh=False so they preserve other sources' tables.
     """
     if fresh and os.path.exists(path):

@@ -151,10 +151,10 @@ Windows shell (`cmd.exe` or PowerShell):
 cd tools
 python -m venv env
 env\Scripts\pip install -r requirements.txt
-env\Scripts\python download_all.py ..\nasr_data
+env\Scripts\python download_faa.py ..\nasr_data
 ```
 
-Follow the build command printed by `download_all.py` to produce `osect.db`.
+Follow the build command printed by `download_faa.py` to produce `osect.db`.
 
 (MSYS2 also ships `mingw-w64-x86_64-python`, but several of the geospatial
 dependencies in `requirements.txt` are easier to install via Windows-native

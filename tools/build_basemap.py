@@ -3,7 +3,7 @@
 Render a minimal two-color basemap from Natural Earth data as z/x/y PNG tiles.
 
 Usage:
-    python3 render_basemap.py /path/to/natural_earth_vector.gpkg.zip tiles/ [--zoom 0-7]
+    python3 build_basemap.py /path/to/natural_earth_vector.gpkg.zip tiles/ [--zoom 0-7]
 
 Produces tiles/{z}/{x}/{y}.png compatible with osect's tile_renderer.
 

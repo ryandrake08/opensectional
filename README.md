@@ -16,17 +16,15 @@ cmake --build build -j
 cd tools && python3 -m venv env && env/bin/pip install -r requirements.txt && cd ..
 
 # 4. Download FAA data (prints build command when done)
-tools/env/bin/python3 tools/download_all.py nasr_data
+tools/env/bin/python3 tools/download_faa.py nasr_data
 
 # 5. Build the NASR database (use the command printed by the download script)
 
-# 6. Download the Natural Earth basemap source (~100 MB zip; one time)
-mkdir -p mapdata
-curl -L -o mapdata/natural_earth_vector.gpkg.zip \
-    https://naciscdn.org/naturalearth/packages/natural_earth_vector.gpkg.zip
+# 6. Download the Natural Earth basemap source (~426 MB zip; one time)
+tools/env/bin/python3 tools/download_basemap.py mapdata
 
 # 7. Render the basemap tile pyramid into basemap/
-tools/env/bin/python3 tools/render_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/
+tools/env/bin/python3 tools/build_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/
 
 # 8. Build the bundled GMTED2010 z0-z6 global terrain set into terrain/
 tools/env/bin/python3 tools/download_terrain.py --dataset gmted2010 terrain_source/gmted2010
@@ -170,8 +168,8 @@ running a package script:
 
 | Asset | Build steps | Detail |
 |---|---|---|
-| `osect.db` | `download_all.py nasr_data` → `build_all.py` (use the command the download prints) | [NASR Database](#1-nasr-database) |
-| `basemap/` | `render_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/` | [Basemap Tiles](#2-basemap-tiles) |
+| `osect.db` | `download_faa.py nasr_data` → `build_faa.py` (use the command the download prints) | [NASR Database](#1-nasr-database) |
+| `basemap/` | `download_basemap.py mapdata` → `build_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/` | [Basemap Tiles](#2-basemap-tiles) |
 | `terrain/` | `download_terrain.py --dataset gmted2010 terrain_source/gmted2010` → `build_terrain.py --dataset gmted2010 --zoom 0-6 terrain_source/gmted2010 terrain/gmted2010` | [Bundled Terrain Tiles](#3-bundled-terrain-tiles) |
 
 If any of the three is missing, CMake configuration under `OSECT_ENABLE_PACKAGING=ON`
@@ -313,7 +311,7 @@ Shaders are cross-compiled automatically during the build:
 OpenSectional draws on the following upstream data sources. The
 "static" sources (everything in this section) are baked into
 `osect.db` by the Python ingesters on a cycle cadence; the user
-re-runs `download_all.py` + `build_all.py` to refresh. Ephemeral
+re-runs `download_faa.py` + `build_faa.py` to refresh. Ephemeral
 sources (currently TFRs, with NOTAMs / weather to follow) are
 fetched and parsed in-app at runtime — see
 [Network and offline mode](#network-and-offline-mode).
@@ -326,7 +324,7 @@ fetched and parsed in-app at runtime — see
 | Digital Obstacle File | FAA | https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dof/ | 56-day cycle | build_dof.py |
 | ADIZ boundaries | FAA | https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/ArcGIS/rest/services/Airspace/FeatureServer | Irregular | build_adiz.py |
 | Temporary flight restrictions | FAA | https://tfr.faa.gov/ | Continuous (as NOTAMs are issued) | (in-app, see [Network and offline mode](#network-and-offline-mode)) |
-| Natural Earth basemap | Natural Earth | https://www.naturalearthdata.com/ | Irregular | render_basemap.py |
+| Natural Earth basemap | Natural Earth | https://www.naturalearthdata.com/ | Irregular | build_basemap.py |
 | GMTED2010 terrain elevation | USGS/NGA | https://www.usgs.gov/coastal-changes-and-impacts/gmted2010 | Static (2010) | build_terrain.py |
 
 Three offline artifacts are produced from these sources: the aviation database, the
@@ -340,12 +338,12 @@ Set up the Python environment, download FAA data, and build the database:
 cd tools && python3 -m venv env && env/bin/pip install -r requirements.txt && cd ..
 
 # Download all FAA data (prints build command when done)
-tools/env/bin/python3 tools/download_all.py nasr_data
+tools/env/bin/python3 tools/download_faa.py nasr_data
 ```
 
 The download script fetches data from the FAA NASR subscription page, the Digital Obstacle File page, and ADIZ boundaries from the FAA ArcGIS service. Use `--preview` for the next cycle's data instead of the current one.
 
-`build_all.py` orchestrates the per-source ingesters (`build_nasr.py` for the NASR CSV subscription, `build_shp.py` for class airspace, `build_aixm.py` for SUA, `build_dof.py` for obstacles, `build_adiz.py` for the ADIZ GeoJSON, and `build_search.py` for the FTS5 index). Each ingester reads its ZIP or directory directly (no manual extraction) and can be re-run on its own when that source updates. All spatial tables have R-tree indexes for bounding-box queries. Column names match FAA NASR naming conventions.
+`build_faa.py` orchestrates the per-source ingesters (`build_nasr.py` for the NASR CSV subscription, `build_shp.py` for class airspace, `build_aixm.py` for SUA, `build_dof.py` for obstacles, `build_adiz.py` for the ADIZ GeoJSON, and `build_search.py` for the FTS5 index). Each ingester reads its ZIP or directory directly (no manual extraction) and can be re-run on its own when that source updates. All spatial tables have R-tree indexes for bounding-box queries. Column names match FAA NASR naming conventions.
 
 **Airports & Runways**
 - `APT_BASE` — 19,606 airports with coordinates, elevation, ownership, facility use
@@ -398,13 +396,11 @@ OpenSectional requires a basemap tile directory in standard XYZ layout (`{z}/{x}
 A minimal worldwide basemap with coastlines, borders, roads, railroads, rivers, lakes, and labels.
 
 ```bash
-# Download Natural Earth GeoPackage (~100 MB zip)
-mkdir -p mapdata
-curl -L -o mapdata/natural_earth_vector.gpkg.zip \
-    https://naciscdn.org/naturalearth/packages/natural_earth_vector.gpkg.zip
+# Download the Natural Earth vector GeoPackage (~426 MB zip) into mapdata/
+tools/env/bin/python3 tools/download_basemap.py mapdata
 
 # Render basemap tiles
-tools/env/bin/python3 tools/render_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/
+tools/env/bin/python3 tools/build_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/
 ```
 
 On first run, the script reprojects the source data to EPSG:3857 and saves a `*_3857.gpkg` file alongside the zip. Subsequent runs reuse the preprocessed file automatically.
@@ -610,8 +606,8 @@ shaders/                  HLSL shaders (cross-compiled to Metal/SPIR-V/DXIL)
 cmake/                    CMake helpers: macOS / MinGW toolchain files, FindZLIB shim
 thirdparty/               Vendored dependencies (see "Third-Party Components")
 tools/
-  download_all.py         FAA data downloader (supports --only for per-source fetches)
-  build_all.py            Orchestrator; runs every per-source ingester
+  download_faa.py         FAA data downloader (supports --only for per-source fetches)
+  build_faa.py            Orchestrator; runs every per-source ingester
   build_common.py         Shared ingestion helpers (ring/antimeridian/altitude)
   build_nasr.py           NASR CSV subscription ingester (APT/NAV/FIX/AWY/...)
   build_shp.py            Class airspace shapefile ingester
@@ -619,7 +615,10 @@ tools/
   build_dof.py            Digital Obstacle File ingester
   build_adiz.py           ADIZ GeoJSON ingester
   build_search.py         FTS5 search index builder (run last)
-  render_basemap.py       Natural Earth basemap tile renderer
+  download_basemap.py     Natural Earth basemap source downloader
+  build_basemap.py        Natural Earth basemap tile renderer
+  download_terrain.py     DEM source downloader (--dataset NAME)
+  build_terrain.py        DEM source → Terrarium z/x/y.png tree + manifest.json (--dataset NAME)
   build-macos-package.sh  Vendored universal-binary build → DMG installer (cleans thirdparty/ on success unless --no-clean)
   build-mingw-package.sh  Vendored MinGW-w64 cross build → NSIS installer  (cleans thirdparty/ on success unless --no-clean)
   build_macos_icon.sh     PNG → .icns app icon (sips + iconutil)

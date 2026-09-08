@@ -1845,7 +1845,7 @@ def write_aixm_meta(conn, aixm_zf):
     the CSV. The FAA repackages it for each NASR cycle but doesn't bump
     inner-file timestamps when the SUA data hasn't actually changed, so
     those timestamps lag the cycle. Inherit effective/expires from the
-    nasr META row when present (build_all runs build_nasr first); fall
+    nasr META row when present (build_faa runs build_nasr first); fall
     back to the inner ZIP's build date for standalone re-runs."""
     eff_iso, expires_iso = read_meta(conn, "nasr")
 

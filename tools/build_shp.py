@@ -358,7 +358,7 @@ def write_shp_meta(conn, shp_zf):
     but carries no EFF_DATE column, and the FAA doesn't bump the inner
     .dbf timestamp when the data hasn't changed — so that timestamp lags
     the actual cycle. Inherit effective/expires from the nasr META row
-    when present (build_all runs build_nasr first); fall back to the
+    when present (build_faa runs build_nasr first); fall back to the
     .dbf's build date for standalone re-runs."""
     eff_iso, expires_iso = read_meta(conn, "nasr")
 
