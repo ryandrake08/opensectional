@@ -156,15 +156,11 @@ namespace osect
         return std::filesystem::path{std::move(bundled)};
     }
 
-    std::optional<std::filesystem::path> resolve_terrain_path(const parsed_options& opts, const ini_config& ini)
+    std::optional<std::filesystem::path> resolve_terrain_path(const parsed_options& opts)
     {
         if(opts.terrain_path)
         {
             return *opts.terrain_path;
-        }
-        if(ini.exists("terrain.path"))
-        {
-            return ini.get<std::string>("terrain.path");
         }
         auto bundled = sdl::resolve_bundled_asset("terrain");
         if(bundled.empty())

@@ -97,7 +97,7 @@ namespace osect
               imgui_ctx(dev, win),
               tfrs(opts.offline ? nullptr : std::make_unique<tfr_refresher>(ephemeral_database::default_path())),
               ini(build_ini(opts)),
-              terrain_path(resolve_terrain_path(opts, ini)),
+              terrain_path(resolve_terrain_path(opts)),
               terrain(terrain_path ? *terrain_path : std::filesystem::path{}),
               udb(user_database::default_path()),
               map(dev, tile_path, terrain, db_path, ini, 1280, 1024),

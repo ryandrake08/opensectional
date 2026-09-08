@@ -4,7 +4,6 @@
 #include "app_options.hpp"
 
 #include <filesystem>
-#include <fstream>
 #include <stdexcept>
 #include <string>
 
@@ -107,24 +106,10 @@ TEST_CASE("resolve_gpu_driver: an unrecognized driver throws")
     CHECK_THROWS_AS(resolve_gpu_driver(o), std::runtime_error);
 }
 
-TEST_CASE("resolve_terrain_path: command line overrides INI")
+TEST_CASE("resolve_terrain_path: --terrain is used verbatim")
 {
-    const std::filesystem::path config_path = std::filesystem::temp_directory_path() / "osect-terrain.ini";
-    std::ofstream(config_path) << "[terrain]\npath = configured-terrain\n";
-    const ini_config ini(config_path);
     parsed_options options;
     options.terrain_path = "command-line-terrain";
 
-    CHECK(resolve_terrain_path(options, ini) == std::filesystem::path("command-line-terrain"));
-    std::filesystem::remove(config_path);
-}
-
-TEST_CASE("resolve_terrain_path: uses the INI path")
-{
-    const std::filesystem::path config_path = std::filesystem::temp_directory_path() / "osect-terrain.ini";
-    std::ofstream(config_path) << "[terrain]\npath = configured-terrain\n";
-    const ini_config ini(config_path);
-
-    CHECK(resolve_terrain_path(parsed_options{}, ini) == std::filesystem::path("configured-terrain"));
-    std::filesystem::remove(config_path);
+    CHECK(resolve_terrain_path(options) == std::filesystem::path("command-line-terrain"));
 }

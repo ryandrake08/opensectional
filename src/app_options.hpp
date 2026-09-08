@@ -49,8 +49,10 @@ namespace osect
     // tiles are optional.
     std::optional<std::filesystem::path> resolve_tile_path(const parsed_options& opts);
 
-    // Resolve the terrain tile directory
-    std::optional<std::filesystem::path> resolve_terrain_path(const parsed_options& opts, const ini_config& ini);
+    // Resolve the terrain tile directory: --terrain, else the bundled
+    // set (or the single dataset subdirectory inside it). nullopt means
+    // "no terrain" — the layer is optional.
+    std::optional<std::filesystem::path> resolve_terrain_path(const parsed_options& opts);
 
     // Build the ini_config: bundled defaults, then the per-user
     // file, then the optional --conf override, each merged on top.

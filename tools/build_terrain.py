@@ -5,8 +5,8 @@ Top-level tiles are reprojected to Web Mercator. Lower levels max-pool
 child interiors, then copy skirts from same-zoom neighbours.
 
 Usage:
-    python3 tools/build_terrain.py --dataset gmted2010 --zoom 0-6 \\
-        terrain_source/gmted2010 terrain/gmted2010
+    python3 tools/build_terrain.py --dataset gmted2010-30 --zoom 0-6 \\
+        terrain_source/gmted2010-30 terrain/gmted2010-30
 """
 
 import argparse
@@ -132,7 +132,8 @@ def build_tile(z, x, y, adapter, index, output_dir, force=False):
         sources, bounds=window, nodata=adapter.native_nodata, method="max"
     )
     merged = merged[0].astype(np.float64)  # single band
-    merged[merged == adapter.native_nodata] = np.nan
+    if adapter.native_nodata is not None:
+        merged[merged == adapter.native_nodata] = np.nan
     if np.all(np.isnan(merged)):
         return "empty"
 

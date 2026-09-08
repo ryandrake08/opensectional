@@ -27,9 +27,9 @@ tools/env/bin/python3 tools/download_basemap.py mapdata
 tools/env/bin/python3 tools/build_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/
 
 # 8. Build the bundled GMTED2010 z0-z6 global terrain set into terrain/
-tools/env/bin/python3 tools/download_terrain.py --dataset gmted2010 terrain_source/gmted2010
-tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010 --zoom 0-6 \
-    terrain_source/gmted2010 terrain/gmted2010
+tools/env/bin/python3 tools/download_terrain.py --dataset gmted2010-30 terrain_source/gmted2010-30
+tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010-30 --zoom 0-6 \
+    terrain_source/gmted2010-30 terrain/gmted2010-30
 
 # 9. Run. With no options, osect looks for osect.db and basemap/ next
 #    to the executable (installer layout) or in the current working
@@ -39,7 +39,7 @@ tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010 --zoom 0-6 \
 ./build/osect
 
 # Override any asset path explicitly:
-./build/osect -d osect.db -b basemap -t terrain/gmted2010 -c osect.ini
+./build/osect -d osect.db -b basemap -t terrain/gmted2010-30 -c osect.ini
 
 # Verbosity: -v (warnings), -vv (info), -vvv (debug)
 ./build/osect -vv
@@ -170,7 +170,7 @@ running a package script:
 |---|---|---|
 | `osect.db` | `download_faa.py nasr_data` → `build_faa.py` (use the command the download prints) | [NASR Database](#1-nasr-database) |
 | `basemap/` | `download_basemap.py mapdata` → `build_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/` | [Basemap Tiles](#2-basemap-tiles) |
-| `terrain/` | `download_terrain.py --dataset gmted2010 terrain_source/gmted2010` → `build_terrain.py --dataset gmted2010 --zoom 0-6 terrain_source/gmted2010 terrain/gmted2010` | [Bundled Terrain Tiles](#3-bundled-terrain-tiles) |
+| `terrain/` | `download_terrain.py --dataset gmted2010-30 terrain_source/gmted2010-30` → `build_terrain.py --dataset gmted2010-30 --zoom 0-6 terrain_source/gmted2010-30 terrain/gmted2010-30` | [Bundled Terrain Tiles](#3-bundled-terrain-tiles) |
 
 If any of the three is missing, CMake configuration under `OSECT_ENABLE_PACKAGING=ON`
 aborts with `Installer asset missing: ...`. These assets are not in source control
@@ -326,6 +326,7 @@ fetched and parsed in-app at runtime — see
 | Temporary flight restrictions | FAA | https://tfr.faa.gov/ | Continuous (as NOTAMs are issued) | (in-app, see [Network and offline mode](#network-and-offline-mode)) |
 | Natural Earth basemap | Natural Earth | https://www.naturalearthdata.com/ | Irregular | build_basemap.py |
 | GMTED2010 terrain elevation | USGS/NGA | https://www.usgs.gov/coastal-changes-and-impacts/gmted2010 | Static (2010) | build_terrain.py |
+| Copernicus DEM (GLO-90 / GLO-30) terrain elevation | ESA / Airbus | https://registry.opendata.aws/copernicus-dem/ | Static (2021 release) | build_terrain.py |
 
 Three offline artifacts are produced from these sources: the aviation database, the
 basemap tile directory, and the terrain elevation tile directory.
@@ -418,11 +419,11 @@ and feeds the shaded-relief map layer and route terrain profile.
 
 ```bash
 # Download the GMTED2010 source (one whole-globe archive)
-tools/env/bin/python3 tools/download_terrain.py --dataset gmted2010 terrain_source/gmted2010
+tools/env/bin/python3 tools/download_terrain.py --dataset gmted2010-30 terrain_source/gmted2010-30
 
-# Build the z0-z6 Terrarium-encoded tile tree and manifest.json into terrain/gmted2010/
-tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010 --zoom 0-6 \
-    terrain_source/gmted2010 terrain/gmted2010
+# Build the z0-z6 Terrarium-encoded tile tree and manifest.json into terrain/gmted2010-30/
+tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010-30 --zoom 0-6 \
+    terrain_source/gmted2010-30 terrain/gmted2010-30
 ```
 
 The `[terrain]` section of the ini controls how the relief is drawn:
@@ -433,11 +434,42 @@ commented block in `osect.ini` for the full list and defaults.
 
 Larger, finer sets are downloaded and built with the same two tools by
 passing a different `--dataset` and `--zoom` range, then pointed at with
-`-t <path>` or `[terrain] path` in the ini. GMTED2010 also ships 15
-arc-second (`gmted2010-15`, ~460 m posts) and 7.5 arc-second
-(`gmted2010-75`, ~230 m posts) grids for higher zoom levels off the same
-public-domain source; Copernicus GLO-90/GLO-30 and USGS 3DEP are the
-other options.
+`-t <path>`. With no `-t`, osect uses `terrain/` next to the executable
+or in the working directory: either a tile tree directly, or a single
+dataset subdirectory inside it (so `terrain/gmted2010-30/` is found
+automatically).
+
+| `--dataset` | Coverage | Post spacing | Model | Licence | Download | Max `--zoom` |
+|---|---|---|---|---|---|---|
+| `gmted2010-30` | Global | ~925 m (30") | DSM | Public domain | One 0.25 GB archive | z8 |
+| `gmted2010-15` | Global | ~460 m (15") | DSM | Public domain | One 0.9 GB archive | z9 |
+| `gmted2010-75` | Global | ~230 m (7.5") | DSM | Public domain | One 3.0 GB archive | z10 |
+| `copernicus-glo90` | Global land | ~90 m (3") | DSM | Attribution required | ~4 MB per 1° land tile (~5 GB for CONUS) | z11 |
+| `copernicus-glo30` | Global land | ~30 m (1") | DSM | Attribution required | ~35 MB per 1° land tile (~40 GB for CONUS) | z13 |
+
+The max `--zoom` is where output pixels reach half the native post
+spacing; `build_terrain.py` refuses a finer zoom rather than
+interpolating a coarser source upward.
+
+`gmted2010*` fetch a single whole-globe file. Copernicus is one Cloud
+Optimized GeoTIFF per 1° land tile on AWS Open Data; restrict the
+download to an area with `--bbox` (west,south,east,north degrees,
+attached with `=` so a negative longitude is not read as a flag).
+Transient S3 connection resets are retried automatically; `--jobs`
+higher than the default 4 finishes faster but trips those resets sooner.
+
+```bash
+tools/env/bin/python3 tools/download_terrain.py --dataset copernicus-glo90 \
+    --bbox=-125,24,-66,50 terrain_source/glo90
+tools/env/bin/python3 tools/build_terrain.py --dataset copernicus-glo90 --zoom 0-10 \
+    terrain_source/glo90 terrain/glo90
+```
+
+**Surface-model caveat.** GMTED2010 and Copernicus are digital *surface*
+models: their heights include tree canopy and buildings, so a displayed
+elevation can read 15–30 m high over forest. For terrain *clearance*
+that errs on the safe side. USGS 3DEP (bare earth) does not have this
+property but is not yet a supported `--dataset`.
 
 ## Controls
 
@@ -623,7 +655,7 @@ tools/
   build_search.py         FTS5 search index builder (run last)
   download_basemap.py     Natural Earth basemap source downloader
   build_basemap.py        Natural Earth basemap tile renderer
-  download_terrain.py     DEM source downloader (--dataset NAME)
+  download_terrain.py     DEM source downloader (--dataset NAME, optional --bbox / --jobs)
   build_terrain.py        DEM source → Terrarium z/x/y.png tree + manifest.json (--dataset NAME)
   build-macos-package.sh  Vendored universal-binary build → DMG installer (cleans thirdparty/ on success unless --no-clean)
   build-mingw-package.sh  Vendored MinGW-w64 cross build → NSIS installer  (cleans thirdparty/ on success unless --no-clean)

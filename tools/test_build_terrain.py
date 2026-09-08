@@ -257,6 +257,35 @@ def test_build_tile_all_nodata_source_is_empty():
     return True
 
 
+def test_build_tile_handles_a_source_without_a_nodata_sentinel():
+    """A dataset like Copernicus declares native_nodata = None -- its
+    COGs carry no sentinel. build_tile must not attempt the `== None`
+    substitution and must still produce a tile from the real values."""
+    class _NoNodataAdapter(_FakeAdapter):
+        name = "faketest_no_nodata_adapter"
+        native_nodata = None
+
+    adapter = _NoNodataAdapter()
+    with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as output_dir:
+        _write_source_tif(os.path.join(source_dir, "patch.tif"), 0.0, 0.0, 0.4, 200,
+                          np.full((200, 200), 640.0), nodata=None)
+        index = build_source_index(source_dir, adapter)
+
+        z = 8
+        x, y = lonlat_to_tile_xy(0.1, 0.1, z)
+        assert build_tile(z, x, y, adapter, index, output_dir) == "built"
+
+        tile_path = os.path.join(output_dir, str(z), str(x), f"{y}.png")
+        elevation = terrain_common.decode_elevation_array(terrain_common.load_tile_png(tile_path))
+        interior = terrain_common.extract_interior(elevation)
+        # The source values survived; where the tile extends past the
+        # small patch, a nodata-less merge fills 0 (ocean-style), which
+        # the future water mask is responsible for, not this step.
+        assert 640.0 in np.unique(interior)
+        assert not np.any(np.isnan(interior))
+    return True
+
+
 def test_build_tile_skips_existing_unless_force():
     adapter = _FakeAdapter()
     with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as output_dir:
@@ -624,6 +653,7 @@ TESTS = [
     test_build_tile_empty_when_no_coverage,
     test_build_tile_raises_when_reproject_drops_real_data,
     test_build_tile_all_nodata_source_is_empty,
+    test_build_tile_handles_a_source_without_a_nodata_sentinel,
     test_build_tile_skips_existing_unless_force,
     test_build_tile_applies_datum_conversion,
     test_neighbor_xy_wraps_longitude_not_latitude,

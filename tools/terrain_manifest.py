@@ -34,17 +34,21 @@ def read_manifest(output_dir):
     path = os.path.join(output_dir, MANIFEST_FILENAME)
     if not os.path.exists(path):
         return None
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
 def write_manifest(adapter, output_dir, min_zoom, max_zoom, bbox):
-    """Compute and atomically write manifest.json into output_dir."""
+    """Compute and atomically write manifest.json into output_dir.
+
+    Non-ASCII text (e.g. the "©" in the Copernicus attribution) is
+    written as literal UTF-8, not "\\uXXXX" escapes -- the client's
+    manifest parser handles raw bytes but not "\\u"."""
     manifest = build_manifest(adapter, min_zoom, max_zoom, bbox)
     path = os.path.join(output_dir, MANIFEST_FILENAME)
     tmp_path = path + ".tmp"
-    with open(tmp_path, "w") as f:
-        json.dump(manifest, f, indent=2, sort_keys=True)
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, sort_keys=True, ensure_ascii=False)
         f.write("\n")
     os.replace(tmp_path, path)
     return manifest

@@ -84,11 +84,29 @@ def test_read_manifest_roundtrips_and_returns_none_when_absent():
     return True
 
 
+def test_non_ascii_attribution_is_written_as_literal_utf8():
+    """The client's hand-rolled JSON parser handles raw UTF-8 bytes but
+    not "\\uXXXX" escapes, so the "©" in the Copernicus attribution must
+    reach the file unescaped."""
+    class _CopyrightAdapter(_FakeAdapter):
+        attribution = "© DLR e.V. 2010-2014 provided under COPERNICUS"
+
+    with tempfile.TemporaryDirectory() as output_dir:
+        write_manifest(_CopyrightAdapter(), output_dir, 0, 5, (0.0, 0.0, 1.0, 1.0))
+        with open(os.path.join(output_dir, MANIFEST_FILENAME), encoding="utf-8") as f:
+            raw = f.read()
+        assert "© DLR" in raw
+        assert "\\u00a9" not in raw
+        assert json.loads(raw)["attribution"] == _CopyrightAdapter.attribution
+    return True
+
+
 TESTS = [
     test_build_manifest_fields,
     test_vertical_datum_is_always_the_target_not_the_source,
     test_write_manifest_is_valid_json_and_leaves_no_temp_file,
     test_read_manifest_roundtrips_and_returns_none_when_absent,
+    test_non_ascii_attribution_is_written_as_literal_utf8,
 ]
 
 
