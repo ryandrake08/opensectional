@@ -36,12 +36,14 @@ namespace osect
         popup_manager(const popup_manager&) = delete;
         popup_manager& operator=(const popup_manager&) = delete;
 
-        void open_pick(std::vector<feature> features, double click_lon, double click_lat);
+        void open_pick(std::vector<feature> features, double click_lon, double click_lat,
+                       std::optional<double> terrain_elevation_ft = std::nullopt);
         void close_pick();
         // Open the info popup for `f`. When `f` holds a route_pick,
         // the body renders the legs table + Delete button instead
         // of the kv table.
-        void open_info(const feature& f, double anchor_lon, double anchor_lat);
+        void open_info(const feature& f, double anchor_lon, double anchor_lat,
+                       std::optional<double> terrain_elevation_ft = std::nullopt);
         void close_info();
 
         bool pick_open() const;

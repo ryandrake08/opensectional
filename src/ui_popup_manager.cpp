@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <imgui/scoped.hpp>
 #include <misc/cpp/imgui_stdlib.h>
+#include <cmath>
 #include <string>
 
 namespace osect
@@ -28,6 +29,7 @@ namespace osect
             int warmup_frames = 0;
             double click_lon = 0.0;
             double click_lat = 0.0;
+            std::optional<double> terrain_elevation_ft;
             std::vector<feature> items;
         };
 
@@ -39,6 +41,7 @@ namespace osect
             int warmup_frames = 0;
             double anchor_lon = 0.0;
             double anchor_lat = 0.0;
+            std::optional<double> terrain_elevation_ft;
             feature payload{airport{}};
             // Inline-rename state, used only for a user_waypoint
             // payload. `renaming` swaps the Rename button for an
@@ -79,7 +82,8 @@ namespace osect
     }
     popup_manager::~popup_manager() = default;
 
-    void popup_manager::open_pick(std::vector<feature> items, double click_lon, double click_lat)
+    void popup_manager::open_pick(std::vector<feature> items, double click_lon, double click_lat,
+                                  std::optional<double> terrain_elevation_ft)
     {
         auto& p = pimpl->pick;
         p.open = true;
@@ -88,6 +92,7 @@ namespace osect
         p.warmup_frames = 2;
         p.click_lon = click_lon;
         p.click_lat = click_lat;
+        p.terrain_elevation_ft = terrain_elevation_ft;
         p.items = std::move(items);
     }
 
@@ -97,7 +102,8 @@ namespace osect
         pimpl->pick.items.clear();
     }
 
-    void popup_manager::open_info(const feature& f, double anchor_lon, double anchor_lat)
+    void popup_manager::open_info(const feature& f, double anchor_lon, double anchor_lat,
+                                  std::optional<double> terrain_elevation_ft)
     {
         auto& p = pimpl->info;
         p.open = true;
@@ -106,6 +112,7 @@ namespace osect
         p.warmup_frames = 2;
         p.anchor_lon = anchor_lon;
         p.anchor_lat = anchor_lat;
+        p.terrain_elevation_ft = terrain_elevation_ft;
         p.payload = f;
         p.renaming = false;
     }
@@ -177,6 +184,10 @@ namespace osect
                 p.items.clear();
                 out.pick_dismissed = true;
                 return true;
+            }
+            if(p.terrain_elevation_ft)
+            {
+                ImGui::Text("Terrain elevation: %ld ft", std::lround(*p.terrain_elevation_ft));
             }
 
             if(!p.items.empty())
@@ -381,6 +392,10 @@ namespace osect
                 // keeping the key column aligned.
                 const auto& L = find_feature_type(feature_types, p.payload);
                 auto rows = L.info_kv(p.payload);
+                if(p.terrain_elevation_ft)
+                {
+                    rows.emplace_back("Terrain elevation", std::to_string(std::lround(*p.terrain_elevation_ft)) + " ft");
+                }
                 const ImGuiTableFlags flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX;
                 if(imgui::scoped_table table("info_kv", 2, flags); table)
                 {

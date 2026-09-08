@@ -283,6 +283,7 @@ namespace osect
 
         // Tile renderer for raster basemap (null if no basemap was provided)
         std::unique_ptr<tile_renderer> tiles;
+        const elevation_source& elevation;
         std::unique_ptr<terrain_renderer> terrain;
 
         // Vector feature renderer
@@ -394,6 +395,7 @@ namespace osect
                                 load_shader(dev, shader_id::LINE, sdl::shader_stage::fragment, 0, 2),
                                 sdl::primitive_type::triangle_list, sdl::texture_format_t(0), false),
               tiles(tile_path ? std::make_unique<tile_renderer>(dev, *tile_path) : nullptr),
+              elevation(terrain_source),
               terrain(terrain_source.available() ? std::make_unique<terrain_renderer>(dev, terrain_source, terrain_style(ini))
                                                  : nullptr),
               features(dev, db_path, chart_style(ini)),
@@ -803,6 +805,11 @@ namespace osect
             return std::pair<double, double>{sum_lon / n, sum_lat / n};
         }
 
+        std::optional<double> terrain_elevation_at(double lon, double lat) const
+        {
+            return elevation.elevation_ft(lat, lon, elevation.max_zoom());
+        }
+
         // Set the selected route, opening or closing the route info
         // popup to match. nullopt closes the popup and clears the
         // highlight. `anchor`, when set, places the popup at those
@@ -886,8 +893,11 @@ namespace osect
         // Open (or replace) the info popup showing details for a selected feature.
         void open_info_popup(const feature& f, double click_lon, double click_lat)
         {
-            auto [alon, alat] = find_feature_type(feature_types, f).anchor_lonlat(f, click_lon, click_lat);
-            popups.open_info(f, alon, alat);
+            const auto& type = find_feature_type(feature_types, f);
+            auto [alon, alat] = type.anchor_lonlat(f, click_lon, click_lat);
+            const auto point = type.point_coord(f);
+            const auto terrain_elevation = point ? terrain_elevation_at(point->first, point->second) : std::nullopt;
+            popups.open_info(f, alon, alat, terrain_elevation);
             features.set_selection(f);
             select_route(std::nullopt);
             needs_update = true;
@@ -988,7 +998,7 @@ namespace osect
                 // point.
                 close_info_popup();
                 select_route(std::nullopt);
-                popups.open_pick({}, result.lon, result.lat);
+                popups.open_pick({}, result.lon, result.lat, terrain_elevation_at(result.lon, result.lat));
                 needs_update = true;
                 return;
             }
@@ -1004,7 +1014,8 @@ namespace osect
             sdl::log_info("pick: selector with " + std::to_string(result.features.size()) + " candidates");
             close_info_popup();
             select_route(std::nullopt);
-            popups.open_pick(std::move(result.features), result.lon, result.lat);
+            popups.open_pick(std::move(result.features), result.lon, result.lat,
+                             terrain_elevation_at(result.lon, result.lat));
             needs_update = true;
         }
 
