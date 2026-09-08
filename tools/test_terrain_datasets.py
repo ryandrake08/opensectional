@@ -15,9 +15,41 @@ from terrain_datasets import (
 
 
 def test_registry_lookup():
-    adapter = get_adapter("gmted2010")
-    assert isinstance(adapter, Gmted2010Adapter)
-    assert adapter is DATASETS["gmted2010"]
+    for name in ("gmted2010", "gmted2010-15", "gmted2010-75"):
+        adapter = get_adapter(name)
+        assert isinstance(adapter, Gmted2010Adapter)
+        assert adapter is DATASETS[name]
+        # adapter.name must round-trip: build_terrain hands args.dataset to
+        # worker processes, which re-look-up via get_adapter, and the
+        # existing-tree guard compares manifest["dataset"] to adapter.name.
+        assert adapter.name == name
+    return True
+
+
+def test_resolution_variants_differ_only_in_resolution():
+    r30, r15, r75 = (get_adapter(n) for n in ("gmted2010", "gmted2010-15", "gmted2010-75"))
+
+    # Finer resolution -> smaller post spacing, halving each step.
+    assert r30.native_post_spacing_m > r15.native_post_spacing_m > r75.native_post_spacing_m
+    # arcsec factors are 30/15/7.5, so the spacings differ by exact powers of
+    # two: scaling by 2^n commutes with rounding, so these are bit-exact.
+    assert r15.native_post_spacing_m == r30.native_post_spacing_m / 2.0
+    assert r75.native_post_spacing_m == r30.native_post_spacing_m / 4.0
+
+    # Distinct source archives.
+    assert (r30.GRID_ZIP_NAME, r15.GRID_ZIP_NAME, r75.GRID_ZIP_NAME) == (
+        "mx30_grd.zip",
+        "mx15_grd.zip",
+        "mx75_grd.zip",
+    )
+
+    # Everything else is shared.
+    for a in (r15, r75):
+        assert a.source_version == r30.source_version
+        assert a.native_vertical_datum == r30.native_vertical_datum
+        assert a.is_surface_model == r30.is_surface_model
+        assert a.vertical_precision_m == r30.vertical_precision_m
+        assert a.attribution == r30.attribution
     return True
 
 
@@ -119,6 +151,7 @@ def test_source_paths_empty_when_not_yet_downloaded():
 
 TESTS = [
     test_registry_lookup,
+    test_resolution_variants_differ_only_in_resolution,
     test_registry_unknown_dataset,
     test_base_class_is_unusable_directly,
     test_declared_metadata,

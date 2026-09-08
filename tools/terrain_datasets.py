@@ -51,10 +51,14 @@ class DatasetAdapter:
 
 
 class Gmted2010Adapter(DatasetAdapter):
-    """USGS/NGA GMTED2010 maximum-statistic, 30-arc-second data."""
+    """USGS/NGA GMTED2010, maximum statistic. Constructed for one of the
+    three native resolutions: 30, 15 or 7.5 arc-seconds.
 
-    name = "gmted2010"
-    display_name = "GMTED2010 (USGS/NGA, maximum statistic, 30 arc-second)"
+    All three resolutions share the same distribution (one whole-globe
+    ArcGrid archive), int16-metre storage, EGM96 datum and DSM model —
+    only the grid file, post spacing and registry name differ.
+    """
+
     source_version = "20101117"
     attribution = (
         "Danielson, J.J., and Gesch, D.B., 2011, Global multi-resolution "
@@ -63,15 +67,26 @@ class Gmted2010Adapter(DatasetAdapter):
     )
     native_vertical_datum = "EGM96"
     is_surface_model = True
-    native_post_spacing_m = 40075017.0 / 360.0 / 120.0  # 30 arc-seconds at the equator
     vertical_precision_m = 1.0
+    native_nodata = -32768
 
     SOURCE_BASE_URL = "https://edcintl.cr.usgs.gov/downloads/sciweb1/shared/topo/downloads/GMTED/Grid_ZipFiles"
-    GRID_ZIP_NAME = "mx30_grd.zip"
-    GRID_INTERNAL_NAME = "mx30_grd"
     EXTRACTION_MARKER = ".osect-extracted"
 
-    native_nodata = -32768
+    #: File-name resolution code -> (registry name, arc-seconds per post).
+    RESOLUTIONS = {
+        "30": ("gmted2010", 30.0),
+        "15": ("gmted2010-15", 15.0),
+        "75": ("gmted2010-75", 7.5),
+    }
+
+    def __init__(self, resolution_code):
+        self.name, arcsec = self.RESOLUTIONS[resolution_code]
+        self.display_name = f"GMTED2010 (USGS/NGA, maximum statistic, {arcsec:g} arc-second)"
+        # metres per degree at the equator / arc-seconds per degree * arc-seconds per post
+        self.native_post_spacing_m = 40075017.0 / 360.0 / 3600.0 * arcsec
+        self.GRID_ZIP_NAME = f"mx{resolution_code}_grd.zip"
+        self.GRID_INTERNAL_NAME = f"mx{resolution_code}_grd"
 
     def source_tiles(self):
         return [SourceTile(url=f"{self.SOURCE_BASE_URL}/{self.GRID_ZIP_NAME}", local_name=self.GRID_ZIP_NAME)]
@@ -103,7 +118,9 @@ class Gmted2010Adapter(DatasetAdapter):
 
 
 DATASETS = {
-    "gmted2010": Gmted2010Adapter(),
+    "gmted2010": Gmted2010Adapter("30"),
+    "gmted2010-15": Gmted2010Adapter("15"),
+    "gmted2010-75": Gmted2010Adapter("75"),
 }
 
 

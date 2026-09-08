@@ -429,10 +429,13 @@ tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010 --zoom 0-6 \
     terrain_source/gmted2010 terrain/gmted2010
 ```
 
-Larger, finer sets (Copernicus GLO-90/GLO-30, USGS 3DEP) are downloaded
-and built with the same two tools by passing a different `--dataset` and
-`--zoom` range, then pointed at with `-t <path>` or `[terrain] path` in
-the ini.
+Larger, finer sets are downloaded and built with the same two tools by
+passing a different `--dataset` and `--zoom` range, then pointed at with
+`-t <path>` or `[terrain] path` in the ini. GMTED2010 also ships 15
+arc-second (`gmted2010-15`, ~460 m posts) and 7.5 arc-second
+(`gmted2010-75`, ~230 m posts) grids for higher zoom levels off the same
+public-domain source; Copernicus GLO-90/GLO-30 and USGS 3DEP are the
+other options.
 
 ## Controls
 
