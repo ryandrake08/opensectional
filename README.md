@@ -28,7 +28,12 @@ curl -L -o mapdata/natural_earth_vector.gpkg.zip \
 # 7. Render the basemap tile pyramid into basemap/
 tools/env/bin/python3 tools/render_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/
 
-# 8. Run. With no options, osect looks for osect.db and basemap/ next
+# 8. Build the bundled GMTED2010 z0-z6 global terrain set into terrain/
+tools/env/bin/python3 tools/download_terrain.py --dataset gmted2010 terrain_source/gmted2010
+tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010 --zoom 0-6 \
+    terrain_source/gmted2010 terrain/gmted2010
+
+# 9. Run. With no options, osect looks for osect.db and basemap/ next
 #    to the executable (installer layout) or in the current working
 #    directory (dev). Configuration is optional — sensible chart-style
 #    and routing defaults are baked into the binary; see "Configuration"
@@ -157,6 +162,22 @@ The macOS DMG and Windows NSIS installers ship a self-contained binary with all 
 
 Both package scripts initialize the dependency submodules, download the SQLite amalgamation (sha256-verified), configure CMake with `-DOSECT_VENDOR_DEPS=ON -DOSECT_ENABLE_PACKAGING=ON`, build, run `cpack`, and then **restore `thirdparty/` to its pre-build state by default** — submodules deinitialized, tarball-extracted directories and `.cache/` removed. Pass `--no-clean` to keep the build state in place when iterating on the installer (faster re-runs since submodules don't need to re-init).
 
+### Prerequisite: build the bundled data assets
+
+The package scripts handle only the C/C++ build. They do **not** download or
+process any dataset. Build all three bundled assets, from the repo root, before
+running a package script:
+
+| Asset | Build steps | Detail |
+|---|---|---|
+| `osect.db` | `download_all.py nasr_data` → `build_all.py` (use the command the download prints) | [NASR Database](#1-nasr-database) |
+| `basemap/` | `render_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/` | [Basemap Tiles](#2-basemap-tiles) |
+| `terrain/` | `download_terrain.py --dataset gmted2010 terrain_source/gmted2010` → `build_terrain.py --dataset gmted2010 --zoom 0-6 terrain_source/gmted2010 terrain/gmted2010` | [Bundled Terrain Tiles](#3-bundled-terrain-tiles) |
+
+If any of the three is missing, CMake configuration under `OSECT_ENABLE_PACKAGING=ON`
+aborts with `Installer asset missing: ...`. These assets are not in source control
+and are rebuilt on the source data's own cadence, independent of the app version.
+
 ### macOS DMG
 
 ```bash
@@ -235,12 +256,9 @@ For a clean signed installer, sign `osect.exe` *before* `cpack` runs (so the NSI
 
 ### Installer assets and packaging notes
 
-The package scripts run `cpack` against pre-generated runtime assets that aren't checked in:
+The package scripts run `cpack` against three pre-generated runtime assets that aren't checked in — `osect.db`, `basemap/`, and `terrain/`. Build them first (see [Prerequisite: build the bundled data assets](#prerequisite-build-the-bundled-data-assets)); packaging configuration aborts with `Installer asset missing: ...` until they exist.
 
-- `osect.db` — built from FAA NASR data (see [Data Preparation](#data-preparation))
-- `basemap/` — rendered from Natural Earth (see [Data Preparation](#data-preparation))
-
-Packaging configuration aborts with `Installer asset missing: ...` until those exist. The macOS bundle additionally needs `osect.png` for icon generation (via `sips` + `iconutil`); the Windows installer uses the same PNG via ImageMagick `magick`. If the icon-generation tool is missing the installer still builds, just without a custom icon.
+The macOS bundle additionally needs `osect.png` for icon generation (via `sips` + `iconutil`); the Windows installer uses the same PNG via ImageMagick `magick`. If the icon-generation tool is missing the installer still builds, just without a custom icon.
 
 ### GPU Backend
 
@@ -309,9 +327,10 @@ fetched and parsed in-app at runtime — see
 | ADIZ boundaries | FAA | https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/ArcGIS/rest/services/Airspace/FeatureServer | Irregular | build_adiz.py |
 | Temporary flight restrictions | FAA | https://tfr.faa.gov/ | Continuous (as NOTAMs are issued) | (in-app, see [Network and offline mode](#network-and-offline-mode)) |
 | Natural Earth basemap | Natural Earth | https://www.naturalearthdata.com/ | Irregular | render_basemap.py |
+| GMTED2010 terrain elevation | USGS/NGA | https://www.usgs.gov/coastal-changes-and-impacts/gmted2010 | Static (2010) | build_terrain.py |
 
-Two offline artifacts are produced from these sources: the aviation database and the
-basemap tile directory.
+Three offline artifacts are produced from these sources: the aviation database, the
+basemap tile directory, and the terrain elevation tile directory.
 
 ### 1. NASR Database
 
@@ -393,6 +412,27 @@ On first run, the script reprojects the source data to EPSG:3857 and saves a `*_
 #### FAA VFR raster charts (alternative)
 
 For a basemap derived from FAA aeronav charts, generate XYZ tile pyramids using [aeronav2tiles](https://github.com/ryandrake08/aeronav) or a similar tool and point osect at the output directory.
+
+### 3. Bundled Terrain Tiles
+
+The installers ship a small global terrain elevation set built from
+[GMTED2010](https://www.usgs.gov/coastal-changes-and-impacts/gmted2010)
+(USGS/NGA, public domain). It covers zoom levels 0–6 worldwide (~85 MB)
+and feeds the shaded-relief map layer and route terrain profile.
+
+```bash
+# Download the GMTED2010 source (one whole-globe archive)
+tools/env/bin/python3 tools/download_terrain.py --dataset gmted2010 terrain_source/gmted2010
+
+# Build the z0-z6 Terrarium-encoded tile tree and manifest.json into terrain/gmted2010/
+tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010 --zoom 0-6 \
+    terrain_source/gmted2010 terrain/gmted2010
+```
+
+Larger, finer sets (Copernicus GLO-90/GLO-30, USGS 3DEP) are downloaded
+and built with the same two tools by passing a different `--dataset` and
+`--zoom` range, then pointed at with `-t <path>` or `[terrain] path` in
+the ini.
 
 ## Controls
 

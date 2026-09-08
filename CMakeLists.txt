@@ -531,6 +531,7 @@ endif()
 # regenerate them via tools/ before running `cpack`.
 set(BUNDLED_DB      "${CMAKE_SOURCE_DIR}/osect.db")
 set(BUNDLED_BASEMAP "${CMAKE_SOURCE_DIR}/basemap")
+set(BUNDLED_TERRAIN "${CMAKE_SOURCE_DIR}/terrain")
 
 set(ICON_PNG            "${CMAKE_SOURCE_DIR}/osect.png")
 set(INSTALLER_ICON_ICNS "${CMAKE_BINARY_DIR}/osect.icns")
@@ -633,6 +634,7 @@ if(APPLE AND OSECT_ENABLE_PACKAGING)
     set(_rsrc "${APPLICATION_NAME}.app/Contents/Resources")
     install(FILES "${BUNDLED_DB}"  DESTINATION "${_rsrc}")
     install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION "${_rsrc}")
+    install(DIRECTORY "${BUNDLED_TERRAIN}" DESTINATION "${_rsrc}")
 
     # Bundle MoltenVK so the .app's Vulkan backend works on a fresh Mac
     # with no Vulkan SDK / Homebrew installed. SDL3 searches
@@ -701,6 +703,7 @@ if(APPLE AND OSECT_ENABLE_PACKAGING)
 
     _require_asset("${BUNDLED_DB}")
     _require_asset("${BUNDLED_BASEMAP}")
+    _require_asset("${BUNDLED_TERRAIN}")
     include(CPack)
 
 elseif(WIN32 AND OSECT_ENABLE_PACKAGING)
@@ -715,6 +718,7 @@ elseif(WIN32 AND OSECT_ENABLE_PACKAGING)
     install(TARGETS osect RUNTIME DESTINATION .)
     install(FILES "${BUNDLED_DB}"  DESTINATION .)
     install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION .)
+    install(DIRECTORY "${BUNDLED_TERRAIN}" DESTINATION .)
 
     # MinGW runtime DLLs (SDL3/SDL3_image/SDL3_ttf/sqlite3 are statically
     # linked when OSECT_VENDOR_DEPS=ON via build-mingw-package.sh, so only
@@ -765,5 +769,6 @@ elseif(WIN32 AND OSECT_ENABLE_PACKAGING)
 
     _require_asset("${BUNDLED_DB}")
     _require_asset("${BUNDLED_BASEMAP}")
+    _require_asset("${BUNDLED_TERRAIN}")
     include(CPack)
 endif()
