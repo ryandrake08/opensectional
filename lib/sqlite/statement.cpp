@@ -131,6 +131,11 @@ namespace sqlite
         return sqlite3_column_double(pimpl->stmt, col);
     }
 
+    bool statement::column_is_null(int col)
+    {
+        return sqlite3_column_type(pimpl->stmt, col) == SQLITE_NULL;
+    }
+
     std::string statement::column_text(int col)
     {
         const unsigned char* text = sqlite3_column_text(pimpl->stmt, col);

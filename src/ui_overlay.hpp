@@ -149,7 +149,7 @@ namespace osect
         // existing panel is the pristine starter (no route, no
         // text), it's populated in place so loading N saved routes
         // produces exactly N tabs.
-        std::uint64_t add_route_tab(const flight_route& route);
+        std::uint64_t add_route_tab(const flight_route& route, std::optional<double> cruise_altitude_ft = std::nullopt);
 
         // Mark the panel for `tab_id` as holding a planned route.
         // Snaps the input buffer to the canonical shorthand (so any

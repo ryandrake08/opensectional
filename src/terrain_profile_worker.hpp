@@ -34,7 +34,8 @@ namespace osect
         terrain_profile_worker(const terrain_profile_worker&) = delete;
         terrain_profile_worker& operator=(const terrain_profile_worker&) = delete;
 
-        void submit(std::vector<route_waypoint> waypoints, std::optional<double> cruise_altitude_ft);
+        void submit(std::vector<route_waypoint> waypoints, std::optional<double> cruise_altitude_ft,
+                    terrain_profile_gradients gradients);
         terrain_profile_status poll();
     };
 } // namespace osect

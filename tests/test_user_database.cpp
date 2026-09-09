@@ -90,6 +90,9 @@ TEST_CASE("user_database creates schema on fresh file and round-trips one route"
         REQUIRE(routes.size() == 1);
         CHECK(routes[0].route_id == id);
         CHECK(routes[0].name.empty());
+        CHECK_FALSE(routes[0].cruise_altitude_ft);
+        CHECK(routes[0].gradients.climb_ft_per_nm == 300.0);
+        CHECK(routes[0].gradients.descent_ft_per_nm == 318.0);
         REQUIRE(routes[0].waypoints.size() == 2);
         CHECK(routes[0].waypoints[0].identifier == "KCNY");
         CHECK(routes[0].waypoints[1].identifier == "KSGU");
@@ -211,7 +214,7 @@ TEST_CASE("update_route replaces the waypoints and bumps updated_at")
     user_database db(tmp.db_file());
 
     const auto id = db.insert_route(make_rows({"OLD1", "OLD2"}));
-    db.update_route(id, make_rows({"NEW1", "NEW2", "NEW3"}));
+    db.update_route(id, make_rows({"NEW1", "NEW2", "NEW3"}), std::nullopt);
 
     auto routes = db.load_routes();
     REQUIRE(routes.size() == 1);
@@ -232,12 +235,40 @@ TEST_CASE("update_route replaces the waypoints and bumps updated_at")
     CHECK(updated >= created);
 }
 
+TEST_CASE("route vertical profile settings round-trip through insert and update")
+{
+    tmp_dir tmp("cruise_altitude");
+    user_database db(tmp.db_file());
+
+    const osect::terrain_profile_gradients gradients{450.0, 275.0};
+    const auto id = db.insert_route(make_rows({"A", "B"}), 5500.0, gradients);
+    auto rec = db.query_route(id);
+    REQUIRE(rec);
+    REQUIRE(rec->cruise_altitude_ft);
+    CHECK(*rec->cruise_altitude_ft == 5500.0);
+    CHECK(rec->gradients.climb_ft_per_nm == 450.0);
+    CHECK(rec->gradients.descent_ft_per_nm == 275.0);
+
+    db.update_route(id, make_rows({"A", "C"}), 7500.0);
+    rec = db.query_route(id);
+    REQUIRE(rec);
+    REQUIRE(rec->cruise_altitude_ft);
+    CHECK(*rec->cruise_altitude_ft == 7500.0);
+    CHECK(rec->gradients.climb_ft_per_nm == 450.0);
+    CHECK(rec->gradients.descent_ft_per_nm == 275.0);
+
+    db.update_route_cruise_altitude(id, std::nullopt);
+    rec = db.query_route(id);
+    REQUIRE(rec);
+    CHECK_FALSE(rec->cruise_altitude_ft);
+}
+
 TEST_CASE("update_route and delete_route are no-ops on unknown ids")
 {
     tmp_dir tmp("noop");
     user_database db(tmp.db_file());
 
-    db.update_route(9999, make_rows({"ghost1", "ghost2"}));
+    db.update_route(9999, make_rows({"ghost1", "ghost2"}), std::nullopt);
     db.delete_route(9999);
 
     CHECK(db.load_routes().empty());
@@ -266,8 +297,8 @@ TEST_CASE("an older schema version is dropped and recreated at the current versi
     sqlite::database raw(tmp.db_file().string().c_str(), /*read_only=*/true);
     auto ver = raw.prepare("SELECT version FROM SCHEMA_VERSIONS WHERE group_name = 'routes'");
     REQUIRE(ver.step());
-    CHECK(ver.column_int(0) == 2);
-    // The v2 ROUTE_WAYPOINT table exists.
+    CHECK(ver.column_int(0) == 4);
+    // The v4 ROUTE_WAYPOINT table exists.
     auto tbl = raw.prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ROUTE_WAYPOINT'");
     REQUIRE(tbl.step());
     CHECK(tbl.column_int(0) == 1);

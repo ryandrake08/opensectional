@@ -59,6 +59,7 @@ namespace sqlite
         int column_int(int col);
         std::int64_t column_int64(int col);
         double column_double(int col);
+        bool column_is_null(int col);
         std::string column_text(int col);
     };
 

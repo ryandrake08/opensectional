@@ -10,6 +10,8 @@ namespace osect
     class map_widget;
     class ui_overlay;
     class user_database;
+    class elevation_source;
+    struct terrain_profile;
     struct ui_overlay_result;
 
     // Owns the correspondence between route-panel tabs, the routes
@@ -24,8 +26,8 @@ namespace osect
         std::unique_ptr<impl> pimpl;
 
     public:
-        route_session(ui_overlay& ui, map_widget& map, user_database& udb, const ini_config& ini,
-                       const std::filesystem::path& db_path);
+        route_session(ui_overlay& ui, map_widget& map, user_database& udb, const elevation_source& terrain,
+                      const ini_config& ini, const std::filesystem::path& db_path);
         ~route_session();
 
         route_session(const route_session&) = delete;
@@ -41,5 +43,9 @@ namespace osect
         // map_widget and the planner. Returns true if anything changed
         // and the frame needs to be re-rendered.
         bool process(const ui_overlay_result& r);
+
+        // Borrowed profile for a saved route, or nullptr while its
+        // profile has not yet been computed.
+        const terrain_profile* profile_for_route(std::int64_t route_id) const;
     };
 }

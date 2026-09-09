@@ -63,7 +63,7 @@ namespace osect
             );
         )";
 
-        // Routes group, v2.
+        // Routes group, v4.
         //
         // route_id is AUTOINCREMENT so rowids are strictly monotonic
         // and never reused — future cross-references can rely on a
@@ -77,7 +77,7 @@ namespace osect
         // form one airway traversal; an empty `airway_id` marks a
         // standalone waypoint. ON DELETE CASCADE drops a route's
         // waypoints with the route.
-        constexpr int ROUTES_GROUP_VERSION = 2;
+        constexpr int ROUTES_GROUP_VERSION = 4;
         constexpr const char* ROUTES_GROUP_NAME = "routes";
         constexpr const char* ROUTES_GROUP_DROP_SQL = R"(
             DROP TABLE IF EXISTS ROUTE_WAYPOINT;
@@ -87,6 +87,9 @@ namespace osect
             CREATE TABLE ROUTE (
                 route_id    INTEGER PRIMARY KEY AUTOINCREMENT,
                 name        TEXT NOT NULL DEFAULT '',
+                cruise_altitude_ft REAL,
+                climb_gradient_ft_per_nm REAL NOT NULL,
+                descent_gradient_ft_per_nm REAL NOT NULL,
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL
             );
@@ -304,14 +307,16 @@ namespace osect
         explicit impl(const std::filesystem::path& p)
             : db(open_and_init_schema(p)),
               stmt_load_routes(db.prepare(R"(
-                SELECT route_id, name FROM ROUTE ORDER BY route_id
+                SELECT route_id, name, cruise_altitude_ft, climb_gradient_ft_per_nm, descent_gradient_ft_per_nm
+                FROM ROUTE ORDER BY route_id
             )")),
               stmt_load_all_waypoints(db.prepare(R"(
                 SELECT route_id, element_index, kind, identifier, lat, lon, airway_id
                 FROM ROUTE_WAYPOINT ORDER BY route_id, seq
             )")),
               stmt_query_route(db.prepare(R"(
-                SELECT route_id, name FROM ROUTE WHERE route_id = ?
+                SELECT route_id, name, cruise_altitude_ft, climb_gradient_ft_per_nm, descent_gradient_ft_per_nm
+                FROM ROUTE WHERE route_id = ?
             )")),
               stmt_query_waypoints(db.prepare(R"(
                 SELECT element_index, kind, identifier, lat, lon, airway_id
@@ -321,10 +326,12 @@ namespace osect
                 SELECT 1 FROM ROUTE WHERE route_id = ?
             )")),
               stmt_insert_route(db.prepare(R"(
-                INSERT INTO ROUTE (created_at, updated_at) VALUES (?, ?)
+                INSERT INTO ROUTE
+                    (cruise_altitude_ft, climb_gradient_ft_per_nm, descent_gradient_ft_per_nm, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
             )")),
               stmt_touch_route(db.prepare(R"(
-                UPDATE ROUTE SET updated_at = ? WHERE route_id = ?
+                UPDATE ROUTE SET cruise_altitude_ft = ?, updated_at = ? WHERE route_id = ?
             )")),
               stmt_insert_waypoint(db.prepare(R"(
                 INSERT INTO ROUTE_WAYPOINT
@@ -409,6 +416,9 @@ namespace osect
             route_record rec;
             rec.route_id = routes.column_int64(0);
             rec.name     = routes.column_text(1);
+            if(!routes.column_is_null(2)) rec.cruise_altitude_ft = routes.column_double(2);
+            rec.gradients.climb_ft_per_nm = routes.column_double(3);
+            rec.gradients.descent_ft_per_nm = routes.column_double(4);
             index_by_id[rec.route_id] = out.size();
             out.push_back(std::move(rec));
         }
@@ -441,6 +451,9 @@ namespace osect
             }
             rec.route_id = st.column_int64(0);
             rec.name     = st.column_text(1);
+            if(!st.column_is_null(2)) rec.cruise_altitude_ft = st.column_double(2);
+            rec.gradients.climb_ft_per_nm = st.column_double(3);
+            rec.gradients.descent_ft_per_nm = st.column_double(4);
             // A statement parked on SQLITE_ROW holds an implicit read
             // transaction open until the next reset, pinning this
             // connection to that snapshot. Release it now so concurrent
@@ -457,7 +470,9 @@ namespace osect
         return rec;
     }
 
-    std::int64_t user_database::insert_route(const std::vector<route_waypoint_row>& waypoints)
+    std::int64_t user_database::insert_route(const std::vector<route_waypoint_row>& waypoints,
+                                             std::optional<double> cruise_altitude_ft,
+                                             terrain_profile_gradients gradients)
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);
         const auto ts = now_iso8601();
@@ -466,8 +481,11 @@ namespace osect
         {
             auto& s = pimpl->stmt_insert_route;
             s.reset();
-            s.bind(1, ts);
-            s.bind(2, ts);
+            if(cruise_altitude_ft) s.bind(1, *cruise_altitude_ft); else s.bind_null(1);
+            s.bind(2, gradients.climb_ft_per_nm);
+            s.bind(3, gradients.descent_ft_per_nm);
+            s.bind(4, ts);
+            s.bind(5, ts);
             s.step();
             const auto route_id = pimpl->db.last_insert_rowid();
             pimpl->write_waypoints(route_id, waypoints);
@@ -487,7 +505,8 @@ namespace osect
         }
     }
 
-    void user_database::update_route(std::int64_t route_id, const std::vector<route_waypoint_row>& waypoints)
+    void user_database::update_route(std::int64_t route_id, const std::vector<route_waypoint_row>& waypoints,
+                                     std::optional<double> cruise_altitude_ft)
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);
         pimpl->db.exec("BEGIN");
@@ -508,8 +527,9 @@ namespace osect
             {
                 auto& touch = pimpl->stmt_touch_route;
                 touch.reset();
-                touch.bind(1, now_iso8601());
-                touch.bind(2, route_id);
+                if(cruise_altitude_ft) touch.bind(1, *cruise_altitude_ft); else touch.bind_null(1);
+                touch.bind(2, now_iso8601());
+                touch.bind(3, route_id);
                 touch.step();
 
                 auto& del = pimpl->stmt_delete_waypoints;
@@ -519,6 +539,34 @@ namespace osect
 
                 pimpl->write_waypoints(route_id, waypoints);
             }
+            pimpl->db.exec("COMMIT");
+        }
+        catch(...)
+        {
+            try
+            {
+                pimpl->db.exec("ROLLBACK");
+            }
+            catch(...)
+            {
+            }
+            throw;
+        }
+    }
+
+    void user_database::update_route_cruise_altitude(std::int64_t route_id,
+                                                      std::optional<double> cruise_altitude_ft)
+    {
+        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        pimpl->db.exec("BEGIN");
+        try
+        {
+            auto& update = pimpl->stmt_touch_route;
+            update.reset();
+            if(cruise_altitude_ft) update.bind(1, *cruise_altitude_ft); else update.bind_null(1);
+            update.bind(2, now_iso8601());
+            update.bind(3, route_id);
+            update.step();
             pimpl->db.exec("COMMIT");
         }
         catch(...)

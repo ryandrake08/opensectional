@@ -12,7 +12,6 @@
 #include "render_context.hpp"
 #include "tile_renderer.hpp"
 #include "terrain_renderer.hpp"
-#include "terrain_profile_worker.hpp"
 #include "terrain_style.hpp"
 #include "ui_overlay.hpp"
 #include "ui_popup_manager.hpp"
@@ -288,9 +287,6 @@ namespace osect
         terrain_style terrain_config;
         std::optional<float> cruise_altitude_ft;
         std::unique_ptr<terrain_renderer> terrain;
-        terrain_profile_worker profile_worker;
-        std::optional<terrain_profile> profile_result;
-        bool profile_dirty = true;
 
         // Vector feature renderer
         feature_renderer features;
@@ -422,7 +418,6 @@ namespace osect
               terrain_config(ini),
               terrain(terrain_source.available() ? std::make_unique<terrain_renderer>(dev, terrain_source, terrain_config)
                                                  : nullptr),
-              profile_worker(terrain_source, db_path),
               features(dev, db_path, chart_style(ini)),
               labels(dev),
               pick_db(db_path),
@@ -433,27 +428,6 @@ namespace osect
         {
             update_terrain_shading();
             set_viewport(viewport_width, viewport_height);
-        }
-
-        void update_profile()
-        {
-            if(!profile_dirty)
-            {
-                return;
-            }
-            profile_dirty = false;
-            profile_result.reset();
-            if(!active_route_id || !elevation.available())
-            {
-                return;
-            }
-            const auto route = load_route(*active_route_id);
-            if(!route)
-            {
-                return;
-            }
-            const auto altitude = cruise_altitude_ft ? std::optional<double>(*cruise_altitude_ft) : std::nullopt;
-            profile_worker.submit(route->waypoints, altitude);
         }
 
         void rebuild_grid()
@@ -792,7 +766,6 @@ namespace osect
             }
             route_drag_result = std::move(*route_drag.route);
             route_drag.route.reset();
-            profile_dirty = true;
             features.set_drag_preview(std::nullopt, std::nullopt);
             features.invalidate();
             needs_update = true;
@@ -934,7 +907,6 @@ namespace osect
                 selected_route_cache_id.reset();
             }
             features.set_active_route_id(active_route_id);
-            profile_dirty = true;
             update_terrain_shading();
             features.invalidate();
             needs_update = true;
@@ -1362,18 +1334,12 @@ namespace osect
             return;
         }
         pimpl->cruise_altitude_ft = altitude_ft;
-        pimpl->profile_dirty = true;
         if(pimpl->terrain)
         {
             pimpl->terrain->set_cruise_altitude_ft(altitude_ft.value_or(0.0F));
             pimpl->update_terrain_shading();
             pimpl->needs_update = true;
         }
-    }
-
-    const std::optional<terrain_profile>& map_widget::profile_result() const
-    {
-        return pimpl->profile_result;
     }
 
     terrain_shading map_widget::terrain_shading_mode() const
@@ -1508,20 +1474,6 @@ namespace osect
         {
             pimpl->terrain->drain();
         }
-        // Submit a replacement before polling so a route or altitude change
-        // cannot briefly surface the prior profile result.
-        pimpl->update_profile();
-        const auto profile_status = pimpl->profile_worker.poll();
-        if(profile_status.result)
-        {
-            pimpl->profile_result = std::move(profile_status.result);
-            pimpl->needs_update = true;
-        }
-        else if(!profile_status.error.empty())
-        {
-            sdl::log_warn("terrain profile: " + profile_status.error);
-        }
-
         auto new_candidates = pimpl->features.drain();
         if(new_candidates)
         {
@@ -1584,7 +1536,6 @@ namespace osect
         // The route is already in user.db; just flag a rebuild so
         // the next feature build picks it up.
         pimpl->features.invalidate();
-        pimpl->profile_dirty = true;
         pimpl->needs_update = true;
     }
 
@@ -1647,10 +1598,6 @@ namespace osect
         {
             pimpl->selected_route_cache = pimpl->load_route(id);
         }
-        if(pimpl->active_route_id == id)
-        {
-            pimpl->profile_dirty = true;
-        }
         pimpl->features.invalidate();
         pimpl->needs_update = true;
     }
@@ -1667,7 +1614,6 @@ namespace osect
             return;
         }
         pimpl->active_route_id = id;
-        pimpl->profile_dirty = true;
         pimpl->features.set_active_route_id(id);
         pimpl->update_terrain_shading();
         pimpl->needs_update = true;

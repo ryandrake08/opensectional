@@ -102,7 +102,7 @@ namespace osect
               udb(user_database::default_path()),
               map(dev, tile_path, terrain, db_path, ini, 1280, 1024),
               waypoints(map, udb),
-              routes(ui, map, udb, ini, db_path),
+              routes(ui, map, udb, terrain, ini, db_path),
               prev_vis(ui.visibility())
         {
             event_mgr.set_raw_event_hook([this](const void* event) { imgui_ctx.process_event(event); });

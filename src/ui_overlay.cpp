@@ -17,6 +17,18 @@ namespace osect
     namespace
     {
         constexpr auto SEARCH_INPUT_WIDTH_PX = 240;
+
+        std::string format_cruise_altitude(double altitude_ft)
+        {
+            auto text = std::to_string(altitude_ft);
+            // Trim the trailing zeros from std::to_string's fixed format.
+            text.erase(text.find_last_not_of('0') + 1);
+            if(text.back() == '.')
+            {
+                text.pop_back();
+            }
+            return text;
+        }
     }
 
     struct route_panel
@@ -99,7 +111,7 @@ namespace osect
     }
     ui_overlay::~ui_overlay() = default;
 
-    std::uint64_t ui_overlay::add_route_tab(const flight_route& route)
+    std::uint64_t ui_overlay::add_route_tab(const flight_route& route, std::optional<double> cruise_altitude_ft)
     {
         auto& d = *pimpl;
         // Absorb the pristine starter panel rather than appending a
@@ -112,11 +124,15 @@ namespace osect
             p.has_route = true;
             p.error.clear();
             p.text_buf = route.to_text();
+            p.cruise_altitude_ft = cruise_altitude_ft;
+            p.cruise_altitude_text = cruise_altitude_ft ? format_cruise_altitude(*cruise_altitude_ft) : "";
             return p.id;
         }
         auto p = d.make_panel();
         p.has_route = true;
         p.text_buf = route.to_text();
+        p.cruise_altitude_ft = cruise_altitude_ft;
+        p.cruise_altitude_text = cruise_altitude_ft ? format_cruise_altitude(*cruise_altitude_ft) : "";
         auto id = p.id;
         d.panels.push_back(std::move(p));
         return id;

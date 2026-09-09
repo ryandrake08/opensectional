@@ -19,7 +19,7 @@ TEST_CASE("terrain profile worker delivers an asynchronous result")
     osect::terrain_profile_worker worker(terrain, "osect.db");
     worker.submit({{osect::waypoint_kind::airport, "O61", 38.684, -120.98752777},
                    {osect::waypoint_kind::airport, "KMER", 37.38048444, -120.56818638}},
-                  10000.0);
+                  10000.0, {});
 
     osect::terrain_profile_status status;
     do

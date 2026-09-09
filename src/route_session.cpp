@@ -1,14 +1,17 @@
 #include "route_session.hpp"
 
+#include "elevation_source.hpp"
 #include "flight_route.hpp"
 #include "ini_config.hpp"
 #include "map_widget.hpp"
 #include "route_plan_config.hpp"
 #include "route_submitter.hpp"
+#include "terrain_profile_worker.hpp"
 #include "ui_overlay.hpp"
 #include "user_database.hpp"
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <exception>
 #include <memory>
 #include <optional>
@@ -25,22 +28,115 @@ namespace osect
         map_widget& map;
         user_database& udb;
         route_submitter submitter;
+        std::unique_ptr<terrain_profile_worker> profile_worker;
         route_plan_options plan_options;
         // Maps each route-panel tab id to its planned route's
         // persistent route_id. Tabs without a planned route are
         // absent. route_id is stable across mutations (no
         // shift-after-remove housekeeping needed).
         std::unordered_map<std::uint64_t, route_id> tab_to_route;
+        struct profile_request
+        {
+            route_id id;
+            std::uint64_t generation;
+            std::vector<route_waypoint> waypoints;
+            std::optional<double> cruise_altitude_ft;
+            terrain_profile_gradients gradients;
+        };
+        std::deque<profile_request> profile_queue;
+        std::optional<profile_request> active_profile;
+        std::unordered_map<route_id, std::uint64_t> profile_generations;
+        std::unordered_map<route_id, terrain_profile> profiles;
         // Last active panel tab id observed via active_tab_changed.
         // Used to decide whether a freshly-planned route should pull
         // the view (only when the user is still focused on the
         // submitting tab when the result arrives).
         std::uint64_t active_tab_id = 0;
 
-        impl(ui_overlay& ui, map_widget& map, user_database& udb, const ini_config& ini, const std::filesystem::path& db_path)
-            : ui(ui), map(map), udb(udb), submitter(db_path), plan_options(load_route_plan_options(ini))
+        impl(ui_overlay& ui, map_widget& map, user_database& udb, const elevation_source& terrain,
+             const ini_config& ini, const std::filesystem::path& db_path)
+            : ui(ui), map(map), udb(udb), submitter(db_path),
+              profile_worker(terrain.available() ? std::make_unique<terrain_profile_worker>(terrain, db_path)
+                                                 : nullptr),
+              plan_options(load_route_plan_options(ini))
         {
             ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
+        }
+
+        void remove_queued_profile(route_id id)
+        {
+            for(auto it = profile_queue.begin(); it != profile_queue.end();)
+            {
+                if(it->id == id)
+                {
+                    it = profile_queue.erase(it);
+                }
+                else
+                {
+                    ++it;
+                }
+            }
+        }
+
+        void queue_profile(route_id id, const flight_route& route, std::optional<double> cruise_altitude_ft,
+                           terrain_profile_gradients gradients)
+        {
+            const auto generation = ++profile_generations[id];
+            profiles.erase(id);
+            remove_queued_profile(id);
+            if(!profile_worker)
+            {
+                return;
+            }
+            profile_queue.push_back({id, generation, route.waypoints, cruise_altitude_ft, gradients});
+        }
+
+        void drop_profile(route_id id)
+        {
+            profile_generations.erase(id);
+            profiles.erase(id);
+            remove_queued_profile(id);
+        }
+
+        bool profile_is_current(const profile_request& request) const
+        {
+            const auto it = profile_generations.find(request.id);
+            return it != profile_generations.end() && it->second == request.generation;
+        }
+
+        bool service_profiles()
+        {
+            bool changed = false;
+            if(active_profile)
+            {
+                auto status = profile_worker->poll();
+                if(status.pending)
+                {
+                    return false;
+                }
+                const auto request = std::move(*active_profile);
+                active_profile.reset();
+                if(status.result)
+                {
+                    if(profile_is_current(request))
+                    {
+                        profiles[request.id] = std::move(*status.result);
+                        changed = true;
+                    }
+                }
+                else if(!status.error.empty() && profile_is_current(request))
+                {
+                    sdl::log_warn("terrain profile: route_id=" + std::to_string(request.id) + " " + status.error);
+                }
+            }
+            if(!active_profile && !profile_queue.empty())
+            {
+                active_profile = std::move(profile_queue.front());
+                profile_queue.pop_front();
+                profile_worker->submit(active_profile->waypoints, active_profile->cruise_altitude_ft,
+                                       active_profile->gradients);
+            }
+            return changed;
         }
 
         void restore_from_db()
@@ -62,9 +158,10 @@ namespace osect
                 try
                 {
                     flight_route route(rec.waypoints);
-                    auto tab_id = ui.add_route_tab(route);
+                    auto tab_id = ui.add_route_tab(route, rec.cruise_altitude_ft);
                     map.add_route(rec.route_id);
                     tab_to_route.emplace(tab_id, rec.route_id);
+                    queue_profile(rec.route_id, route, rec.cruise_altitude_ft, rec.gradients);
                     ++loaded;
                 }
                 catch(const std::exception& e)
@@ -112,6 +209,7 @@ namespace osect
                     sdl::log_info("route cleared: tab=" + std::to_string(req.tab_id));
                     map.remove_route(rid);
                     tab_to_route.erase(it);
+                    drop_profile(rid);
                     try
                     {
                         udb.delete_route(rid);
@@ -176,24 +274,35 @@ namespace osect
 
                 auto it = tab_to_route.find(tag);
                 route_id rid = 0;
+                terrain_profile_gradients gradients;
+                bool route_saved = false;
                 if(it != tab_to_route.end())
                 {
                     rid = it->second;
                     try
                     {
-                        udb.update_route(rid, route.to_rows());
+                        if(const auto rec = udb.query_route(rid))
+                        {
+                            gradients = rec->gradients;
+                        }
+                        udb.update_route(rid, route.to_rows(), ui.cruise_altitude_ft(tag));
+                        route_saved = true;
                     }
                     catch(const std::exception& e)
                     {
                         sdl::log_warn(std::string("user.db: update_route failed (continuing): ") + e.what());
                     }
-                    map.replace_route(rid);
+                    if(route_saved)
+                    {
+                        map.replace_route(rid);
+                    }
                 }
                 else
                 {
                     try
                     {
-                        rid = udb.insert_route(route.to_rows());
+                        rid = udb.insert_route(route.to_rows(), ui.cruise_altitude_ft(tag), gradients);
+                        route_saved = true;
                     }
                     catch(const std::exception& e)
                     {
@@ -203,6 +312,10 @@ namespace osect
                     }
                     map.add_route(rid);
                     tab_to_route.emplace(tag, rid);
+                }
+                if(route_saved)
+                {
+                    queue_profile(rid, route, ui.cruise_altitude_ft(tag), gradients);
                 }
 
                 // Only pull the view, activate, and highlight if the
@@ -237,9 +350,20 @@ namespace osect
             {
                 return true;
             }
+            auto tab = tab_for_route(*active);
+            if(!tab)
+            {
+                return true;
+            }
             try
             {
-                udb.update_route(*active, result->to_rows());
+                terrain_profile_gradients gradients;
+                if(const auto rec = udb.query_route(*active))
+                {
+                    gradients = rec->gradients;
+                }
+                udb.update_route(*active, result->to_rows(), ui.cruise_altitude_ft(*tab));
+                queue_profile(*active, *result, ui.cruise_altitude_ft(*tab), gradients);
             }
             catch(const std::exception& e)
             {
@@ -247,11 +371,6 @@ namespace osect
                 // the next feature build will render the old route.
                 // Leave the tab's text alone too so disk and UI agree.
                 sdl::log_warn(std::string("user.db: drag update_route failed: ") + e.what());
-                return true;
-            }
-            auto tab = tab_for_route(*active);
-            if(!tab)
-            {
                 return true;
             }
             ui.set_route_state(*tab, *result);
@@ -285,6 +404,33 @@ namespace osect
             }
             const auto altitude = r.cruise_altitude_changed->second;
             map.set_cruise_altitude_ft(altitude ? std::optional<float>(static_cast<float>(*altitude)) : std::nullopt);
+            const auto it = tab_to_route.find(active_tab_id);
+            if(it == tab_to_route.end())
+            {
+                return true;
+            }
+            try
+            {
+                udb.update_route_cruise_altitude(it->second, altitude);
+            }
+            catch(const std::exception& e)
+            {
+                sdl::log_warn(std::string("user.db: update_route_cruise_altitude failed (continuing): ") + e.what());
+                return true;
+            }
+
+            try
+            {
+                const auto rec = udb.query_route(it->second);
+                if(rec)
+                {
+                    queue_profile(it->second, flight_route(rec->waypoints), altitude, rec->gradients);
+                }
+            }
+            catch(const std::exception& e)
+            {
+                sdl::log_warn(std::string("terrain profile: route refresh after cruise altitude change failed: ") + e.what());
+            }
             return true;
         }
 
@@ -302,6 +448,7 @@ namespace osect
                               " route_id=" + std::to_string(rid));
                 map.remove_route(rid);
                 tab_to_route.erase(it);
+                drop_profile(rid);
                 try
                 {
                     udb.delete_route(rid);
@@ -330,6 +477,7 @@ namespace osect
                 tab_to_route.erase(*tab);
             }
             map.remove_route(*rid);
+            drop_profile(*rid);
             try
             {
                 udb.delete_route(*rid);
@@ -365,9 +513,10 @@ namespace osect
         }
     };
 
-    route_session::route_session(ui_overlay& ui, map_widget& map, user_database& udb, const ini_config& ini,
+    route_session::route_session(ui_overlay& ui, map_widget& map, user_database& udb, const elevation_source& terrain,
+                                 const ini_config& ini,
                                  const std::filesystem::path& db_path)
-        : pimpl(std::make_unique<impl>(ui, map, udb, ini, db_path))
+        : pimpl(std::make_unique<impl>(ui, map, udb, terrain, ini, db_path))
     {
     }
 
@@ -389,6 +538,13 @@ namespace osect
         changed |= pimpl->handle_route_dirty();
         changed |= pimpl->handle_route_delete_request();
         changed |= pimpl->handle_route_activate_request();
+        changed |= pimpl->service_profiles();
         return changed;
+    }
+
+    const terrain_profile* route_session::profile_for_route(std::int64_t route_id) const
+    {
+        const auto it = pimpl->profiles.find(route_id);
+        return it != pimpl->profiles.end() ? &it->second : nullptr;
     }
 }

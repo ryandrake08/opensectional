@@ -30,7 +30,8 @@ namespace osect
             }
         }
 
-        void submit(std::vector<route_waypoint> waypoints, std::optional<double> cruise_altitude_ft)
+        void submit(std::vector<route_waypoint> waypoints, std::optional<double> cruise_altitude_ft,
+                    terrain_profile_gradients gradients)
         {
             if(worker.joinable())
             {
@@ -40,11 +41,11 @@ namespace osect
             error.clear();
             done = false;
             worker = std::thread(
-                [this, waypoints = std::move(waypoints), cruise_altitude_ft]
+                [this, waypoints = std::move(waypoints), cruise_altitude_ft, gradients]
                 {
                     try
                     {
-                        result = build_terrain_profile(waypoints, terrain, airports, cruise_altitude_ft);
+                        result = build_terrain_profile(waypoints, terrain, airports, cruise_altitude_ft, gradients);
                     }
                     catch(const std::exception& e)
                     {
@@ -81,9 +82,10 @@ namespace osect
 
     terrain_profile_worker::~terrain_profile_worker() = default;
 
-    void terrain_profile_worker::submit(std::vector<route_waypoint> waypoints, std::optional<double> cruise_altitude_ft)
+    void terrain_profile_worker::submit(std::vector<route_waypoint> waypoints, std::optional<double> cruise_altitude_ft,
+                                        terrain_profile_gradients gradients)
     {
-        pimpl->submit(std::move(waypoints), cruise_altitude_ft);
+        pimpl->submit(std::move(waypoints), cruise_altitude_ft, gradients);
     }
 
     terrain_profile_status terrain_profile_worker::poll()

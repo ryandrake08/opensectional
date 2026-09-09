@@ -1,6 +1,7 @@
 #pragma once
 
 #include "route_waypoint_row.hpp"
+#include "terrain_profile.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -17,6 +18,8 @@ namespace osect
     {
         std::int64_t route_id;
         std::string name;
+        std::optional<double> cruise_altitude_ft;
+        terrain_profile_gradients gradients;
         std::vector<route_waypoint_row> waypoints;
     };
 
@@ -90,14 +93,23 @@ namespace osect
         // Single-row lookup by id. nullopt if no row matches.
         std::optional<route_record> query_route(std::int64_t route_id) const;
 
-        // Insert a new route from its resolved waypoint rows. `name`
-        // starts empty (no UI to set it yet). Returns the assigned
-        // route_id. Route + waypoints are written in one transaction.
-        std::int64_t insert_route(const std::vector<route_waypoint_row>& waypoints);
+        // Insert a new route from its resolved waypoint rows and optional
+        // cruise altitude, and vertical-profile gradients. `name` starts empty (no UI to set it yet).
+        // Returns the assigned route_id. Route + waypoints are written in
+        // one transaction.
+        std::int64_t insert_route(const std::vector<route_waypoint_row>& waypoints,
+                                  std::optional<double> cruise_altitude_ft = std::nullopt,
+                                  terrain_profile_gradients gradients = {});
 
-        // Replace an existing route's waypoints; bumps updated_at.
+        // Replace an existing route's waypoints and cruise altitude; bumps
+        // updated_at.
         // No-op if route_id does not exist.
-        void update_route(std::int64_t route_id, const std::vector<route_waypoint_row>& waypoints);
+        void update_route(std::int64_t route_id, const std::vector<route_waypoint_row>& waypoints,
+                          std::optional<double> cruise_altitude_ft);
+
+        // Replace only an existing route's optional cruise altitude;
+        // bumps updated_at. No-op if route_id does not exist.
+        void update_route_cruise_altitude(std::int64_t route_id, std::optional<double> cruise_altitude_ft);
 
         // Remove a saved route. Its waypoint rows cascade away. No-op
         // if route_id does not exist.
