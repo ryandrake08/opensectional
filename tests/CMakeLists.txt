@@ -36,6 +36,7 @@ target_link_libraries(test_texture_format PRIVATE sdl_wrapper)
 add_osect_test(elevation_tile ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp)
 target_link_libraries(test_elevation_tile PRIVATE sdl_wrapper)
 add_osect_test(elevation_address)
+add_osect_test(terrain_profile)
 add_osect_test(elevation_source
     ${CMAKE_SOURCE_DIR}/src/elevation_source.cpp
     ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp
@@ -80,6 +81,16 @@ osect_apply_app_definitions(test_http_client)
 # flight_route and route_planner query the generated NASR database. They are
 # integration tests, enabled only when data preparation has produced osect.db.
 if(EXISTS "${CMAKE_SOURCE_DIR}/osect.db")
+    add_osect_test(terrain_profile_sampling
+        ${CMAKE_SOURCE_DIR}/src/terrain_profile.cpp
+        ${CMAKE_SOURCE_DIR}/src/geo_math.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_source.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp
+        ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
+        ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
+    target_link_libraries(test_terrain_profile_sampling PRIVATE sqlite_wrapper sdl_wrapper)
+    osect_apply_app_definitions(test_terrain_profile_sampling)
+
     # route_planner reads user.db, so user_database.cpp comes along too.
     add_osect_test(flight_route
         ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
