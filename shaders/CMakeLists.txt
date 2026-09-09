@@ -99,6 +99,22 @@ if(APPLE)
     if(NOT SPIRV_CROSS)
         message(FATAL_ERROR "spirv-cross not found - required for Metal shader compilation. Install via 'brew install spirv-cross', 'sudo port install spirv-cross', or the Vulkan SDK.")
     endif()
+
+    find_path(SPIRV_CROSS_INCLUDE_DIR spirv_cross/spirv_msl.hpp HINTS "${VULKAN_SDK_PATH}/include")
+    find_library(SPIRV_CROSS_MSL_LIBRARY spirv-cross-msl HINTS "${VULKAN_SDK_PATH}/lib")
+    find_library(SPIRV_CROSS_GLSL_LIBRARY spirv-cross-glsl HINTS "${VULKAN_SDK_PATH}/lib")
+    find_library(SPIRV_CROSS_CORE_LIBRARY spirv-cross-core HINTS "${VULKAN_SDK_PATH}/lib")
+    if(NOT SPIRV_CROSS_INCLUDE_DIR OR NOT SPIRV_CROSS_MSL_LIBRARY OR NOT SPIRV_CROSS_GLSL_LIBRARY OR NOT SPIRV_CROSS_CORE_LIBRARY)
+        message(FATAL_ERROR "spirv-cross development files not found - required to remap MSL resources for SDL GPU")
+    endif()
+
+    add_executable(spirv_to_msl spirv_to_msl.cpp)
+    target_compile_features(spirv_to_msl PRIVATE cxx_std_17)
+    target_include_directories(spirv_to_msl PRIVATE ${SPIRV_CROSS_INCLUDE_DIR})
+    target_link_libraries(spirv_to_msl PRIVATE
+        ${SPIRV_CROSS_MSL_LIBRARY}
+        ${SPIRV_CROSS_GLSL_LIBRARY}
+        ${SPIRV_CROSS_CORE_LIBRARY})
 endif()
 
 # Helper: emit a HLSL → SPIR-V custom command using whichever compiler was selected.
@@ -180,8 +196,8 @@ foreach(SHADER ${SHADERS})
             # SPIR-V → MSL source
             add_custom_command(
                 OUTPUT ${STAGE_METAL}
-                COMMAND ${SPIRV_CROSS} --msl ${STAGE_SPV} --output ${STAGE_METAL}
-                DEPENDS ${STAGE_SPV}
+                COMMAND $<TARGET_FILE:spirv_to_msl> ${STAGE_SPV} ${STAGE_METAL}
+                DEPENDS ${STAGE_SPV} spirv_to_msl
                 COMMENT "SPIR-V → MSL: ${SHADER}_${STAGE_SUFFIX}.spv → ${SHADER}_${STAGE_SUFFIX}.metal"
                 VERBATIM
             )
@@ -244,6 +260,15 @@ foreach(SHADER ${SHADERS})
 
         add_custom_target(${SHADER}_shader DEPENDS ${SHADER_HEADERS})
         add_dependencies(shaders ${SHADER}_shader)
+
+        if(BUILD_TESTING AND SHADER STREQUAL "line")
+            add_test(NAME msl_shader_abi
+                COMMAND ${CMAKE_COMMAND}
+                    -DVERTEX_SHADER=${CMAKE_CURRENT_BINARY_DIR}/line_vert.metal
+                    -DFRAGMENT_SHADER=${CMAKE_CURRENT_BINARY_DIR}/line_frag.metal
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/test_msl_shader_abi.cmake)
+            set_tests_properties(msl_shader_abi PROPERTIES DEPENDS line_shader)
+        endif()
 
     else()
         # Non-Apple: HLSL → SPIR-V (always) + HLSL → DXIL (Windows only)
