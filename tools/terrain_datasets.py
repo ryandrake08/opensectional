@@ -11,11 +11,17 @@ import http_retry
 
 
 class SourceTile:
-    """A source raster URL and its local filename."""
+    """A source raster URL and its local filename.
 
-    def __init__(self, url, local_name):
+    `optional` marks a companion file (e.g. a Copernicus water-body
+    mask) whose absence on the server is a skip, not a download
+    failure.
+    """
+
+    def __init__(self, url, local_name, optional=False):
         self.url = url
         self.local_name = local_name
+        self.optional = optional
 
 
 class DatasetAdapter:
@@ -45,6 +51,10 @@ class DatasetAdapter:
     #: Terrarium output precision in metres.
     vertical_precision_m = None
 
+    #: Identifier for the water-mask source recorded in manifest.json,
+    #: or None when the dataset has no companion mask.
+    water_mask_source = None
+
     #: When True, download_terrain.py re-checks an already-present file
     #: against the server's Content-Length before skipping it. When
     #: False, the file's existence alone is taken as "already done" --
@@ -52,19 +62,26 @@ class DatasetAdapter:
     #: HEAD per file would dominate a resumed run.
     verify_download_size = True
 
-    def source_tiles(self, bbox=None):
+    def source_tiles(self, bbox=None, water=True):
         """Return the SourceTile list this dataset needs downloaded.
 
         `bbox` is `(west, south, east, north)` in degrees, or None for
         the dataset's full coverage. An adapter whose source is a single
         global file raises if given a bbox rather than silently ignoring
-        it.
+        it. `water=False` drops the water-mask companion(s).
         """
         raise NotImplementedError
 
     def source_paths(self, source_dir):
-        """Return GDAL-openable source paths in `source_dir`."""
+        """Return GDAL-openable elevation source paths in `source_dir`."""
         raise NotImplementedError
+
+    def water_source_paths(self, source_dir):
+        """GDAL-openable water-mask source rasters in `source_dir`, for
+        `build_terrain.py`'s water pass. Empty when this dataset has no
+        companion mask (the default; GMTED gets its mask from a separate
+        vector source, handled elsewhere)."""
+        return []
 
 
 class Gmted2010Adapter(DatasetAdapter):
@@ -87,6 +104,14 @@ class Gmted2010Adapter(DatasetAdapter):
     vertical_precision_m = 1.0
     native_nodata = -32768
 
+    #: GMTED ships no companion mask; the water pass rasterises GSHHG
+    #: shoreline polygons instead (build_terrain.py). "i" (intermediate,
+    #: ~1 km) is finer than any GMTED grid needs.
+    water_mask_source = "gshhg"
+    gshhg_resolution = "i"
+    GSHHG_ZIP_NAME = "gshhg-shp-2.3.7.zip"
+    GSHHG_URL = f"https://www.soest.hawaii.edu/pwessel/gshhg/{GSHHG_ZIP_NAME}"
+
     SOURCE_BASE_URL = "https://edcintl.cr.usgs.gov/downloads/sciweb1/shared/topo/downloads/GMTED/Grid_ZipFiles"
     EXTRACTION_MARKER = ".osect-extracted"
 
@@ -105,13 +130,21 @@ class Gmted2010Adapter(DatasetAdapter):
         self.GRID_ZIP_NAME = f"mx{resolution_code}_grd.zip"
         self.GRID_INTERNAL_NAME = f"mx{resolution_code}_grd"
 
-    def source_tiles(self, bbox=None):
+    def source_tiles(self, bbox=None, water=True):
         if bbox is not None:
             raise ValueError(
                 f"{self.name} is a single whole-globe archive; --bbox is not supported "
                 "(there is no smaller subset to fetch)"
             )
-        return [SourceTile(url=f"{self.SOURCE_BASE_URL}/{self.GRID_ZIP_NAME}", local_name=self.GRID_ZIP_NAME)]
+        tiles = [SourceTile(url=f"{self.SOURCE_BASE_URL}/{self.GRID_ZIP_NAME}", local_name=self.GRID_ZIP_NAME)]
+        if water:
+            tiles.append(SourceTile(url=self.GSHHG_URL, local_name=self.GSHHG_ZIP_NAME))
+        return tiles
+
+    def gshhg_zip_path(self, source_dir):
+        """The downloaded GSHHG shapefile archive, or None if absent."""
+        path = os.path.join(source_dir, self.GSHHG_ZIP_NAME)
+        return path if os.path.exists(path) else None
 
     def source_paths(self, source_dir):
         extracted_dir = os.path.join(source_dir, self.GRID_INTERNAL_NAME)
@@ -192,6 +225,8 @@ class CopernicusGloAdapter(DatasetAdapter):
     vertical_precision_m = 1.0 / 256
     #: Per-release immutable COGs: presence on disk means "done".
     verify_download_size = False
+    #: Each DEM tile ships an aligned Water Body Mask in AUXFILES/.
+    water_mask_source = "copernicus-wbm"
 
     TILE_LIST_NAME = "tileList.txt"
 
@@ -224,7 +259,7 @@ class CopernicusGloAdapter(DatasetAdapter):
                 return response.read().decode().split()
         return http_retry.retry(fetch, label=self.TILE_LIST_NAME)
 
-    def source_tiles(self, bbox=None):
+    def source_tiles(self, bbox=None, water=True):
         tiles = []
         for tile_name in self._fetch_tile_list():
             cell = _parse_copernicus_cell(tile_name)
@@ -236,9 +271,19 @@ class CopernicusGloAdapter(DatasetAdapter):
                 url=f"{self.bucket_url}/{tile_name}/{tile_name}.tif",
                 local_name=f"{tile_name}.tif",
             ))
+            if water:
+                # The Water Body Mask ships in the tile's AUXFILES/ on the
+                # same grid as the DEM. Tens of KB against a ~4 MB DEM,
+                # and ~2.5% of tiles lack one -- optional, so a 404 is a skip.
+                wbm_base = tile_name.removesuffix("_DEM")
+                tiles.append(SourceTile(
+                    url=f"{self.bucket_url}/{tile_name}/AUXFILES/{wbm_base}_WBM.tif",
+                    local_name=f"{wbm_base}_WBM.tif",
+                    optional=True,
+                ))
         return tiles
 
-    def source_paths(self, source_dir):
+    def _source_files(self, source_dir, suffix):
         if not os.path.isdir(source_dir):
             return []
         # The resolution code is part of the filename (30 for GLO-90, 10
@@ -248,8 +293,16 @@ class CopernicusGloAdapter(DatasetAdapter):
         return sorted(
             os.path.join(source_dir, name)
             for name in os.listdir(source_dir)
-            if name.startswith(prefix) and name.endswith("_DEM.tif")
+            if name.startswith(prefix) and name.endswith(suffix)
         )
+
+    def source_paths(self, source_dir):
+        return self._source_files(source_dir, "_DEM.tif")
+
+    def water_source_paths(self, source_dir):
+        """The downloaded Water Body Mask rasters, parallel to
+        `source_paths` but for `build_terrain.py`'s water pass."""
+        return self._source_files(source_dir, "_WBM.tif")
 
 
 DATASETS = {

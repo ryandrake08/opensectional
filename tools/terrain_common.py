@@ -176,6 +176,49 @@ def decode_elevation_array(rgb):
     return elevation
 
 
+# --- Water mask -----------------------------------------------------------
+
+# A parallel water/z/x/y.png sidecar tree classifies each terrain texel.
+# The class rides in the R channel of an RGB PNG (same no-alpha rule as
+# the height tiles below); G and B are zero. An all-land tile (every
+# texel WATER_NONE) is not written -- the client treats an absent water
+# tile as all-land. Class values are the Copernicus Water Body Mask's
+# own scheme; GSHHG-derived masks reuse them. The v1 renderer draws
+# every water class with one flat tint (matching sectional cartography);
+# the ocean/lake/river distinction is carried in the sidecar and the
+# manifest for later use.
+WATER_NONE = 0
+WATER_OCEAN = 1
+WATER_LAKE = 2
+WATER_RIVER = 3
+WATER_CLASS_NAMES = {
+    WATER_NONE: "none",
+    WATER_OCEAN: "ocean",
+    WATER_LAKE: "lake",
+    WATER_RIVER: "river",
+}
+
+
+def encode_water_array(classes):
+    """Pack a (rows, cols) uint8 water-class array into a (rows, cols, 3)
+    uint8 RGB array with the class in the R channel.
+
+    Raises ValueError on a value outside 0..WATER_RIVER.
+    """
+    classes = np.asarray(classes, dtype=np.uint8)
+    if classes.size and int(classes.max()) > WATER_RIVER:
+        raise ValueError(f"water class array has a value > {WATER_RIVER}")
+    out = np.zeros(classes.shape + (3,), dtype=np.uint8)
+    out[..., 0] = classes
+    return out
+
+
+def decode_water_array(rgb):
+    """The (rows, cols) uint8 water-class array from an (..., 3) uint8
+    RGB array (the R channel)."""
+    return np.asarray(rgb, dtype=np.uint8)[..., 0].copy()
+
+
 # --- Tile file I/O -----------------------------------------------------
 
 def save_tile_png(path, rgb):

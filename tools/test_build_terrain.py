@@ -9,6 +9,7 @@ import math
 import os
 import sys
 import tempfile
+import zipfile
 from contextlib import redirect_stdout
 
 import numpy as np
@@ -26,6 +27,7 @@ from build_terrain import (
     build_pyramid_level,
     build_source_index,
     build_tile,
+    build_water_pass,
     candidate_parents,
     expanded_tile_bounds_3857,
     lonlat_to_tile_xy,
@@ -80,11 +82,11 @@ def _registered_dataset(name, adapter):
         del terrain_datasets.DATASETS[name]
 
 
-def _write_source_tif(path, lon0, lat0, size_deg, pixels, values, nodata):
+def _write_source_tif(path, lon0, lat0, size_deg, pixels, values, nodata, dtype="float64"):
     transform = from_origin(lon0, lat0 + size_deg, size_deg / pixels, size_deg / pixels)
     with rasterio.open(
         path, "w", driver="GTiff", height=pixels, width=pixels, count=1,
-        dtype="float64", crs="EPSG:4326", transform=transform, nodata=nodata,
+        dtype=dtype, crs="EPSG:4326", transform=transform, nodata=nodata,
     ) as dataset:
         dataset.write(values, 1)
 
@@ -283,6 +285,101 @@ def test_build_tile_handles_a_source_without_a_nodata_sentinel():
         # the future water mask is responsible for, not this step.
         assert 640.0 in np.unique(interior)
         assert not np.any(np.isnan(interior))
+    return True
+
+
+class _WbmFakeAdapter(_FakeAdapter):
+    name = "faketest_wbm_adapter"
+    water_mask_source = "copernicus-wbm"
+
+    def water_source_paths(self, source_dir):
+        return sorted(glob.glob(os.path.join(source_dir, "*_WBM.tif")))
+
+
+def test_build_water_pass_builds_sidecar_and_pyramid():
+    """A WBM uint8 source produces a water/ tree whose tiles decode back
+    to the source classes, plus a pooled pyramid."""
+    adapter = _WbmFakeAdapter()
+    with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as output_dir:
+        pixels = 400
+        classes = np.zeros((pixels, pixels), dtype=np.uint8)
+        classes[:, :pixels // 2] = terrain_common.WATER_OCEAN     # west half ocean
+        classes[100:140, 250:290] = terrain_common.WATER_LAKE     # a lake blob on land
+        _write_source_tif(os.path.join(source_dir, "patch_WBM.tif"), 0.0, 0.0, 0.4, pixels,
+                          classes, nodata=0, dtype="uint8")
+
+        z = 9
+        x, y = lonlat_to_tile_xy(0.2, 0.2, z)
+        height_tiles = sorted(tiles_covering_bounds(0.0, 0.0, 0.4, 0.4, z))
+        result = build_water_pass(source_dir, adapter, output_dir, z - 2, z, height_tiles, 1)
+        assert result == (z - 2, z, result[2])
+
+        water = terrain_common.decode_water_array(
+            terrain_common.load_tile_png(os.path.join(output_dir, "water", str(z), str(x), f"{y}.png")))
+        interior = terrain_common.extract_interior(water)
+        present = set(np.unique(interior).tolist())
+        assert terrain_common.WATER_OCEAN in present and terrain_common.WATER_LAKE in present
+        assert interior[interior.shape[0] // 2, 0] == terrain_common.WATER_OCEAN     # west: ocean
+        assert interior[interior.shape[0] // 2, -1] == terrain_common.WATER_NONE     # east: land
+
+        assert all_tiles_at(z - 1, os.path.join(output_dir, "water"))
+        parent = terrain_common.decode_water_array(terrain_common.load_tile_png(
+            os.path.join(output_dir, "water", str(z - 1), str(x // 2), f"{y // 2}.png")))
+        assert (parent != 0).any()
+    return True
+
+
+def test_build_water_pass_builds_to_height_max_zoom():
+    """The water tree is built to the same max zoom as the height tree
+    (no cap), so the client always finds an exact-zoom water tile."""
+    adapter = _WbmFakeAdapter()
+    with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as output_dir:
+        _write_source_tif(os.path.join(source_dir, "p_WBM.tif"), 0.0, 0.0, 0.4, 100,
+                          np.full((100, 100), terrain_common.WATER_OCEAN, dtype=np.uint8),
+                          nodata=0, dtype="uint8")
+        height_zoom = 13
+        height_tiles = sorted(tiles_covering_bounds(0.0, 0.0, 0.4, 0.4, height_zoom))
+        result = build_water_pass(source_dir, adapter, output_dir, height_zoom - 1, height_zoom,
+                                  height_tiles, 1)
+        assert result[1] == height_zoom
+        assert all_tiles_at(height_zoom, os.path.join(output_dir, "water"))
+    return True
+
+
+def test_build_water_pass_returns_none_without_water_sources():
+    with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as output_dir:
+        assert build_water_pass(source_dir, _FakeAdapter(), output_dir, 0, 4, [], 1) is None
+    return True
+
+
+def test_gshhg_water_provider_rasterizes_a_shoreline():
+    """A minimal GSHHG-layout zip with one land polygon: the provider
+    returns ocean outside it and land inside."""
+    from build_terrain import _GshhgWaterProvider
+    import fiona
+    from shapely.geometry import mapping, box as _box
+
+    with tempfile.TemporaryDirectory() as d:
+        shp_dir = os.path.join(d, "GSHHS_shp", "i")
+        os.makedirs(shp_dir)
+        land = _box(-1.0, -1.0, 0.5, 0.5)  # covers the SW, leaves NE as ocean
+        schema = {"geometry": "Polygon", "properties": {"level": "int"}}
+        with fiona.open(os.path.join(shp_dir, "GSHHS_i_L1.shp"), "w",
+                        driver="ESRI Shapefile", crs="EPSG:4326", schema=schema) as dst:
+            dst.write({"geometry": mapping(land), "properties": {"level": 1}})
+        zip_path = os.path.join(d, "gshhg.zip")
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            for f in os.listdir(shp_dir):
+                zf.write(os.path.join(shp_dir, f), f"GSHHS_shp/i/{f}")
+
+        provider = _GshhgWaterProvider(zip_path, "i")
+        z = 9
+        land_tile = lonlat_to_tile_xy(-0.5, -0.5, z)
+        ocean_tile = lonlat_to_tile_xy(3.0, 3.0, z)
+        land_classes = provider(z, *land_tile)
+        ocean_classes = provider(z, *ocean_tile)
+        assert (land_classes == terrain_common.WATER_NONE).mean() > 0.9
+        assert np.all(ocean_classes == terrain_common.WATER_OCEAN)
     return True
 
 
@@ -654,6 +751,10 @@ TESTS = [
     test_build_tile_raises_when_reproject_drops_real_data,
     test_build_tile_all_nodata_source_is_empty,
     test_build_tile_handles_a_source_without_a_nodata_sentinel,
+    test_build_water_pass_builds_sidecar_and_pyramid,
+    test_build_water_pass_builds_to_height_max_zoom,
+    test_build_water_pass_returns_none_without_water_sources,
+    test_gshhg_water_provider_rasterizes_a_shoreline,
     test_build_tile_skips_existing_unless_force,
     test_build_tile_applies_datum_conversion,
     test_neighbor_xy_wraps_longitude_not_latitude,

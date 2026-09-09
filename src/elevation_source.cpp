@@ -123,6 +123,36 @@ namespace
         }
         return static_cast<int>(value);
     }
+
+    // The brace-delimited object that `key` maps to, or nullopt when the
+    // key is absent. Used to scope nested lookups (e.g. water_mask's own
+    // min_zoom, which must not resolve to the top-level one).
+    std::optional<std::string> object_value(const std::string& json, const std::string& key)
+    {
+        const size_t k = json.find('"' + key + '"');
+        if(k == std::string::npos)
+        {
+            return std::nullopt;
+        }
+        const size_t open = json.find('{', k);
+        if(open == std::string::npos)
+        {
+            throw std::runtime_error("manifest.json: invalid " + key);
+        }
+        int depth = 0;
+        for(size_t i = open; i < json.size(); ++i)
+        {
+            if(json[i] == '{')
+            {
+                ++depth;
+            }
+            else if(json[i] == '}' && --depth == 0)
+            {
+                return json.substr(open, i - open + 1);
+            }
+        }
+        throw std::runtime_error("manifest.json: invalid " + key);
+    }
 }
 
 namespace osect
@@ -163,6 +193,21 @@ namespace osect
         {
             throw std::runtime_error("manifest.json: invalid tile geometry");
         }
+
+        // The optional water/ sidecar tree. Built over the same zoom
+        // range as the height tiles; the zoom-range guard stays as a
+        // defensive check on a hand-edited manifest.
+        if(const auto water = object_value(manifest, "water_mask"))
+        {
+            has_water_mask_ = true;
+            water_min_zoom_ = integer_value(*water, "min_zoom");
+            water_max_zoom_ = integer_value(*water, "max_zoom");
+            if(water_max_zoom_ < water_min_zoom_)
+            {
+                throw std::runtime_error("manifest.json: invalid water_mask zoom range");
+            }
+        }
+
         available_ = true;
     }
 
@@ -189,6 +234,21 @@ namespace osect
     int elevation_source::skirt() const
     {
         return skirt_;
+    }
+
+    bool elevation_source::has_water_mask() const
+    {
+        return has_water_mask_;
+    }
+
+    int elevation_source::water_min_zoom() const
+    {
+        return water_min_zoom_;
+    }
+
+    int elevation_source::water_max_zoom() const
+    {
+        return water_max_zoom_;
     }
 
     double elevation_source::vertical_precision_m() const

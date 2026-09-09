@@ -16,10 +16,15 @@ from terrain_common import (
     TILE_PIXELS,
     VERTICAL_PRECISION_SUBMETRE,
     VERTICAL_PRECISION_WHOLE_METRE,
+    WATER_LAKE,
+    WATER_OCEAN,
+    WATER_RIVER,
     decode_elevation,
     decode_elevation_array,
+    decode_water_array,
     encode_elevation,
     encode_elevation_array,
+    encode_water_array,
     extract_interior,
     interior_slice,
     load_tile_png,
@@ -182,6 +187,37 @@ def test_png_roundtrip():
     return True
 
 
+def test_water_array_roundtrip():
+    rng = np.random.default_rng(7)
+    classes = rng.integers(0, WATER_RIVER + 1, size=(FULL_TILE_PIXELS, FULL_TILE_PIXELS), dtype=np.uint8)
+    rgb = encode_water_array(classes)
+    assert rgb.shape == (FULL_TILE_PIXELS, FULL_TILE_PIXELS, 3)
+    assert np.all(rgb[..., 1:] == 0)  # class rides in R only
+    assert np.array_equal(decode_water_array(rgb), classes)
+    return True
+
+
+def test_water_png_roundtrip():
+    classes = np.full((FULL_TILE_PIXELS, FULL_TILE_PIXELS), WATER_OCEAN, dtype=np.uint8)
+    classes[10:20, 10:20] = WATER_LAKE
+    classes[30, :] = WATER_RIVER
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "water.png")
+        save_tile_png(path, encode_water_array(classes))
+        loaded = load_tile_png(path)
+    assert np.array_equal(decode_water_array(loaded), classes)
+    return True
+
+
+def test_water_array_rejects_out_of_range_class():
+    try:
+        encode_water_array(np.array([[0, 1], [2, 9]], dtype=np.uint8))
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+    return True
+
+
 TESTS = [
     test_scalar_roundtrip,
     test_nodata_sentinel,
@@ -193,6 +229,9 @@ TESTS = [
     test_array_nodata_roundtrip,
     test_skirt_geometry,
     test_png_roundtrip,
+    test_water_array_roundtrip,
+    test_water_png_roundtrip,
+    test_water_array_rejects_out_of_range_class,
 ]
 
 

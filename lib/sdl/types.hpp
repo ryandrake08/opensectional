@@ -225,7 +225,7 @@ namespace sdl
     // All shaders accept this structure but only use the fields they need.
     // This eliminates the need for multiple uniform structures and simplifies
     // shader switching without changing uniform layout.
-    // Total size: 400 bytes (naturally aligned)
+    // Total size: 416 bytes (naturally aligned)
     struct uniform_buffer
     {
         // Core transformation matrices (used by ALL shaders)
@@ -257,6 +257,12 @@ namespace sdl
         float taws_caution_m;        // 4 bytes, offset 392 - metres below cruise for the caution band
         float taws_clear_m;          // 4 bytes, offset 396 - metres below cruise where terrain stops drawing
 
+        // Water-mask parameters (used by terrain shader)
+        int water_mode;              // 4 bytes, offset 400 - 0 no water mask, 1 flat-tint water fragments
+        float water_r;               // 4 bytes, offset 404 - flat water tint, 0..1
+        float water_g;               // 4 bytes, offset 408
+        float water_b;               // 4 bytes, offset 412
+
         // Default constructor: Initialize all fields to safe defaults
         uniform_buffer()
             : projection_matrix(1.0F), // Identity matrix
@@ -279,7 +285,11 @@ namespace sdl
               taws_cruise_m(0.0F),
               taws_warning_m(152.0F),
               taws_caution_m(305.0F),
-              taws_clear_m(610.0F)
+              taws_clear_m(610.0F),
+              water_mode(0),
+              water_r(0.66F),
+              water_g(0.78F),
+              water_b(0.88F)
         {
         }
     };

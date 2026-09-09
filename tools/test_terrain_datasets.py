@@ -94,12 +94,23 @@ def test_declared_metadata():
     return True
 
 
-def test_source_tiles_returns_the_single_global_archive():
+def test_source_tiles_returns_the_global_archive_plus_gshhg():
     a = get_adapter("gmted2010-30")
-    tiles = a.source_tiles()
-    assert len(tiles) == 1
-    assert tiles[0].local_name == a.GRID_ZIP_NAME
-    assert tiles[0].url.endswith(a.GRID_ZIP_NAME)
+    assert [t.local_name for t in a.source_tiles()] == [a.GRID_ZIP_NAME, a.GSHHG_ZIP_NAME]
+    # water=False drops the shoreline archive.
+    water_off = a.source_tiles(water=False)
+    assert len(water_off) == 1 and water_off[0].local_name == a.GRID_ZIP_NAME
+    assert a.source_tiles()[1].url == a.GSHHG_URL
+    return True
+
+
+def test_gmted_gshhg_zip_path():
+    a = get_adapter("gmted2010-15")
+    with tempfile.TemporaryDirectory() as source_dir:
+        assert a.gshhg_zip_path(source_dir) is None
+        p = os.path.join(source_dir, a.GSHHG_ZIP_NAME)
+        open(p, "w").close()
+        assert a.gshhg_zip_path(source_dir) == p
     return True
 
 
@@ -223,17 +234,26 @@ def test_copernicus_source_tiles_filters_the_tile_list():
     original = CopernicusGloAdapter._fetch_tile_list
     CopernicusGloAdapter._fetch_tile_list = lambda self: tile_list.split()
     try:
+        # Each kept cell yields a DEM tile plus its optional WBM companion.
         all_tiles = a.source_tiles()
-        assert len(all_tiles) == 3  # the junk line is dropped
+        assert len(all_tiles) == 6  # 3 cells (junk line dropped) x (DEM + WBM)
         conus = a.source_tiles((-125.0, 24.0, -66.0, 50.0))
         assert [t.local_name for t in conus] == [
             "Copernicus_DSM_COG_30_N39_00_W120_00_DEM.tif",
+            "Copernicus_DSM_COG_30_N39_00_W120_00_WBM.tif",
             "Copernicus_DSM_COG_30_N45_00_W110_00_DEM.tif",
+            "Copernicus_DSM_COG_30_N45_00_W110_00_WBM.tif",
         ]
+        assert [t.optional for t in conus] == [False, True, False, True]
         assert conus[0].url == (
             "https://copernicus-dem-90m.s3.amazonaws.com/"
             "Copernicus_DSM_COG_30_N39_00_W120_00_DEM/"
             "Copernicus_DSM_COG_30_N39_00_W120_00_DEM.tif"
+        )
+        assert conus[1].url == (
+            "https://copernicus-dem-90m.s3.amazonaws.com/"
+            "Copernicus_DSM_COG_30_N39_00_W120_00_DEM/AUXFILES/"
+            "Copernicus_DSM_COG_30_N39_00_W120_00_WBM.tif"
         )
     finally:
         CopernicusGloAdapter._fetch_tile_list = original
@@ -269,13 +289,29 @@ def test_copernicus_source_paths_ignores_the_other_resolution():
     return True
 
 
+def test_copernicus_water_source_paths():
+    glo90 = get_adapter("copernicus-glo90")
+    with tempfile.TemporaryDirectory() as source_dir:
+        for name in ("Copernicus_DSM_COG_30_N39_00_W120_00_DEM.tif",
+                     "Copernicus_DSM_COG_30_N39_00_W120_00_WBM.tif",
+                     "Copernicus_DSM_COG_30_N45_00_W110_00_WBM.tif",
+                     "Copernicus_DSM_COG_10_N39_00_W120_00_WBM.tif"):  # wrong resolution
+            open(os.path.join(source_dir, name), "w").close()
+        assert glo90.water_source_paths(source_dir) == [
+            os.path.join(source_dir, "Copernicus_DSM_COG_30_N39_00_W120_00_WBM.tif"),
+            os.path.join(source_dir, "Copernicus_DSM_COG_30_N45_00_W110_00_WBM.tif"),
+        ]
+    return True
+
+
 TESTS = [
     test_registry_lookup,
     test_resolution_variants_differ_only_in_resolution,
     test_registry_unknown_dataset,
     test_base_class_is_unusable_directly,
     test_declared_metadata,
-    test_source_tiles_returns_the_single_global_archive,
+    test_source_tiles_returns_the_global_archive_plus_gshhg,
+    test_gmted_gshhg_zip_path,
     test_source_paths_extracts_the_zip_once,
     test_source_paths_replaces_an_incomplete_extraction,
     test_source_paths_empty_when_not_yet_downloaded,
@@ -287,6 +323,7 @@ TESTS = [
     test_copernicus_source_tiles_filters_the_tile_list,
     test_copernicus_source_paths_globs_downloaded_cogs,
     test_copernicus_source_paths_ignores_the_other_resolution,
+    test_copernicus_water_source_paths,
 ]
 
 

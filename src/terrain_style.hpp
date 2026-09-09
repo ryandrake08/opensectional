@@ -34,6 +34,12 @@ namespace osect
         float sun_altitude_deg = 45.0F;
         float vertical_exaggeration = 1.0F;
 
+        // Flat tint for water-mask fragments (0..1). Default a pale
+        // sectional blue; overridden by [terrain] water_color = #RRGGBB.
+        float water_r = 168.0F / 255.0F;
+        float water_g = 200.0F / 255.0F;
+        float water_b = 224.0F / 255.0F;
+
         // Ascending by elevation, at least two stops.
         std::vector<hypsometric_stop> ramp;
 

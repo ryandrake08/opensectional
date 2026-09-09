@@ -181,6 +181,14 @@ namespace osect
         {
             ramp = parse_ramp(ini.get<std::string>("terrain.ramp"));
         }
+        if(ini.exists("terrain.water_color"))
+        {
+            const std::string spec = trim(ini.get<std::string>("terrain.water_color"));
+            if(!parse_hex_color(spec, water_r, water_g, water_b))
+            {
+                reject("water_color", "must be #RRGGBB or #RGB", spec);
+            }
+        }
 
         if(!(opacity >= 0.0F) || opacity > 1.0F)
         {

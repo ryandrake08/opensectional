@@ -18,13 +18,13 @@ import time
 
 import numpy as np
 import rasterio
+import rasterio.features
 import rasterio.transform
-from rasterio.merge import merge as rasterio_merge
-from rasterio.warp import Resampling, reproject
-
 import terrain_common
 import terrain_datum
 import terrain_manifest
+from rasterio.merge import merge as rasterio_merge
+from rasterio.warp import Resampling, reproject
 from terrain_datasets import get_adapter
 from tile_math import (
     EARTH_RADIUS_M,
@@ -91,12 +91,14 @@ def tiles_covering_bounds(lon_min, lat_min, lon_max, lat_max, zoom):
     return {(zoom, x, y) for y in range(y_min, y_max + 1) for x in range(x_min, x_max + 1)}
 
 
-def build_source_index(source_dir, adapter):
+def build_source_index(source_dir, adapter, *, water=False):
     """[(path, (lon_min, lat_min, lon_max, lat_max)), ...] for every
     source raster `adapter` resolves in source_dir, read once from
-    each dataset's header."""
+    each dataset's header. `water=True` indexes the water-mask sources
+    instead of the elevation sources."""
+    paths = adapter.water_source_paths(source_dir) if water else adapter.source_paths(source_dir)
     index = []
-    for path in adapter.source_paths(source_dir):
+    for path in paths:
         with rasterio.open(path) as dataset:
             b = dataset.bounds
             index.append((path, (b.left, b.bottom, b.right, b.top)))
@@ -431,6 +433,297 @@ def stitch_level_skirts(zoom, output_dir, pool):
     return len(tiles)
 
 
+# --- Water-mask pass -------------------------------------------------
+#
+# A parallel `water/z/x/y.png` tree beside the height tiles, same zoom
+# range and tile + skirt geometry: the class (terrain_common.WATER_*)
+# rides in the R channel. All functions take the water root
+# (output_dir/water) directly, so candidate_parents / all_tiles_at work
+# on it unchanged. A per-adapter provider turns the dataset's water
+# source into a class array for one tile: the Copernicus WBM raster, or
+# rasterised GSHHG shoreline polygons for GMTED.
+
+#: GSHHG level -> class painted for it. Painter's order: land over
+#: ocean, lake over land, island-in-lake over lake, pond over island.
+#: L5/L6 (Antarctic ice front / grounding line) are skipped -- that far
+#: south is ice, not water, and outside GMTED's coverage.
+_GSHHG_LEVELS = ((1, 0), (2, 2), (3, 0), (4, 2))  # (level, WATER_* class)
+
+
+def _water_tile_path(z, x, y, water_dir):
+    return os.path.join(water_dir, str(z), str(x), f"{y}.png")
+
+
+def _write_water_tile(tile_path, classes):
+    rgb = terrain_common.encode_water_array(classes)
+    os.makedirs(os.path.dirname(tile_path), exist_ok=True)
+    tmp_path = tile_path[: -len(".png")] + ".tmp.png"
+    terrain_common.save_tile_png(tmp_path, rgb)
+    os.replace(tmp_path, tile_path)
+
+
+def _load_water_interior(z, x, y, water_dir):
+    """The 256x256 class interior of a built water tile, or None."""
+    path = _water_tile_path(z, x, y, water_dir)
+    if not os.path.exists(path):
+        return None
+    classes = terrain_common.decode_water_array(terrain_common.load_tile_png(path))
+    return terrain_common.extract_interior(classes)
+
+
+class _WbmWaterProvider:
+    """Reprojects the Copernicus Water Body Mask rasters into a tile's
+    class grid. Returns None where no WBM source covers the tile."""
+
+    def __init__(self, index):
+        self._index = index
+
+    def __call__(self, z, x, y):
+        merc_bounds = expanded_tile_bounds_3857(z, x, y)
+        lon_min, lat_min, lon_max, lat_max = mercator_bounds_to_lonlat(*merc_bounds)
+        window = (lon_min - _MARGIN_DEG, lat_min - _MARGIN_DEG,
+                  lon_max + _MARGIN_DEG, lat_max + _MARGIN_DEG)
+        sources = relevant_sources(self._index, window)
+        if not sources:
+            return None
+        # Class 0 (no water) acts as merge/reproject nodata: land never
+        # overwrites anything and the margin fills as land, so only water
+        # classes are painted into `destination`.
+        merged, merged_transform = rasterio_merge(sources, bounds=window, nodata=0)
+        merged = merged[0].astype(np.uint8)
+        full = terrain_common.FULL_TILE_PIXELS
+        dst_transform = rasterio.transform.from_bounds(*merc_bounds, full, full)
+        destination = np.zeros((full, full), dtype=np.uint8)
+        reproject(
+            source=merged, destination=destination,
+            src_transform=merged_transform, src_crs="EPSG:4326",
+            dst_transform=dst_transform, dst_crs="EPSG:3857",
+            src_nodata=0, dst_nodata=0,
+            resampling=Resampling.nearest,
+        )
+        return destination
+
+
+class _GshhgWaterProvider:
+    """Rasterises GSHHG shoreline polygons into a tile's class grid.
+    Always returns a full array (ocean where nothing else applies)."""
+
+    def __init__(self, zip_path, resolution):
+        import zipfile
+
+        import fiona
+        from pyproj import Transformer
+        from shapely import STRtree
+        from shapely.geometry import box, shape
+        from shapely.ops import transform as shapely_transform
+
+        self._box = box
+        to_merc = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True).transform
+        clip = box(-180.0, -MERCATOR_MAX_LAT, 180.0, MERCATOR_MAX_LAT)
+        present = set(zipfile.ZipFile(zip_path).namelist())
+
+        self._layers = []  # [(paint_class, [merc geoms], STRtree), ...]
+        for level, paint_class in _GSHHG_LEVELS:
+            entry = f"GSHHS_shp/{resolution}/GSHHS_{resolution}_L{level}.shp"
+            if entry not in present:
+                continue  # L3/L4 are sparse and may be absent
+            geoms = []
+            with fiona.open(f"zip://{zip_path}!/{entry}") as src:
+                for feat in src:
+                    g = shape(feat["geometry"])
+                    if not g.intersects(clip):
+                        continue
+                    if not g.within(clip):
+                        g = g.intersection(clip)
+                    if not g.is_empty:
+                        geoms.append(shapely_transform(to_merc, g))
+            self._layers.append((paint_class, geoms, STRtree(geoms) if geoms else None))
+
+    def __call__(self, z, x, y):
+        merc = expanded_tile_bounds_3857(z, x, y)
+        full = terrain_common.FULL_TILE_PIXELS
+        transform = rasterio.transform.from_bounds(*merc, full, full)
+        tile_box = self._box(*merc)
+        classes = np.full((full, full), terrain_common.WATER_OCEAN, dtype=np.uint8)
+        for paint_class, geoms, tree in self._layers:
+            if tree is None:
+                continue
+            shapes = [(geoms[i], 1) for i in tree.query(tile_box) if geoms[i].intersects(tile_box)]
+            if not shapes:
+                continue
+            # Land polygons (L1, L3) grab every pixel they touch so a
+            # coastline hugs the land side; water bodies (L2, L4) only
+            # take pixels whose centre is inside, so they don't grow.
+            hit = rasterio.features.rasterize(shapes, out_shape=(full, full), transform=transform,
+                                              fill=0, dtype=np.uint8,
+                                              all_touched=(paint_class == terrain_common.WATER_NONE))
+            classes[hit == 1] = paint_class
+        return classes
+
+
+def _make_water_provider(source_dir, adapter):
+    """The water provider for `adapter`, or None if it has no usable
+    water source in `source_dir`."""
+    src = getattr(adapter, "water_mask_source", None)
+    if src == "copernicus-wbm":
+        index = build_source_index(source_dir, adapter, water=True)
+        return _WbmWaterProvider(index) if index else None
+    if src == "gshhg":
+        zip_path = adapter.gshhg_zip_path(source_dir)
+        return _GshhgWaterProvider(zip_path, adapter.gshhg_resolution) if zip_path else None
+    return None
+
+
+def build_water_tile(z, x, y, provider, water_dir, force=False):
+    """Build one water tile. Returns "built", "skipped" (already
+    present), or "empty" (no source coverage, or all-land)."""
+    tile_path = _water_tile_path(z, x, y, water_dir)
+    if not force and os.path.exists(tile_path):
+        return "skipped"
+    classes = provider(z, x, y)
+    if classes is None or not classes.any():
+        return "empty"
+    _write_water_tile(tile_path, classes)
+    return "built"
+
+
+def pool_water_children(parent_z, parent_x, parent_y, water_dir):
+    """Reduce 4 child water interiors one level. A parent texel is water
+    only when a strict majority (3 of 4) of its children are, with ties
+    (2 of 4) resolving to land -- not the height pyramid's max-pool. An
+    isolated child water texel drops out, a solid water body keeps its
+    size, and coastlines pull landward one texel per level, countering
+    the outward creep the old max-pool produced. Class is the max of the
+    water children present."""
+    child_z = parent_z + 1
+    tp = terrain_common.TILE_PIXELS
+    merged = np.zeros((tp * 2, tp * 2), dtype=np.uint8)
+    any_child = False
+    for dy in (0, 1):
+        for dx in (0, 1):
+            interior = _load_water_interior(child_z, parent_x * 2 + dx, parent_y * 2 + dy, water_dir)
+            if interior is None:
+                continue
+            merged[dy * tp:(dy + 1) * tp, dx * tp:(dx + 1) * tp] = interior
+            any_child = True
+    if not any_child:
+        return None
+    blocks = merged.reshape(tp, 2, tp, 2)
+    water_count = (blocks > 0).sum(axis=(1, 3))
+    pooled = np.where(water_count >= 3, blocks.max(axis=(1, 3)), 0).astype(np.uint8)
+    if not pooled.any():
+        return None
+    return pooled
+
+
+def pool_water_tile(parent_z, parent_x, parent_y, water_dir, force=False):
+    tile_path = _water_tile_path(parent_z, parent_x, parent_y, water_dir)
+    if not force and os.path.exists(tile_path):
+        return "skipped"
+    interior = pool_water_children(parent_z, parent_x, parent_y, water_dir)
+    if interior is None:
+        return "empty"
+    full = np.zeros((terrain_common.FULL_TILE_PIXELS, terrain_common.FULL_TILE_PIXELS), dtype=np.uint8)
+    rows, cols = terrain_common.interior_slice()
+    full[rows, cols] = interior
+    _write_water_tile(tile_path, full)
+    return "built"
+
+
+def stitch_water_skirt(z, x, y, water_dir):
+    """Fill a water tile's skirt from same-zoom neighbours."""
+    tile_path = _water_tile_path(z, x, y, water_dir)
+    classes = terrain_common.decode_water_array(terrain_common.load_tile_png(tile_path))
+    n = 2 ** z
+    for _side, ((row_slice, col_slice), extract) in _SKIRT_SIDES.items():
+        neighbor = _neighbor_xy(x, y, _side, n)
+        if neighbor is None:
+            continue
+        neighbor_interior = _load_water_interior(z, *neighbor, water_dir)
+        if neighbor_interior is None:
+            continue
+        classes[row_slice, col_slice] = extract(neighbor_interior)
+    _write_water_tile(tile_path, classes)
+
+
+# Water workers inherit the provider (and the GSHHG provider's ~150 MB
+# of geometry) from the parent via fork, so no initializer is needed.
+_water_provider = None
+
+
+def _water_build_worker(args):
+    z, x, y, water_dir, force = args
+    return build_water_tile(z, x, y, _water_provider, water_dir, force=force)
+
+
+def _water_pool_worker(args):
+    z, x, y, water_dir, force = args
+    return pool_water_tile(z, x, y, water_dir, force=force)
+
+
+def _water_stitch_worker(args):
+    z, x, y, water_dir = args
+    stitch_water_skirt(z, x, y, water_dir)
+
+
+@contextlib.contextmanager
+def water_pool(num_workers):
+    """One fork-based worker pool for the whole water pass -- the top
+    zoom build, its skirts, and every pyramid level. Workers inherit the
+    provider (and the GSHHG provider's ~150 MB of geometry) from the
+    parent via fork, so no initializer is needed."""
+    if num_workers == 1:
+        yield None
+        return
+    ctx = multiprocessing.get_context("fork")
+    with ctx.Pool(num_workers) as pool:
+        yield pool
+
+
+def build_water_pass(source_dir, adapter, output_dir, min_zoom, max_zoom,
+                     height_tiles, num_workers, force=False):
+    """Build the water/ sidecar tree over the same zoom range as the
+    height tiles. Returns (min_zoom, max_zoom, bbox), or None if the
+    adapter has no usable water source / nothing was built."""
+    global _water_provider
+    _water_provider = _make_water_provider(source_dir, adapter)
+    if _water_provider is None:
+        return None
+
+    water_dir = os.path.join(output_dir, "water")
+    tiles = sorted({(x, y) for _, x, y in height_tiles})
+    # The GSHHG provider forks ~150 MB of geometry per worker (copy on
+    # write); cap the water pass below the height build's worker count.
+    workers = min(num_workers, 8)
+    print(f"water: {len(tiles)} candidate tile(s) at z{max_zoom}")
+
+    with water_pool(workers) as pool:
+        start = time.time()
+        results = _run_on_pool([(max_zoom, x, y, water_dir, force) for x, y in tiles],
+                               _water_build_worker, pool)
+        level = all_tiles_at(max_zoom, water_dir)
+        _run_on_pool([(z, x, y, water_dir) for z, x, y in level], _water_stitch_worker, pool)
+        print(f"water z{max_zoom}: {results.count('built')} built, {results.count('skipped')} skipped, "
+              f"{results.count('empty')} empty, of {len(tiles)}, in {time.time() - start:.1f}s")
+
+        # Majority-pool the pyramid so water stays proportional at reduced
+        # zoom (the height pyramid's max-pool would grow it at every step).
+        for parent_zoom in range(max_zoom - 1, min_zoom - 1, -1):
+            start = time.time()
+            parents = sorted(candidate_parents(parent_zoom + 1, water_dir))
+            pooled = _run_on_pool([(parent_zoom, x, y, water_dir, force) for x, y in parents],
+                                  _water_pool_worker, pool)
+            level = all_tiles_at(parent_zoom, water_dir)
+            _run_on_pool([(z, x, y, water_dir) for z, x, y in level], _water_stitch_worker, pool)
+            print(f"water z{parent_zoom} (pooled from z{parent_zoom + 1}): {pooled.count('built')} built, "
+                  f"{pooled.count('skipped')} skipped, {len(level)} skirt(s) stitched, in {time.time() - start:.1f}s")
+
+    try:
+        return min_zoom, max_zoom, scan_built_coverage(water_dir)[2]
+    except ValueError:
+        return None  # every candidate tile was all-land
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Build the highest-zoom terrain tiles from downloaded DEM source rasters."
@@ -442,6 +735,8 @@ def main(argv=None):
                              "(the minimum is for the pyramid-reduction step that runs on top of it).")
     parser.add_argument("--force", action="store_true",
                         help="Rebuild a tile even if its output file already exists")
+    parser.add_argument("--no-water", action="store_true",
+                        help="Skip building the water/ mask sidecar tree")
     parser.add_argument("--workers", type=int, default=os.cpu_count(),
                         help=f"Number of parallel workers (default: {os.cpu_count()})")
     parser.add_argument("source_dir", help="Directory of downloaded source rasters")
@@ -503,11 +798,29 @@ def main(argv=None):
             print(f"z{parent_zoom} (pooled from z{parent_zoom + 1}): {built} built, {skipped} skipped, "
                   f"{empty} empty, {stitched} skirt(s) stitched, in {elapsed:.1f}s")
 
+    # Water-mask sidecar: Copernicus WBM, or rasterised GSHHG for GMTED.
+    water = None
+    if not args.no_water:
+        water = build_water_pass(args.source_dir, adapter, args.output_dir,
+                                 min_zoom, max_zoom, tiles, num_workers, force=args.force)
+
     # Derive the manifest from tiles on disk.
     built_min, built_max, bbox = scan_built_coverage(args.output_dir)
-    terrain_manifest.write_manifest(adapter, args.output_dir, built_min, built_max, bbox)
+    water_mask = None
+    if water is not None:
+        water_min, water_max, water_bbox = water
+        water_mask = {
+            "source": adapter.water_mask_source,
+            "classes": terrain_common.WATER_CLASS_NAMES,
+            "min_zoom": water_min,
+            "max_zoom": water_max,
+            "bbox": list(water_bbox),
+        }
+    terrain_manifest.write_manifest(adapter, args.output_dir, built_min, built_max, bbox,
+                                    water_mask=water_mask)
     print(f"\nWrote manifest.json: z{built_min}-{built_max}, "
-          f"bbox=({bbox[0]:.2f}, {bbox[1]:.2f}, {bbox[2]:.2f}, {bbox[3]:.2f})")
+          f"bbox=({bbox[0]:.2f}, {bbox[1]:.2f}, {bbox[2]:.2f}, {bbox[3]:.2f})"
+          + (f", water mask z{water_mask['min_zoom']}-{water_mask['max_zoom']}" if water_mask else ""))
 
 
 if __name__ == "__main__":

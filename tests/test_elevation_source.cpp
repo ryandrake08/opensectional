@@ -34,7 +34,8 @@ namespace
     };
 
     std::string manifest(const std::string& dataset, int tile_pixels, int skirt_pixels, int min_zoom, int max_zoom,
-                         double precision, const std::string& datum = "EGM2008")
+                         double precision, const std::string& datum = "EGM2008",
+                         const std::string& water_mask = {})
     {
         return "{\n"
                "  \"dataset\": \"" + dataset + "\",\n"
@@ -46,7 +47,8 @@ namespace
                "  \"tile_pixels\": " + std::to_string(tile_pixels) + ",\n"
                "  \"skirt_pixels\": " + std::to_string(skirt_pixels) + ",\n"
                "  \"min_zoom\": " + std::to_string(min_zoom) + ",\n"
-               "  \"max_zoom\": " + std::to_string(max_zoom) + "\n"
+               "  \"max_zoom\": " + std::to_string(max_zoom) +
+               (water_mask.empty() ? "" : ",\n  \"water_mask\": " + water_mask) + "\n"
                "}\n";
     }
 
@@ -104,6 +106,28 @@ TEST_CASE("Elevation source reads dataset-agnostic manifests")
     CHECK(second_source.vertical_precision_m() == 0.25);
     CHECK(second_source.attribution() == "Test data");
     CHECK(second_source.data_source_row().info == "second display 2026-01-01");
+}
+
+TEST_CASE("Elevation source reads the optional water_mask block")
+{
+    const std::string wm = "{\n"
+                           "    \"source\": \"gshhg\",\n"
+                           "    \"classes\": {\"0\": \"none\", \"1\": \"ocean\", \"2\": \"lake\"},\n"
+                           "    \"min_zoom\": 0,\n"
+                           "    \"max_zoom\": 8,\n"
+                           "    \"bbox\": [-180, -60, 180, 84]\n"
+                           "  }";
+    temporary_tree with("osect-elevation-source-water", manifest("wet", 256, 2, 0, 11, 1.0, "EGM2008", wm));
+    temporary_tree without("osect-elevation-source-nowater", manifest("dry", 256, 2, 0, 6, 1.0));
+
+    const osect::elevation_source wet(with.path());
+    // The nested min_zoom must not collide with the top-level one (0..11 here).
+    CHECK(wet.has_water_mask());
+    CHECK(wet.water_min_zoom() == 0);
+    CHECK(wet.water_max_zoom() == 8);
+    CHECK(wet.max_zoom() == 11);
+
+    CHECK_FALSE(osect::elevation_source(without.path()).has_water_mask());
 }
 
 TEST_CASE("Missing terrain tree is unavailable")

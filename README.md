@@ -327,6 +327,7 @@ fetched and parsed in-app at runtime — see
 | Natural Earth basemap | Natural Earth | https://www.naturalearthdata.com/ | Irregular | build_basemap.py |
 | GMTED2010 terrain elevation | USGS/NGA | https://www.usgs.gov/coastal-changes-and-impacts/gmted2010 | Static (2010) | build_terrain.py |
 | Copernicus DEM (GLO-90 / GLO-30) terrain elevation | ESA / Airbus | https://registry.opendata.aws/copernicus-dem/ | Static (2021 release) | build_terrain.py |
+| GSHHG shoreline polygons (water mask for GMTED2010) | Wessel & Smith (SOEST Hawaii) | https://www.soest.hawaii.edu/pwessel/gshhg/ | Static (2.3.7, 2017) | build_terrain.py |
 
 Three offline artifacts are produced from these sources: the aviation database, the
 basemap tile directory, and the terrain elevation tile directory.
@@ -418,13 +419,19 @@ The installers ship a small global terrain elevation set built from
 and feeds the shaded-relief map layer and route terrain profile.
 
 ```bash
-# Download the GMTED2010 source (one whole-globe archive)
+# Download the GMTED2010 grid plus the GSHHG shoreline archive (149 MB, once)
 tools/env/bin/python3 tools/download_terrain.py --dataset gmted2010-30 terrain_source/gmted2010-30
 
-# Build the z0-z6 Terrarium-encoded tile tree and manifest.json into terrain/gmted2010-30/
+# Build the z0-z6 Terrarium tile tree, water mask and manifest.json into terrain/gmted2010-30/
 tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010-30 --zoom 0-6 \
     terrain_source/gmted2010-30 terrain/gmted2010-30
 ```
+
+The build also writes a `water/` sidecar tree so the terrain layer can
+draw oceans and lakes on its own (from the Copernicus Water Body Mask,
+or GSHHG shoreline polygons for GMTED2010). It covers the same zoom
+range as the height tiles and adds roughly 6–20% to the store;
+`--no-water` on either tool skips it.
 
 The `[terrain]` section of the ini controls how the relief is drawn:
 shading `mode` (`hillshade` / `hypsometric` / `cruise_relative`),
@@ -448,9 +455,9 @@ automatically).
 
 | `--dataset` | Coverage | Post spacing | Model | Licence | Source download | Max `--zoom` |
 |---|---|---|---|---|---|---|
-| `gmted2010-30` | Global | ~925 m (30") | DSM | Public domain | one 0.25 GB archive | z8 |
-| `gmted2010-15` | Global | ~460 m (15") | DSM | Public domain | one 0.9 GB archive | z9 |
-| `gmted2010-75` | Global | ~230 m (7.5") | DSM | Public domain | one 3.0 GB archive | z10 |
+| `gmted2010-30` | Global | ~925 m (30") | DSM | Public domain | 0.25 GB grid + 0.15 GB GSHHG | z8 |
+| `gmted2010-15` | Global | ~460 m (15") | DSM | Public domain | 0.9 GB grid + 0.15 GB GSHHG | z9 |
+| `gmted2010-75` | Global | ~230 m (7.5") | DSM | Public domain | 3.0 GB grid + 0.15 GB GSHHG | z10 |
 | `copernicus-glo90` | Global land | ~90 m (3") | DSM | Attribution required | ~4 MB per 1° land tile | z11 |
 | `copernicus-glo30` | Global land | ~30 m (1") | DSM | Attribution required | ~25 MB per 1° land tile | z13 |
 

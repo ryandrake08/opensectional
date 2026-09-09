@@ -61,6 +61,22 @@ TEST_CASE("defaults-only terrain_style")
     {
         CHECK(s.ramp[i].elevation_m > s.ramp[i - 1].elevation_m);
     }
+
+    CHECK(s.water_r == doctest::Approx(168.0F / 255.0F)); // divides by 255
+    CHECK(s.water_g == doctest::Approx(200.0F / 255.0F));
+    CHECK(s.water_b == doctest::Approx(224.0F / 255.0F));
+}
+
+TEST_CASE("terrain_style water_color override")
+{
+    tmp_ini ok("[terrain]\nwater_color = #3366cc\n");
+    osect::terrain_style s(ok.load());
+    CHECK(s.water_r == doctest::Approx(0x33 / 255.0F));
+    CHECK(s.water_g == doctest::Approx(0x66 / 255.0F));
+    CHECK(s.water_b == doctest::Approx(0xCC / 255.0F));
+
+    tmp_ini bad("[terrain]\nwater_color = navy\n");
+    CHECK_THROWS_AS(osect::terrain_style(bad.load()), std::runtime_error);
 }
 
 TEST_CASE("terrain_style overrides")

@@ -22,6 +22,9 @@ namespace osect
         int max_zoom_ = 0;
         int tile_size_ = 0;
         int skirt_ = 0;
+        bool has_water_mask_ = false;
+        int water_min_zoom_ = 0;
+        int water_max_zoom_ = 0;
         double vertical_precision_m_ = 0.0;
         std::string attribution_;
         std::string display_name_;
@@ -52,6 +55,11 @@ namespace osect
         int max_zoom() const;
         int tile_size() const;
         int skirt() const;
+        // The water/ sidecar tree (recorded in manifest.json). Built
+        // over the same zoom range as the height tiles.
+        bool has_water_mask() const;
+        int water_min_zoom() const;
+        int water_max_zoom() const;
         double vertical_precision_m() const;
         const std::filesystem::path& path() const;
         const std::string& attribution() const;

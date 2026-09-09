@@ -22,6 +22,7 @@
 #include <sdl/device.hpp>
 #include <sdl/render_pass.hpp>
 #include <sdl/sampler.hpp>
+#include <sdl/surface.hpp>
 #include <sdl/texture.hpp>
 #include <sdl/transfer_buffer.hpp>
 #include <sdl/types.hpp>
@@ -61,7 +62,28 @@ namespace osect
             int width;
             int height;
             std::vector<uint16_t> elevations;
+            // Water-class mask aligned to the height texels. Empty when
+            // the tile has no water sidecar; the renderer then binds its
+            // shared all-land texture instead.
+            int water_width = 0;
+            int water_height = 0;
+            std::vector<uint8_t> water = {};
         };
+
+        // Reads the R channel (the water class) of a mask PNG.
+        std::vector<uint8_t> load_water_classes(const std::filesystem::path& path, int& width, int& height)
+        {
+            const sdl::surface surface(path.string().c_str());
+            width = surface.width();
+            height = surface.height();
+            const auto* pixels = static_cast<const uint8_t*>(surface.pixels());
+            std::vector<uint8_t> classes(static_cast<size_t>(width) * height);
+            for(size_t i = 0; i < classes.size(); ++i)
+            {
+                classes[i] = pixels[i * 4];
+            }
+            return classes;
+        }
 
         class terrain_loader
         {
@@ -69,6 +91,7 @@ namespace osect
             {
                 tile_key key;
                 std::filesystem::path path;
+                std::filesystem::path water_path; // empty when there is no water mask
             };
 
             mutable std::mutex mutex_;
@@ -116,10 +139,15 @@ namespace osect
                             continue;
                         }
                         const auto tile = elevation_tile::load(request.path);
-                        auto elevations = tile.quantized_m();
+                        terrain_load_result result{request.key, tile.width(), tile.height(), tile.quantized_m()};
+                        if(!request.water_path.empty() && std::filesystem::exists(request.water_path))
+                        {
+                            result.water = load_water_classes(request.water_path, result.water_width,
+                                                              result.water_height);
+                        }
                         {
                             std::lock_guard<std::mutex> lock(mutex_);
-                            results_.push_back({request.key, tile.width(), tile.height(), std::move(elevations)});
+                            results_.push_back(std::move(result));
                         }
                         wake_main_thread();
                     }
@@ -145,13 +173,14 @@ namespace osect
                 worker_.join();
             }
 
-            void request_tile(const tile_key& key, const std::filesystem::path& path)
+            void request_tile(const tile_key& key, const std::filesystem::path& path,
+                              const std::filesystem::path& water_path)
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 if(pending_.count(key) == 0 && failed_.count(key) == 0)
                 {
                     pending_.insert(key);
-                    requests_.push_back({key, path});
+                    requests_.push_back({key, path, water_path});
                     cv_.notify_one();
                 }
             }
@@ -197,6 +226,7 @@ namespace osect
         {
             std::unique_ptr<sdl::buffer> vertices;
             std::unique_ptr<sdl::texture> heights;
+            std::unique_ptr<sdl::texture> water; // R8 class mask; null when the tile has no water sidecar
         };
 
         constexpr uint32_t ramp_width = 256;
@@ -238,6 +268,7 @@ namespace osect
         terrain_style style;
         float cruise_altitude_ft = 0.0F;
         sdl::sampler sampler;
+        sdl::sampler water_sampler; // nearest: the R8 value is an exact class index
         tile_cache<terrain_gpu> cache;
         terrain_loader loader;
         std::vector<terrain_load_result> pending;
@@ -254,13 +285,21 @@ namespace osect
         std::unique_ptr<sdl::texture> ramp;
         bool ramp_uploaded = false;
 
+        // Shared 1x1 R8 all-land mask, bound for every tile without a
+        // water sidecar so the fragment sampler slot is always valid.
+        std::unique_ptr<sdl::texture> no_water;
+        bool no_water_uploaded = false;
+
         impl(sdl::device& dev, const elevation_source& source, terrain_style style)
             : dev(dev),
               source(source),
               style(std::move(style)),
               sampler(dev, sdl::filter::linear, sdl::filter::linear, sdl::sampler_address_mode::clamp_to_edge),
+              water_sampler(dev, sdl::filter::nearest, sdl::filter::nearest,
+                            sdl::sampler_address_mode::clamp_to_edge),
               cache(source.max_zoom(), static_cast<std::size_t>(this->style.gpu_tile_cache)),
-              ramp(std::make_unique<sdl::texture>(dev, ramp_width, 1U, sdl::texture_format::r8g8b8a8_unorm))
+              ramp(std::make_unique<sdl::texture>(dev, ramp_width, 1U, sdl::texture_format::r8g8b8a8_unorm)),
+              no_water(std::make_unique<sdl::texture>(dev, 1U, 1U, sdl::texture_format::r8_unorm))
         {
         }
 
@@ -269,6 +308,18 @@ namespace osect
             const int count = 1 << key.z;
             const int x = (key.x % count + count) % count;
             return source.path() / std::to_string(key.z) / std::to_string(x) / (std::to_string(key.y) + ".png");
+        }
+
+        std::filesystem::path water_tile_path(const tile_key& key) const
+        {
+            if(!source.has_water_mask())
+            {
+                return {};
+            }
+            const int count = 1 << key.z;
+            const int x = (key.x % count + count) % count;
+            return source.path() / "water" / std::to_string(key.z) / std::to_string(x) /
+                   (std::to_string(key.y) + ".png");
         }
 
         float texel_meters(const tile_key& key) const
@@ -295,7 +346,7 @@ namespace osect
             }
             if(!loader.failed(key))
             {
-                loader.request_tile(key, tile_path(key));
+                loader.request_tile(key, tile_path(key), water_tile_path(key));
                 return;
             }
             if(key.z > source.min_zoom())
@@ -356,7 +407,8 @@ namespace osect
 
     bool terrain_renderer::needs_upload() const
     {
-        return !pimpl->pending.empty() || pimpl->fallback_dirty || !pimpl->ramp_uploaded;
+        return !pimpl->pending.empty() || pimpl->fallback_dirty || !pimpl->ramp_uploaded ||
+               !pimpl->no_water_uploaded;
     }
 
     void terrain_renderer::copy(sdl::copy_pass& pass)
@@ -368,7 +420,8 @@ namespace osect
         uint32_t bytes = 0;
         for(const auto& result : pimpl->pending)
         {
-            bytes += vertex_bytes + static_cast<uint32_t>(result.elevations.size() * sizeof(uint16_t));
+            bytes += vertex_bytes + static_cast<uint32_t>(result.elevations.size() * sizeof(uint16_t)) +
+                     static_cast<uint32_t>(result.water.size());
         }
         for(const auto& key : pimpl->cache.visible_tiles())
         {
@@ -388,6 +441,11 @@ namespace osect
         {
             bytes += ramp_width * 4;
         }
+        const bool upload_no_water = !pimpl->no_water_uploaded;
+        if(upload_no_water)
+        {
+            bytes += 1;
+        }
         if(bytes == 0)
         {
             return;
@@ -399,6 +457,12 @@ namespace osect
             const auto pixels = ramp_to_rgba(pimpl->style.ramp);
             pass.upload_texture(transfer, *pimpl->ramp, pixels.data(), ramp_width, 1, ramp_width * 4);
             pimpl->ramp_uploaded = true;
+        }
+        if(upload_no_water)
+        {
+            const uint8_t land = 0;
+            pass.upload_texture(transfer, *pimpl->no_water, &land, 1, 1, 1);
+            pimpl->no_water_uploaded = true;
         }
         for(auto& result : pimpl->pending)
         {
@@ -415,6 +479,16 @@ namespace osect
             auto gpu = std::make_shared<terrain_gpu>();
             gpu->vertices = std::make_unique<sdl::buffer>(std::move(vertices));
             gpu->heights = std::make_unique<sdl::texture>(std::move(heights));
+            if(!result.water.empty())
+            {
+                sdl::texture water(pimpl->dev, static_cast<unsigned>(result.water_width),
+                                   static_cast<unsigned>(result.water_height), sdl::texture_format::r8_unorm);
+                pass.upload_texture(transfer, water, result.water.data(),
+                                    static_cast<uint32_t>(result.water_width),
+                                    static_cast<uint32_t>(result.water_height),
+                                    static_cast<uint32_t>(result.water.size()));
+                gpu->water = std::make_unique<sdl::texture>(std::move(water));
+            }
             pimpl->cache.put(result.key, std::move(gpu));
         }
         pimpl->pending.clear();
@@ -456,6 +530,10 @@ namespace osect
         uniforms.taws_caution_m = style.cruise_caution_ft * ft_to_m;
         uniforms.taws_clear_m = style.cruise_clear_ft * ft_to_m;
         uniforms.taws_cruise_m = pimpl->cruise_altitude_ft * ft_to_m;
+        uniforms.water_mode = pimpl->source.has_water_mask() ? 1 : 0;
+        uniforms.water_r = style.water_r;
+        uniforms.water_g = style.water_g;
+        uniforms.water_b = style.water_b;
 
         const auto draw = [&pass, &uniforms, this](const terrain_gpu& gpu, const sdl::buffer& vertices, float texel_m)
         {
@@ -463,8 +541,11 @@ namespace osect
             pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
             pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
             pass.bind_vertex_buffer(vertices);
+            // Slots match the shader's first-use / declaration order.
             pass.bind_fragment_texture_sampler(0, *gpu.heights, pimpl->sampler);
-            pass.bind_fragment_texture_sampler(1, *pimpl->ramp, pimpl->sampler);
+            pass.bind_fragment_texture_sampler(1, gpu.water ? *gpu.water : *pimpl->no_water,
+                                               pimpl->water_sampler);
+            pass.bind_fragment_texture_sampler(2, *pimpl->ramp, pimpl->sampler);
             pass.draw(6);
         };
         for(const auto& key : pimpl->cache.visible_tiles())

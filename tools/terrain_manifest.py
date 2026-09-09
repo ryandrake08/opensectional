@@ -10,9 +10,14 @@ import terrain_datum
 MANIFEST_FILENAME = "manifest.json"
 
 
-def build_manifest(adapter, min_zoom, max_zoom, bbox):
-    """Build a manifest for a terrain tile tree."""
-    return {
+def build_manifest(adapter, min_zoom, max_zoom, bbox, water_mask=None):
+    """Build a manifest for a terrain tile tree.
+
+    `water_mask`, when given, is recorded as-is (the water/ sidecar's
+    source, class table, and covered bbox); the key is omitted entirely
+    when there is no mask, so the client checks presence, not null.
+    """
+    manifest = {
         "dataset": adapter.name,
         "dataset_display_name": adapter.display_name,
         "source_version": adapter.source_version,
@@ -27,6 +32,9 @@ def build_manifest(adapter, min_zoom, max_zoom, bbox):
         "bbox": list(bbox),
         "last_updated": datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat(),
     }
+    if water_mask is not None:
+        manifest["water_mask"] = water_mask
+    return manifest
 
 
 def read_manifest(output_dir):
@@ -38,13 +46,13 @@ def read_manifest(output_dir):
         return json.load(f)
 
 
-def write_manifest(adapter, output_dir, min_zoom, max_zoom, bbox):
+def write_manifest(adapter, output_dir, min_zoom, max_zoom, bbox, water_mask=None):
     """Compute and atomically write manifest.json into output_dir.
 
     Non-ASCII text (e.g. the "©" in the Copernicus attribution) is
     written as literal UTF-8, not "\\uXXXX" escapes -- the client's
     manifest parser handles raw bytes but not "\\u"."""
-    manifest = build_manifest(adapter, min_zoom, max_zoom, bbox)
+    manifest = build_manifest(adapter, min_zoom, max_zoom, bbox, water_mask=water_mask)
     path = os.path.join(output_dir, MANIFEST_FILENAME)
     tmp_path = path + ".tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:

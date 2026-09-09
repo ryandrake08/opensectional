@@ -287,6 +287,24 @@ def test_download_tile_gives_up_after_the_retry_budget():
     return True
 
 
+def test_download_tile_optional_missing_returns_missing_not_error():
+    with tempfile.TemporaryDirectory() as served, \
+         tempfile.TemporaryDirectory() as dest_dir, \
+         file_server(served) as base_url:
+        required = SourceTile(url=f"{base_url}/nope.tif", local_name="nope.tif")
+        optional = SourceTile(url=f"{base_url}/nope.tif", local_name="nope.tif", optional=True)
+        dest = os.path.join(dest_dir, "nope.tif")
+
+        assert download_tile(optional, dest) == "missing"
+        assert not os.path.exists(dest)
+        try:
+            download_tile(required, dest)
+            assert False, "expected an HTTPError for a non-optional 404"
+        except urllib.error.HTTPError:
+            pass
+    return True
+
+
 def test_parse_bbox_valid_and_invalid():
     assert parse_bbox("-125,24,-66,50") == (-125.0, 24.0, -66.0, 50.0)
     assert parse_bbox("170,-20,-170,20") == (170.0, -20.0, -170.0, 20.0)  # antimeridian wrap
@@ -311,16 +329,26 @@ def test_main_copernicus_parallel_download_and_resume():
     with tempfile.TemporaryDirectory() as served, tempfile.TemporaryDirectory() as dest_dir:
         with open(os.path.join(served, "tileList.txt"), "w") as f:
             f.write("\n".join(names) + "\n")
-        for name in names:
-            os.makedirs(os.path.join(served, name))
+        for i, name in enumerate(names):
+            os.makedirs(os.path.join(served, name, "AUXFILES"))
             with open(os.path.join(served, name, f"{name}.tif"), "wb") as f:
                 f.write(f"fake COG {name}".encode())
+            # Serve the WBM companion for all but the last tile, so the
+            # optional-missing path (404 -> "missing", not an error) runs.
+            if i < len(names) - 1:
+                wbm = name.removesuffix("_DEM") + "_WBM"
+                with open(os.path.join(served, name, "AUXFILES", f"{wbm}.tif"), "wb") as f:
+                    f.write(b"fake WBM")
 
         with file_server(served) as base_url, _patched(adapter, "bucket_url", base_url):
             argv = ["--dataset", "copernicus-glo90", "--jobs", "3", dest_dir]
             run_download_terrain(argv)
             for name in names:
                 assert os.path.exists(os.path.join(dest_dir, f"{name}.tif"))
+            assert os.path.exists(os.path.join(
+                dest_dir, names[0].removesuffix("_DEM") + "_WBM.tif"))
+            assert not os.path.exists(os.path.join(
+                dest_dir, names[-1].removesuffix("_DEM") + "_WBM.tif"))  # 404'd, tolerated
 
             # Second run: all present, skipped without error.
             run_download_terrain(argv)
@@ -358,7 +386,7 @@ def test_main_bounds_the_submission_backlog():
         open(dest_path, "wb").close()
         return "downloaded"
 
-    def fake_source_tiles(bbox=None):
+    def fake_source_tiles(bbox=None, water=True):
         return [SourceTile(url=f"http://x/{n}/{n}.tif", local_name=f"{n}.tif") for n in names]
 
     adapter = get_adapter("copernicus-glo90")
@@ -379,7 +407,7 @@ def test_main_bounds_the_submission_backlog():
 def test_main_end_to_end():
     """The CLI downloads and then reuses a source file."""
     adapter = get_adapter("gmted2010-30")
-    filename = adapter.source_tiles()[0].local_name
+    filename = adapter.source_tiles(water=False)[0].local_name
 
     with tempfile.TemporaryDirectory() as served, tempfile.TemporaryDirectory() as dest_dir:
         content = b"fake global grid zip bytes" * 10
@@ -387,7 +415,7 @@ def test_main_end_to_end():
             f.write(content)
 
         with file_server(served) as base_url, _patched(Gmted2010Adapter, "SOURCE_BASE_URL", base_url):
-            argv = ["--dataset", "gmted2010-30", dest_dir]
+            argv = ["--dataset", "gmted2010-30", "--no-water", dest_dir]
             run_download_terrain(argv)  # fresh download
             run_download_terrain(argv)  # resumable: should skip without error
 
@@ -407,6 +435,7 @@ TESTS = [
     test_download_tile_skip_on_existence_issues_no_head,
     test_download_tile_retries_transient_errors,
     test_download_tile_gives_up_after_the_retry_budget,
+    test_download_tile_optional_missing_returns_missing_not_error,
     test_parse_bbox_valid_and_invalid,
     test_main_rejects_non_positive_jobs,
     test_main_bounds_the_submission_backlog,

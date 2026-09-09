@@ -408,7 +408,7 @@ namespace osect
                                 load_shader(dev, shader_id::TEXTURED, sdl::shader_stage::fragment, 1),
                                 sdl::primitive_type::triangle_list),
               terrain_pipeline(dev, load_shader(dev, shader_id::TERRAIN, sdl::shader_stage::vertex),
-                               load_shader(dev, shader_id::TERRAIN, sdl::shader_stage::fragment, 2),
+                               load_shader(dev, shader_id::TERRAIN, sdl::shader_stage::fragment, 3),
                                sdl::primitive_type::triangle_list),
               line_sdf_pipeline(dev, load_shader(dev, shader_id::LINE, sdl::shader_stage::vertex, 0, 2),
                                 load_shader(dev, shader_id::LINE, sdl::shader_stage::fragment, 0, 2),

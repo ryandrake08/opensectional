@@ -15,6 +15,7 @@ import concurrent.futures
 import itertools
 import os
 import shutil
+import urllib.error
 import urllib.request
 
 import http_retry
@@ -61,7 +62,9 @@ def _remote_content_length(url, label):
 
 
 def download_tile(tile, dest_path, force=False, verify_size=True):
-    """Download one source tile atomically, returning its result.
+    """Download one source tile atomically, returning its result:
+    "downloaded", "skipped", or "missing" (an optional tile the server
+    doesn't have).
 
     An already-present `dest_path` is skipped: when `verify_size`, only
     if it matches the server's declared Content-Length; otherwise on
@@ -70,7 +73,8 @@ def download_tile(tile, dest_path, force=False, verify_size=True):
     always size-checked against the GET response's Content-Length.
 
     Transient network failures are retried with backoff; a truncated
-    body raises and is not retried."""
+    body raises and is not retried. A 403/404 raises unless
+    `tile.optional`, in which case it returns "missing"."""
     if not force and os.path.exists(dest_path):
         if not verify_size:
             return "skipped"
@@ -96,6 +100,12 @@ def download_tile(tile, dest_path, force=False, verify_size=True):
 
     try:
         return http_retry.retry(get, label=tile.local_name)
+    except urllib.error.HTTPError as e:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        if tile.optional and e.code in (403, 404):
+            return "missing"
+        raise
     except BaseException:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -119,11 +129,14 @@ def main(argv=None):
                         help="Parallel downloads (default: 4). Values past ~6-8 trip "
                              "AWS's anonymous S3 rate limiting; the retry backoff recovers "
                              "but slowly.")
+    parser.add_argument("--no-water", action="store_true",
+                        help="Skip the water-mask companion(s) (Copernicus WBM tiles, "
+                             "the GSHHG shoreline archive for GMTED)")
     parser.add_argument("source_dir", help="Directory to save downloaded source rasters into")
     args = parser.parse_args(argv)
 
     adapter = get_adapter(args.dataset)
-    tiles = adapter.source_tiles(args.bbox)
+    tiles = adapter.source_tiles(args.bbox, water=not args.no_water)
     if not tiles:
         where = " in the requested bbox" if args.bbox is not None else ""
         raise ValueError(f"{args.dataset} has no source tiles to download{where}")
@@ -138,7 +151,7 @@ def main(argv=None):
                                verify_size=adapter.verify_download_size)
         return tile, dest_path, result
 
-    downloaded = skipped = 0
+    downloaded = skipped = missing = 0
     pending_tiles = iter(tiles)
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
         # Keep at most 2*jobs futures alive: a whole-world job is
@@ -154,6 +167,8 @@ def main(argv=None):
                     tile, dest_path, result = future.result()
                     if result == "skipped":
                         skipped += 1
+                    elif result == "missing":
+                        missing += 1
                     else:
                         size_mb = os.path.getsize(dest_path) / (1024 * 1024)
                         print(f"  Downloaded {tile.local_name} ({size_mb:.1f} MB)")
@@ -165,7 +180,9 @@ def main(argv=None):
                 future.cancel()
             raise
 
-    print(f"\n{downloaded} downloaded, {skipped} skipped, of {len(tiles)} total, in {args.source_dir}/")
+    tail = f", {missing} optional not on server" if missing else ""
+    print(f"\n{downloaded} downloaded, {skipped} skipped{tail}, of {len(tiles)} total, "
+          f"in {args.source_dir}/")
     print("\nTo build:")
     print(f"  python3 tools/build_terrain.py --dataset {adapter.name} --zoom <min-max> "
           f"{args.source_dir} <output_dir>")

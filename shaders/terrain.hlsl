@@ -36,6 +36,10 @@ cbuffer Uniforms : register(b0, space3)
     float taws_warning_m;          // metres below cruise for the warning band
     float taws_caution_m;          // metres below cruise for the caution band
     float taws_clear_m;            // metres below cruise where terrain stops drawing
+    int water_mode;               // 0 no water mask, 1 flat-tint water fragments
+    float water_r;                // flat water tint
+    float water_g;
+    float water_b;
 };
 
 struct PSInput
@@ -54,10 +58,14 @@ PSInput vertex_main(VSInput input)
     return output;
 }
 
+// Declared in first-use order: spirv-cross assigns Metal binding slots
+// that way, and the C++ side binds to match.
 Texture2D height_texture : register(t0, space2);
 SamplerState height_sampler : register(s0, space2);
-Texture2D ramp_texture : register(t1, space2);
-SamplerState ramp_sampler : register(s1, space2);
+Texture2D water_texture : register(t1, space2); // R8: 0 land, 1 ocean, 2 lake, 3 river
+SamplerState water_sampler : register(s1, space2);
+Texture2D ramp_texture : register(t2, space2);
+SamplerState ramp_sampler : register(s2, space2);
 
 static const float EARTH_RADIUS_M = 6378137.0;
 static const float MIN_VALID_HEIGHT_M = -999.5; // anything lower is the no-data sentinel
@@ -68,9 +76,25 @@ float decode_height_m(float2 uv)
     return height_texture.Sample(height_sampler, uv).r * 65535.0 - 1000.0;
 }
 
+// True where the water mask marks any water class. The mask carries
+// ocean / lake / river separately, but the chart draws them with one
+// flat tint, so this collapses to a binary test. SampleLevel (no
+// mipmaps, explicit LOD 0) so it is valid after the no-data discard.
+bool is_water(float2 uv)
+{
+    return water_mode != 0 && water_texture.SampleLevel(water_sampler, uv, 0.0).r * 255.0 >= 0.5;
+}
+
 float4 fragment_main(PSInput input) : SV_Target
 {
     float2 texel = 1.0 / float2(texture_size);
+
+    // Water renders as a flat tint with no relief -- the terrain layer
+    // draws it itself rather than relying on the basemap.
+    if(is_water(input.texcoord))
+    {
+        return float4(water_r, water_g, water_b, terrain_opacity);
+    }
 
     float h_c = decode_height_m(input.texcoord);
     if(h_c < MIN_VALID_HEIGHT_M)
@@ -89,6 +113,12 @@ float4 fragment_main(PSInput input) : SV_Target
     if(h_w < MIN_VALID_HEIGHT_M) h_w = h_c;
     if(h_s < MIN_VALID_HEIGHT_M) h_s = h_c;
     if(h_n < MIN_VALID_HEIGHT_M) h_n = h_c;
+
+    // A water neighbour would read as a shoreline cliff; treat it as flat.
+    if(is_water(input.texcoord + float2(texel.x, 0.0))) h_e = h_c;
+    if(is_water(input.texcoord - float2(texel.x, 0.0))) h_w = h_c;
+    if(is_water(input.texcoord + float2(0.0, texel.y))) h_s = h_c;
+    if(is_water(input.texcoord - float2(0.0, texel.y))) h_n = h_c;
 
     // Web Mercator overstates ground distance by 1/cos(lat); cos(lat) = sech(y/R).
     float ground_texel_m = terrain_texel_m / cosh(input.model_y / EARTH_RADIUS_M);
