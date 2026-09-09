@@ -25,6 +25,7 @@ namespace osect
     struct search_hit;
     class elevation_source;
     class feature_type;
+    struct terrain_profile;
     enum class terrain_shading;
 
     // The main map widget: owns the tile renderer, feature renderer, label
@@ -53,6 +54,11 @@ namespace osect
 
         // Update the active route tab's optional altitude for relative-to-cruise shading.
         void set_cruise_altitude_ft(std::optional<float> altitude_ft);
+
+        // Get the current route's terrain profile
+        const std::optional<terrain_profile>& profile_result() const;
+
+        // Terrain shading mode
         terrain_shading terrain_shading_mode() const;
         void set_terrain_shading_mode(terrain_shading mode);
 

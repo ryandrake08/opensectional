@@ -91,6 +91,17 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/osect.db")
     target_link_libraries(test_terrain_profile_sampling PRIVATE sqlite_wrapper sdl_wrapper)
     osect_apply_app_definitions(test_terrain_profile_sampling)
 
+    add_osect_test(terrain_profile_worker
+        ${CMAKE_SOURCE_DIR}/src/terrain_profile_worker.cpp
+        ${CMAKE_SOURCE_DIR}/src/terrain_profile.cpp
+        ${CMAKE_SOURCE_DIR}/src/geo_math.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_source.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp
+        ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
+        ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
+    target_link_libraries(test_terrain_profile_worker PRIVATE sqlite_wrapper sdl_wrapper)
+    osect_apply_app_definitions(test_terrain_profile_worker)
+
     # route_planner reads user.db, so user_database.cpp comes along too.
     add_osect_test(flight_route
         ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
