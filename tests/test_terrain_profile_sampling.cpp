@@ -98,6 +98,24 @@ TEST_CASE("terrain profile clips the aircraft trace below cruise on a short rout
     }
 }
 
+TEST_CASE("terrain profile rejects a short route with no climb-descent intersection")
+{
+    const auto departure = test_db().lookup_airports("O61");
+    const auto arrival = test_db().lookup_airports("KMER");
+    REQUIRE(departure.size() == 1);
+    REQUIRE(arrival.size() == 1);
+    REQUIRE(departure.front().elev != arrival.front().elev);
+
+    const std::vector<osect::route_waypoint> waypoints{
+        {osect::waypoint_kind::airport, "O61", departure.front().lat, departure.front().lon},
+        {osect::waypoint_kind::airport, "KMER", departure.front().lat, departure.front().lon},
+    };
+    const osect::elevation_source terrain("missing-terrain-tree");
+    CHECK_THROWS_WITH(osect::build_terrain_profile(waypoints, terrain, test_db(), 10000.0,
+                                                    osect::terrain_profile_gradients{300.0, 318.0}),
+                      "route is too short for the configured climb and descent gradients");
+}
+
 TEST_CASE("terrain profile derives maxima, MSA, and clearance spans")
 {
     const auto departure = test_db().lookup_airports("O61");

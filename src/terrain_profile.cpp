@@ -81,54 +81,69 @@ namespace
         return terrain.elevation_ft(lat, lon, terrain.max_zoom());
     }
 
-    std::optional<double> aircraft_altitude_ft(double distance_nm, double route_distance_nm,
-                                               const std::optional<double>& departure_elevation_ft,
-                                               const std::optional<double>& arrival_elevation_ft,
-                                               const std::optional<double>& cruise_altitude_ft,
-                                               const osect::terrain_profile_gradients& gradients)
+    struct aircraft_trace
     {
-        if(!cruise_altitude_ft || !departure_elevation_ft || !arrival_elevation_ft)
+        enum class shape
         {
-            return std::nullopt;
-        }
+            trapezoid,
+            triangle,
+        };
 
-        const double departure = *departure_elevation_ft;
-        const double arrival = *arrival_elevation_ft;
-        const double cruise = *cruise_altitude_ft;
-        const double climb_distance = (cruise - departure) / gradients.climb_ft_per_nm;
-        const double descent_distance = (cruise - arrival) / gradients.descent_ft_per_nm;
+        double route_distance_nm;
+        double departure_elevation_ft;
+        double arrival_elevation_ft;
+        double cruise_altitude_ft;
+        osect::terrain_profile_gradients gradients;
+        double transition_distance_nm;
+        shape profile_shape;
 
-        if(climb_distance + descent_distance <= route_distance_nm)
+        double altitude_at(double distance_nm) const
         {
-            if(distance_nm < climb_distance)
+            if(profile_shape == shape::trapezoid)
             {
-                return departure + distance_nm * gradients.climb_ft_per_nm;
+                const double descent_start_nm = route_distance_nm - transition_distance_nm;
+                if(distance_nm < transition_distance_nm)
+                {
+                    return departure_elevation_ft + distance_nm * gradients.climb_ft_per_nm;
+                }
+                if(distance_nm > descent_start_nm)
+                {
+                    return arrival_elevation_ft + (route_distance_nm - distance_nm) * gradients.descent_ft_per_nm;
+                }
+                return cruise_altitude_ft;
             }
-            if(distance_nm > route_distance_nm - descent_distance)
+            if(distance_nm <= transition_distance_nm)
             {
-                return arrival + (route_distance_nm - distance_nm) * gradients.descent_ft_per_nm;
+                return std::min(cruise_altitude_ft, departure_elevation_ft + distance_nm * gradients.climb_ft_per_nm);
             }
-            return cruise;
+            return std::min(cruise_altitude_ft,
+                            arrival_elevation_ft + (route_distance_nm - distance_nm) * gradients.descent_ft_per_nm);
         }
 
-        const double intersection = (arrival + gradients.descent_ft_per_nm * route_distance_nm - departure) /
-                                    (gradients.climb_ft_per_nm + gradients.descent_ft_per_nm);
-        if(intersection < 0.0 || intersection > route_distance_nm)
+        osect::terrain_profile_phase phase_at(double distance_nm) const
         {
-            throw std::runtime_error("route is too short for the configured climb and descent gradients");
+            if(profile_shape == shape::trapezoid)
+            {
+                if(distance_nm < transition_distance_nm)
+                {
+                    return osect::terrain_profile_phase::climb;
+                }
+                if(distance_nm > route_distance_nm - transition_distance_nm)
+                {
+                    return osect::terrain_profile_phase::descent;
+                }
+                return osect::terrain_profile_phase::cruise;
+            }
+            return distance_nm <= transition_distance_nm ? osect::terrain_profile_phase::climb
+                                                          : osect::terrain_profile_phase::descent;
         }
-        if(distance_nm <= intersection)
-        {
-            return std::min(cruise, departure + distance_nm * gradients.climb_ft_per_nm);
-        }
-        return std::min(cruise, arrival + (route_distance_nm - distance_nm) * gradients.descent_ft_per_nm);
-    }
+    };
 
-    std::optional<osect::terrain_profile_phase> phase_at(double distance_nm, double route_distance_nm,
-                                                          const std::optional<double>& departure_elevation_ft,
-                                                          const std::optional<double>& arrival_elevation_ft,
-                                                          const std::optional<double>& cruise_altitude_ft,
-                                                          const osect::terrain_profile_gradients& gradients)
+    std::optional<aircraft_trace> make_aircraft_trace(double route_distance_nm,
+                                                       const std::optional<double>& departure_elevation_ft,
+                                                       const std::optional<double>& arrival_elevation_ft,
+                                                       const std::optional<double>& cruise_altitude_ft,
+                                                       const osect::terrain_profile_gradients& gradients)
     {
         if(!cruise_altitude_ft || !departure_elevation_ft || !arrival_elevation_ft)
         {
@@ -139,22 +154,19 @@ namespace
         const double descent_distance = (*cruise_altitude_ft - *arrival_elevation_ft) / gradients.descent_ft_per_nm;
         if(climb_distance + descent_distance <= route_distance_nm)
         {
-            if(distance_nm < climb_distance)
-            {
-                return osect::terrain_profile_phase::climb;
-            }
-            if(distance_nm > route_distance_nm - descent_distance)
-            {
-                return osect::terrain_profile_phase::descent;
-            }
-            return osect::terrain_profile_phase::cruise;
+            return aircraft_trace{route_distance_nm, *departure_elevation_ft, *arrival_elevation_ft, *cruise_altitude_ft,
+                                  gradients, climb_distance, aircraft_trace::shape::trapezoid};
         }
 
         const double intersection = (*arrival_elevation_ft + gradients.descent_ft_per_nm * route_distance_nm -
                                      *departure_elevation_ft) /
                                     (gradients.climb_ft_per_nm + gradients.descent_ft_per_nm);
-        return distance_nm <= intersection ? osect::terrain_profile_phase::climb
-                                           : osect::terrain_profile_phase::descent;
+        if(intersection < 0.0 || intersection > route_distance_nm)
+        {
+            throw std::runtime_error("route is too short for the configured climb and descent gradients");
+        }
+        return aircraft_trace{route_distance_nm, *departure_elevation_ft, *arrival_elevation_ft, *cruise_altitude_ft,
+                              gradients, intersection, aircraft_trace::shape::triangle};
     }
 }
 
@@ -316,11 +328,14 @@ namespace osect
         {
             throw std::runtime_error("terrain profile cruise altitude is below an endpoint elevation");
         }
+        const auto aircraft_trace = make_aircraft_trace(route_distance_nm, departure_elevation_ft, arrival_elevation_ft,
+                                                        cruise_altitude_ft, gradients);
         for(auto& sample : profile.samples)
         {
-            sample.aircraft_altitude_ft = aircraft_altitude_ft(sample.distance_nm, route_distance_nm,
-                                                               departure_elevation_ft, arrival_elevation_ft,
-                                                               cruise_altitude_ft, gradients);
+            if(aircraft_trace)
+            {
+                sample.aircraft_altitude_ft = aircraft_trace->altitude_at(sample.distance_nm);
+            }
         }
 
         for(auto& leg : profile.legs)
@@ -352,8 +367,11 @@ namespace osect
                 profile.maximum_elevation_ft = sample.corridor_elevation_ft;
             }
 
-            const auto phase = phase_at(sample.distance_nm, route_distance_nm, departure_elevation_ft,
-                                        arrival_elevation_ft, cruise_altitude_ft, gradients);
+            std::optional<terrain_profile_phase> phase;
+            if(aircraft_trace)
+            {
+                phase = aircraft_trace->phase_at(sample.distance_nm);
+            }
             const bool violates = phase && sample.aircraft_altitude_ft && sample.corridor_elevation_ft &&
                                   *sample.aircraft_altitude_ft < *sample.corridor_elevation_ft + required_clearance_ft;
             if(violates && (!span || span->phase == *phase))
