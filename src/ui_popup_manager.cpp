@@ -239,7 +239,7 @@ namespace osect
         // Render the legs table + Delete button for a route_pick
         // info popup. Returns true if the user clicked Delete (the
         // caller closes the popup and surfaces the action).
-        bool draw_route_info_body(const route_pick& rp, const flight_route& route)
+        bool draw_route_info_body(const route_pick& rp, const flight_route& route, bool& profile_requested)
         {
             auto legs = route.compute_legs();
             const auto flags = ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit;
@@ -270,6 +270,8 @@ namespace osect
             }
             ImGui::Text("Total: %.1f nm", total_nm);
             (void)rp;
+            profile_requested = ImGui::Button("Terrain profile");
+            ImGui::SameLine();
             return ImGui::Button("Delete route");
         }
 
@@ -378,12 +380,14 @@ namespace osect
             if(std::holds_alternative<route_pick>(p.payload))
             {
                 const auto& rp = std::get<route_pick>(p.payload);
-                if(draw_route_info_body(rp, *route_for_popup))
+                bool profile_requested = false;
+                if(draw_route_info_body(rp, *route_for_popup, profile_requested))
                 {
                     p.open = false;
                     out.route_delete = true;
                     return true;
                 }
+                out.route_profile = profile_requested;
             }
             else
             {

@@ -11,6 +11,7 @@ TEST_CASE("terrain profile value types retain profile results")
         1200.0,
         4500.0,
         true,
+        true,
     };
     osect::terrain_profile_leg leg{
         1,
@@ -36,6 +37,7 @@ TEST_CASE("terrain profile value types retain profile results")
     REQUIRE(sample.aircraft_altitude_ft);
     CHECK(*sample.aircraft_altitude_ft == 4500.0);
     CHECK(sample.has_obstacle);
+    CHECK(sample.corridor_from_obstacle);
 
     CHECK(leg.route_leg_index == 1);
     CHECK(leg.start_distance_nm == 10.0);
@@ -62,6 +64,7 @@ TEST_CASE("terrain profile defaults represent unavailable derived values")
     CHECK_FALSE(sample.corridor_elevation_ft);
     CHECK_FALSE(sample.aircraft_altitude_ft);
     CHECK_FALSE(sample.has_obstacle);
+    CHECK_FALSE(sample.corridor_from_obstacle);
     CHECK_FALSE(leg.maximum_elevation_ft);
     CHECK_FALSE(leg.msa_ft);
     CHECK_FALSE(leg.has_obstacle);

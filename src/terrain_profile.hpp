@@ -40,6 +40,7 @@ namespace osect
         std::optional<double> corridor_elevation_ft;
         std::optional<double> aircraft_altitude_ft;
         bool has_obstacle = false;
+        bool corridor_from_obstacle = false;
     };
 
     // Derived terrain figures for one route leg.

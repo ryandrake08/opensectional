@@ -94,15 +94,16 @@ namespace
         double arrival_elevation_ft;
         double cruise_altitude_ft;
         osect::terrain_profile_gradients gradients;
-        double transition_distance_nm;
+        double climb_distance_nm;
+        double descent_distance_nm;
         shape profile_shape;
 
         double altitude_at(double distance_nm) const
         {
             if(profile_shape == shape::trapezoid)
             {
-                const double descent_start_nm = route_distance_nm - transition_distance_nm;
-                if(distance_nm < transition_distance_nm)
+                const double descent_start_nm = route_distance_nm - descent_distance_nm;
+                if(distance_nm < climb_distance_nm)
                 {
                     return departure_elevation_ft + distance_nm * gradients.climb_ft_per_nm;
                 }
@@ -112,7 +113,7 @@ namespace
                 }
                 return cruise_altitude_ft;
             }
-            if(distance_nm <= transition_distance_nm)
+            if(distance_nm <= climb_distance_nm)
             {
                 return std::min(cruise_altitude_ft, departure_elevation_ft + distance_nm * gradients.climb_ft_per_nm);
             }
@@ -124,17 +125,17 @@ namespace
         {
             if(profile_shape == shape::trapezoid)
             {
-                if(distance_nm < transition_distance_nm)
+                if(distance_nm < climb_distance_nm)
                 {
                     return osect::terrain_profile_phase::climb;
                 }
-                if(distance_nm > route_distance_nm - transition_distance_nm)
+                if(distance_nm > route_distance_nm - descent_distance_nm)
                 {
                     return osect::terrain_profile_phase::descent;
                 }
                 return osect::terrain_profile_phase::cruise;
             }
-            return distance_nm <= transition_distance_nm ? osect::terrain_profile_phase::climb
+            return distance_nm <= climb_distance_nm ? osect::terrain_profile_phase::climb
                                                           : osect::terrain_profile_phase::descent;
         }
     };
@@ -155,7 +156,7 @@ namespace
         if(climb_distance + descent_distance <= route_distance_nm)
         {
             return aircraft_trace{route_distance_nm, *departure_elevation_ft, *arrival_elevation_ft, *cruise_altitude_ft,
-                                  gradients, climb_distance, aircraft_trace::shape::trapezoid};
+                                  gradients, climb_distance, descent_distance, aircraft_trace::shape::trapezoid};
         }
 
         const double intersection = (*arrival_elevation_ft + gradients.descent_ft_per_nm * route_distance_nm -
@@ -166,7 +167,7 @@ namespace
             throw std::runtime_error("route is too short for the configured climb and descent gradients");
         }
         return aircraft_trace{route_distance_nm, *departure_elevation_ft, *arrival_elevation_ft, *cruise_altitude_ft,
-                              gradients, intersection, aircraft_trace::shape::triangle};
+                              gradients, intersection, intersection, aircraft_trace::shape::triangle};
     }
 }
 
@@ -252,8 +253,7 @@ namespace osect
                 }
                 profile.samples.push_back({distance_nm,
                                            elevation_at(waypoint, points[point_index].lat, points[point_index].lon,
-                                                        terrain, airports),
-                                           std::nullopt, std::nullopt, false});
+                                           terrain, airports), std::nullopt, std::nullopt, false, false});
                 sample_points.push_back(points[point_index]);
             }
 
@@ -310,10 +310,13 @@ namespace osect
                         }
                         profile.samples[sample_index].has_obstacle = true;
                         const double obstacle_elevation_ft = static_cast<double>(obstacle.amsl_ht);
+                        const bool obstacle_only = !profile.samples[sample_index].corridor_elevation_ft ||
+                                                   profile.samples[sample_index].corridor_from_obstacle;
                         if(!profile.samples[sample_index].corridor_elevation_ft ||
                            obstacle_elevation_ft > *profile.samples[sample_index].corridor_elevation_ft)
                         {
                             profile.samples[sample_index].corridor_elevation_ft = obstacle_elevation_ft;
+                            profile.samples[sample_index].corridor_from_obstacle = obstacle_only;
                         }
                     }
                 }

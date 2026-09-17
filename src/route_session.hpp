@@ -47,5 +47,8 @@ namespace osect
         // Borrowed profile for a saved route, or nullptr while its
         // profile has not yet been computed.
         const terrain_profile* profile_for_route(std::int64_t route_id) const;
+        const terrain_profile* active_profile() const;
+        std::optional<std::string> active_profile_error() const;
+        bool has_active_route() const;
     };
 }

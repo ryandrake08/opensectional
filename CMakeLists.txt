@@ -295,6 +295,7 @@ add_executable(osect
     src/tfr_refresher.cpp
     src/tile_renderer.cpp
     src/ui_overlay.cpp
+    src/ui_profile_panel.cpp
     src/ui_sectioned_list.cpp
     src/user_database.cpp
     src/waypoint_session.cpp

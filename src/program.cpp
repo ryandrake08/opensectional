@@ -313,7 +313,8 @@ namespace osect
                 needs_render |= waypoints.process();
 
                 imgui_ctx.new_frame();
-                ui_result = ui.draw(last_render_ms, map.feature_types(), terrain.available());
+                ui_result = ui.draw(last_render_ms, map.feature_types(), terrain.available(), routes.active_profile(),
+                                    routes.has_active_route(), routes.active_profile_error(), terrain.is_surface_model());
                 needs_render |= map.draw_imgui();
                 imgui_ctx.end_frame();
 

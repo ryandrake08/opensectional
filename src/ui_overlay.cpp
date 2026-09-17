@@ -2,6 +2,7 @@
 #include "feature_type.hpp"
 #include "route_plan_options.hpp"
 #include "ui_sectioned_list.hpp"
+#include "ui_profile_panel.hpp"
 #include <imgui.h>
 #include <imgui/scoped.hpp>
 #include <algorithm>
@@ -59,6 +60,7 @@ namespace osect
         std::string last_search_query;
         std::vector<search_hit> hits;
         terrain_shading terrain_mode = terrain_shading::hypsometric;
+        ui_profile_panel profile_panel;
 
         // Route panel tabs. Always at least one — closing the last
         // re-creates a fresh empty panel so the panel UI never
@@ -244,6 +246,11 @@ namespace osect
         pimpl->terrain_mode = mode;
     }
 
+    void ui_overlay::open_terrain_profile()
+    {
+        pimpl->profile_panel.open_drawer();
+    }
+
     void ui_overlay::set_data_sources(std::vector<data_source> sources)
     {
         pimpl->sources = std::move(sources);
@@ -265,16 +272,18 @@ namespace osect
     }
 
     ui_overlay_result ui_overlay::draw(float last_render_ms, const std::vector<std::unique_ptr<feature_type>>& feature_types,
-                                       bool terrain_available)
+                                       bool terrain_available, const terrain_profile* profile, bool has_active_route,
+                                       std::optional<std::string> profile_error, bool terrain_surface_model)
     {
         auto& io = ImGui::GetIO();
         auto result = ui_overlay_result{};
         auto& d = *pimpl;
 
-        // FPS overlay in the bottom-right corner
-        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x, io.DisplaySize.y), ImGuiCond_Always, ImVec2(1.0F, 1.0F));
-        ImGui::SetNextWindowBgAlpha(0.4F);
+        // The profile drawer owns the entire bottom edge while open.
+        if(!d.profile_panel.open())
         {
+            ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x, io.DisplaySize.y), ImGuiCond_Always, ImVec2(1.0F, 1.0F));
+            ImGui::SetNextWindowBgAlpha(0.4F);
             imgui::scoped_window window("##fps", ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                                                      ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
                                                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
@@ -635,6 +644,11 @@ namespace osect
 
                         if(p.has_route && !p.planning)
                         {
+                            if(ImGui::Button("Terrain profile"))
+                            {
+                                d.profile_panel.toggle();
+                            }
+                            ImGui::SameLine();
                             if(ImGui::Button("Clear"))
                             {
                                 p.text_buf.clear();
@@ -706,7 +720,7 @@ namespace osect
         }
 
         // Data status panel, pinned to the bottom-left corner.
-        if(!d.sources.empty())
+        if(!d.profile_panel.open() && !d.sources.empty())
         {
             ImGui::SetNextWindowPos(ImVec2(0, io.DisplaySize.y), ImGuiCond_Always, ImVec2(0.0F, 1.0F));
             ImGui::SetNextWindowBgAlpha(0.6F);
@@ -750,6 +764,8 @@ namespace osect
                 ImGui::Text("%-7s %s", s.name.c_str(), s.info.c_str());
             }
         }
+
+        d.profile_panel.draw(profile, std::move(profile_error), has_active_route, terrain_available, terrain_surface_model);
 
         return result;
     }

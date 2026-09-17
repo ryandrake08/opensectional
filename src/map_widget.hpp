@@ -118,6 +118,7 @@ namespace osect
         // corresponding panel tab in the same operation. nullopt
         // otherwise.
         std::optional<route_id> drain_route_delete_request();
+        bool drain_route_profile_request();
 
         // If the user clicked a non-active route's leg or waypoint
         // since the last call, return that route's id. The caller

@@ -124,6 +124,20 @@ namespace
         return static_cast<int>(value);
     }
 
+    bool bool_value(const std::string& json, const std::string& key)
+    {
+        const size_t offset = value_offset(json, key);
+        if(json.compare(offset, 4, "true") == 0)
+        {
+            return true;
+        }
+        if(json.compare(offset, 5, "false") == 0)
+        {
+            return false;
+        }
+        throw std::runtime_error("manifest.json: invalid " + key);
+    }
+
     // The brace-delimited object that `key` maps to, or nullopt when the
     // key is absent. Used to scope nested lookups (e.g. water_mask's own
     // min_zoom, which must not resolve to the top-level one).
@@ -180,6 +194,7 @@ namespace osect
         status_name_ = display_name_.substr(0, display_name_.find(" ("));
         source_version_ = string_value(manifest, "source_version");
         attribution_ = string_value(manifest, "attribution");
+        surface_model_ = bool_value(manifest, "is_surface_model");
         if(string_value(manifest, "vertical_datum") != "EGM2008")
         {
             throw std::runtime_error("manifest.json: vertical_datum must be EGM2008");
@@ -214,6 +229,11 @@ namespace osect
     bool elevation_source::available() const
     {
         return available_;
+    }
+
+    bool elevation_source::is_surface_model() const
+    {
+        return surface_model_;
     }
 
     int elevation_source::min_zoom() const

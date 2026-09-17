@@ -17,6 +17,8 @@
 namespace osect
 {
     class feature_type;
+    class ui_profile_panel;
+    struct terrain_profile;
 
     // Layer identifiers. The SDF layers are ordered back-to-front for rendering.
     enum layer
@@ -195,6 +197,7 @@ namespace osect
         void set_route_planner_defaults(double max_leg_nm, bool use_airways);
         std::optional<double> cruise_altitude_ft(std::uint64_t tab_id) const;
         void set_terrain_shading(terrain_shading mode);
+        void open_terrain_profile();
 
         // Seed the data-status panel with the per-source freshness
         // records. Typically called once at startup; ephemeral sources
@@ -205,7 +208,8 @@ namespace osect
         // supplies the feature-layer checkboxes; basemap and terrain
         // rows are prepended.
         ui_overlay_result draw(float last_render_ms, const std::vector<std::unique_ptr<feature_type>>& feature_types,
-                               bool terrain_available);
+                               bool terrain_available, const terrain_profile* profile, bool has_active_route,
+                               std::optional<std::string> profile_error, bool terrain_surface_model);
 
         // Access the list of visible/invisible layers
         const layer_visibility& visibility() const;

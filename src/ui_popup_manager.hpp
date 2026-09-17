@@ -73,6 +73,7 @@ namespace osect
             // only when the info popup was showing a route_pick;
             // the caller drains and removes the route.
             bool route_delete = false;
+            bool route_profile = false;
             // The user clicked "WPT" in the pick selector — create a
             // user waypoint at the selector's click point {lon, lat}.
             std::optional<std::pair<double, double>> create_waypoint;

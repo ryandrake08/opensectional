@@ -30,6 +30,7 @@ namespace osect
         std::string display_name_;
         std::string status_name_;
         std::string source_version_;
+        bool surface_model_ = false;
         size_t cache_capacity_;
 
         struct cache_entry
@@ -63,6 +64,7 @@ namespace osect
         double vertical_precision_m() const;
         const std::filesystem::path& path() const;
         const std::string& attribution() const;
+        bool is_surface_model() const;
         // Returns the source metadata used by the data-status panel.
         data_source data_source_row() const;
         // Samples one terrain tile and converts the result to feet.

@@ -47,6 +47,7 @@ namespace osect
         std::optional<profile_request> active_profile;
         std::unordered_map<route_id, std::uint64_t> profile_generations;
         std::unordered_map<route_id, terrain_profile> profiles;
+        std::unordered_map<route_id, std::string> profile_errors;
         // Last active panel tab id observed via active_tab_changed.
         // Used to decide whether a freshly-planned route should pull
         // the view (only when the user is still focused on the
@@ -83,6 +84,7 @@ namespace osect
         {
             const auto generation = ++profile_generations[id];
             profiles.erase(id);
+            profile_errors.erase(id);
             remove_queued_profile(id);
             if(!profile_worker)
             {
@@ -95,6 +97,7 @@ namespace osect
         {
             profile_generations.erase(id);
             profiles.erase(id);
+            profile_errors.erase(id);
             remove_queued_profile(id);
         }
 
@@ -127,6 +130,7 @@ namespace osect
                 else if(!status.error.empty() && profile_is_current(request))
                 {
                     sdl::log_warn("terrain profile: route_id=" + std::to_string(request.id) + " " + status.error);
+                    profile_errors[request.id] = std::move(status.error);
                 }
             }
             if(!active_profile && !profile_queue.empty())
@@ -489,6 +493,16 @@ namespace osect
             return true;
         }
 
+        bool handle_route_profile_request()
+        {
+            if(!map.drain_route_profile_request())
+            {
+                return false;
+            }
+            ui.open_terrain_profile();
+            return true;
+        }
+
         bool handle_route_activate_request()
         {
             auto rid = map.drain_route_activate_request();
@@ -537,6 +551,7 @@ namespace osect
         changed |= pimpl->handle_route_status();
         changed |= pimpl->handle_route_dirty();
         changed |= pimpl->handle_route_delete_request();
+        changed |= pimpl->handle_route_profile_request();
         changed |= pimpl->handle_route_activate_request();
         changed |= pimpl->service_profiles();
         return changed;
@@ -546,5 +561,27 @@ namespace osect
     {
         const auto it = pimpl->profiles.find(route_id);
         return it != pimpl->profiles.end() ? &it->second : nullptr;
+    }
+
+    const terrain_profile* route_session::active_profile() const
+    {
+        const auto route = pimpl->tab_to_route.find(pimpl->active_tab_id);
+        return route == pimpl->tab_to_route.end() ? nullptr : profile_for_route(route->second);
+    }
+
+    std::optional<std::string> route_session::active_profile_error() const
+    {
+        const auto route = pimpl->tab_to_route.find(pimpl->active_tab_id);
+        if(route == pimpl->tab_to_route.end())
+        {
+            return std::nullopt;
+        }
+        const auto error = pimpl->profile_errors.find(route->second);
+        return error == pimpl->profile_errors.end() ? std::nullopt : std::optional<std::string>{error->second};
+    }
+
+    bool route_session::has_active_route() const
+    {
+        return pimpl->tab_to_route.find(pimpl->active_tab_id) != pimpl->tab_to_route.end();
     }
 }

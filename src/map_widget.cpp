@@ -342,6 +342,7 @@ namespace osect
         std::optional<route_id> active_route_id;
         std::optional<flight_route> route_drag_result; // surfaces via drain after a drag commit
         std::optional<route_id> route_delete_request;
+        bool route_profile_request = false;
         std::optional<route_id> route_activate_request;
         std::optional<std::pair<double, double>> create_waypoint_request;
         std::optional<std::int64_t> delete_waypoint_request;
@@ -1064,6 +1065,11 @@ namespace osect
                 features.set_selection(std::nullopt);
                 needs_update = true;
             }
+            if(out.route_profile)
+            {
+                route_profile_request = true;
+                needs_update = true;
+            }
             if(out.create_waypoint)
             {
                 create_waypoint_request = out.create_waypoint;
@@ -1638,6 +1644,13 @@ namespace osect
         return r;
     }
 
+    bool map_widget::drain_route_profile_request()
+    {
+        const bool requested = pimpl->route_profile_request;
+        pimpl->route_profile_request = false;
+        return requested;
+    }
+
     std::optional<route_id> map_widget::drain_route_activate_request()
     {
         auto r = pimpl->route_activate_request;
@@ -1676,7 +1689,7 @@ namespace osect
     bool map_widget::has_pending_actions() const
     {
         const auto& d = *pimpl;
-        return d.route_delete_request || d.route_activate_request || d.create_waypoint_request ||
+        return d.route_delete_request || d.route_profile_request || d.route_activate_request || d.create_waypoint_request ||
                d.delete_waypoint_request || d.rename_waypoint_request || d.route_drag_result ||
                d.waypoint_drag_result || d.popups_unsettled;
     }

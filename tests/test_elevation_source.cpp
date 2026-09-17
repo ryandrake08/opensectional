@@ -35,13 +35,14 @@ namespace
 
     std::string manifest(const std::string& dataset, int tile_pixels, int skirt_pixels, int min_zoom, int max_zoom,
                          double precision, const std::string& datum = "EGM2008",
-                         const std::string& water_mask = {})
+                         const std::string& water_mask = {}, bool surface_model = false)
     {
         return "{\n"
                "  \"dataset\": \"" + dataset + "\",\n"
                "  \"dataset_display_name\": \"" + dataset + " display\",\n"
                "  \"source_version\": \"2026-01-01\",\n"
                "  \"attribution\": \"Test data\",\n"
+               "  \"is_surface_model\": " + std::string(surface_model ? "true" : "false") + ",\n"
                "  \"vertical_datum\": \"" + datum + "\",\n"
                "  \"vertical_precision_m\": " + std::to_string(precision) + ",\n"
                "  \"tile_pixels\": " + std::to_string(tile_pixels) + ",\n"
@@ -86,7 +87,7 @@ namespace
 TEST_CASE("Elevation source reads dataset-agnostic manifests")
 {
     temporary_tree first("osect-elevation-source-first", manifest("first", 256, 2, 0, 6, 1.0));
-    temporary_tree second("osect-elevation-source-second", manifest("second", 512, 4, 3, 11, 0.25));
+    temporary_tree second("osect-elevation-source-second", manifest("second", 512, 4, 3, 11, 0.25, "EGM2008", {}, true));
 
     const osect::elevation_source first_source(first.path());
     const osect::elevation_source second_source(second.path());
@@ -97,6 +98,7 @@ TEST_CASE("Elevation source reads dataset-agnostic manifests")
     CHECK(first_source.skirt() == 2);
     CHECK(first_source.vertical_precision_m() == 1.0);
     CHECK(first_source.attribution() == "Test data");
+    CHECK_FALSE(first_source.is_surface_model());
     CHECK(first_source.data_source_row().info == "first display 2026-01-01");
 
     CHECK(second_source.available());
@@ -105,6 +107,7 @@ TEST_CASE("Elevation source reads dataset-agnostic manifests")
     CHECK(second_source.skirt() == 4);
     CHECK(second_source.vertical_precision_m() == 0.25);
     CHECK(second_source.attribution() == "Test data");
+    CHECK(second_source.is_surface_model());
     CHECK(second_source.data_source_row().info == "second display 2026-01-01");
 }
 
@@ -146,6 +149,7 @@ TEST_CASE("Elevation source decodes escaped manifest strings")
                         "  \"dataset_display_name\": \"escaped display\",\n"
                         "  \"source_version\": \"2026-01-01\",\n"
                         "  \"attribution\": \"Agency \\\"quoted\\\" text\",\n"
+                        "  \"is_surface_model\": false,\n"
                         "  \"vertical_datum\": \"EGM2008\",\n"
                         "  \"vertical_precision_m\": 1,\n"
                         "  \"tile_pixels\": 256,\n"
