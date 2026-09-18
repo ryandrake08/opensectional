@@ -67,7 +67,7 @@ namespace osect
             // shared all-land texture instead.
             int water_width = 0;
             int water_height = 0;
-            std::vector<uint8_t> water = {};
+            std::vector<uint8_t> water;
         };
 
         // Reads the R channel (the water class) of a mask PNG.
@@ -139,7 +139,8 @@ namespace osect
                             continue;
                         }
                         const auto tile = elevation_tile::load(request.path);
-                        terrain_load_result result{request.key, tile.width(), tile.height(), tile.quantized_m()};
+                        terrain_load_result result{
+                            request.key, tile.width(), tile.height(), tile.quantized_m(), 0, 0, {}};
                         if(!request.water_path.empty() && std::filesystem::exists(request.water_path))
                         {
                             result.water = load_water_classes(request.water_path, result.water_width,
@@ -162,6 +163,11 @@ namespace osect
             terrain_loader() : worker_(&terrain_loader::run, this)
             {
             }
+
+            terrain_loader(const terrain_loader&) = delete;
+            terrain_loader& operator=(const terrain_loader&) = delete;
+            terrain_loader(terrain_loader&&) = delete;
+            terrain_loader& operator=(terrain_loader&&) = delete;
 
             ~terrain_loader()
             {

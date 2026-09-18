@@ -167,7 +167,7 @@ namespace osect
         {
             return std::nullopt;
         }
-        const std::filesystem::path root{std::move(bundled)};
+        std::filesystem::path root{std::move(bundled)};
         if(std::filesystem::exists(root / "manifest.json"))
         {
             return root;

@@ -1,10 +1,12 @@
 #include "elevation_tile.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <sdl/surface.hpp>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace osect
 {
@@ -44,7 +46,7 @@ namespace osect
                 elevations_m[index] = static_cast<float>(pixel[0] * 256 + pixel[1] + pixel[2] / 256.0 - 32768.0);
             }
         }
-        return elevation_tile(width, height, std::move(elevations_m));
+        return {width, height, std::move(elevations_m)};
     }
 
     int elevation_tile::width() const
@@ -68,28 +70,25 @@ namespace osect
         const double tx = x - x0;
         const double ty = y - y0;
 
-        const float samples[] = {
-            elevations_m_[static_cast<size_t>(y0) * width_ + x0],
-            elevations_m_[static_cast<size_t>(y0) * width_ + x1],
-            elevations_m_[static_cast<size_t>(y1) * width_ + x0],
-            elevations_m_[static_cast<size_t>(y1) * width_ + x1],
-        };
-        const double weights[] = {
-            (1.0 - tx) * (1.0 - ty), tx * (1.0 - ty), (1.0 - tx) * ty, tx * ty,
+        const std::array<std::pair<float, double>, 4> samples = {
+            std::make_pair(elevations_m_[static_cast<size_t>(y0) * width_ + x0], (1.0 - tx) * (1.0 - ty)),
+            std::make_pair(elevations_m_[static_cast<size_t>(y0) * width_ + x1], tx * (1.0 - ty)),
+            std::make_pair(elevations_m_[static_cast<size_t>(y1) * width_ + x0], (1.0 - tx) * ty),
+            std::make_pair(elevations_m_[static_cast<size_t>(y1) * width_ + x1], tx * ty),
         };
 
         double elevation_m = 0.0;
-        for(size_t i = 0; i < 4; i++)
+        for(const auto& [sample, weight] : samples)
         {
-            if(weights[i] == 0.0)
+            if(weight == 0.0)
             {
                 continue;
             }
-            if(std::isnan(samples[i]))
+            if(std::isnan(sample))
             {
                 return NAN;
             }
-            elevation_m += samples[i] * weights[i];
+            elevation_m += sample * weight;
         }
         return static_cast<float>(elevation_m);
     }

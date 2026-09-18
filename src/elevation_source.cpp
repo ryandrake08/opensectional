@@ -423,10 +423,10 @@ namespace osect
         float maximum_m = NAN;
         const auto scan = [this, zoom, y_start, y_end, &maximum_m](double x_start, double x_end)
         {
-            const int64_t first_x = static_cast<int64_t>(std::floor(x_start));
-            const int64_t last_x = static_cast<int64_t>(std::ceil(x_end)) - 1;
-            const int64_t first_y = static_cast<int64_t>(std::floor(y_start));
-            const int64_t last_y = static_cast<int64_t>(std::ceil(y_end)) - 1;
+            const auto first_x = static_cast<int64_t>(std::floor(x_start));
+            const auto last_x = static_cast<int64_t>(std::ceil(x_end)) - 1;
+            const auto first_y = static_cast<int64_t>(std::floor(y_start));
+            const auto last_y = static_cast<int64_t>(std::ceil(y_end)) - 1;
             for(int64_t tile_y = first_y / tile_size_; tile_y <= last_y / tile_size_; tile_y++)
             {
                 for(int64_t tile_x = first_x / tile_size_; tile_x <= last_x / tile_size_; tile_x++)

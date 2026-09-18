@@ -228,19 +228,23 @@ namespace
         {
             bc = get_metallib_bytecode(id);
         }
-        else
 #endif
 #ifdef __APPLE__
-            if(format == sdl::shader_format::msl)
+        if(format == sdl::shader_format::msl)
+        {
             bc = get_msl_bytecode(id, stage);
-        else
+        }
 #endif
 #ifdef OSECT_HAVE_DXIL
-            if(format == sdl::shader_format::dxil)
+        if(format == sdl::shader_format::dxil)
+        {
             bc = get_dxil_bytecode(id, stage);
-        else
+        }
 #endif
+        if(format == sdl::shader_format::spirv)
+        {
             bc = get_spirv_bytecode(id, stage);
+        }
         return {dev, bc.data, bc.len, entrypoint, stage, format, num_samplers, num_storage_buffers};
     }
     // NOLINTEND(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
@@ -379,7 +383,7 @@ namespace osect
             return terrain_config.mode;
         }
 
-        void update_terrain_shading()
+        void update_terrain_shading() // NOLINT(readability-make-member-function-const)
         {
             if(terrain)
             {

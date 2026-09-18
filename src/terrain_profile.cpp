@@ -309,7 +309,7 @@ namespace osect
                             continue;
                         }
                         profile.samples[sample_index].has_obstacle = true;
-                        const double obstacle_elevation_ft = static_cast<double>(obstacle.amsl_ht);
+                        const auto obstacle_elevation_ft = static_cast<double>(obstacle.amsl_ht);
                         const bool obstacle_only = !profile.samples[sample_index].corridor_elevation_ft ||
                                                    profile.samples[sample_index].corridor_from_obstacle;
                         if(!profile.samples[sample_index].corridor_elevation_ft ||

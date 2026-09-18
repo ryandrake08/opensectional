@@ -2,6 +2,7 @@
 
 #include "ini_config.hpp"
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <sstream>
@@ -60,30 +61,34 @@ namespace osect
                 return -1;
             };
 
-            int channels[3] = {0, 0, 0};
+            std::array<int, 3> channels{};
             if(hex.size() == 6)
             {
-                for(int i = 0; i < 3; i++)
+                size_t channel_index = 0;
+                for(auto& channel : channels)
                 {
-                    const int hi = nibble(hex[i * 2]);
-                    const int lo = nibble(hex[i * 2 + 1]);
+                    const int hi = nibble(hex[channel_index * 2]);
+                    const int lo = nibble(hex[channel_index * 2 + 1]);
                     if(hi < 0 || lo < 0)
                     {
                         return false;
                     }
-                    channels[i] = hi * 16 + lo;
+                    channel = hi * 16 + lo;
+                    ++channel_index;
                 }
             }
             else if(hex.size() == 3)
             {
-                for(int i = 0; i < 3; i++)
+                size_t channel_index = 0;
+                for(auto& channel : channels)
                 {
-                    const int v = nibble(hex[i]);
+                    const int v = nibble(hex[channel_index]);
                     if(v < 0)
                     {
                         return false;
                     }
-                    channels[i] = v * 17;
+                    channel = v * 17;
+                    ++channel_index;
                 }
             }
             else

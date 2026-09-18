@@ -97,7 +97,7 @@ namespace osect
 
         const auto max_distance = profile->samples.back().distance_nm;
         const auto max_elevation = std::max(1.0, maximum_elevation(*profile).value_or(0.0));
-        const auto draw_list = ImGui::GetWindowDrawList();
+        auto* const draw_list = ImGui::GetWindowDrawList();
         const auto origin = ImGui::GetCursorScreenPos();
         const auto available = ImGui::GetContentRegionAvail();
         const auto plot_min = ImVec2(origin.x + MARGIN_PX, origin.y + MARGIN_PX);
@@ -199,7 +199,15 @@ namespace osect
                 continue;
             }
             const auto difference = *current.aircraft_altitude_ft - *previous.aircraft_altitude_ft;
-            const auto color = difference > 1e-6 ? climb : difference < -1e-6 ? descent : cruise;
+            auto color = cruise;
+            if(difference > 1e-6)
+            {
+                color = climb;
+            }
+            else if(difference < -1e-6)
+            {
+                color = descent;
+            }
             draw_list->AddLine(point_at(previous.distance_nm, *previous.aircraft_altitude_ft),
                                point_at(current.distance_nm, *current.aircraft_altitude_ft), color, 2.5F);
         }

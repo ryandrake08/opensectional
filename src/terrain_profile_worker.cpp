@@ -22,6 +22,11 @@ namespace osect
         {
         }
 
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl(impl&&) = delete;
+        impl& operator=(impl&&) = delete;
+
         ~impl()
         {
             if(worker.joinable())
