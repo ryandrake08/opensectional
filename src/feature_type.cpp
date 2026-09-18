@@ -3770,6 +3770,73 @@ namespace osect
                 bool is_active = act && *act == loaded[*selected_pos].first;
                 draw_one(loaded[*selected_pos].second, is_active, /*is_highlighted=*/true);
             }
+
+            if(!req.terrain_warning_route_id || req.terrain_warning_spans.empty())
+            {
+                return;
+            }
+            const auto route = std::find_if(loaded.begin(), loaded.end(),
+                                            [&](const auto& entry)
+                                            {
+                                                return entry.first == *req.terrain_warning_route_id;
+                                            });
+            if(route == loaded.end())
+            {
+                return;
+            }
+
+            const auto& wps = route->second.waypoints;
+            auto& pd = ctx.poly[layer_route];
+            double route_distance_nm = 0.0;
+            for(std::size_t i = 1; i < wps.size(); ++i)
+            {
+                route_distance_nm += haversine_distance_nm(wps[i - 1].lat, wps[i - 1].lon, wps[i].lat, wps[i].lon);
+            }
+            const auto sample_interval_nm = route_distance_nm > 0.0
+                                                ? std::min(TERRAIN_PROFILE_SAMPLE_INTERVAL_NM,
+                                                           route_distance_nm / (TERRAIN_PROFILE_MIN_SAMPLES - 1))
+                                                : TERRAIN_PROFILE_SAMPLE_INTERVAL_NM;
+            double leg_start_nm = 0.0;
+            for(std::size_t leg_index = 1; leg_index < wps.size(); ++leg_index)
+            {
+                const auto& from = wps[leg_index - 1];
+                const auto& to = wps[leg_index];
+                const auto leg_distance_nm = haversine_distance_nm(from.lat, from.lon, to.lat, to.lon);
+                const auto leg_end_nm = leg_start_nm + leg_distance_nm;
+                const auto arc = geodesic_interpolate(from.lat, from.lon, to.lat, to.lon, sample_interval_nm);
+                for(const auto& span : req.terrain_warning_spans)
+                {
+                    const auto start_nm = std::max(leg_start_nm, span.start_distance_nm);
+                    const auto end_nm = std::min(leg_end_nm, span.end_distance_nm);
+                    if(start_nm >= end_nm)
+                    {
+                        continue;
+                    }
+                    std::vector<glm::vec2> polyline;
+                    for(const auto& point : arc)
+                    {
+                        const auto distance_nm = leg_start_nm + haversine_distance_nm(from.lat, from.lon, point.lat, point.lon);
+                        if(distance_nm >= start_nm && distance_nm <= end_nm)
+                        {
+                            polyline.emplace_back(static_cast<float>(lon_to_mx(point.lon) + ctx.mx_offset),
+                                                  static_cast<float>(lat_to_my(point.lat)));
+                        }
+                    }
+                    if(polyline.size() < 2)
+                    {
+                        continue;
+                    }
+                    line_style style{};
+                    style.line_width = 5.0F;
+                    style.r = 1.0F;
+                    style.g = span.severity == terrain_profile_clearance_severity::terrain_intersection ? 0.2F : 0.85F;
+                    style.b = 0.0F;
+                    style.a = 1.0F;
+                    pd.polylines.push_back(std::move(polyline));
+                    pd.styles.push_back(style);
+                }
+                leg_start_nm = leg_end_nm;
+            }
         }
     }
 

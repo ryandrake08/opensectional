@@ -251,6 +251,11 @@ namespace osect
         pimpl->profile_panel.open_drawer();
     }
 
+    bool ui_overlay::terrain_profile_open() const
+    {
+        return pimpl->profile_panel.open();
+    }
+
     void ui_overlay::set_data_sources(std::vector<data_source> sources)
     {
         pimpl->sources = std::move(sources);
@@ -644,10 +649,39 @@ namespace osect
 
                         if(p.has_route && !p.planning)
                         {
-                            if(ImGui::Button("Terrain profile"))
+                            const bool incomplete_profile = profile && std::any_of(profile->samples.begin(), profile->samples.end(),
+                                                                                   [](const auto& sample)
+                                                                                   {
+                                                                                       return !sample.centreline_elevation_ft ||
+                                                                                              !sample.corridor_elevation_ft;
+                                                                                   });
+                            const bool has_violations = profile && !profile->clearance_spans.empty();
+                            const char* label = "Terrain profile";
+                            ImU32 color = IM_COL32(255, 255, 255, 255);
+                            if(!terrain_available || profile_error || incomplete_profile)
+                            {
+                                label = "Terrain unavailable";
+                                color = IM_COL32(150, 150, 150, 255);
+                            }
+                            else if(!profile)
+                            {
+                                label = "Calculating terrain";
+                            }
+                            else if(has_violations)
+                            {
+                                color = IM_COL32(255, 80, 80, 255);
+                            }
+                            else
+                            {
+                                color = IM_COL32(80, 220, 100, 255);
+                            }
+                            ImGui::PushStyleColor(ImGuiCol_Text, color);
+                            if(ImGui::Button(label))
                             {
                                 d.profile_panel.toggle();
+                                result.terrain_profile_open_changed = true;
                             }
+                            ImGui::PopStyleColor();
                             ImGui::SameLine();
                             if(ImGui::Button("Clear"))
                             {

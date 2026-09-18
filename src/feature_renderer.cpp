@@ -56,6 +56,8 @@ namespace osect
         layer_visibility vis;
         std::optional<feature> selection;
         std::optional<route_id> active_route_id;
+        std::optional<route_id> terrain_warning_route_id;
+        std::vector<terrain_profile_clearance_span> terrain_warning_spans;
         std::optional<route_id> drag_route_id;
         std::optional<flight_route> drag_route;
 
@@ -146,6 +148,8 @@ namespace osect
             req.chart = pimpl->vis.chart;
             req.selection = pimpl->selection;
             req.active_route_id = pimpl->active_route_id;
+            req.terrain_warning_route_id = pimpl->terrain_warning_route_id;
+            req.terrain_warning_spans = pimpl->terrain_warning_spans;
             req.drag_route_id = pimpl->drag_route_id;
             req.drag_route = pimpl->drag_route;
             pimpl->builder.request(std::move(req));
@@ -273,6 +277,28 @@ namespace osect
         }
         pimpl->active_route_id = id;
         pimpl->has_cached_query = false;
+    }
+
+    bool feature_renderer::set_terrain_warning_overlay(std::optional<route_id> id,
+                                                        std::vector<terrain_profile_clearance_span> spans)
+    {
+        const auto same_spans = pimpl->terrain_warning_spans.size() == spans.size() &&
+                                std::equal(pimpl->terrain_warning_spans.begin(), pimpl->terrain_warning_spans.end(),
+                                           spans.begin(),
+                                           [](const auto& left, const auto& right)
+                                           {
+                                               return left.start_distance_nm == right.start_distance_nm &&
+                                                      left.end_distance_nm == right.end_distance_nm &&
+                                                      left.phase == right.phase && left.severity == right.severity;
+                                           });
+        if(pimpl->terrain_warning_route_id == id && same_spans)
+        {
+            return false;
+        }
+        pimpl->terrain_warning_route_id = id;
+        pimpl->terrain_warning_spans = std::move(spans);
+        pimpl->has_cached_query = false;
+        return true;
     }
 
     void feature_renderer::set_drag_preview(std::optional<route_id> id, std::optional<flight_route> route)

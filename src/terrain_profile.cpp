@@ -266,24 +266,24 @@ namespace osect
         windows.reserve(profile.samples.size());
         for(std::size_t sample_index = 0; sample_index < profile.samples.size(); ++sample_index)
         {
-            double half_step_nm = 0.0;
-            if(sample_index > 0)
-            {
-                half_step_nm = (profile.samples[sample_index].distance_nm -
-                                profile.samples[sample_index - 1].distance_nm) *
-                               0.5;
-            }
-            if(sample_index + 1 < profile.samples.size())
-            {
-                half_step_nm = std::max(half_step_nm, (profile.samples[sample_index + 1].distance_nm -
-                                                        profile.samples[sample_index].distance_nm) *
-                                                           0.5);
-            }
+            const auto distance_from_terminal_nm = std::min(profile.samples[sample_index].distance_nm,
+                                                             route_distance_nm - profile.samples[sample_index].distance_nm);
+            const auto terminal_fraction = std::clamp(distance_from_terminal_nm /
+                                                           TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM,
+                                                       0.0, 1.0);
+            const auto sample_corridor_half_width_nm = corridor_half_width_nm * terminal_fraction;
             const geo_bbox window = bbox_around(sample_points[sample_index].lat, sample_points[sample_index].lon,
-                                                corridor_half_width_nm + half_step_nm);
+                                                sample_corridor_half_width_nm);
             windows.push_back(window);
-            profile.samples[sample_index].corridor_elevation_ft =
-                terrain.maximum_elevation_ft(window.lat_min, window.lon_min, window.lat_max, window.lon_max);
+            if(sample_corridor_half_width_nm == 0.0)
+            {
+                profile.samples[sample_index].corridor_elevation_ft = profile.samples[sample_index].centreline_elevation_ft;
+            }
+            else
+            {
+                profile.samples[sample_index].corridor_elevation_ft =
+                    terrain.maximum_elevation_ft(window.lat_min, window.lon_min, window.lat_max, window.lon_max);
+            }
         }
 
         if(include_obstacles)
@@ -375,13 +375,25 @@ namespace osect
             {
                 phase = aircraft_trace->phase_at(sample.distance_nm);
             }
-            const bool violates = phase && sample.aircraft_altitude_ft && sample.corridor_elevation_ft &&
-                                  *sample.aircraft_altitude_ft < *sample.corridor_elevation_ft + required_clearance_ft;
-            if(violates && (!span || span->phase == *phase))
+            std::optional<terrain_profile_clearance_severity> severity;
+            if(phase && sample.aircraft_altitude_ft && sample.corridor_elevation_ft)
+            {
+                if(*sample.aircraft_altitude_ft < *sample.corridor_elevation_ft)
+                {
+                    severity = terrain_profile_clearance_severity::terrain_intersection;
+                }
+                else if(sample.distance_nm >= TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM &&
+                        route_distance_nm - sample.distance_nm >= TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM &&
+                        *sample.aircraft_altitude_ft < *sample.corridor_elevation_ft + required_clearance_ft)
+                {
+                    severity = terrain_profile_clearance_severity::below_clearance;
+                }
+            }
+            if(severity && (!span || (span->phase == *phase && span->severity == *severity)))
             {
                 if(!span)
                 {
-                    span = {sample.distance_nm, sample.distance_nm, *phase};
+                    span = {sample.distance_nm, sample.distance_nm, *phase, *severity};
                 }
                 else
                 {
@@ -394,9 +406,9 @@ namespace osect
                 profile.clearance_spans.push_back(*span);
                 span.reset();
             }
-            if(violates)
+            if(severity)
             {
-                span = {sample.distance_nm, sample.distance_nm, *phase};
+                span = {sample.distance_nm, sample.distance_nm, *phase, *severity};
             }
         }
         if(span)

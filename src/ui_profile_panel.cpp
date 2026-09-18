@@ -113,6 +113,8 @@ namespace osect
         const auto climb = IM_COL32(90, 210, 255, 255);
         const auto cruise = IM_COL32(255, 255, 255, 255);
         const auto descent = IM_COL32(255, 110, 220, 255);
+        const auto warning = IM_COL32(255, 225, 0, 255);
+        const auto terrain_intersection = IM_COL32(255, 50, 50, 255);
         const auto point_at = [=](double distance_nm, double elevation_ft)
         {
             const auto x_fraction = max_distance > 0.0 ? static_cast<float>(distance_nm / max_distance) : 0.0F;
@@ -170,6 +172,7 @@ namespace osect
         }
         flush_terrain();
 
+        std::size_t warning_span = 0;
         for(std::size_t i = 1; i < profile->samples.size(); ++i)
         {
             const auto& previous = profile->samples[i - 1];
@@ -210,6 +213,39 @@ namespace osect
             }
             draw_list->AddLine(point_at(previous.distance_nm, *previous.aircraft_altitude_ft),
                                point_at(current.distance_nm, *current.aircraft_altitude_ft), color, 2.5F);
+            while(warning_span < profile->clearance_spans.size() &&
+                  profile->clearance_spans[warning_span].end_distance_nm <= previous.distance_nm)
+            {
+                ++warning_span;
+            }
+            for(auto span_index = warning_span; span_index < profile->clearance_spans.size(); ++span_index)
+            {
+                const auto& span = profile->clearance_spans[span_index];
+                if(span.start_distance_nm >= current.distance_nm)
+                {
+                    break;
+                }
+                const auto segment_start = std::max(span.start_distance_nm, previous.distance_nm);
+                const auto segment_end = std::min(span.end_distance_nm, current.distance_nm);
+                if(segment_start >= segment_end)
+                {
+                    continue;
+                }
+                const auto fraction_at = [&](double distance_nm)
+                {
+                    return (distance_nm - previous.distance_nm) / (current.distance_nm - previous.distance_nm);
+                };
+                const auto altitude_at = [&](double distance_nm)
+                {
+                    return *previous.aircraft_altitude_ft +
+                           (*current.aircraft_altitude_ft - *previous.aircraft_altitude_ft) * fraction_at(distance_nm);
+                };
+                const auto warning_color = span.severity == terrain_profile_clearance_severity::terrain_intersection
+                                               ? terrain_intersection
+                                               : warning;
+                draw_list->AddLine(point_at(segment_start, altitude_at(segment_start)),
+                                   point_at(segment_end, altitude_at(segment_end)), warning_color, 4.0F);
+            }
         }
         ImGui::SetCursorScreenPos(ImVec2(origin.x, plot_max.y + ImGui::GetTextLineHeight() + 6.0F));
         ImGui::TextUnformatted(surface_model ? "Elevation source: DSM  |  terrain: brown  corridor: orange  obstacle corridor: gray  aircraft: blue/white/magenta"

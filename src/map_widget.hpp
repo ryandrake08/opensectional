@@ -26,6 +26,7 @@ namespace osect
     class elevation_source;
     class feature_type;
     enum class terrain_shading;
+    struct terrain_profile_clearance_span;
 
     // The main map widget: owns the tile renderer, feature renderer, label
     // renderer, pick/info popups, GPU pipelines, and map view (pan/zoom).
@@ -101,6 +102,10 @@ namespace osect
         // active route is the panel/drag target. Independent of the
         // selected (highlighted) route.
         void set_active_route(std::optional<route_id> id);
+
+        // Highlight terrain-profile violations for the active route.
+        void set_terrain_warning_overlay(std::optional<route_id> id,
+                                         std::vector<terrain_profile_clearance_span> spans);
 
         // The active route, or nullopt if none.
         std::optional<route_id> active_route() const;

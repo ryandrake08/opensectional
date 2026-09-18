@@ -4,6 +4,7 @@
 #include "flight_route.hpp"
 #include "line_style.hpp"
 #include "pick_result.hpp"
+#include "terrain_profile.hpp"
 #include "ui_overlay.hpp"
 #include <glm/glm.hpp>
 #include <array>
@@ -73,6 +74,11 @@ namespace osect
         // (white + halos + popup) is identified by `selection`
         // when it holds a `route_pick`.
         std::optional<route_id> active_route_id;
+
+        // Clearance spans for the active route, rendered only while the
+        // terrain-profile drawer is open.
+        std::optional<route_id> terrain_warning_route_id;
+        std::vector<terrain_profile_clearance_span> terrain_warning_spans;
 
         // Transient route overlay used during a drag: while the
         // user is dragging a waypoint or segment, map_widget has

@@ -14,6 +14,7 @@ namespace osect
     inline constexpr double TERRAIN_PROFILE_SAMPLE_INTERVAL_NM = 0.5;
     inline constexpr std::size_t TERRAIN_PROFILE_MIN_SAMPLES = 100;
     inline constexpr double TERRAIN_PROFILE_CORRIDOR_HALF_WIDTH_NM = 4.0;
+    inline constexpr double TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM = 10.0;
     inline constexpr double TERRAIN_PROFILE_REQUIRED_CLEARANCE_FT = 1000.0;
 
     enum class terrain_profile_phase
@@ -23,11 +24,18 @@ namespace osect
         descent,
     };
 
+    enum class terrain_profile_clearance_severity
+    {
+        below_clearance,
+        terrain_intersection,
+    };
+
     struct terrain_profile_clearance_span
     {
         double start_distance_nm = 0.0;
         double end_distance_nm = 0.0;
         terrain_profile_phase phase = terrain_profile_phase::cruise;
+        terrain_profile_clearance_severity severity = terrain_profile_clearance_severity::below_clearance;
     };
 
     // One point in a route's terrain and aircraft altitude traces.

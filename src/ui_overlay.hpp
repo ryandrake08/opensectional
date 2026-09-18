@@ -104,6 +104,7 @@ namespace osect
         // terrain shading only.
         std::optional<std::pair<std::uint64_t, std::optional<double>>> cruise_altitude_changed;
         std::optional<terrain_shading> terrain_shading_changed;
+        bool terrain_profile_open_changed = false;
 
         // The id of a tab the user just closed via its X button.
         // ui_overlay has already removed the panel; the caller is
@@ -123,7 +124,7 @@ namespace osect
         {
             return visibility_changed || search_query.has_value() ||
                    selected_hit_index.has_value() || route_submit.has_value() || cruise_altitude_changed.has_value() ||
-                   terrain_shading_changed.has_value() ||
+                   terrain_shading_changed.has_value() || terrain_profile_open_changed ||
                    tab_closed.has_value() || active_tab_changed.has_value();
         }
     };
@@ -198,6 +199,7 @@ namespace osect
         std::optional<double> cruise_altitude_ft(std::uint64_t tab_id) const;
         void set_terrain_shading(terrain_shading mode);
         void open_terrain_profile();
+        bool terrain_profile_open() const;
 
         // Seed the data-status panel with the per-source freshness
         // records. Typically called once at startup; ephemeral sources

@@ -1629,6 +1629,15 @@ namespace osect
         pimpl->needs_update = true;
     }
 
+    void map_widget::set_terrain_warning_overlay(std::optional<route_id> id,
+                                                 std::vector<terrain_profile_clearance_span> spans)
+    {
+        if(pimpl->features.set_terrain_warning_overlay(id, std::move(spans)))
+        {
+            pimpl->needs_update = true;
+        }
+    }
+
     std::optional<route_id> map_widget::active_route() const
     {
         return pimpl->active_route_id;

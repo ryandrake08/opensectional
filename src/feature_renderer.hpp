@@ -72,6 +72,12 @@ namespace osect
         // nullopt clears the active marker.
         void set_active_route_id(std::optional<route_id> id);
 
+        // Replace the route segments highlighted by the terrain-profile
+        // drawer. Passing no route clears the overlay.
+        // Returns true when the requested overlay differs from the current one.
+        bool set_terrain_warning_overlay(std::optional<route_id> id,
+                                         std::vector<terrain_profile_clearance_span> spans);
+
         // While the user is dragging a route, the on-disk text is
         // stale relative to the visible preview. Map_widget pushes
         // the transient flight_route here; the build path renders

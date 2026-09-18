@@ -143,6 +143,24 @@ namespace osect
             return changed;
         }
 
+        void sync_terrain_warning_overlay()
+        {
+            if(!ui.terrain_profile_open())
+            {
+                map.set_terrain_warning_overlay(std::nullopt, {});
+                return;
+            }
+            const auto id = map.active_route();
+            const auto tab = tab_to_route.find(active_tab_id);
+            const auto profile = tab == tab_to_route.end() ? profiles.end() : profiles.find(tab->second);
+            if(!id || profile == profiles.end())
+            {
+                map.set_terrain_warning_overlay(std::nullopt, {});
+                return;
+            }
+            map.set_terrain_warning_overlay(id, profile->second.clearance_spans);
+        }
+
         void restore_from_db()
         {
             // Read every persisted route from user.db and seed
@@ -554,6 +572,7 @@ namespace osect
         changed |= pimpl->handle_route_profile_request();
         changed |= pimpl->handle_route_activate_request();
         changed |= pimpl->service_profiles();
+        pimpl->sync_terrain_warning_overlay();
         return changed;
     }
 

@@ -48,7 +48,8 @@ TEST_CASE("terrain profile samples airport route at the profile interval")
     CHECK(profile.samples.back().distance_nm == doctest::Approx(distance_nm)); // great-circle interpolation
     CHECK(profile.samples.front().aircraft_altitude_ft == airports.front().elev);
     CHECK(profile.samples.back().aircraft_altitude_ft == destination.front().elev);
-    CHECK_FALSE(profile.samples.front().corridor_elevation_ft);
+    CHECK(profile.samples.front().corridor_elevation_ft == airports.front().elev);
+    CHECK(profile.samples.back().corridor_elevation_ft == destination.front().elev);
     CHECK(std::any_of(profile.samples.begin(), profile.samples.end(), [](const auto& sample)
                       { return sample.aircraft_altitude_ft == 10000.0; }));
 }
@@ -68,10 +69,18 @@ TEST_CASE("terrain profile omits aircraft trace without a cruise altitude")
     const osect::terrain_profile profile = osect::build_terrain_profile(
         waypoints, terrain, test_db(), std::nullopt, osect::terrain_profile_gradients{}, 4.0, false);
 
-    for(const auto& sample : profile.samples)
+    for(std::size_t i = 0; i < profile.samples.size(); ++i)
     {
+        const auto& sample = profile.samples[i];
         CHECK_FALSE(sample.aircraft_altitude_ft);
-        CHECK_FALSE(sample.corridor_elevation_ft);
+        if(i == 0 || i + 1 == profile.samples.size())
+        {
+            CHECK(sample.corridor_elevation_ft == sample.centreline_elevation_ft);
+        }
+        else
+        {
+            CHECK_FALSE(sample.corridor_elevation_ft);
+        }
     }
 }
 
@@ -167,7 +176,7 @@ TEST_CASE("terrain profile derives maxima, MSA, and clearance spans")
         waypoints, terrain, test_db(), 10000.0, osect::terrain_profile_gradients{300.0, 318.0}, 4.0, true, 100000.0);
 
     REQUIRE(profile.maximum_elevation_ft);
-    CHECK(std::all_of(profile.samples.begin(), profile.samples.end(), [](const auto& sample)
+    CHECK(std::all_of(profile.samples.begin() + 1, profile.samples.end() - 1, [](const auto& sample)
                       { return !sample.corridor_elevation_ft || sample.corridor_from_obstacle; }));
     REQUIRE(profile.legs.size() == 1);
     REQUIRE(profile.legs.front().maximum_elevation_ft);

@@ -5,6 +5,12 @@
 
 TEST_CASE("terrain profile value types retain profile results")
 {
+    osect::terrain_profile_clearance_span span{
+        10.0,
+        12.5,
+        osect::terrain_profile_phase::cruise,
+        osect::terrain_profile_clearance_severity::terrain_intersection,
+    };
     osect::terrain_profile_sample sample{
         12.5,
         800.0,
@@ -25,7 +31,7 @@ TEST_CASE("terrain profile value types retain profile results")
         {sample},
         {leg},
         1200.0,
-        {},
+        {span},
     };
     osect::terrain_profile_gradients gradients{300.0, 318.0};
 
@@ -52,6 +58,8 @@ TEST_CASE("terrain profile value types retain profile results")
     CHECK(*profile.maximum_elevation_ft == 1200.0);
     CHECK(gradients.climb_ft_per_nm == 300.0);
     CHECK(gradients.descent_ft_per_nm == 318.0);
+    REQUIRE(profile.clearance_spans.size() == 1);
+    CHECK(profile.clearance_spans.front().severity == osect::terrain_profile_clearance_severity::terrain_intersection);
 }
 
 TEST_CASE("terrain profile defaults represent unavailable derived values")
