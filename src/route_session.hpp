@@ -2,6 +2,8 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
+#include <string>
 
 class ini_config;
 
