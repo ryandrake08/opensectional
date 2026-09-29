@@ -131,7 +131,10 @@ namespace osect
             lon_m = 0;
         }
 
-        std::array<char, 16> buf{};
+        // Valid coordinates need 16 bytes, but GCC's -Wformat-truncation
+        // only knows the fields are non-negative ints (up to 10 digits
+        // each), so size for that worst case.
+        std::array<char, 64> buf{};
         std::snprintf(buf.data(), buf.size(), "%02d%02d%02d%c%03d%02d%02d%c", lat_d, lat_m, lat_s, lat_h, lon_d, lon_m,
                       lon_s, lon_h);
         return buf.data();
