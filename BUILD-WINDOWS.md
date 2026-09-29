@@ -11,8 +11,8 @@ shell and a `pacman` package manager that already ships every dependency
 OpenSectional needs as a prebuilt MinGW package. The compiler (`g++` from
 MinGW-w64) and ABI are the same as the cross-compile toolchain. The difference
 is where dependencies come from: this build links MSYS2's DLLs dynamically,
-while the release cross-compile builds them from `thirdparty/` and links them
-statically.
+while the release cross-compile builds them from pinned sources and links
+them statically.
 
 We do **not** support building with Microsoft Visual C++ (MSVC). The codebase
 uses GCC-style attributes and warning flags that would need porting work.
@@ -91,9 +91,7 @@ git clone https://github.com/ryandrake08/osect.git
 cd osect
 ```
 
-The dependency submodules under `thirdparty/` (SDL, curl, zlib, …) are only
-used by release builds. This build uses the MSYS2 packages instead, so don't
-initialize them.
+This build uses the MSYS2 packages; nothing else needs to be fetched.
 
 ## 4. Configure and build
 
@@ -129,8 +127,8 @@ executable.
 > off by default (`OSECT_ENABLE_PACKAGING=OFF`), and turning it on requires
 > `OSECT_VENDOR_DEPS=ON`: the NSIS installer only bundles the MinGW C++
 > runtime DLLs and assumes everything else is statically linked into
-> `osect.exe`. Build installers from Linux or macOS with
-> `tools/build-mingw-package.sh` (see `README.md`).
+> `osect.exe`. Build installers from Linux or macOS with the
+> `mingw-package` preset (see "Cutting a release" in `README.md`).
 
 ## 6. Run the test suite
 

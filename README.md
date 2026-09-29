@@ -53,9 +53,7 @@ tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010-30 --zoom 0-6 \
 Two paths exist:
 
 - **Contributor build (default).** Dependencies come from your system package manager. Fast configure, fast build, dynamic linkage. This is the path described below.
-- **Release/installer build.** Dependencies are pinned via in-tree submodules and built statically into a self-contained binary. The per-platform scripts under `tools/build-*-package.sh` enable both vendored dependencies and installer packaging. See [Cutting a release](#cutting-a-release).
-
-`git clone` the repo without `--recurse-submodules` — the submodules under `thirdparty/SDL`, `thirdparty/SDL_image`, `thirdparty/SDL_ttf`, `thirdparty/zlib`, and `thirdparty/curl` are only needed for release builds and stay un-initialized otherwise.
+- **Release/installer build.** CMake fetches pinned dependency sources into the build directory and links them statically into a self-contained binary. See [Cutting a release](#cutting-a-release).
 
 ### Library dependencies
 
@@ -170,11 +168,11 @@ tools/check-sources.sh [-t]                                 # clangd diagnostics
 
 ## Cutting a release
 
-The macOS DMG and Windows NSIS installers ship a self-contained binary with all C/C++ dependencies (SDL3, SDL3_image, SDL3_ttf, libcurl, zlib, SQLite3) built from pinned submodules and linked statically. TLS comes from the OS-native backend on each platform (SecureTransport on macOS, Schannel on Windows).
+The macOS DMG and Windows NSIS installers ship a self-contained binary with all C/C++ dependencies (SDL3, SDL3_image, SDL3_ttf, libcurl, zlib, SQLite3) built from pinned sources and linked statically. TLS comes from the OS-native backend on each platform (SecureTransport on macOS, Schannel on Windows).
 
-Both package scripts initialize the dependency submodules, download the SQLite amalgamation (sha256-verified), configure and build with the platform's package preset (`macos-package` or `mingw-package`), run `cpack`, and then **restore `thirdparty/` to its pre-build state by default** — submodules deinitialized, tarball-extracted directories and `.cache/` removed. Pass `--no-clean` to keep the build state in place when iterating on the installer (faster re-runs since submodules don't need to re-init).
+Each installer is one preset. Configuring it fetches the pinned dependency sources (SHA-256-pinned archives; no git needed) into `<build>/_deps/`, which needs network access the first time; building it compiles everything and runs CPack. Nothing is written outside the build directory.
 
-The `macos-vendored` and `mingw-vendored` presets build the same self-contained binary without configuring an installer, so they don't need the bundled data assets below. They expect the submodules and SQLite amalgamation to be in place already; run a package script with `--no-clean` once to set that up.
+The `macos-vendored` and `mingw-vendored` presets build the same self-contained binary without configuring an installer, so they don't need the bundled data assets below.
 
 ### Prerequisite: build the bundled data assets
 
@@ -195,11 +193,11 @@ and are rebuilt on the source data's own cadence, independent of the app version
 ### macOS DMG
 
 ```bash
-./tools/build-macos-package.sh              # build then clean
-./tools/build-macos-package.sh --no-clean   # build, leave thirdparty/ initialized
+cmake --preset macos-package
+cmake --build --preset macos-package -j
 ```
 
-Additionally downloads a precompiled universal MoltenVK dylib (sha256-verified) and ships it in `Contents/Frameworks/`, so the .app runs without requiring the user to install Vulkan SDK or Homebrew. Builds a universal (arm64+x86_64) binary via `cmake/macos-toolchain.cmake` (`CMAKE_OSX_ARCHITECTURES=arm64;x86_64`, `CMAKE_OSX_DEPLOYMENT_TARGET=11.0`). Output: `build-macos-package/OpenSectional-X.Y.Z-Darwin.dmg`.
+Also fetches a precompiled universal MoltenVK dylib and ships it in `Contents/Frameworks/`, so the .app runs without requiring the user to install Vulkan SDK or Homebrew. Builds a universal (arm64+x86_64) binary via `cmake/macos-toolchain.cmake` (`CMAKE_OSX_ARCHITECTURES=arm64;x86_64`, `CMAKE_OSX_DEPLOYMENT_TARGET=11.0`). Output: `build-macos-package/OpenSectional-X.Y.Z-Darwin.dmg`.
 
 The DMG is **not signed by a Developer ID and not notarized.** First-launch instructions and the optional Developer ID / notarization workflow are documented in [Installer signing](#installer-signing) below.
 
@@ -207,8 +205,8 @@ The DMG is **not signed by a Developer ID and not notarized.** First-launch inst
 
 ```bash
 sudo apt install g++-mingw-w64-x86-64 nsis    # Debian/Ubuntu host
-./tools/build-mingw-package.sh                # build then clean
-./tools/build-mingw-package.sh --no-clean     # build, leave thirdparty/ initialized
+cmake --preset mingw-package
+cmake --build --preset mingw-package -j
 ```
 
 The resulting `osect.exe` is self-contained: the only DLLs shipped alongside it are the MinGW C++ runtime (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`). Output: `build-mingw-package/OpenSectional-X.Y.Z-win64.exe`.
@@ -266,7 +264,7 @@ osslsigncode sign \
     -out build-mingw-package/OpenSectional-0.1.0-win64-signed.exe
 ```
 
-For a clean signed installer, sign `osect.exe` *before* `cpack` runs (so the NSIS installer wraps an already-signed binary), then sign the produced installer afterward. The package script doesn't currently automate this; invoke `osslsigncode` manually around `tools/build-mingw-package.sh` with `--no-clean`, or extend the script when you have a cert in hand.
+For a clean signed installer, sign `osect.exe` *before* CPack runs (so the NSIS installer wraps an already-signed binary), then sign the produced installer afterward. The build doesn't automate this: build only the executable with `cmake --build --preset mingw-package --target osect`, sign `build-mingw-package/osect.exe` in place, run `cpack` from `build-mingw-package/`, then sign the installer.
 
 ### Installer assets and packaging notes
 
@@ -689,8 +687,6 @@ tools/
   terrain_manifest.py     manifest.json builder (the ingester↔client contract)
   tile_math.py            Web Mercator tile-bounds math, zoom-range parsing
   http_retry.py           Backoff wrapper for the terrain HTTP fetches
-  build-macos-package.sh  Vendored universal-binary build → DMG installer (cleans thirdparty/ on success unless --no-clean)
-  build-mingw-package.sh  Vendored MinGW-w64 cross build → NSIS installer  (cleans thirdparty/ on success unless --no-clean)
   build_macos_icon.sh     PNG → .icns app icon (sips + iconutil)
   build_windows_icon.sh   PNG → .ico installer icon (ImageMagick)
   test_nasr_queries.py    Database query correctness and performance tests
@@ -711,15 +707,15 @@ tools/env/bin/python3 tools/test_nasr_queries.py osect.db
 
 ## Third-Party Components
 
-Contributor builds link the SDL trio, libcurl, zlib, and SQLite3 from the host's package manager. Release builds (DMG / NSIS) link them statically from pinned in-tree submodules. Either way the runtime contract — version floor, feature set, license obligations — matches the table below. Smaller header-only / single-source components are always in-repo and list their license texts alongside the source.
+Contributor builds link the SDL trio, libcurl, zlib, and SQLite3 from the host's package manager. Release builds (DMG / NSIS) fetch pinned sources (`cmake/vendored_deps.cmake`) and link them statically. Either way the runtime contract — version floor, feature set, license obligations — matches the table below. Smaller header-only / single-source components are always in-repo and list their license texts alongside the source.
 
 | Component | Version pin (release build) | License | Source |
 |---|---|---|---|
-| SDL3 | 3.4.4 (submodule) | zlib | https://github.com/libsdl-org/SDL |
-| SDL3_image | 3.4.2 (submodule) | zlib | https://github.com/libsdl-org/SDL_image |
-| SDL3_ttf | 3.2.2 (submodule) | zlib | https://github.com/libsdl-org/SDL_ttf |
-| zlib | 1.3.1 (submodule) | zlib | https://github.com/madler/zlib |
-| libcurl | 8.13.0 (submodule) | curl (MIT-style) | https://github.com/curl/curl |
+| SDL3 | 3.4.4 (release archive, sha256-pinned) | zlib | https://github.com/libsdl-org/SDL |
+| SDL3_image | 3.4.2 (release archive + vendored libtiff, sha256-pinned) | zlib | https://github.com/libsdl-org/SDL_image |
+| SDL3_ttf | 3.2.2 (release archive + vendored freetype, harfbuzz, plutosvg, plutovg, sha256-pinned) | zlib | https://github.com/libsdl-org/SDL_ttf |
+| zlib | 1.3.1 (release archive, sha256-pinned) | zlib | https://github.com/madler/zlib |
+| libcurl | 8.13.0 (release archive, sha256-pinned) | curl (MIT-style) | https://github.com/curl/curl |
 | SQLite3 | 3.49.1 (tarball, sha256-pinned) | Public domain | https://www.sqlite.org |
 | MoltenVK | 1.3.0 (binary tarball, macOS only, sha256-pinned) | Apache-2.0 | https://github.com/KhronosGroup/MoltenVK |
 | Dear ImGui | tracked | MIT | https://github.com/ocornut/imgui |

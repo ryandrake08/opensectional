@@ -1,8 +1,6 @@
 # CMake toolchain file for universal (arm64+x86_64) macOS distribution builds.
 # Selected by the macos-vendored and macos-package presets in
-# CMakePresets.json. tools/build-macos-package.sh runs the macos-package
-# preset after handling `git submodule update --init` and the MoltenVK /
-# SQLite tarball downloads. Contributor builds use the release / debug /
+# CMakePresets.json. Contributor builds use the release / debug /
 # relwithdebinfo presets with Homebrew or MacPorts dependencies instead.
 
 # FORCE into the cache so the toolchain wins over any value CMake's Apple

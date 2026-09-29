@@ -1,10 +1,8 @@
 # CMake toolchain file for cross-compiling to Windows using MinGW-w64.
 # Selected by the mingw-vendored and mingw-package presets in
-# CMakePresets.json. tools/build-mingw-package.sh runs the mingw-package
-# preset after handling `git submodule update --init` and the SQLite tarball
-# download. MSYS2 contributors building natively on Windows use the release /
-# debug / relwithdebinfo presets with mingw-w64-x86_64-* pacman packages
-# instead.
+# CMakePresets.json. MSYS2 contributors building natively on Windows use the
+# release / debug / relwithdebinfo presets with mingw-w64-x86_64-* pacman
+# packages instead.
 
 # Target system
 set(CMAKE_SYSTEM_NAME Windows)

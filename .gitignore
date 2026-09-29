@@ -4,9 +4,6 @@
 .vscode
 __pycache__
 /build*
-/thirdparty/.cache
-/thirdparty/sqlite
-/thirdparty/MoltenVK
 tools/env*
 tools/proj_grids
 nasr_data

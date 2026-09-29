@@ -36,7 +36,7 @@
         {
             "name": "macos-vendored",
             "displayName": "macOS universal (vendored dependencies)",
-            "description": "Static universal (arm64+x86_64) release binary without an installer. Requires initialized submodules and the SQLite amalgamation.",
+            "description": "Static universal (arm64+x86_64) release binary without an installer. Dependency sources are fetched into the build directory at configure time.",
             "binaryDir": "${sourceDir}/build-macos-vendored",
             "toolchainFile": "${sourceDir}/cmake/macos-toolchain.cmake",
             "cacheVariables": {
@@ -53,7 +53,7 @@
             "name": "macos-package",
             "inherits": "macos-vendored",
             "displayName": "macOS DMG installer",
-            "description": "macos-vendored plus installer configuration. Run via tools/build-macos-package.sh, which fetches submodules, SQLite and MoltenVK.",
+            "description": "macos-vendored plus installer configuration and MoltenVK bundling. Building it produces the DMG. Requires the bundled data assets.",
             "binaryDir": "${sourceDir}/build-macos-package",
             "cacheVariables": {
                 "OSECT_ENABLE_PACKAGING": "ON"
@@ -62,7 +62,7 @@
         {
             "name": "mingw-vendored",
             "displayName": "Windows x86_64 cross-compile (vendored dependencies)",
-            "description": "Static MinGW-w64 release binary without an installer, cross-compiled from Linux or macOS. Requires initialized submodules and the SQLite amalgamation.",
+            "description": "Static MinGW-w64 release binary without an installer, cross-compiled from Linux or macOS. Dependency sources are fetched into the build directory at configure time.",
             "binaryDir": "${sourceDir}/build-mingw-vendored",
             "toolchainFile": "${sourceDir}/cmake/mingw-w64-toolchain.cmake",
             "cacheVariables": {
@@ -79,7 +79,7 @@
             "name": "mingw-package",
             "inherits": "mingw-vendored",
             "displayName": "Windows NSIS installer",
-            "description": "mingw-vendored plus installer configuration. Run via tools/build-mingw-package.sh, which fetches submodules and SQLite.",
+            "description": "mingw-vendored plus installer configuration. Building it produces the NSIS installer. Requires the bundled data assets and NSIS.",
             "binaryDir": "${sourceDir}/build-mingw-package",
             "cacheVariables": {
                 "OSECT_ENABLE_PACKAGING": "ON"
@@ -91,9 +91,9 @@
         { "name": "debug",          "configurePreset": "debug" },
         { "name": "relwithdebinfo", "configurePreset": "relwithdebinfo" },
         { "name": "macos-vendored", "configurePreset": "macos-vendored" },
-        { "name": "macos-package",  "configurePreset": "macos-package" },
+        { "name": "macos-package",  "configurePreset": "macos-package", "targets": ["package"] },
         { "name": "mingw-vendored", "configurePreset": "mingw-vendored" },
-        { "name": "mingw-package",  "configurePreset": "mingw-package" }
+        { "name": "mingw-package",  "configurePreset": "mingw-package", "targets": ["package"] }
     ],
     "testPresets": [
         {

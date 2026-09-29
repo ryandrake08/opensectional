@@ -46,16 +46,16 @@ find_package(Threads REQUIRED)
 # dependencies so their output is self-contained. Both default OFF for the
 # contributor build. Kept separate deliberately: VENDOR_DEPS=ON with
 # PACKAGING=OFF builds the static (and on macOS, universal) release binary
-# without the installer, so submodule bumps and release link problems can be
+# without the installer, so dependency bumps and release link problems can be
 # worked on without first building osect.db, basemap/, and terrain/ — the
 # packaging block aborts configure until all three exist.
-option(OSECT_VENDOR_DEPS "Build dependencies from vendored submodules instead of using system packages" OFF)
+option(OSECT_VENDOR_DEPS "Fetch pinned dependency sources and link them statically instead of using system packages" OFF)
 option(OSECT_ENABLE_PACKAGING "Configure platform installer packaging" OFF)
 
 if(OSECT_ENABLE_PACKAGING AND NOT OSECT_VENDOR_DEPS)
     message(FATAL_ERROR
         "OSECT_ENABLE_PACKAGING requires OSECT_VENDOR_DEPS=ON. "
-        "Use the appropriate tools/build-<platform>-package.sh script.")
+        "Use the macos-package or mingw-package preset.")
 endif()
 
 if(OSECT_VENDOR_DEPS)
@@ -75,26 +75,8 @@ if(OSECT_VENDOR_DEPS)
             "and install the dependency packages listed in the README.")
     endif()
 
-    # The submodules and tarballs must be in place.
-    # tools/build-<platform>-package.sh runs `git submodule update --init`
-    # for the platform's subset before configuring, so this check fires
-    # only when someone enables OSECT_VENDOR_DEPS without that step.
-    set(_required_thirdparty SDL SDL_image SDL_ttf zlib curl)
-    foreach(_dep ${_required_thirdparty})
-        if(NOT EXISTS "${CMAKE_SOURCE_DIR}/thirdparty/${_dep}/CMakeLists.txt")
-            message(FATAL_ERROR
-                "thirdparty/${_dep} is empty. OSECT_VENDOR_DEPS=ON requires "
-                "all dependency submodules to be initialized — run the "
-                "appropriate tools/build-<platform>-package.sh script, or "
-                "`git submodule update --init thirdparty/${_dep}` manually.")
-        endif()
-    endforeach()
-    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/thirdparty/sqlite/sqlite3.c")
-        message(FATAL_ERROR
-            "thirdparty/sqlite/sqlite3.c is missing. OSECT_VENDOR_DEPS=ON "
-            "requires the SQLite amalgamation tarball to be downloaded — "
-            "the per-platform package scripts handle this automatically.")
-    endif()
+    # Fetch the pinned dependency sources into <build>/_deps/.
+    include(cmake/vendored_deps.cmake)
 
     # cmake/FindZLIB.cmake short-circuits curl's `find_package(ZLIB)` to
     # the in-tree zlibstatic target so the arch matches the rest of the
@@ -107,7 +89,7 @@ if(OSECT_VENDOR_DEPS)
     set(SDL_STATIC ON  CACHE BOOL "" FORCE)
     set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
     set(SDL_VULKAN ON CACHE BOOL "" FORCE)
-    add_subdirectory(thirdparty/SDL EXCLUDE_FROM_ALL)
+    add_subdirectory(${sdl3_SOURCE_DIR} ${sdl3_BINARY_DIR} EXCLUDE_FROM_ALL)
 
     # zlib — built in-tree as `zlibstatic`. Added before SDL_image and
     # curl so any vendored library that calls `find_package(ZLIB)`
@@ -117,7 +99,7 @@ if(OSECT_VENDOR_DEPS)
     # with our top-level ctest.
     set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(ZLIB_BUILD_TESTING  OFF CACHE BOOL "" FORCE)
-    add_subdirectory(thirdparty/zlib EXCLUDE_FROM_ALL)
+    add_subdirectory(${zlib_SOURCE_DIR} ${zlib_BINARY_DIR} EXCLUDE_FROM_ALL)
     if(NOT TARGET ZLIB::ZLIB)
         add_library(ZLIB::ZLIB ALIAS zlibstatic)
     endif()
@@ -127,7 +109,7 @@ if(OSECT_VENDOR_DEPS)
     # only load PNG tiles). SDLIMAGE_PNG_LIBPNG OFF routes PNG decoding
     # through SDL_image's built-in stb_image rather than its vendored
     # libpng — that skips SDL_image's separate vendored zlib (which
-    # would conflict with our top-level thirdparty/zlib).
+    # would conflict with our top-level vendored zlib).
     set(BUILD_SHARED_LIBS    OFF CACHE BOOL "" FORCE)
     set(SDLIMAGE_VENDORED    ON  CACHE BOOL "" FORCE)
     set(SDLIMAGE_AVIF        OFF CACHE BOOL "" FORCE)
@@ -135,11 +117,11 @@ if(OSECT_VENDOR_DEPS)
     set(SDLIMAGE_PNG_LIBPNG  OFF CACHE BOOL "" FORCE)
     set(SDLIMAGE_TESTS       OFF CACHE BOOL "" FORCE)
     set(SDLIMAGE_SAMPLES     OFF CACHE BOOL "" FORCE)
-    add_subdirectory(thirdparty/SDL_image EXCLUDE_FROM_ALL)
+    add_subdirectory(${sdl3_image_SOURCE_DIR} ${sdl3_image_BINARY_DIR} EXCLUDE_FROM_ALL)
 
     set(SDLTTF_VENDORED ON CACHE BOOL "" FORCE)
     set(SDLTTF_SAMPLES  OFF CACHE BOOL "" FORCE)
-    add_subdirectory(thirdparty/SDL_ttf EXCLUDE_FROM_ALL)
+    add_subdirectory(${sdl3_ttf_SOURCE_DIR} ${sdl3_ttf_BINARY_DIR} EXCLUDE_FROM_ALL)
 
     # libcurl — Schannel on Windows, SecureTransport on macOS. Other
     # protocol/feature surface beyond HTTPS is disabled to keep the
@@ -191,7 +173,7 @@ if(OSECT_VENDOR_DEPS)
         set(CURL_USE_SCHANNEL  ON  CACHE BOOL "" FORCE)
         set(CURL_USE_OPENSSL   OFF CACHE BOOL "" FORCE)
     endif()
-    add_subdirectory(thirdparty/curl EXCLUDE_FROM_ALL)
+    add_subdirectory(${curl_SOURCE_DIR} ${curl_BINARY_DIR} EXCLUDE_FROM_ALL)
     # Restore BUILD_TESTING (see save above) so the osect tests block
     # sees the caller's intent.
     if(DEFINED _osect_saved_build_testing AND NOT "${_osect_saved_build_testing}" STREQUAL "")
@@ -204,8 +186,8 @@ if(OSECT_VENDOR_DEPS)
     # RTREE = spatial bbox queries; FTS5 = the search index built by
     # tools/build_search.py. Both off by default in the amalgamation;
     # we need them.
-    add_library(sqlite3 STATIC thirdparty/sqlite/sqlite3.c)
-    target_include_directories(sqlite3 PUBLIC ${CMAKE_SOURCE_DIR}/thirdparty/sqlite)
+    add_library(sqlite3 STATIC ${sqlite_SOURCE_DIR}/sqlite3.c)
+    target_include_directories(sqlite3 PUBLIC ${sqlite_SOURCE_DIR})
     target_compile_definitions(sqlite3 PRIVATE
         SQLITE_ENABLE_RTREE=1
         SQLITE_ENABLE_FTS5=1)
@@ -214,10 +196,9 @@ if(OSECT_VENDOR_DEPS)
 else()
     # System mode (default for contributor builds). Each dependency
     # comes from the host's package manager — apt, brew, pacman/MSYS2.
-    # Runtime links are dynamic. The submodules under thirdparty/ are
-    # not consulted and don't need to be initialized.
-    # SDL3 3.2 is the first stable line shipped in distros. The
-    # vendored submodule is pinned ahead of this for release builds,
+    # Runtime links are dynamic, and cmake/vendored_deps.cmake fetches
+    # nothing. SDL3 3.2 is the first stable line shipped in distros. The
+    # vendored SDL is pinned ahead of this for release builds,
     # but contributors using system packages on Ubuntu/brew/MSYS2 get
     # whatever stable point release the distro ships.
     find_package(SDL3       3.2 REQUIRED CONFIG)
@@ -647,38 +628,15 @@ if(APPLE AND OSECT_ENABLE_PACKAGING)
     # Bundle MoltenVK so the .app's Vulkan backend works on a fresh Mac
     # with no Vulkan SDK / Homebrew installed. SDL3 searches
     # @executable_path/../Frameworks/libMoltenVK.dylib first when loading
-    # Vulkan on macOS, so this just works once the file is in place.
-    # MoltenVK ships as a precompiled universal (arm64+x86_64) dylib via
-    # the binary tarball that tools/build-macos-package.sh extracts into
-    # thirdparty/MoltenVK/. Layout has shifted across releases (v1.2.x
-    # used .xcframework/macos-arm64_x86_64/; v1.3.x uses
-    # dynamic/dylib/macOS/), so glob for the dylib rather than hard-code
-    # a path. file(GLOB) re-runs each configure, picking up a newer
-    # release if the package script updates the pin.
-    file(GLOB_RECURSE MOLTENVK_DYLIB
-        "${CMAKE_SOURCE_DIR}/thirdparty/MoltenVK/*/libMoltenVK.dylib")
-    list(GET MOLTENVK_DYLIB 0 MOLTENVK_DYLIB)
-    if(MOLTENVK_DYLIB AND EXISTS "${MOLTENVK_DYLIB}")
-        message(STATUS "MoltenVK: bundling ${MOLTENVK_DYLIB}")
-        install(FILES "${MOLTENVK_DYLIB}"
-                DESTINATION "${APPLICATION_NAME}.app/Contents/Frameworks")
-        # Apache-2.0 requires shipping the LICENSE alongside the binary.
-        file(GLOB_RECURSE MOLTENVK_LICENSE
-            "${CMAKE_SOURCE_DIR}/thirdparty/MoltenVK/*/LICENSE")
-        list(GET MOLTENVK_LICENSE 0 MOLTENVK_LICENSE)
-        if(MOLTENVK_LICENSE AND EXISTS "${MOLTENVK_LICENSE}")
-            install(FILES "${MOLTENVK_LICENSE}"
-                    DESTINATION "${_rsrc}"
-                    RENAME "LICENSE-MoltenVK.txt")
-        else()
-            message(WARNING "MoltenVK LICENSE not found alongside the dylib in "
-                "thirdparty/MoltenVK/. Apache-2.0 requires shipping it.")
-        endif()
-    else()
-        message(FATAL_ERROR "MoltenVK dylib missing from thirdparty/MoltenVK/. "
-            "Run tools/build-macos-package.sh, which downloads it as part "
-            "of the packaging flow.")
-    endif()
+    # Vulkan on macOS, so this just works once the file is in place. The
+    # precompiled universal dylib is fetched by cmake/vendored_deps.cmake;
+    # the paths below match the pinned release's archive layout.
+    install(FILES "${moltenvk_SOURCE_DIR}/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib"
+            DESTINATION "${APPLICATION_NAME}.app/Contents/Frameworks")
+    # Apache-2.0 requires shipping the LICENSE alongside the binary.
+    install(FILES "${moltenvk_SOURCE_DIR}/LICENSE"
+            DESTINATION "${_rsrc}"
+            RENAME "LICENSE-MoltenVK.txt")
 
     # Bundle brew-installed SDL dylibs into the .app via fixup_bundle at
     # install time. Runs inside the install prefix so paths resolve correctly.
@@ -729,7 +687,7 @@ elseif(WIN32 AND OSECT_ENABLE_PACKAGING)
     install(DIRECTORY "${BUNDLED_TERRAIN}" DESTINATION .)
 
     # MinGW runtime DLLs (SDL3/SDL3_image/SDL3_ttf/sqlite3 are statically
-    # linked when OSECT_VENDOR_DEPS=ON via build-mingw-package.sh, so only
+    # linked when OSECT_VENDOR_DEPS=ON, so only
     # libstdc++/libgcc/winpthread need to ship).
     set(_mingw_runtime_dlls
         libgcc_s_seh-1.dll
