@@ -8,9 +8,9 @@ A desktop application for visualizing FAA NASR (National Airspace System Resourc
 # 1. Install system dependencies (see "Build from source" below for the
 #    Ubuntu / brew / MSYS2 package lists).
 
-# 2. Build:
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+# 2. Build (CMake 3.21+):
+cmake --preset release
+cmake --build --preset release -j
 
 # 3. Set up Python venv for data build tools
 cd tools && python3 -m venv env && env/bin/pip install -r requirements.txt && cd ..
@@ -131,21 +131,24 @@ MSVC is not supported. See [BUILD-WINDOWS.md](BUILD-WINDOWS.md) for a step-by-st
 
 ### Build commands
 
+Builds are driven by the presets in `CMakePresets.json`, which needs CMake 3.21 or newer. Configure, build, and test with the same preset name:
+
 ```bash
-# Release build (optimized)
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-
-# Debug build (with AddressSanitizer on Linux/macOS)
-cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-debug -j
-
-# Tests
-ctest --test-dir build --output-on-failure
+cmake --preset release
+cmake --build --preset release -j
+ctest --preset release
 ```
 
-The default contributor build produces `build/osect` on macOS and Linux, or
-`build/osect.exe` on Windows. It does not configure an installer, copy
+| Preset | Build directory | Purpose |
+|---|---|---|
+| `release` | `build/` | Optimized contributor build |
+| `debug` | `build-debug/` | Unoptimized, with AddressSanitizer on Linux/macOS/FreeBSD |
+| `relwithdebinfo` | `build-relwithdebinfo/` | Optimized with debug info and frame pointers, for profiling |
+
+`cmake --list-presets` shows every preset available on the current host, including the release presets described in [Cutting a release](#cutting-a-release). Extra `-D` options can be appended to any configure command, e.g. `cmake --preset release -DBUILD_TESTING=OFF`. Put personal presets in `CMakeUserPresets.json`, which is git-ignored.
+
+The contributor presets produce `osect` on macOS, Linux, and FreeBSD, or
+`osect.exe` on Windows, in the preset's build directory. It does not configure an installer, copy
 `osect.db` or `basemap/`, generate platform installer icons, or bundle runtime
 libraries. Run it from the repository root so the default asset lookup can find
 `osect.db` and `basemap/`, or pass their paths with `--database` and
@@ -154,11 +157,24 @@ bundle, and needs a separately installed MoltenVK plus `SDL_VULKAN_LIBRARY` to
 use the Vulkan backend (see [GPU Backend](#gpu-backend)).
 The release scripts below produce the self-contained platform packages instead.
 
+### Code quality
+
+With `clang-format` and `clang-tidy` installed, a configured build directory also has lint targets for `src/` and `lib/`:
+
+```bash
+cmake --build --preset release --target clang-format        # reformat in place
+cmake --build --preset release --target clang-format-check  # fail if anything would change
+cmake --build --preset release --target clang-tidy
+tools/check-sources.sh [-t]                                 # clangd diagnostics (plus clang-tidy with -t)
+```
+
 ## Cutting a release
 
 The macOS DMG and Windows NSIS installers ship a self-contained binary with all C/C++ dependencies (SDL3, SDL3_image, SDL3_ttf, libcurl, zlib, SQLite3) built from pinned submodules and linked statically. TLS comes from the OS-native backend on each platform (SecureTransport on macOS, Schannel on Windows).
 
-Both package scripts initialize the dependency submodules, download the SQLite amalgamation (sha256-verified), configure CMake with `-DOSECT_VENDOR_DEPS=ON -DOSECT_ENABLE_PACKAGING=ON`, build, run `cpack`, and then **restore `thirdparty/` to its pre-build state by default** — submodules deinitialized, tarball-extracted directories and `.cache/` removed. Pass `--no-clean` to keep the build state in place when iterating on the installer (faster re-runs since submodules don't need to re-init).
+Both package scripts initialize the dependency submodules, download the SQLite amalgamation (sha256-verified), configure and build with the platform's package preset (`macos-package` or `mingw-package`), run `cpack`, and then **restore `thirdparty/` to its pre-build state by default** — submodules deinitialized, tarball-extracted directories and `.cache/` removed. Pass `--no-clean` to keep the build state in place when iterating on the installer (faster re-runs since submodules don't need to re-init).
+
+The `macos-vendored` and `mingw-vendored` presets build the same self-contained binary without configuring an installer, so they don't need the bundled data assets below. They expect the submodules and SQLite amalgamation to be in place already; run a package script with `--no-clean` once to set that up.
 
 ### Prerequisite: build the bundled data assets
 
@@ -262,7 +278,7 @@ The macOS bundle additionally needs `osect.png` for icon generation (via `sips` 
 
 OpenSectional defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` to override on macOS. The shader format is selected at runtime based on the active backend. The packaged macOS build includes MoltenVK in `OpenSectional.app/Contents/Frameworks/`, so the .app runs out of the box without requiring the user to install Vulkan SDK or Homebrew.
 
-**Vulkan on macOS for development.** The bundled MoltenVK only lands in packaged builds (`OSECT_ENABLE_PACKAGING=ON`); a regular `cmake -B build` dev build carries no MoltenVK of its own and needs one installed elsewhere:
+**Vulkan on macOS for development.** The bundled MoltenVK only lands in packaged builds (`OSECT_ENABLE_PACKAGING=ON`); a contributor build (`release`, `debug`, or `relwithdebinfo` preset) carries no MoltenVK of its own and needs one installed elsewhere:
 
 - **MacPorts**: `sudo port install MoltenVK` → `/opt/local/lib/libMoltenVK.dylib`
 - **Homebrew**: `brew install molten-vk` → `$(brew --prefix)/lib/libMoltenVK.dylib`
@@ -684,7 +700,7 @@ tools/
 
 ```bash
 # C++ unit tests (doctest, registered with ctest)
-ctest --test-dir build --output-on-failure
+ctest --preset release
 
 # The flight_route and route_planner integration suites require the generated
 # osect.db at the repository root. CMake skips them when it is absent.

@@ -1,14 +1,10 @@
 # CMake toolchain file for cross-compiling to Windows using MinGW-w64.
-# Used by tools/build-mingw-package.sh to produce the NSIS installer; that
-# script also handles `git submodule update --init` and the SQLite tarball
-# download, then invokes:
-#   cmake -B build-mingw-package \
-#         -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-toolchain.cmake \
-#         -DCMAKE_BUILD_TYPE=Release \
-#         -DOSECT_VENDOR_DEPS=ON \
-#         -DOSECT_ENABLE_PACKAGING=ON
-# MSYS2 contributors building locally use the default `cmake -B build` flow
-# with mingw-w64-x86_64-SDL3* / mingw-w64-x86_64-curl pacman packages.
+# Selected by the mingw-vendored and mingw-package presets in
+# CMakePresets.json. tools/build-mingw-package.sh runs the mingw-package
+# preset after handling `git submodule update --init` and the SQLite tarball
+# download. MSYS2 contributors building natively on Windows use the release /
+# debug / relwithdebinfo presets with mingw-w64-x86_64-* pacman packages
+# instead.
 
 # Target system
 set(CMAKE_SYSTEM_NAME Windows)

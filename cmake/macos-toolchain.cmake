@@ -1,13 +1,9 @@
 # CMake toolchain file for universal (arm64+x86_64) macOS distribution builds.
-# Used by tools/build-macos-package.sh to produce the .dmg installer; that
-# script also handles `git submodule update --init` and the MoltenVK / SQLite
-# tarball downloads, then invokes:
-#   cmake -B build-macos-package \
-#         -DCMAKE_TOOLCHAIN_FILE=cmake/macos-toolchain.cmake \
-#         -DCMAKE_BUILD_TYPE=Release \
-#         -DOSECT_VENDOR_DEPS=ON \
-#         -DOSECT_ENABLE_PACKAGING=ON
-# Native dev uses the default `cmake -B build` flow with Homebrew SDL3/curl.
+# Selected by the macos-vendored and macos-package presets in
+# CMakePresets.json. tools/build-macos-package.sh runs the macos-package
+# preset after handling `git submodule update --init` and the MoltenVK /
+# SQLite tarball downloads. Contributor builds use the release / debug /
+# relwithdebinfo presets with Homebrew or MacPorts dependencies instead.
 
 # FORCE into the cache so the toolchain wins over any value CMake's Apple
 # platform module initialized to default, and over any value left in a stale

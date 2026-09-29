@@ -1,0 +1,115 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 21,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "release",
+            "displayName": "Release (system dependencies)",
+            "description": "Contributor build: optimized, dependencies from the system package manager.",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "debug",
+            "displayName": "Debug (system dependencies)",
+            "description": "Contributor build: unoptimized, AddressSanitizer except on MinGW.",
+            "binaryDir": "${sourceDir}/build-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "relwithdebinfo",
+            "displayName": "RelWithDebInfo (system dependencies)",
+            "description": "Contributor build: optimized with debug info and frame pointers, for profiling.",
+            "binaryDir": "${sourceDir}/build-relwithdebinfo",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+            }
+        },
+        {
+            "name": "macos-vendored",
+            "displayName": "macOS universal (vendored dependencies)",
+            "description": "Static universal (arm64+x86_64) release binary without an installer. Requires initialized submodules and the SQLite amalgamation.",
+            "binaryDir": "${sourceDir}/build-macos-vendored",
+            "toolchainFile": "${sourceDir}/cmake/macos-toolchain.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "OSECT_VENDOR_DEPS": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
+        },
+        {
+            "name": "macos-package",
+            "inherits": "macos-vendored",
+            "displayName": "macOS DMG installer",
+            "description": "macos-vendored plus installer configuration. Run via tools/build-macos-package.sh, which fetches submodules, SQLite and MoltenVK.",
+            "binaryDir": "${sourceDir}/build-macos-package",
+            "cacheVariables": {
+                "OSECT_ENABLE_PACKAGING": "ON"
+            }
+        },
+        {
+            "name": "mingw-vendored",
+            "displayName": "Windows x86_64 cross-compile (vendored dependencies)",
+            "description": "Static MinGW-w64 release binary without an installer, cross-compiled from Linux or macOS. Requires initialized submodules and the SQLite amalgamation.",
+            "binaryDir": "${sourceDir}/build-mingw-vendored",
+            "toolchainFile": "${sourceDir}/cmake/mingw-w64-toolchain.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "OSECT_VENDOR_DEPS": "ON"
+            },
+            "condition": {
+                "type": "notEquals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "mingw-package",
+            "inherits": "mingw-vendored",
+            "displayName": "Windows NSIS installer",
+            "description": "mingw-vendored plus installer configuration. Run via tools/build-mingw-package.sh, which fetches submodules and SQLite.",
+            "binaryDir": "${sourceDir}/build-mingw-package",
+            "cacheVariables": {
+                "OSECT_ENABLE_PACKAGING": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "release",        "configurePreset": "release" },
+        { "name": "debug",          "configurePreset": "debug" },
+        { "name": "relwithdebinfo", "configurePreset": "relwithdebinfo" },
+        { "name": "macos-vendored", "configurePreset": "macos-vendored" },
+        { "name": "macos-package",  "configurePreset": "macos-package" },
+        { "name": "mingw-vendored", "configurePreset": "mingw-vendored" },
+        { "name": "mingw-package",  "configurePreset": "mingw-package" }
+    ],
+    "testPresets": [
+        {
+            "name": "release",
+            "configurePreset": "release",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "debug",
+            "configurePreset": "debug",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "relwithdebinfo",
+            "configurePreset": "relwithdebinfo",
+            "output": { "outputOnFailure": true }
+        }
+    ]
+}

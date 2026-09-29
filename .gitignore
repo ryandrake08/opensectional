@@ -19,3 +19,4 @@ terrain_source
 /elevation_plan
 REQUIREMENTS.md
 *.trace
+CMakeUserPresets.json

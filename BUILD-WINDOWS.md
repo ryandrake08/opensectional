@@ -98,10 +98,12 @@ initialize them.
 ## 4. Configure and build
 
 ```bash
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cmake --preset release -G Ninja
+cmake --build --preset release -j
 ```
 
+The `release` preset comes from `CMakePresets.json`; `debug` and
+`relwithdebinfo` work the same way (see "Build commands" in `README.md`).
 `-G Ninja` is recommended on MSYS2; the default generator on Windows is
 "MSYS Makefiles", which works but is slower.
 
@@ -133,7 +135,7 @@ executable.
 ## 6. Run the test suite
 
 ```bash
-ctest --test-dir build --output-on-failure
+ctest --preset release
 ```
 
 Tests that need `osect.db` (e.g. `flight_route`, `route_planner`) skip
@@ -236,8 +238,8 @@ function mingw64 {
 }
 
 mingw64 "pacman -S --needed --noconfirm git mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-pkgconf mingw-w64-x86_64-sdl3 mingw-w64-x86_64-sdl3-image mingw-w64-x86_64-sdl3-ttf mingw-w64-x86_64-sqlite3 mingw-w64-x86_64-curl mingw-w64-x86_64-glslang vim"
-mingw64 "cd /c/src/osect && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release"
-mingw64 "cd /c/src/osect && cmake --build build -j"
+mingw64 "cd /c/src/osect && cmake --preset release -G Ninja"
+mingw64 "cd /c/src/osect && cmake --build --preset release -j"
 ```
 
 > **`pacman -Syu` two-step.** The first time you update MSYS2, the core

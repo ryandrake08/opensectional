@@ -2,10 +2,11 @@
 # Build a self-contained macOS .dmg installer for OpenSectional.
 #
 # Pulls all dependency submodules, downloads the SQLite amalgamation
-# and a precompiled MoltenVK dylib, configures CMake with
-# OSECT_VENDOR_DEPS=ON and OSECT_ENABLE_PACKAGING=ON so dependencies are
-# built from in-tree sources and the installer is configured, builds a
-# universal (arm64+x86_64) binary, and runs cpack to produce a DragNDrop DMG.
+# and a precompiled MoltenVK dylib, configures and builds with the
+# macos-package CMake preset (OSECT_VENDOR_DEPS=ON, OSECT_ENABLE_PACKAGING=ON)
+# so dependencies are built from in-tree sources and the installer is
+# configured, builds a universal (arm64+x86_64) binary, and runs cpack to
+# produce a DragNDrop DMG.
 #
 # After a successful cpack the script restores thirdparty/ to its
 # pre-build state (deinits the dependency submodules, removes the
@@ -97,14 +98,11 @@ if [ ! -f "${THIRDPARTY}/MoltenVK/.fetched" ]; then
 fi
 
 echo "=== Configuring (universal, vendored dependencies, packaging enabled) ==="
-cmake -B "${BUILDDIR}" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_TOOLCHAIN_FILE="${PROJECTDIR}/cmake/macos-toolchain.cmake" \
-    -DOSECT_VENDOR_DEPS=ON \
-    -DOSECT_ENABLE_PACKAGING=ON
+cd "${PROJECTDIR}"
+cmake --preset macos-package
 
 echo "=== Building ==="
-cmake --build "${BUILDDIR}" -j"$(sysctl -n hw.ncpu)"
+cmake --build --preset macos-package -j"$(sysctl -n hw.ncpu)"
 
 echo "=== Packaging (cpack → DMG) ==="
 ( cd "${BUILDDIR}" && cpack )

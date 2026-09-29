@@ -71,7 +71,7 @@ if(OSECT_VENDOR_DEPS)
             "OSECT_VENDOR_DEPS=ON is only supported on macOS and MinGW "
             "(the platforms with a packaged release). On Linux, use the "
             "default system-deps build:\n"
-            "  cmake -B build && cmake --build build -j\n"
+            "  cmake --preset release && cmake --build --preset release -j\n"
             "and install the dependency packages listed in the README.")
     endif()
 

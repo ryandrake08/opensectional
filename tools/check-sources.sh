@@ -129,7 +129,7 @@ esac
 
 if [ ! -f "$compile_commands_dir/compile_commands.json" ]; then
     echo "Error: $compile_commands_dir/compile_commands.json not found." >&2
-    echo "Configure the project first, for example: cmake -B build -DCMAKE_BUILD_TYPE=Release" >&2
+    echo "Configure the project first, for example: cmake --preset release" >&2
     exit 1
 fi
 compile_commands_dir=$(cd "$compile_commands_dir" && pwd)
