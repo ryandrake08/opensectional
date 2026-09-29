@@ -663,6 +663,10 @@ if(APPLE AND OSECT_ENABLE_PACKAGING)
     set(CPACK_PACKAGE_VERSION_PATCH "${BUILD_VERSION}")
     set(CPACK_DMG_VOLUME_NAME "${APPLICATION_NAME} ${APPLICATION_VERSION}")
     set(CPACK_DMG_FORMAT "UDZO")
+    # Avoids `hdiutil create -srcfolder`, which needs root authorization
+    # when the build tree's files belong to another uid (network shares);
+    # see the script header.
+    set(CPACK_COMMAND_HDIUTIL "${CMAKE_SOURCE_DIR}/cmake/hdiutil_wrapper.sh")
     if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE")
         set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
     endif()
