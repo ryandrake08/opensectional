@@ -2,15 +2,17 @@
 
 This document covers building OpenSectional **directly on a Windows machine**.
 The primary supported workflow remains MinGW-w64 cross-compilation from Linux
-(see the "Windows (cross-compiled from Linux)" section of the main `README.md`),
-which is what produces the official Windows installer. The native path
+(see "Windows NSIS (MinGW-w64 cross-compile)" under "Cutting a release" in the
+main `README.md`), which is what produces the official Windows installer. The native path
 documented here exists for contributors who only have access to Windows.
 
 We use the **MSYS2** distribution of MinGW-w64. MSYS2 provides a Unix-like
 shell and a `pacman` package manager that already ships every dependency
 OpenSectional needs as a prebuilt MinGW package. The compiler (`g++` from
-MinGW-w64) and ABI are the same as the cross-compile toolchain, so the build
-behaves identically to the Linux-hosted cross-compile.
+MinGW-w64) and ABI are the same as the cross-compile toolchain. The difference
+is where dependencies come from: this build links MSYS2's DLLs dynamically,
+while the release cross-compile builds them from `thirdparty/` and links them
+statically.
 
 We do **not** support building with Microsoft Visual C++ (MSVC). The codebase
 uses GCC-style attributes and warning flags that would need porting work.
@@ -55,7 +57,6 @@ pacman -S --needed \
     mingw-w64-x86_64-sqlite3 \
     mingw-w64-x86_64-curl \
     mingw-w64-x86_64-glslang \
-    mingw-w64-x86_64-imagemagick \
     vim
 ```
 
@@ -72,8 +73,8 @@ What each package provides:
 | `pkgconf` | `pkg-config` implementation, used to locate SQLite3 |
 | `sdl3`, `sdl3-image`, `sdl3-ttf` | Windowing, image loading, text rendering |
 | `sqlite3` | NASR database queries |
+| `curl` | HTTP client for runtime-fetched data (TFRs) |
 | `glslang` | Provides `glslangValidator` for HLSL → SPIR-V shader compilation |
-| `imagemagick` | Provides `magick`, used to generate the Windows app icon (`osect.ico`) |
 | `vim` | Provides `xxd`, used to embed shaders and the bundled font as C headers |
 
 The optional D3D12 backend additionally requires `dxc`, which MSYS2 does not
@@ -90,7 +91,9 @@ git clone https://github.com/ryandrake08/osect.git
 cd osect
 ```
 
-`thirdparty/` is fully vendored, so no submodule init is required.
+The dependency submodules under `thirdparty/` (SDL, curl, zlib, …) are only
+used by release builds. This build uses the MSYS2 packages instead, so don't
+initialize them.
 
 ## 4. Configure and build
 
@@ -120,13 +123,12 @@ If you want a portable redistributable instead, use the cross-compile path
 documented in `README.md`, which produces a self-contained statically-linked
 executable.
 
-> **Don't run `cpack` from a native MSYS2 build.** The installer scaffolding
-> in `CMakeLists.txt` only bundles the MinGW C++ runtime DLLs; it assumes
-> SDL3/SDL3_image/SDL3_ttf/SQLite3 are statically linked into `osect.exe`,
-> which is only true for the cross-compile path. A native-build NSIS
-> installer would be missing a dozen `.dll`s and fail to launch on any
-> machine without MSYS2 installed. Build installers from Linux via
-> `tools/build-mingw-deps.sh` + `cpack -G NSIS` (see `README.md`).
+> **This build doesn't produce an installer.** Installer configuration is
+> off by default (`OSECT_ENABLE_PACKAGING=OFF`), and turning it on requires
+> `OSECT_VENDOR_DEPS=ON`: the NSIS installer only bundles the MinGW C++
+> runtime DLLs and assumes everything else is statically linked into
+> `osect.exe`. Build installers from Linux or macOS with
+> `tools/build-mingw-package.sh` (see `README.md`).
 
 ## 6. Run the test suite
 
@@ -233,7 +235,7 @@ function mingw64 {
     & C:\msys64\usr\bin\bash.exe -lc "$args"
 }
 
-mingw64 "pacman -S --needed --noconfirm git mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-pkgconf mingw-w64-x86_64-sdl3 mingw-w64-x86_64-sdl3-image mingw-w64-x86_64-sdl3-ttf mingw-w64-x86_64-sqlite3 mingw-w64-x86_64-glslang mingw-w64-x86_64-imagemagick vim"
+mingw64 "pacman -S --needed --noconfirm git mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-pkgconf mingw-w64-x86_64-sdl3 mingw-w64-x86_64-sdl3-image mingw-w64-x86_64-sdl3-ttf mingw-w64-x86_64-sqlite3 mingw-w64-x86_64-curl mingw-w64-x86_64-glslang vim"
 mingw64 "cd /c/src/osect && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release"
 mingw64 "cd /c/src/osect && cmake --build build -j"
 ```

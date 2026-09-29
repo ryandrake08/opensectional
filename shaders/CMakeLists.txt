@@ -95,20 +95,22 @@ endif()
 set(OSECT_BUILD_D3D12 ${OSECT_BUILD_D3D12} PARENT_SCOPE)
 
 if(APPLE)
-    find_program(SPIRV_CROSS spirv-cross HINTS "${VULKAN_SDK_BIN}")
-    if(NOT SPIRV_CROSS)
-        message(FATAL_ERROR "spirv-cross not found - required for Metal shader compilation. Install via 'brew install spirv-cross', 'sudo port install spirv-cross', or the Vulkan SDK.")
-    endif()
-
+    # SPIR-V → MSL runs through spirv_to_msl, a build-host tool linked against
+    # the spirv-cross libraries; the spirv-cross CLI itself is not used.
     find_path(SPIRV_CROSS_INCLUDE_DIR spirv_cross/spirv_msl.hpp HINTS "${VULKAN_SDK_PATH}/include")
     find_library(SPIRV_CROSS_MSL_LIBRARY spirv-cross-msl HINTS "${VULKAN_SDK_PATH}/lib")
     find_library(SPIRV_CROSS_GLSL_LIBRARY spirv-cross-glsl HINTS "${VULKAN_SDK_PATH}/lib")
     find_library(SPIRV_CROSS_CORE_LIBRARY spirv-cross-core HINTS "${VULKAN_SDK_PATH}/lib")
     if(NOT SPIRV_CROSS_INCLUDE_DIR OR NOT SPIRV_CROSS_MSL_LIBRARY OR NOT SPIRV_CROSS_GLSL_LIBRARY OR NOT SPIRV_CROSS_CORE_LIBRARY)
-        message(FATAL_ERROR "spirv-cross development files not found - required to remap MSL resources for SDL GPU")
+        message(FATAL_ERROR "spirv-cross headers and libraries not found - required for Metal shader compilation. Install via 'brew install spirv-cross', 'sudo port install spirv-cross', or the Vulkan SDK.")
     endif()
 
     add_executable(spirv_to_msl spirv_to_msl.cpp)
+    # Runs only on the build host. Build it for the host architecture alone so
+    # a universal release build (CMAKE_OSX_ARCHITECTURES=arm64;x86_64) doesn't
+    # try to link it against single-architecture package-manager libraries.
+    set_target_properties(spirv_to_msl PROPERTIES
+        OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}")
     target_compile_features(spirv_to_msl PRIVATE cxx_std_17)
     target_include_directories(spirv_to_msl PRIVATE ${SPIRV_CROSS_INCLUDE_DIR})
     target_link_libraries(spirv_to_msl PRIVATE

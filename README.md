@@ -74,7 +74,7 @@ Two paths exist:
 | doctest | in-repo | Unit-test harness |
 | Noto Sans (Regular) | in-repo | Embedded UI font |
 
-Plus `xxd` (vim) for embedding shaders/font as C headers, and the shader cross-compilation toolchain — `glslangValidator` (or `dxc`) for HLSL → SPIR-V, and `spirv-cross` on macOS for SPIR-V → MSL. Each per-platform package list below includes these. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) bundles all of them and is sufficient on its own, but is **not required** — the build searches `$VULKAN_SDK/bin` first when set, then falls through to `PATH`, so distro / Homebrew / MacPorts packages work without any Vulkan SDK install. The SDK is only strictly needed on Windows when you want the experimental D3D12 backend, which requires `dxc` (the Microsoft compiler that produces DXIL bytecode). SDL3 must be 3.2 or newer.
+Plus `xxd` (vim) for embedding shaders/font as C headers, and the shader cross-compilation toolchain — `glslangValidator` (or `dxc`) for HLSL → SPIR-V, and the `spirv-cross` headers and libraries on macOS for SPIR-V → MSL. Each per-platform package list below includes these. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) bundles all of them and is sufficient on its own, but is **not required** — the build searches `$VULKAN_SDK/bin` first when set, then falls through to `PATH`, so distro / Homebrew / MacPorts packages work without any Vulkan SDK install. The SDK is only strictly needed on Windows when you want the experimental D3D12 backend, which requires `dxc` (the Microsoft compiler that produces DXIL bytecode). SDL3 must be 3.2 or newer.
 
 ### macOS (MacPorts)
 
@@ -107,13 +107,13 @@ sudo apt install build-essential cmake pkgconf xxd \
 sudo apk add build-base cmake pkgconf vim \
     sdl3-dev sdl3_image-dev sdl3_ttf-dev \
     curl-dev sqlite-dev \
-    glslang spirv-cross-dev
+    glslang
 ```
 
 ### FreeBSD
 
 ```bash
-pkg install cmake pkgconf vim sdl3 sdl3-image sdl3-ttf curl sqlite3 glslang spirv-cross
+pkg install cmake pkgconf vim sdl3 sdl3-image sdl3-ttf curl sqlite3 glslang
 ```
 
 ### Windows (MSYS2 / MinGW-w64)
@@ -124,7 +124,7 @@ pacman -S mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake \
           mingw-w64-x86_64-SDL3 mingw-w64-x86_64-SDL3_image mingw-w64-x86_64-SDL3_ttf \
           mingw-w64-x86_64-curl mingw-w64-x86_64-zlib mingw-w64-x86_64-sqlite3 \
           mingw-w64-x86_64-vulkan-headers mingw-w64-x86_64-vulkan-loader \
-          mingw-w64-x86_64-shaderc mingw-w64-x86_64-spirv-cross
+          mingw-w64-x86_64-shaderc
 ```
 
 MSVC is not supported. See [BUILD-WINDOWS.md](BUILD-WINDOWS.md) for a step-by-step walkthrough.
@@ -295,7 +295,7 @@ Shaders are written in HLSL and cross-compiled during the build. The build searc
 
 - **HLSL → SPIR-V**: `glslangValidator` (preferred) or `dxc`. The build picks whichever it finds; output is functionally equivalent.
 - **HLSL → DXIL**: `dxc`. Optional — only used when building with the experimental D3D12 backend (Windows targets, controlled by `-DOSECT_ENABLE_D3D12=ON`, default ON). DXIL is Microsoft-defined and has no alternative producer. The configure step auto-disables D3D12 if `dxc` is not found; the resulting Windows binary still runs via Vulkan. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) ships `dxc` on all platforms.
-- **SPIR-V → MSL**: `spirv-cross`. Required only on macOS for the Metal backend.
+- **SPIR-V → MSL**: the `spirv-cross` headers and libraries, linked into a small build-time tool (`shaders/spirv_to_msl.cpp`) that also remaps resource bindings for SDL GPU. Required only on macOS for the Metal backend. The `spirv-cross` command-line tool isn't used.
 - **xxd**: embeds shader bytecode as C headers. Ships with `vim` on most systems.
 - **Xcode** (macOS only): full Xcode provides `metal` and `metallib` for precompiling shaders to `.metallib` bytecode (fastest startup). If only Command Line Tools (`xcode-select --install`) is installed, the build automatically falls back to embedding MSL source for the Metal driver to compile at first use — runtime behavior is identical, just a small per-shader compile on first frame. (Apple no longer ships a standalone Metal compiler download.)
 

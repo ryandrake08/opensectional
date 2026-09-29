@@ -44,7 +44,11 @@ find_package(Threads REQUIRED)
 # OSECT_VENDOR_DEPS controls dependency sources only. OSECT_ENABLE_PACKAGING
 # controls installer configuration; package builds require vendored
 # dependencies so their output is self-contained. Both default OFF for the
-# contributor build.
+# contributor build. Kept separate deliberately: VENDOR_DEPS=ON with
+# PACKAGING=OFF builds the static (and on macOS, universal) release binary
+# without the installer, so submodule bumps and release link problems can be
+# worked on without first building osect.db, basemap/, and terrain/ — the
+# packaging block aborts configure until all three exist.
 option(OSECT_VENDOR_DEPS "Build dependencies from vendored submodules instead of using system packages" OFF)
 option(OSECT_ENABLE_PACKAGING "Configure platform installer packaging" OFF)
 
