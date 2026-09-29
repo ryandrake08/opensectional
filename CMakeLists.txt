@@ -638,15 +638,11 @@ if(APPLE AND OSECT_ENABLE_PACKAGING)
             DESTINATION "${_rsrc}"
             RENAME "LICENSE-MoltenVK.txt")
 
-    # Bundle brew-installed SDL dylibs into the .app via fixup_bundle at
-    # install time. Runs inside the install prefix so paths resolve correctly.
-    # fixup_bundle rewrites LC_LOAD_DYLIB paths, which invalidates any existing
-    # signatures on the bundled dylibs and main binary. Ad-hoc re-sign so the
-    # kernel will launch the result on Apple Silicon.
+    # Ad-hoc sign the installed bundle as a whole (executable, bundled
+    # MoltenVK, Info.plist and resources) so it launches on Apple Silicon.
+    # Runs inside the install prefix, after every file is in place.
     install(CODE "
-        include(BundleUtilities)
         set(_bundle \"\${CMAKE_INSTALL_PREFIX}/${APPLICATION_NAME}.app\")
-        fixup_bundle(\"\${_bundle}\" \"\" \"/usr/local/lib;/opt/homebrew/lib\")
         execute_process(
             COMMAND codesign --force --deep --sign - \"\${_bundle}\"
             RESULT_VARIABLE _codesign_rc)
