@@ -57,14 +57,14 @@ namespace osect
                     // has no data; demoted to debug to keep the warn
                     // channel signal-only.
                     sdl::log_debug(std::string("tile load failed: ") + e.what());
-                    std::lock_guard<std::mutex> lock(mutex);
+                    std::scoped_lock lock(mutex);
                     pending_set.erase(req.key);
                     failed_set.insert(req.key);
                     continue;
                 }
 
                 {
-                    std::lock_guard<std::mutex> lock(mutex);
+                    std::scoped_lock lock(mutex);
                     result_queue.push_back({req.key, std::move(surf)});
                 }
                 wake_main_thread();
@@ -80,7 +80,7 @@ namespace osect
     tile_loader::~tile_loader()
     {
         {
-            std::lock_guard<std::mutex> lock(pimpl->mutex);
+            std::scoped_lock lock(pimpl->mutex);
             pimpl->shutdown = true;
         }
         pimpl->cv.notify_one();
@@ -89,7 +89,7 @@ namespace osect
 
     void tile_loader::request(const tile_key& key, const std::filesystem::path& path)
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         if(!pimpl->pending_set.count(key) && !pimpl->failed_set.count(key))
         {
             pimpl->pending_set.insert(key);
@@ -100,13 +100,13 @@ namespace osect
 
     bool tile_loader::is_failed(const tile_key& key) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         return pimpl->failed_set.count(key) > 0;
     }
 
     void tile_loader::cancel()
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         for(const auto& req : pimpl->request_queue)
         {
             pimpl->pending_set.erase(req.key);
@@ -116,7 +116,7 @@ namespace osect
 
     std::vector<tile_load_result> tile_loader::drain_results()
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         for(const auto& r : pimpl->result_queue)
         {
             pimpl->pending_set.erase(r.key);

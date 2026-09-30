@@ -105,7 +105,7 @@ namespace osect
             void fail(const tile_key& key)
             {
                 {
-                    std::lock_guard<std::mutex> lock(mutex_);
+                    std::scoped_lock lock(mutex_);
                     pending_.erase(key);
                     failed_.insert(key);
                     failure_pending_ = true;
@@ -145,7 +145,7 @@ namespace osect
                                 load_water_classes(request.water_path, result.water_width, result.water_height);
                         }
                         {
-                            std::lock_guard<std::mutex> lock(mutex_);
+                            std::scoped_lock lock(mutex_);
                             results_.push_back(std::move(result));
                         }
                         wake_main_thread();
@@ -170,7 +170,7 @@ namespace osect
             ~terrain_loader()
             {
                 {
-                    std::lock_guard<std::mutex> lock(mutex_);
+                    std::scoped_lock lock(mutex_);
                     shutdown_ = true;
                 }
                 cv_.notify_one();
@@ -180,7 +180,7 @@ namespace osect
             void request_tile(const tile_key& key, const std::filesystem::path& path,
                               const std::filesystem::path& water_path)
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                std::scoped_lock lock(mutex_);
                 if(pending_.count(key) == 0 && failed_.count(key) == 0)
                 {
                     pending_.insert(key);
@@ -191,7 +191,7 @@ namespace osect
 
             void cancel()
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                std::scoped_lock lock(mutex_);
                 for(const auto& request : requests_)
                 {
                     pending_.erase(request.key);
@@ -201,13 +201,13 @@ namespace osect
 
             bool failed(const tile_key& key) const
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                std::scoped_lock lock(mutex_);
                 return failed_.count(key) != 0;
             }
 
             std::vector<terrain_load_result> drain()
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                std::scoped_lock lock(mutex_);
                 for(const auto& result : results_)
                 {
                     pending_.erase(result.key);
@@ -219,7 +219,7 @@ namespace osect
 
             bool drain_failures()
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                std::scoped_lock lock(mutex_);
                 const bool failed = failure_pending_;
                 failure_pending_ = false;
                 return failed;
@@ -279,7 +279,7 @@ namespace osect
 
         struct fallback_quad
         {
-            std::unique_ptr<sdl::buffer> vertices;
+            sdl::buffer vertices;
             std::shared_ptr<terrain_gpu> ancestor;
             float texel_m = 0.0F;
         };
@@ -506,8 +506,7 @@ namespace osect
             // fallback.key is the display tile; its texels span (u1-u0) of an
             // ancestor texel, so scale up to the ancestor's ground resolution.
             const float texel_m = pimpl->texel_meters(fallback.key) / (fallback.u1 - fallback.u0);
-            pimpl->fallbacks.push_back(
-                {std::make_unique<sdl::buffer>(std::move(vertices)), std::move(fallback.resource), texel_m});
+            pimpl->fallbacks.push_back({std::move(vertices), std::move(fallback.resource), texel_m});
         }
     }
 
@@ -559,7 +558,7 @@ namespace osect
         }
         for(const auto& fallback : pimpl->fallbacks)
         {
-            draw(*fallback.ancestor, *fallback.vertices, fallback.texel_m);
+            draw(*fallback.ancestor, fallback.vertices, fallback.texel_m);
         }
     }
 } // namespace osect

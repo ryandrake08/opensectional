@@ -193,7 +193,7 @@ namespace osect
             }
             auto& log = global_unknown_log();
             {
-                std::lock_guard<std::mutex> lk(log.mtx);
+                std::scoped_lock lk(log.mtx);
                 if(!log.seen.insert(path).second)
                 {
                     return; // already logged this session

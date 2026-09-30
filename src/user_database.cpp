@@ -402,7 +402,7 @@ namespace osect
 
     std::vector<route_record> user_database::load_routes() const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         std::vector<route_record> out;
         std::unordered_map<std::int64_t, std::size_t> index_by_id;
 
@@ -439,7 +439,7 @@ namespace osect
 
     std::optional<route_record> user_database::query_route(std::int64_t route_id) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         route_record rec;
         {
             auto& st = pimpl->stmt_query_route;
@@ -477,7 +477,7 @@ namespace osect
                                              std::optional<double> cruise_altitude_ft,
                                              terrain_profile_gradients gradients)
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         const auto ts = now_iso8601();
         pimpl->db.exec("BEGIN");
         try
@@ -518,7 +518,7 @@ namespace osect
     void user_database::update_route(std::int64_t route_id, const std::vector<route_waypoint_row>& waypoints,
                                      std::optional<double> cruise_altitude_ft)
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         pimpl->db.exec("BEGIN");
         try
         {
@@ -573,7 +573,7 @@ namespace osect
 
     void user_database::update_route_cruise_altitude(std::int64_t route_id, std::optional<double> cruise_altitude_ft)
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         pimpl->db.exec("BEGIN");
         try
         {
@@ -607,7 +607,7 @@ namespace osect
 
     void user_database::delete_route(std::int64_t route_id)
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_delete_route;
         s.reset();
         s.bind(1, route_id);
@@ -616,7 +616,7 @@ namespace osect
 
     std::vector<user_waypoint> user_database::load_waypoints() const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         std::vector<user_waypoint> out;
         auto& st = pimpl->stmt_load_user_waypoints;
         st.reset();
@@ -634,7 +634,7 @@ namespace osect
 
     std::optional<user_waypoint> user_database::query_waypoint(std::int64_t waypoint_id) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& st = pimpl->stmt_query_user_waypoint;
         st.reset();
         st.bind(1, waypoint_id);
@@ -655,7 +655,7 @@ namespace osect
 
     user_waypoint user_database::insert_waypoint(double lat, double lon)
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
 
         // Auto-name with the lowest unused WPT<n>. The mutex serializes
         // every user_database call, so this scan-then-insert can't race.
@@ -692,7 +692,7 @@ namespace osect
 
     bool user_database::update_waypoint(std::int64_t waypoint_id, const std::string& name, double lat, double lon)
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         if(name.empty())
         {
             return false;
@@ -724,7 +724,7 @@ namespace osect
 
     void user_database::delete_waypoint(std::int64_t waypoint_id)
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_delete_user_waypoint;
         s.reset();
         s.bind(1, waypoint_id);

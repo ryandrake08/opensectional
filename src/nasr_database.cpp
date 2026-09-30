@@ -802,7 +802,7 @@ namespace osect
     std::vector<airport> nasr_database::query_airports(const geo_bbox& bbox, const filter_list& class_filter) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox_filtered(
             d.stmt_airports, bbox, class_filter,
             [](sqlite::statement& s)
@@ -820,7 +820,7 @@ namespace osect
     std::vector<navaid> nasr_database::query_navaids(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_navaids, bbox,
                             [](sqlite::statement& s)
                             {
@@ -837,7 +837,7 @@ namespace osect
     std::vector<fix> nasr_database::query_fixes(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_fixes, bbox,
                             [](sqlite::statement& s)
                             {
@@ -850,7 +850,7 @@ namespace osect
     std::vector<airway_segment> nasr_database::query_airways(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_airways, bbox,
                             [](sqlite::statement& s)
                             {
@@ -864,7 +864,7 @@ namespace osect
     std::vector<mtr_segment> nasr_database::query_mtrs(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_mtrs, bbox,
                             [](sqlite::statement& s)
                             {
@@ -876,7 +876,7 @@ namespace osect
 
     std::vector<airway_segment> nasr_database::query_airway_by_id(const std::string& awy_id) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_airway_by_id;
         s.reset();
         s.bind(1, awy_id);
@@ -892,7 +892,7 @@ namespace osect
 
     std::vector<std::string> nasr_database::adjacent_airways(const std::string& a, const std::string& b) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_adjacent_airways;
         s.reset();
         s.bind(1, a);
@@ -907,7 +907,7 @@ namespace osect
 
     std::vector<std::string> nasr_database::airways_containing(const std::string& fix_name) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_airways_containing;
         s.reset();
         s.bind(1, fix_name);
@@ -921,7 +921,7 @@ namespace osect
 
     std::vector<mtr_segment> nasr_database::query_mtr_by_id(const std::string& mtr_id) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_mtr_by_id;
         s.reset();
         s.bind(1, mtr_id);
@@ -937,7 +937,7 @@ namespace osect
     std::vector<maa> nasr_database::query_maas(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_maas, bbox,
                             [&](sqlite::statement& s)
                             {
@@ -969,7 +969,7 @@ namespace osect
     std::vector<class_airspace> nasr_database::query_class_airspace(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_cls_arsp, bbox,
                             [&](sqlite::statement& s)
                             {
@@ -1010,7 +1010,7 @@ namespace osect
     std::vector<runway> nasr_database::query_runways(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_runways, bbox,
                             [](sqlite::statement& s)
                             {
@@ -1022,7 +1022,7 @@ namespace osect
     std::vector<sua> nasr_database::query_sua(const geo_bbox& bbox, const filter_list& type_filter) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox_filtered(d.stmt_sua, bbox, type_filter,
                                      [&](sqlite::statement& s)
                                      {
@@ -1149,7 +1149,7 @@ namespace osect
     std::vector<sua_circle> nasr_database::query_sua_circles(const geo_bbox& bbox, const filter_list& type_filter) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox_filtered(d.stmt_sua_circles_bbox, bbox, type_filter,
                                      [](sqlite::statement& s)
                                      {
@@ -1162,7 +1162,7 @@ namespace osect
     std::vector<obstacle> nasr_database::query_obstacles(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_obstacles, bbox,
                             [](sqlite::statement& s)
                             {
@@ -1178,7 +1178,7 @@ namespace osect
     std::vector<artcc> nasr_database::query_artcc(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_artcc, bbox,
                             [&](sqlite::statement& s)
                             {
@@ -1200,7 +1200,7 @@ namespace osect
     std::vector<pja> nasr_database::query_pjas(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_pjas, bbox,
                             [](sqlite::statement& s)
                             {
@@ -1212,7 +1212,7 @@ namespace osect
     std::vector<adiz> nasr_database::query_adiz(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(
             d.stmt_adiz, bbox,
             [&](sqlite::statement& s)
@@ -1239,7 +1239,7 @@ namespace osect
     std::vector<fss> nasr_database::query_fss(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_fss, bbox,
                             [](sqlite::statement& s)
                             {
@@ -1253,7 +1253,7 @@ namespace osect
     std::vector<awos> nasr_database::query_awos(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_awos, bbox,
                             [](sqlite::statement& s)
                             {
@@ -1268,7 +1268,7 @@ namespace osect
     std::vector<comm_outlet> nasr_database::query_comm_outlets(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         return d.query_bbox(d.stmt_comm_outlets, bbox,
                             [](sqlite::statement& s)
                             {
@@ -1283,7 +1283,7 @@ namespace osect
     std::vector<boundary_segment> nasr_database::query_artcc_segments(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         std::vector<boundary_segment> results;
         d.bind_bbox(d.stmt_artcc_seg, bbox);
         auto current_seg = -1;
@@ -1303,7 +1303,7 @@ namespace osect
     std::vector<boundary_segment> nasr_database::query_adiz_segments(const geo_bbox& bbox) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         std::vector<boundary_segment> results;
         d.bind_bbox(d.stmt_adiz_seg, bbox);
         auto current_seg = -1;
@@ -1324,7 +1324,7 @@ namespace osect
                                                                                const filter_list& class_filter) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         std::vector<airspace_segment> results;
         d.bind_bbox(d.stmt_cls_arsp_seg, bbox);
         d.bind_filter(d.stmt_cls_arsp_seg, 5, class_filter);
@@ -1358,7 +1358,7 @@ namespace osect
                                                                const filter_list& type_filter) const
     {
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         std::vector<sua_segment> results;
         d.bind_bbox(d.stmt_sua_seg, bbox);
         d.bind_filter(d.stmt_sua_seg, 5, type_filter);
@@ -1423,7 +1423,7 @@ namespace osect
         }
 
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         d.stmt_search.reset();
         d.stmt_search.bind(1, expr);
         d.stmt_search.bind(2, limit);
@@ -1523,7 +1523,7 @@ namespace osect
         }
 
         auto& d = *pimpl;
-        std::lock_guard<std::mutex> lock(d.mutex);
+        std::scoped_lock lock(d.mutex);
         auto stmt = d.db.prepare(sql);
         stmt.bind(1, entity_rowid);
         if(!stmt.step())
@@ -1536,7 +1536,7 @@ namespace osect
 
     std::vector<airport> nasr_database::lookup_airports(const std::string& id) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_lookup_airport;
         s.reset();
         s.bind(1, id);
@@ -1556,7 +1556,7 @@ namespace osect
 
     std::vector<navaid> nasr_database::lookup_navaids(const std::string& id) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_lookup_navaid;
         s.reset();
         s.bind(1, id);
@@ -1575,7 +1575,7 @@ namespace osect
 
     std::vector<fix> nasr_database::lookup_fixes(const std::string& id) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_lookup_fix;
         s.reset();
         s.bind(1, id);
@@ -1605,7 +1605,7 @@ namespace osect
 
     std::vector<route_node_row> nasr_database::load_routable_airports() const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_load_routable_airports;
         s.reset();
         return drain_route_nodes(s);
@@ -1613,7 +1613,7 @@ namespace osect
 
     std::vector<route_node_row> nasr_database::load_routable_navaids() const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_load_routable_navaids;
         s.reset();
         return drain_route_nodes(s);
@@ -1621,7 +1621,7 @@ namespace osect
 
     std::vector<route_node_row> nasr_database::load_routable_fixes() const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_load_routable_fixes;
         s.reset();
         return drain_route_nodes(s);
@@ -1629,7 +1629,7 @@ namespace osect
 
     std::vector<route_airway_edge_row> nasr_database::load_airway_edges() const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& s = pimpl->stmt_load_airway_edges;
         s.reset();
         std::vector<route_airway_edge_row> out;
@@ -1662,19 +1662,19 @@ namespace osect
 
     std::vector<int> nasr_database::query_airport_rowids_bbox(const geo_bbox& bbox) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         return drain_rtree_rowids(pimpl->stmt_rtree_bbox_airports, bbox);
     }
 
     std::vector<int> nasr_database::query_navaid_rowids_bbox(const geo_bbox& bbox) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         return drain_rtree_rowids(pimpl->stmt_rtree_bbox_navaids, bbox);
     }
 
     std::vector<int> nasr_database::query_fix_rowids_bbox(const geo_bbox& bbox) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         return drain_rtree_rowids(pimpl->stmt_rtree_bbox_fixes, bbox);
     }
 
@@ -1776,7 +1776,7 @@ namespace osect
 
     std::vector<data_source> nasr_database::list_data_sources() const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         std::vector<data_source> out;
         auto& stmt = pimpl->stmt_meta;
         stmt.reset();

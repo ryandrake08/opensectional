@@ -466,7 +466,7 @@ namespace osect
     std::optional<std::chrono::system_clock::time_point> ephemeral_database::last_refreshed(
         const std::string& source_name) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& stmt = pimpl->stmt_select_source_meta;
         stmt.reset();
         stmt.bind(1, source_name);
@@ -479,7 +479,7 @@ namespace osect
 
     std::string ephemeral_database::etag(const std::string& source_name) const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& stmt = pimpl->stmt_select_source_meta;
         stmt.reset();
         stmt.bind(1, source_name);
@@ -493,7 +493,7 @@ namespace osect
     void ephemeral_database::set_source_meta(const std::string& source_name,
                                              std::chrono::system_clock::time_point refreshed, const std::string& etag)
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         auto& stmt = pimpl->stmt_upsert_source_meta;
         stmt.reset();
         stmt.bind(1, source_name);
@@ -504,7 +504,7 @@ namespace osect
 
     std::vector<tfr> ephemeral_database::query_tfrs() const
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         std::vector<tfr> tfrs;
         std::unordered_map<int, std::size_t> tfr_idx;
 
@@ -587,7 +587,7 @@ namespace osect
 
     void ephemeral_database::replace_tfrs(const std::vector<tfr>& tfrs)
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         pimpl->db.exec("BEGIN");
         try
         {

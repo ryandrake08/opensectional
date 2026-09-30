@@ -30,7 +30,7 @@ namespace osect
         feature_builder builder;
 
         // Current view state
-        double half_extent_y;
+        double half_extent_y = HALF_CIRCUMFERENCE;
         double aspect_ratio = 1.0;
         int viewport_height = 0;
 
@@ -62,7 +62,7 @@ namespace osect
         std::optional<flight_route> drag_route;
 
         impl(sdl::device& dev, const std::filesystem::path& db_path, const chart_style& styles)
-            : dev(dev), builder(db_path, styles), half_extent_y(HALF_CIRCUMFERENCE), query_bbox{0, 0, 0, 0}
+            : dev(dev), builder(db_path, styles), query_bbox{0, 0, 0, 0}
         {
         }
 

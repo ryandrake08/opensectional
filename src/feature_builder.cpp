@@ -154,7 +154,7 @@ namespace osect
                     result.labels = std::move(labels);
 
                     {
-                        std::lock_guard<std::mutex> lock(mutex);
+                        std::scoped_lock lock(mutex);
                         completed_result = std::move(result);
                     }
                     wake_main_thread();
@@ -176,7 +176,7 @@ namespace osect
     feature_builder::~feature_builder()
     {
         {
-            std::lock_guard<std::mutex> lock(pimpl->mutex);
+            std::scoped_lock lock(pimpl->mutex);
             pimpl->shutdown = true;
         }
         pimpl->cv.notify_one();
@@ -185,14 +185,14 @@ namespace osect
 
     void feature_builder::request(feature_build_request req)
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         pimpl->pending_request = std::move(req);
         pimpl->cv.notify_one();
     }
 
     std::optional<feature_build_result> feature_builder::drain_result()
     {
-        std::lock_guard<std::mutex> lock(pimpl->mutex);
+        std::scoped_lock lock(pimpl->mutex);
         std::optional<feature_build_result> result;
         result.swap(pimpl->completed_result);
         return result;

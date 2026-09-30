@@ -253,7 +253,7 @@ namespace osect
         // stuck inside curl_easy_perform() when we go to join().
         pimpl->http.cancel();
         {
-            std::lock_guard lk(pimpl->worker_mtx);
+            std::scoped_lock lk(pimpl->worker_mtx);
             pimpl->shutdown = true;
             pimpl->cv.notify_all();
         }
