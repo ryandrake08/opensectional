@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.21)
 project(osect C CXX)
 
 # Package metadata (used by CPack on both platforms and by the macOS bundle)
