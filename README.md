@@ -65,6 +65,7 @@ Two paths exist:
 | libcurl | system | Ephemeral-data HTTP client |
 | zlib | system | gzip/deflate (libcurl dependency) |
 | SQLite3 | system | NASR database queries |
+| MoltenVK | system, macOS only, optional (MoltenVK / molten-vk) | Vulkan on macOS, the default GPU backend. Not needed to build; without it, run with `--gpu metal`. See [GPU Backend](#gpu-backend) |
 | Dear ImGui | in-repo | UI widgets |
 | GLM | in-repo | Matrix/vector math |
 | pugixml | in-repo | XML parser (XNOTAM) |
@@ -197,7 +198,7 @@ cmake --preset macos-package
 cmake --build --preset macos-package -j
 ```
 
-Also fetches a precompiled universal MoltenVK dylib and ships it in `Contents/Frameworks/`, so the .app runs without requiring the user to install Vulkan SDK or Homebrew. Builds a universal (arm64+x86_64) binary via `cmake/macos-toolchain.cmake` (`CMAKE_OSX_ARCHITECTURES=arm64;x86_64`, `CMAKE_OSX_DEPLOYMENT_TARGET=11.0`). Output: `build-macos-package/OpenSectional-X.Y.Z-Darwin.dmg`.
+Also fetches a precompiled universal MoltenVK dylib and ships it in `Contents/Frameworks/`, so the .app runs without requiring the user to install Vulkan SDK or Homebrew. Builds a universal (arm64+x86_64) binary via `cmake/macos-toolchain.cmake` (`CMAKE_OSX_ARCHITECTURES=arm64;x86_64`, `CMAKE_OSX_DEPLOYMENT_TARGET=11.0`). Build on a machine with full Xcode so the DMG includes precompiled `.metallib` shaders for the Metal backend (see [Shader Compiler Toolchain](#shader-compiler-toolchain)). Output: `build-macos-package/OpenSectional-X.Y.Z-Darwin.dmg`.
 
 The DMG is **not signed by a Developer ID and not notarized.** First-launch instructions and the optional Developer ID / notarization workflow are documented in [Installer signing](#installer-signing) below.
 
@@ -311,7 +312,7 @@ Shaders are written in HLSL and cross-compiled during the build. The build searc
 - **HLSL → DXIL**: `dxc`. Optional — only used when building with the experimental D3D12 backend (Windows targets, controlled by `-DOSECT_ENABLE_D3D12=ON`, default ON). DXIL is Microsoft-defined and has no alternative producer. The configure step auto-disables D3D12 if `dxc` is not found; the resulting Windows binary still runs via Vulkan. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) ships `dxc` on all platforms.
 - **SPIR-V → MSL**: the `spirv-cross` headers and libraries, linked into a small build-time tool (`shaders/spirv_to_msl.cpp`) that also remaps resource bindings for SDL GPU. Required only on macOS for the Metal backend. The `spirv-cross` command-line tool isn't used.
 - **xxd**: embeds shader bytecode as C headers. Ships with `vim` on most systems.
-- **Xcode** (macOS only): full Xcode provides `metal` and `metallib` for precompiling shaders to `.metallib` bytecode (fastest startup). If only Command Line Tools (`xcode-select --install`) is installed, the build automatically falls back to embedding MSL source for the Metal driver to compile at first use — runtime behavior is identical, just a small per-shader compile on first frame. (Apple no longer ships a standalone Metal compiler download.)
+- **Xcode** (macOS only): the build always embeds MSL source. When full Xcode is installed it also precompiles that MSL with `metal` / `metallib` to `.metallib` bytecode and embeds it, which catches MSL errors at build time and skips the runtime compile. With `--gpu metal` the app uses the `.metallib` when present, and otherwise has the Metal driver compile the embedded MSL at first use — same rendering, just a small per-shader compile on the first frame. The default Vulkan backend is unaffected either way (MoltenVK translates the SPIR-V itself). The build detects `metal` automatically; `-DOSECT_ENABLE_METALLIB=OFF` forces the MSL-only path even with Xcode installed, e.g. to test it. Because the choice follows the build machine, a DMG built with only the Command Line Tools ships MSL source only. (Apple no longer ships a standalone Metal compiler download.)
 
 ## Shader pipeline
 
