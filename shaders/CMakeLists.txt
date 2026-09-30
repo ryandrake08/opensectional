@@ -111,6 +111,11 @@ if(APPLE)
     # try to link it against single-architecture package-manager libraries.
     set_target_properties(spirv_to_msl PROPERTIES
         OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+    # It also inherits the release build's CMAKE_OSX_DEPLOYMENT_TARGET, which
+    # is lower than the one package managers build spirv-cross for, so ld
+    # warns "object file was built for newer 'macOS' version". Harmless for
+    # a tool that only ever runs on the machine that built it.
+    target_link_options(spirv_to_msl PRIVATE LINKER:-w)
     target_compile_features(spirv_to_msl PRIVATE cxx_std_17)
     target_include_directories(spirv_to_msl PRIVATE ${SPIRV_CROSS_INCLUDE_DIR})
     target_link_libraries(spirv_to_msl PRIVATE

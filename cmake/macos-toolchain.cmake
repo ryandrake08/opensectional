@@ -9,3 +9,11 @@
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures" FORCE)
 # Apple Silicon was introduced in macOS 11 (Big Sur). Lower won't run.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version" FORCE)
+
+# Vendored libraries (curl, SDL, SDL_image) contain translation units that
+# compile to nothing on macOS (other platforms' backends), and Apple's ranlib
+# warns once per empty object per architecture. Silence that one diagnostic.
+# CMake only supplies its default archive-finish rule when none is defined.
+foreach(_lang C CXX OBJC OBJCXX)
+    set(CMAKE_${_lang}_ARCHIVE_FINISH "<CMAKE_RANLIB> -no_warning_for_no_symbols <TARGET>")
+endforeach()
