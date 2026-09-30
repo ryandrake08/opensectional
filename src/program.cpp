@@ -62,9 +62,9 @@ namespace osect
         sdl::device dev;
         imgui::context imgui_ctx;
         sdl::event_manager event_mgr;
-        // Null in --offline mode. When present, supplies the UPD
+        // Empty in --offline mode. When present, supplies the UPD
         // indicator via is_refreshing().
-        std::unique_ptr<tfr_refresher> tfrs;
+        std::optional<tfr_refresher> tfrs;
         ini_config ini;
         std::optional<std::filesystem::path> terrain_path;
         elevation_source terrain;
@@ -95,7 +95,7 @@ namespace osect
                   sdl::window_flags::resizable | sdl::window_flags::high_pixel_density),
               dev(win, resolve_gpu_driver(opts).c_str(), opts.vsync, opts.gpu_debug),
               imgui_ctx(dev, win),
-              tfrs(opts.offline ? nullptr : std::make_unique<tfr_refresher>(ephemeral_database::default_path())),
+              tfrs(opts.offline ? std::nullopt : std::make_optional<tfr_refresher>(ephemeral_database::default_path())),
               ini(build_ini(opts)),
               terrain_path(resolve_terrain_path(opts)),
               terrain(terrain_path ? *terrain_path : std::filesystem::path{}),

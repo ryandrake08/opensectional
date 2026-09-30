@@ -3,12 +3,8 @@
 #include "tile_key.hpp"
 #include <filesystem>
 #include <memory>
+#include <sdl/surface.hpp>
 #include <vector>
-
-namespace sdl
-{
-    class surface;
-}
 
 namespace osect
 {
@@ -16,7 +12,7 @@ namespace osect
     struct tile_load_result
     {
         tile_key key;
-        std::unique_ptr<sdl::surface> surf;
+        sdl::surface surf;
     };
 
     // Background tile loader thread.

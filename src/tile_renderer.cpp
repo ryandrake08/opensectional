@@ -24,8 +24,8 @@ namespace osect
     struct tile_gpu
     {
         tile_key key;
-        std::unique_ptr<sdl::buffer> vertex_buffer;
-        std::unique_ptr<sdl::texture> tex;
+        sdl::buffer vertex_buffer;
+        sdl::texture tex;
     };
 } // namespace osect
 
@@ -75,7 +75,7 @@ namespace osect
         // Fallback quads for visible tiles rendered via an ancestor texture
         struct fallback_quad
         {
-            std::unique_ptr<sdl::buffer> vertex_buffer;
+            sdl::buffer vertex_buffer;
             std::shared_ptr<tile_gpu> ancestor_gpu;
         };
         std::vector<fallback_quad> fallback_quads;
@@ -147,7 +147,7 @@ namespace osect
             uint32_t total_bytes = 0;
             for(const auto& result : pending_results)
             {
-                total_bytes += vbuf_bytes + result.surf->size();
+                total_bytes += vbuf_bytes + result.surf.size();
             }
             total_bytes += static_cast<uint32_t>(fallbacks.size()) * vbuf_bytes;
 
@@ -212,16 +212,13 @@ namespace osect
             auto vertices = std::vector<sdl::vertex_t2f_c4ub_v3f>(6);
             get_tile_vertices(result.key, 0.0F, 0.0F, 1.0F, 1.0F, vertices.data());
 
-            auto gpu = std::make_shared<tile_gpu>();
-            gpu->key = result.key;
-
             sdl::buffer vbuf(pimpl->dev, sdl::buffer_usage::vertex, 6, sizeof(sdl::vertex_t2f_c4ub_v3f));
             pass.upload_buffer(transfer, vbuf, vertices);
-            gpu->vertex_buffer = std::make_unique<sdl::buffer>(std::move(vbuf));
 
-            sdl::texture tex(pimpl->dev, *result.surf);
-            pass.upload_texture(transfer, tex, *result.surf);
-            gpu->tex = std::make_unique<sdl::texture>(std::move(tex));
+            sdl::texture tex(pimpl->dev, result.surf);
+            pass.upload_texture(transfer, tex, result.surf);
+
+            auto gpu = std::make_shared<tile_gpu>(tile_gpu{result.key, std::move(vbuf), std::move(tex)});
 
             pimpl->cache.put(result.key, gpu);
         }
@@ -235,10 +232,7 @@ namespace osect
             sdl::buffer vbuf(pimpl->dev, sdl::buffer_usage::vertex, 6, sizeof(sdl::vertex_t2f_c4ub_v3f));
             pass.upload_buffer(transfer, vbuf, verts);
 
-            impl::fallback_quad quad;
-            quad.vertex_buffer = std::make_unique<sdl::buffer>(std::move(vbuf));
-            quad.ancestor_gpu = std::move(fallback.resource);
-            pimpl->fallback_quads.push_back(std::move(quad));
+            pimpl->fallback_quads.push_back({std::move(vbuf), std::move(fallback.resource)});
         }
     }
 
@@ -264,8 +258,8 @@ namespace osect
 
             pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
             pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
-            pass.bind_vertex_buffer(*gpu->vertex_buffer);
-            pass.bind_fragment_texture_sampler(0, *gpu->tex, pimpl->sampler);
+            pass.bind_vertex_buffer(gpu->vertex_buffer);
+            pass.bind_fragment_texture_sampler(0, gpu->tex, pimpl->sampler);
             pass.draw(6);
         }
 
@@ -274,8 +268,8 @@ namespace osect
         {
             pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
             pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));
-            pass.bind_vertex_buffer(*quad.vertex_buffer);
-            pass.bind_fragment_texture_sampler(0, *quad.ancestor_gpu->tex, pimpl->sampler);
+            pass.bind_vertex_buffer(quad.vertex_buffer);
+            pass.bind_fragment_texture_sampler(0, quad.ancestor_gpu->tex, pimpl->sampler);
             pass.draw(6);
         }
     }

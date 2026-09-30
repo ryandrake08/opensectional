@@ -34,7 +34,7 @@ namespace osect
     class map_widget
     {
         struct impl;
-        std::shared_ptr<impl> pimpl;
+        std::unique_ptr<impl> pimpl;
 
     public:
         // `tile_path` is nullopt when no basemap is available.
@@ -190,10 +190,8 @@ namespace osect
         bool draw_imgui();
 
         // The SDL event listener for this widget. Register with
-        // sdl::event_manager::add_listener. The listener owns its own
-        // shared lifetime, so it stays alive for as long as the event
-        // manager keeps a reference even if the map_widget is destroyed.
-        std::shared_ptr<sdl::event_listener> event_listener();
+        // sdl::event_manager::add_listener; it lives as long as the widget.
+        sdl::event_listener& event_listener();
 
         // Notify that an ephemeral data source has new data on disk.
         // Invalidates any cached projection that depends on it (today

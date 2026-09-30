@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <sdl/log.hpp>
 #include <sdl/surface.hpp>
 #include <string>
@@ -46,10 +47,10 @@ namespace osect
                     request_queue.pop_front();
                 }
 
-                std::unique_ptr<sdl::surface> surf;
+                std::optional<sdl::surface> surf;
                 try
                 {
-                    surf = std::make_unique<sdl::surface>(req.path.string().c_str());
+                    surf.emplace(req.path.string().c_str());
                 }
                 catch(const std::exception& e)
                 {
@@ -65,7 +66,7 @@ namespace osect
 
                 {
                     std::scoped_lock lock(mutex);
-                    result_queue.push_back({req.key, std::move(surf)});
+                    result_queue.push_back({req.key, std::move(*surf)});
                 }
                 wake_main_thread();
             }

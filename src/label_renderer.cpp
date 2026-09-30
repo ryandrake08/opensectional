@@ -89,13 +89,13 @@ namespace osect
         // GPU buffers
         std::vector<sdl::vertex_t2f_c4ub_v3f> fill_vertices;
         std::vector<int> fill_indices;
-        std::unique_ptr<sdl::buffer> fill_vertex_buffer;
-        std::unique_ptr<sdl::buffer> fill_index_buffer;
+        std::optional<sdl::buffer> fill_vertex_buffer;
+        std::optional<sdl::buffer> fill_index_buffer;
 
         std::vector<sdl::vertex_t2f_c4ub_v3f> outline_vertices;
         std::vector<int> outline_indices;
-        std::unique_ptr<sdl::buffer> outline_vertex_buffer;
-        std::unique_ptr<sdl::buffer> outline_index_buffer;
+        std::optional<sdl::buffer> outline_vertex_buffer;
+        std::optional<sdl::buffer> outline_index_buffer;
 
         bool dirty = false;
 
@@ -418,21 +418,21 @@ namespace osect
         auto fill_i_count = static_cast<uint32_t>(pimpl->fill_indices.size());
 
         // Build the destination buffers first so we can sum their byte sizes.
-        std::unique_ptr<sdl::buffer> outline_v;
-        std::unique_ptr<sdl::buffer> outline_i;
-        std::unique_ptr<sdl::buffer> fill_v;
-        std::unique_ptr<sdl::buffer> fill_i;
+        std::optional<sdl::buffer> outline_v;
+        std::optional<sdl::buffer> outline_i;
+        std::optional<sdl::buffer> fill_v;
+        std::optional<sdl::buffer> fill_i;
         uint32_t total_bytes = 0;
         if(outline_v_count != 0)
         {
-            outline_v = std::make_unique<sdl::buffer>(dev, sdl::buffer_usage::vertex, outline_v_count, vsz);
-            outline_i = std::make_unique<sdl::buffer>(dev, sdl::buffer_usage::index, outline_i_count, isz);
+            outline_v.emplace(dev, sdl::buffer_usage::vertex, outline_v_count, vsz);
+            outline_i.emplace(dev, sdl::buffer_usage::index, outline_i_count, isz);
             total_bytes += outline_v->byte_size() + outline_i->byte_size();
         }
         if(fill_v_count != 0)
         {
-            fill_v = std::make_unique<sdl::buffer>(dev, sdl::buffer_usage::vertex, fill_v_count, vsz);
-            fill_i = std::make_unique<sdl::buffer>(dev, sdl::buffer_usage::index, fill_i_count, isz);
+            fill_v.emplace(dev, sdl::buffer_usage::vertex, fill_v_count, vsz);
+            fill_i.emplace(dev, sdl::buffer_usage::index, fill_i_count, isz);
             total_bytes += fill_v->byte_size() + fill_i->byte_size();
         }
 

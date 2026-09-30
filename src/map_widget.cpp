@@ -284,19 +284,19 @@ namespace osect
         sdl::pipeline terrain_pipeline;
         sdl::pipeline line_sdf_pipeline;
 
-        // Tile renderer for raster basemap (null if no basemap was provided)
-        std::unique_ptr<tile_renderer> tiles;
+        // Tile renderer for raster basemap (empty if no basemap was provided)
+        std::optional<tile_renderer> tiles;
         const elevation_source& elevation;
         terrain_style terrain_config;
         std::optional<float> cruise_altitude_ft;
-        std::unique_ptr<terrain_renderer> terrain;
+        std::optional<terrain_renderer> terrain;
 
         // Vector feature renderer
         feature_renderer features;
 
         // Grid line vertex buffer (rebuilt on viewport change)
         std::vector<sdl::vertex_t2f_c4ub_v3f> grid_vertices;
-        std::unique_ptr<sdl::buffer> grid_buffer;
+        std::optional<sdl::buffer> grid_buffer;
 
         // Label renderer
         label_renderer labels;
@@ -417,12 +417,12 @@ namespace osect
               line_sdf_pipeline(dev, load_shader(dev, shader_id::LINE, sdl::shader_stage::vertex, 0, 2),
                                 load_shader(dev, shader_id::LINE, sdl::shader_stage::fragment, 0, 2),
                                 sdl::primitive_type::triangle_list, sdl::texture_format_t(0), false),
-              tiles(tile_path ? std::make_unique<tile_renderer>(dev, *tile_path) : nullptr),
+              tiles(tile_path ? std::make_optional<tile_renderer>(dev, *tile_path) : std::nullopt),
               elevation(terrain_source),
               terrain_config(ini),
               terrain(terrain_source.available()
-                          ? std::make_unique<terrain_renderer>(dev, terrain_source, terrain_config)
-                          : nullptr),
+                          ? std::make_optional<terrain_renderer>(dev, terrain_source, terrain_config)
+                          : std::nullopt),
               features(dev, db_path, chart_style(ini)),
               labels(dev),
               pick_db(db_path),
@@ -1319,7 +1319,7 @@ namespace osect
     map_widget::map_widget(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path,
                            const elevation_source& terrain, const std::filesystem::path& db_path, const ini_config& ini,
                            int viewport_width, int viewport_height)
-        : pimpl(std::make_shared<impl>(dev, tile_path, terrain, db_path, ini, viewport_width, viewport_height))
+        : pimpl(std::make_unique<impl>(dev, tile_path, terrain, db_path, ini, viewport_width, viewport_height))
     {
     }
 
@@ -1456,9 +1456,9 @@ namespace osect
         return need_more;
     }
 
-    std::shared_ptr<sdl::event_listener> map_widget::event_listener()
+    sdl::event_listener& map_widget::event_listener()
     {
-        return pimpl;
+        return *pimpl;
     }
 
     void map_widget::on_ephemeral_refresh(ephemeral_source /*source*/)
@@ -1741,7 +1741,7 @@ namespace osect
                                 sizeof(sdl::vertex_t2f_c4ub_v3f));
                 sdl::transfer_buffer transfer(d.dev, buf.byte_size());
                 copy.upload_buffer(transfer, buf, d.grid_vertices);
-                d.grid_buffer = std::make_unique<sdl::buffer>(std::move(buf));
+                d.grid_buffer = std::move(buf);
             }
             if(d.tiles)
             {

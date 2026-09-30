@@ -27,7 +27,7 @@ namespace osect
         map_widget& map;
         user_database& udb;
         route_submitter submitter;
-        std::unique_ptr<terrain_profile_worker> profile_worker;
+        std::optional<terrain_profile_worker> profile_worker;
         route_plan_options plan_options;
         // Maps each route-panel tab id to its planned route's
         // persistent route_id. Tabs without a planned route are
@@ -59,8 +59,8 @@ namespace osect
               map(map),
               udb(udb),
               submitter(db_path),
-              profile_worker(terrain.available() ? std::make_unique<terrain_profile_worker>(terrain, db_path)
-                                                 : nullptr),
+              profile_worker(terrain.available() ? std::make_optional<terrain_profile_worker>(terrain, db_path)
+                                                 : std::nullopt),
               plan_options(load_route_plan_options(ini))
         {
             ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);

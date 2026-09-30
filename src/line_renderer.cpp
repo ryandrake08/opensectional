@@ -1,6 +1,7 @@
 #include "line_renderer.hpp"
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/render_pass.hpp>
@@ -56,8 +57,8 @@ namespace osect
         bool dirty = false;
 
         // GPU-side data
-        std::unique_ptr<sdl::buffer> packed_points;
-        std::unique_ptr<sdl::buffer> metadata_buf;
+        std::optional<sdl::buffer> packed_points;
+        std::optional<sdl::buffer> metadata_buf;
         uint32_t instance_count = 0;
     };
 
@@ -194,10 +195,10 @@ namespace osect
             sdl::transfer_buffer transfer(dev, pts.byte_size() + meta.byte_size());
 
             pass.upload_buffer(transfer, pts, all_points);
-            pimpl->packed_points = std::make_unique<sdl::buffer>(std::move(pts));
+            pimpl->packed_points = std::move(pts);
 
             pass.upload_buffer(transfer, meta, all_metadata);
-            pimpl->metadata_buf = std::make_unique<sdl::buffer>(std::move(meta));
+            pimpl->metadata_buf = std::move(meta);
         }
         else
         {

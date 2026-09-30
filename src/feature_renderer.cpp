@@ -9,6 +9,7 @@
 #include <cassert>
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
@@ -47,7 +48,7 @@ namespace osect
         // Polygon fill (triangulated concave+holes). Rendered in trianglelist_0
         // pass before line_sdf_0 so outlines and icons sit on top.
         std::vector<sdl::vertex_t2f_c4ub_v3f> fill_vertices;
-        std::unique_ptr<sdl::buffer> fill_buffer;
+        std::optional<sdl::buffer> fill_buffer;
         bool fill_needs_upload = false;
 
         // Labels from most recent build
@@ -220,7 +221,7 @@ namespace osect
                                 static_cast<uint32_t>(pimpl->fill_vertices.size()), sizeof(sdl::vertex_t2f_c4ub_v3f));
                 sdl::transfer_buffer transfer(pimpl->dev, buf.byte_size());
                 pass.upload_buffer(transfer, buf, pimpl->fill_vertices);
-                pimpl->fill_buffer = std::make_unique<sdl::buffer>(std::move(buf));
+                pimpl->fill_buffer = std::move(buf);
             }
             pimpl->fill_needs_upload = false;
         }

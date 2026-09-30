@@ -33,9 +33,10 @@ namespace sdl
         event_manager();
         ~event_manager();
 
-        // Register/unregister event listeners
-        void add_listener(const std::shared_ptr<event_listener>& listener);
-        void remove_listener(const std::shared_ptr<event_listener>& listener);
+        // Register/unregister event listeners. The manager keeps a
+        // reference, so a listener must stay alive while registered.
+        void add_listener(event_listener& listener);
+        void remove_listener(event_listener& listener);
 
         // Set a hook that receives every raw event before dispatch.
         // The void* points to an SDL_Event.

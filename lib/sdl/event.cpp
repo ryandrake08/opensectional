@@ -26,7 +26,7 @@ namespace sdl
 
     struct event_manager::impl
     {
-        std::vector<std::shared_ptr<event_listener>> listeners;
+        std::vector<event_listener*> listeners;
         std::function<void(const void*)> raw_event_hook;
         // Handlers for custom typed events allocated through
         // register_event_type(). The default case in dispatch()
@@ -115,15 +115,15 @@ namespace sdl
 
     event_manager::~event_manager() = default;
 
-    void event_manager::add_listener(const std::shared_ptr<event_listener>& listener)
+    void event_manager::add_listener(event_listener& listener)
     {
-        this->pimpl->listeners.push_back(listener);
+        this->pimpl->listeners.push_back(&listener);
     }
 
-    void event_manager::remove_listener(const std::shared_ptr<event_listener>& listener)
+    void event_manager::remove_listener(event_listener& listener)
     {
         this->pimpl->listeners.erase(
-            std::remove(this->pimpl->listeners.begin(), this->pimpl->listeners.end(), listener),
+            std::remove(this->pimpl->listeners.begin(), this->pimpl->listeners.end(), &listener),
             this->pimpl->listeners.end());
     }
 
