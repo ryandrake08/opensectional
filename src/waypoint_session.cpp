@@ -2,7 +2,6 @@
 #include "map_widget.hpp"
 #include "user_database.hpp"
 #include <exception>
-#include <memory>
 #include <optional>
 #include <sdl/log.hpp>
 #include <string>
@@ -10,16 +9,9 @@
 
 namespace osect
 {
-    struct waypoint_session::impl
+    namespace
     {
-        map_widget& map;
-        user_database& udb;
-
-        impl(map_widget& map, user_database& udb) : map(map), udb(udb)
-        {
-        }
-
-        bool handle_create()
+        bool handle_create(map_widget& map, user_database& udb)
         {
             auto req = map.drain_create_waypoint_request();
             if(!req)
@@ -40,7 +32,7 @@ namespace osect
             return true;
         }
 
-        bool handle_rename()
+        bool handle_rename(map_widget& map, user_database& udb)
         {
             auto req = map.drain_rename_waypoint_request();
             if(!req)
@@ -71,7 +63,7 @@ namespace osect
             return true;
         }
 
-        bool handle_delete()
+        bool handle_delete(map_widget& map, user_database& udb)
         {
             auto id = map.drain_delete_waypoint_request();
             if(!id)
@@ -91,7 +83,7 @@ namespace osect
             return true;
         }
 
-        bool handle_move()
+        bool handle_move(map_widget& map, user_database& udb)
         {
             auto wp = map.drain_waypoint_drag_result();
             if(!wp)
@@ -110,21 +102,19 @@ namespace osect
             map.notify_waypoints_changed();
             return true;
         }
-    };
+    } // namespace
 
-    waypoint_session::waypoint_session(map_widget& map, user_database& udb) : pimpl(std::make_unique<impl>(map, udb))
+    waypoint_session::waypoint_session(map_widget& map, user_database& udb) : map_(map), udb_(udb)
     {
     }
-
-    waypoint_session::~waypoint_session() = default;
 
     bool waypoint_session::process()
     {
         bool changed = false;
-        changed |= pimpl->handle_create();
-        changed |= pimpl->handle_rename();
-        changed |= pimpl->handle_delete();
-        changed |= pimpl->handle_move();
+        changed |= handle_create(map_, udb_);
+        changed |= handle_rename(map_, udb_);
+        changed |= handle_delete(map_, udb_);
+        changed |= handle_move(map_, udb_);
         return changed;
     }
 }

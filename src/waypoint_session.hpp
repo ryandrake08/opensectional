@@ -1,7 +1,5 @@
 #pragma once
 
-#include <memory>
-
 namespace osect
 {
     class map_widget;
@@ -14,12 +12,11 @@ namespace osect
     // build reflects it.
     class waypoint_session
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        map_widget& map_;
+        user_database& udb_;
 
     public:
         waypoint_session(map_widget& map, user_database& udb);
-        ~waypoint_session();
 
         waypoint_session(const waypoint_session&) = delete;
         waypoint_session& operator=(const waypoint_session&) = delete;

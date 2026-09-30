@@ -1,12 +1,18 @@
 #include "elevation_source.hpp"
 #include "elevation_address.hpp"
+#include "elevation_tile.hpp"
+#include "tile_key.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <list>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace
@@ -253,18 +259,95 @@ namespace
 
 namespace osect
 {
-    elevation_source::elevation_source(std::filesystem::path path, size_t cache_capacity)
-        : path_(std::move(path)), cache_capacity_(cache_capacity)
+    struct elevation_source::impl
     {
-        if(cache_capacity_ == 0)
+        std::filesystem::path path;
+        bool available = false;
+        int min_zoom = 0;
+        int max_zoom = 0;
+        int tile_size = 0;
+        int skirt = 0;
+        bool has_water_mask = false;
+        int water_min_zoom = 0;
+        int water_max_zoom = 0;
+        double vertical_precision_m = 0.0;
+        std::string attribution;
+        std::string display_name;
+        std::string status_name;
+        std::string source_version;
+        bool surface_model = false;
+        size_t cache_capacity;
+
+        struct cache_entry
+        {
+            std::shared_ptr<const elevation_tile> tile;
+            std::list<tile_key>::iterator recency;
+        };
+        std::mutex cache_mutex;
+        std::unordered_map<tile_key, cache_entry> cache;
+        std::list<tile_key> recency;
+
+        impl(std::filesystem::path path, size_t cache_capacity) : path(std::move(path)), cache_capacity(cache_capacity)
+        {
+        }
+
+        // Loads a tile on demand and retains it in the LRU cache.
+        std::shared_ptr<const elevation_tile> load_tile(const tile_key& key)
+        {
+            std::unique_lock<std::mutex> lock(cache_mutex);
+            const auto cached = cache.find(key);
+            if(cached != cache.end())
+            {
+                touch(cached);
+                return cached->second.tile;
+            }
+            lock.unlock();
+
+            const std::filesystem::path tile_path =
+                path / std::to_string(key.z) / std::to_string(key.x) / (std::to_string(key.y) + ".png");
+            std::shared_ptr<const elevation_tile> tile;
+            if(std::filesystem::exists(tile_path))
+            {
+                tile = std::make_shared<elevation_tile>(elevation_tile::load(tile_path));
+            }
+
+            lock.lock();
+            const auto inserted = cache.emplace(key, cache_entry{tile, recency.end()});
+            if(!inserted.second)
+            {
+                touch(inserted.first);
+                return inserted.first->second.tile;
+            }
+            recency.push_front(key);
+            inserted.first->second.recency = recency.begin();
+            if(cache.size() > cache_capacity)
+            {
+                const tile_key oldest = recency.back();
+                cache.erase(oldest);
+                recency.pop_back();
+            }
+            return tile;
+        }
+
+        void touch(std::unordered_map<tile_key, cache_entry>::iterator entry)
+        {
+            recency.splice(recency.begin(), recency, entry->second.recency);
+            entry->second.recency = recency.begin();
+        }
+    };
+
+    elevation_source::elevation_source(std::filesystem::path path, size_t cache_capacity)
+        : pimpl(std::make_unique<impl>(std::move(path), cache_capacity))
+    {
+        if(pimpl->cache_capacity == 0)
         {
             throw std::invalid_argument("elevation tile cache capacity must be positive");
         }
-        if(path_.empty())
+        if(pimpl->path.empty())
         {
             return;
         }
-        const std::filesystem::path manifest_path = path_ / "manifest.json";
+        const std::filesystem::path manifest_path = pimpl->path / "manifest.json";
         if(!std::filesystem::exists(manifest_path))
         {
             return;
@@ -272,21 +355,22 @@ namespace osect
 
         const std::string manifest = read_file(manifest_path);
         (void)string_value(manifest, "dataset");
-        display_name_ = string_value(manifest, "dataset_display_name");
-        status_name_ = display_name_.substr(0, display_name_.find(" ("));
-        source_version_ = string_value(manifest, "source_version");
-        attribution_ = string_value(manifest, "attribution");
-        surface_model_ = bool_value(manifest, "is_surface_model");
+        pimpl->display_name = string_value(manifest, "dataset_display_name");
+        pimpl->status_name = pimpl->display_name.substr(0, pimpl->display_name.find(" ("));
+        pimpl->source_version = string_value(manifest, "source_version");
+        pimpl->attribution = string_value(manifest, "attribution");
+        pimpl->surface_model = bool_value(manifest, "is_surface_model");
         if(string_value(manifest, "vertical_datum") != "EGM2008")
         {
             throw std::runtime_error("manifest.json: vertical_datum must be EGM2008");
         }
-        vertical_precision_m_ = number_value(manifest, "vertical_precision_m");
-        tile_size_ = integer_value(manifest, "tile_pixels");
-        skirt_ = integer_value(manifest, "skirt_pixels");
-        min_zoom_ = integer_value(manifest, "min_zoom");
-        max_zoom_ = integer_value(manifest, "max_zoom");
-        if(vertical_precision_m_ <= 0.0 || tile_size_ == 0 || max_zoom_ < min_zoom_ || max_zoom_ > 30)
+        pimpl->vertical_precision_m = number_value(manifest, "vertical_precision_m");
+        pimpl->tile_size = integer_value(manifest, "tile_pixels");
+        pimpl->skirt = integer_value(manifest, "skirt_pixels");
+        pimpl->min_zoom = integer_value(manifest, "min_zoom");
+        pimpl->max_zoom = integer_value(manifest, "max_zoom");
+        if(pimpl->vertical_precision_m <= 0.0 || pimpl->tile_size == 0 || pimpl->max_zoom < pimpl->min_zoom ||
+           pimpl->max_zoom > 30)
         {
             throw std::runtime_error("manifest.json: invalid tile geometry");
         }
@@ -296,139 +380,98 @@ namespace osect
         // defensive check on a hand-edited manifest.
         if(const auto water = object_value(manifest, "water_mask"))
         {
-            has_water_mask_ = true;
-            water_min_zoom_ = integer_value(*water, "min_zoom");
-            water_max_zoom_ = integer_value(*water, "max_zoom");
-            if(water_max_zoom_ < water_min_zoom_)
+            pimpl->has_water_mask = true;
+            pimpl->water_min_zoom = integer_value(*water, "min_zoom");
+            pimpl->water_max_zoom = integer_value(*water, "max_zoom");
+            if(pimpl->water_max_zoom < pimpl->water_min_zoom)
             {
                 throw std::runtime_error("manifest.json: invalid water_mask zoom range");
             }
         }
 
-        available_ = true;
+        pimpl->available = true;
     }
+
+    elevation_source::~elevation_source() = default;
 
     bool elevation_source::available() const
     {
-        return available_;
+        return pimpl->available;
     }
 
     bool elevation_source::is_surface_model() const
     {
-        return surface_model_;
+        return pimpl->surface_model;
     }
 
     int elevation_source::min_zoom() const
     {
-        return min_zoom_;
+        return pimpl->min_zoom;
     }
 
     int elevation_source::max_zoom() const
     {
-        return max_zoom_;
+        return pimpl->max_zoom;
     }
 
     int elevation_source::tile_size() const
     {
-        return tile_size_;
+        return pimpl->tile_size;
     }
 
     int elevation_source::skirt() const
     {
-        return skirt_;
+        return pimpl->skirt;
     }
 
     bool elevation_source::has_water_mask() const
     {
-        return has_water_mask_;
+        return pimpl->has_water_mask;
     }
 
     int elevation_source::water_min_zoom() const
     {
-        return water_min_zoom_;
+        return pimpl->water_min_zoom;
     }
 
     int elevation_source::water_max_zoom() const
     {
-        return water_max_zoom_;
+        return pimpl->water_max_zoom;
     }
 
     double elevation_source::vertical_precision_m() const
     {
-        return vertical_precision_m_;
+        return pimpl->vertical_precision_m;
     }
 
     const std::filesystem::path& elevation_source::path() const
     {
-        return path_;
+        return pimpl->path;
     }
 
     const std::string& elevation_source::attribution() const
     {
-        return attribution_;
+        return pimpl->attribution;
     }
 
     data_source elevation_source::data_source_row() const
     {
-        if(!available_)
+        if(!pimpl->available)
         {
             return {"terrain", "Terrain unavailable", std::nullopt};
         }
-        return {"terrain", status_name_ + " " + source_version_, std::nullopt};
-    }
-
-    std::shared_ptr<const elevation_tile> elevation_source::load_tile(const tile_key& key) const
-    {
-        std::unique_lock<std::mutex> lock(cache_mutex_);
-        const auto cached = cache_.find(key);
-        if(cached != cache_.end())
-        {
-            touch(cached);
-            return cached->second.tile;
-        }
-        lock.unlock();
-
-        const std::filesystem::path tile_path =
-            path_ / std::to_string(key.z) / std::to_string(key.x) / (std::to_string(key.y) + ".png");
-        std::shared_ptr<const elevation_tile> tile;
-        if(std::filesystem::exists(tile_path))
-        {
-            tile = std::make_shared<elevation_tile>(elevation_tile::load(tile_path));
-        }
-
-        lock.lock();
-        const auto inserted = cache_.emplace(key, cache_entry{tile, recency_.end()});
-        if(!inserted.second)
-        {
-            touch(inserted.first);
-            return inserted.first->second.tile;
-        }
-        recency_.push_front(key);
-        inserted.first->second.recency = recency_.begin();
-        if(cache_.size() > cache_capacity_)
-        {
-            const tile_key oldest = recency_.back();
-            cache_.erase(oldest);
-            recency_.pop_back();
-        }
-        return tile;
-    }
-
-    void elevation_source::touch(std::unordered_map<tile_key, cache_entry>::iterator entry) const
-    {
-        recency_.splice(recency_.begin(), recency_, entry->second.recency);
-        entry->second.recency = recency_.begin();
+        return {"terrain", pimpl->status_name + " " + pimpl->source_version, std::nullopt};
     }
 
     std::optional<double> elevation_source::elevation_ft(double lat, double lon, int zoom) const
     {
-        if(!available_ || zoom < min_zoom_ || zoom > max_zoom_)
+        if(!pimpl->available || zoom < pimpl->min_zoom || zoom > pimpl->max_zoom)
         {
             return std::nullopt;
         }
 
-        const elevation_address address = address_elevation(lat, lon, zoom, tile_size_, skirt_);
-        const std::shared_ptr<const elevation_tile> tile = load_tile(address.key);
+        const elevation_address address = address_elevation(lat, lon, zoom, pimpl->tile_size, pimpl->skirt);
+        const std::shared_ptr<const elevation_tile> tile = pimpl->load_tile(address.key);
         if(!tile)
         {
             return std::nullopt;
@@ -444,7 +487,7 @@ namespace osect
     std::optional<double> elevation_source::maximum_elevation_ft(double lat_min, double lon_min, double lat_max,
                                                                  double lon_max) const
     {
-        if(!available_ || !std::isfinite(lat_min) || !std::isfinite(lon_min) || !std::isfinite(lat_max) ||
+        if(!pimpl->available || !std::isfinite(lat_min) || !std::isfinite(lon_min) || !std::isfinite(lat_max) ||
            !std::isfinite(lon_max) || lat_min >= lat_max)
         {
             return std::nullopt;
@@ -470,14 +513,14 @@ namespace osect
 
         const auto global_y = [this](double lat, int zoom)
         {
-            const elevation_address address = address_elevation(lat, 0.0, zoom, tile_size_, skirt_);
-            return address.key.y * tile_size_ + address.pixel_y - skirt_ + 0.5;
+            const elevation_address address = address_elevation(lat, 0.0, zoom, pimpl->tile_size, pimpl->skirt);
+            return address.key.y * pimpl->tile_size + address.pixel_y - pimpl->skirt + 0.5;
         };
 
-        int zoom = max_zoom_;
-        for(int candidate = min_zoom_; candidate <= max_zoom_; candidate++)
+        int zoom = pimpl->max_zoom;
+        for(int candidate = pimpl->min_zoom; candidate <= pimpl->max_zoom; candidate++)
         {
-            const double world_pixels = static_cast<double>(1 << candidate) * tile_size_;
+            const double world_pixels = static_cast<double>(1 << candidate) * pimpl->tile_size;
             const double height_pixels = global_y(lat_min, candidate) - global_y(lat_max, candidate);
             if(longitude_width / 360.0 * world_pixels >= 1.0 - 1e-9 && height_pixels >= 1.0 - 1e-9)
             {
@@ -487,7 +530,7 @@ namespace osect
         }
 
         const int tiles_per_axis = 1 << zoom;
-        const double world_pixels = static_cast<double>(tiles_per_axis) * tile_size_;
+        const double world_pixels = static_cast<double>(tiles_per_axis) * pimpl->tile_size;
         double longitude_start = std::fmod(lon_min + 180.0, 360.0);
         if(longitude_start < 0.0)
         {
@@ -509,24 +552,26 @@ namespace osect
             const auto last_x = static_cast<int64_t>(std::ceil(x_end)) - 1;
             const auto first_y = static_cast<int64_t>(std::floor(y_start));
             const auto last_y = static_cast<int64_t>(std::ceil(y_end)) - 1;
-            for(int64_t tile_y = first_y / tile_size_; tile_y <= last_y / tile_size_; tile_y++)
+            for(int64_t tile_y = first_y / pimpl->tile_size; tile_y <= last_y / pimpl->tile_size; tile_y++)
             {
-                for(int64_t tile_x = first_x / tile_size_; tile_x <= last_x / tile_size_; tile_x++)
+                for(int64_t tile_x = first_x / pimpl->tile_size; tile_x <= last_x / pimpl->tile_size; tile_x++)
                 {
                     const std::shared_ptr<const elevation_tile> tile =
-                        load_tile({zoom, static_cast<int>(tile_x), static_cast<int>(tile_y)});
+                        pimpl->load_tile({zoom, static_cast<int>(tile_x), static_cast<int>(tile_y)});
                     if(!tile)
                     {
                         continue;
                     }
-                    const int x_min =
-                        skirt_ + static_cast<int>(std::max(first_x, tile_x * tile_size_) - tile_x * tile_size_);
-                    const int x_max = skirt_ + static_cast<int>(std::min(last_x, (tile_x + 1) * tile_size_ - 1) -
-                                                                tile_x * tile_size_);
-                    const int y_min =
-                        skirt_ + static_cast<int>(std::max(first_y, tile_y * tile_size_) - tile_y * tile_size_);
-                    const int y_max = skirt_ + static_cast<int>(std::min(last_y, (tile_y + 1) * tile_size_ - 1) -
-                                                                tile_y * tile_size_);
+                    const int x_min = pimpl->skirt + static_cast<int>(std::max(first_x, tile_x * pimpl->tile_size) -
+                                                                      tile_x * pimpl->tile_size);
+                    const int x_max =
+                        pimpl->skirt + static_cast<int>(std::min(last_x, (tile_x + 1) * pimpl->tile_size - 1) -
+                                                        tile_x * pimpl->tile_size);
+                    const int y_min = pimpl->skirt + static_cast<int>(std::max(first_y, tile_y * pimpl->tile_size) -
+                                                                      tile_y * pimpl->tile_size);
+                    const int y_max =
+                        pimpl->skirt + static_cast<int>(std::min(last_y, (tile_y + 1) * pimpl->tile_size - 1) -
+                                                        tile_y * pimpl->tile_size);
                     const float tile_maximum = tile->maximum_m(x_min, y_min, x_max, y_max);
                     if(!std::isnan(tile_maximum) && (std::isnan(maximum_m) || tile_maximum > maximum_m))
                     {
