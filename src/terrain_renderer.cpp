@@ -309,25 +309,6 @@ namespace osect
         {
         }
 
-        std::filesystem::path tile_path(const tile_key& key) const
-        {
-            const int count = 1 << key.z;
-            const int x = (key.x % count + count) % count;
-            return source.path() / std::to_string(key.z) / std::to_string(x) / (std::to_string(key.y) + ".png");
-        }
-
-        std::filesystem::path water_tile_path(const tile_key& key) const
-        {
-            if(!source.has_water_mask())
-            {
-                return {};
-            }
-            const int count = 1 << key.z;
-            const int x = (key.x % count + count) % count;
-            return source.path() / "water" / std::to_string(key.z) / std::to_string(x) /
-                   (std::to_string(key.y) + ".png");
-        }
-
         float texel_meters(const tile_key& key) const
         {
             const auto bounds = tile_bounds_meters(key.x, key.y, key.z);
@@ -352,14 +333,12 @@ namespace osect
             }
             if(!loader.failed(key))
             {
-                loader.request_tile(key, tile_path(key), water_tile_path(key));
+                loader.request_tile(key, source.tile_path(key), source.water_tile_path(key));
                 return;
             }
             if(key.z > source.min_zoom())
             {
-                const int count = 1 << key.z;
-                const int x = (key.x % count + count) % count;
-                request({key.z - 1, x / 2, key.y / 2});
+                request(key.parent());
             }
         }
     };

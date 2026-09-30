@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data_source.hpp"
+#include "tile_key.hpp"
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -32,7 +33,11 @@ namespace osect
         int water_min_zoom() const;
         int water_max_zoom() const;
         double vertical_precision_m() const;
-        const std::filesystem::path& path() const;
+        // The height tile file for key (x wrapped).
+        std::filesystem::path tile_path(const tile_key& key) const;
+        // The water-mask tile file for key; empty when the tree has no
+        // water mask.
+        std::filesystem::path water_tile_path(const tile_key& key) const;
         const std::string& attribution() const;
         bool is_surface_model() const;
         // Returns the source metadata used by the data-status panel.

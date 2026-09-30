@@ -147,6 +147,21 @@ TEST_CASE("Elevation source reads the optional water_mask block")
     CHECK_FALSE(osect::elevation_source(without.path()).has_water_mask());
 }
 
+TEST_CASE("Elevation source builds tile paths from its tree layout")
+{
+    const std::string wm = "{\"source\": \"gshhg\", \"classes\": {\"0\": \"none\"}, \"min_zoom\": 0, \"max_zoom\": 6, "
+                           "\"bbox\": [-180, -60, 180, 84]}";
+    temporary_tree with("osect-elevation-source-paths-water", manifest("wet", 256, 2, 0, 6, 1.0, "EGM2008", wm));
+    temporary_tree without("osect-elevation-source-paths-dry", manifest("dry", 256, 2, 0, 6, 1.0));
+
+    const osect::elevation_source wet(with.path());
+    const osect::elevation_source dry(without.path());
+
+    CHECK(wet.tile_path({3, -1, 2}) == with.path() / "3" / "7" / "2.png");
+    CHECK(wet.water_tile_path({3, -1, 2}) == with.path() / "water" / "3" / "7" / "2.png");
+    CHECK(dry.water_tile_path({3, 1, 2}).empty());
+}
+
 TEST_CASE("Missing terrain tree is unavailable")
 {
     const osect::elevation_source source("missing-terrain-tree");

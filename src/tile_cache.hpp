@@ -155,8 +155,7 @@ namespace osect
         {
             auto zoom_delta = display_tile.z - ancestor_zoom;
             auto scale = 1 << zoom_delta;
-            auto n = 1 << display_tile.z;
-            auto wrapped_x = ((display_tile.x % n) + n) % n;
+            auto wrapped_x = display_tile.wrapped().x;
 
             u0 = static_cast<float>((wrapped_x % scale) / static_cast<double>(scale));
             v0 = static_cast<float>((display_tile.y % scale) / static_cast<double>(scale));

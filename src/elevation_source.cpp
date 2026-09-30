@@ -287,9 +287,7 @@ namespace osect
             return cache.get(key,
                              [this, &key]() -> std::shared_ptr<const elevation_tile>
                              {
-                                 const std::filesystem::path tile_path = path / std::to_string(key.z) /
-                                                                         std::to_string(key.x) /
-                                                                         (std::to_string(key.y) + ".png");
+                                 const std::filesystem::path tile_path = tile_file_path(path, key);
                                  if(!std::filesystem::exists(tile_path))
                                  {
                                      return nullptr;
@@ -403,9 +401,18 @@ namespace osect
         return pimpl->vertical_precision_m;
     }
 
-    const std::filesystem::path& elevation_source::path() const
+    std::filesystem::path elevation_source::tile_path(const tile_key& key) const
     {
-        return pimpl->path;
+        return tile_file_path(pimpl->path, key);
+    }
+
+    std::filesystem::path elevation_source::water_tile_path(const tile_key& key) const
+    {
+        if(!pimpl->has_water_mask)
+        {
+            return {};
+        }
+        return tile_file_path(pimpl->path / "water", key);
     }
 
     const std::string& elevation_source::attribution() const

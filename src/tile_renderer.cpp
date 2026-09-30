@@ -90,14 +90,6 @@ namespace osect
         {
         }
 
-        std::filesystem::path tile_file_path(const tile_key& key) const
-        {
-            // Wrap x into [0, n-1] for file path (tiles repeat horizontally)
-            auto n = 1 << key.z;
-            auto wx = ((key.x % n) + n) % n;
-            return tile_path / std::to_string(key.z) / std::to_string(wx) / (std::to_string(key.y) + ".png");
-        }
-
         // Request a tile for loading. If it previously failed, walk up
         // the zoom tree and request the nearest untried ancestor.
         void request_tile(const tile_key& key)
@@ -109,16 +101,14 @@ namespace osect
 
             if(!loader.is_failed(key))
             {
-                loader.request(key, tile_file_path(key));
+                loader.request(key, tile_file_path(tile_path, key));
                 return;
             }
 
             // This tile has no data — request its parent
             if(key.z > 0)
             {
-                auto n = 1 << key.z;
-                auto wx = ((key.x % n) + n) % n;
-                request_tile({key.z - 1, wx / 2, key.y / 2});
+                request_tile(key.parent());
             }
         }
 
