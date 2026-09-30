@@ -224,6 +224,17 @@ if(OSECT_VENDOR_DEPS)
     set_source_files_properties("${sdl3_image_SOURCE_DIR}/src/IMG_svg.c"
         DIRECTORY "${sdl3_image_SOURCE_DIR}"
         PROPERTIES COMPILE_OPTIONS $<$<C_COMPILER_ID:GNU>:-w>)
+
+    # freetype's internal zlib copy (zutil.h) defines OS_CODE in both its
+    # MACOS and __APPLE__ checks, which Apple Clang reports on macOS.
+    target_compile_options(freetype PRIVATE $<$<C_COMPILER_ID:AppleClang,Clang>:-Wno-macro-redefined>)
+
+    # harfbuzz's hb.hh turns on extra warnings for its own development with
+    # "#pragma GCC diagnostic warning" (-Wformat=2, -Wmissing-format-attribute,
+    # ...), which override command-line flags; its CoreText shaper (macOS)
+    # and printf-style helpers (MinGW) trip them. harfbuzz's switch drops
+    # those pragmas and keeps its error pragmas.
+    target_compile_definitions(harfbuzz PRIVATE HB_NO_PRAGMA_GCC_DIAGNOSTIC_WARNING)
 else()
     # System mode (default for contributor builds). Each dependency
     # comes from the host's package manager — apt, brew, pacman/MSYS2.
