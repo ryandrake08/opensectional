@@ -56,7 +56,8 @@
             "description": "macos-vendored plus installer configuration and MoltenVK bundling. Building it produces the DMG. Requires the bundled data assets.",
             "binaryDir": "${sourceDir}/build-macos-package",
             "cacheVariables": {
-                "OSECT_ENABLE_PACKAGING": "ON"
+                "OSECT_ENABLE_PACKAGING": "ON",
+                "BUILD_TESTING": "OFF"
             }
         },
         {
@@ -81,7 +82,8 @@
             "description": "linux-vendored plus installer configuration. Building it produces an AppImage and a .tar.xz of the same tree. Requires the bundled data assets and CMake 4.2+.",
             "binaryDir": "${sourceDir}/build-linux-package",
             "cacheVariables": {
-                "OSECT_ENABLE_PACKAGING": "ON"
+                "OSECT_ENABLE_PACKAGING": "ON",
+                "BUILD_TESTING": "OFF"
             }
         },
         {
@@ -107,7 +109,8 @@
             "description": "mingw-vendored plus installer configuration. Building it produces the NSIS installer. Requires the bundled data assets and NSIS.",
             "binaryDir": "${sourceDir}/build-mingw-package",
             "cacheVariables": {
-                "OSECT_ENABLE_PACKAGING": "ON"
+                "OSECT_ENABLE_PACKAGING": "ON",
+                "BUILD_TESTING": "OFF"
             }
         }
     ],
