@@ -31,9 +31,9 @@ namespace sdl
          *                         "direct3d12"), or nullptr for auto-selection
          * @param vsync Enable vsync (default: false for lowest latency)
          * @param debug_mode Request backend debug/validation features
-         *                   (default: false; on Vulkan, requires the LunarG
-         *                   loader and validation layer to be reachable
-         *                   at runtime)
+         *                   (default: false; on Vulkan, requires a Vulkan
+         *                   loader and the Khronos validation layer to be
+         *                   reachable at runtime)
          * @throws std::runtime_error if device creation or window claim fails
          */
         explicit device(const sdl::window& win, const char* preferred_driver, bool vsync = false,

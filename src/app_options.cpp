@@ -23,7 +23,7 @@ namespace osect
 #endif
                 << "\n"
                 << "  --vsync                    Enable vsync (default: off, lowest latency)\n"
-                << "  --gpu_debug                Enable GPU debug/validation (Vulkan: requires LunarG SDK)\n"
+                << "  --gpu_debug                Enable GPU debug/validation (Vulkan: requires validation layers)\n"
                 << "  -b, --basemap <path>       Basemap tile directory\n"
                 << "  -t, --terrain <path>       Terrain tile directory\n"
                 << "  -d, --database <osect.db>  NASR SQLite database\n"
@@ -241,7 +241,8 @@ namespace osect
 #elif defined(_WIN32)
             throw std::runtime_error(
                 "--gpu direct3d12 not available: this build was configured without D3D12 support."
-                " Rebuild with -DOSECT_ENABLE_D3D12=ON and dxc on PATH (or in $VULKAN_SDK/bin).");
+                " Rebuild with -DOSECT_ENABLE_D3D12=ON (the default); on build hosts without a"
+                " prebuilt dxc (macOS, Linux arm64), dxc must also be on PATH.");
 #else
             throw std::runtime_error("--gpu direct3d12 not available: D3D12 is supported on Windows only.");
 #endif

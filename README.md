@@ -73,7 +73,7 @@ Two paths exist:
 | doctest | in-repo | Unit-test harness |
 | Noto Sans (Regular) | in-repo | Embedded UI font |
 
-Plus `xxd` (vim) for embedding shaders/font as C headers, and the shader cross-compilation toolchain — `glslangValidator` (or `dxc`) for HLSL → SPIR-V, and the `spirv-cross` headers and libraries on macOS for SPIR-V → MSL. Each per-platform package list below includes these. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) bundles all of them and is sufficient on its own, but is **not required** — the build searches `$VULKAN_SDK/bin` first when set, then falls through to `PATH`, so distro / Homebrew / MacPorts packages work without any Vulkan SDK install. The SDK is only strictly needed on Windows when you want the experimental D3D12 backend, which requires `dxc` (the Microsoft compiler that produces DXIL bytecode). SDL3 must be 3.2 or newer.
+Plus `xxd` (vim) for embedding shaders/font as C headers, and the shader cross-compilation toolchain — `glslangValidator` (or `dxc`) for HLSL → SPIR-V, and the `spirv-cross` headers and libraries on macOS for SPIR-V → MSL. Each per-platform package list below includes these. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) bundles all of them and is sufficient on its own, but is **not required** — the build searches `$VULKAN_SDK/bin` first when set, then falls through to `PATH`, so distro / Homebrew / MacPorts packages work without any Vulkan SDK install. The experimental D3D12 backend for Windows also needs `dxc` (the Microsoft compiler that produces DXIL bytecode); see [Shader Compiler Toolchain](#shader-compiler-toolchain). SDL3 must be 3.2 or newer.
 
 ### macOS (MacPorts)
 
@@ -118,12 +118,12 @@ pkg install cmake pkgconf vim sdl3 sdl3-image sdl3-ttf curl sqlite3 glslang
 ### Windows (MSYS2 / MinGW-w64)
 
 ```bash
-pacman -S mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake \
+pacman -S --needed git vim \
+          mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja \
           mingw-w64-x86_64-pkgconf \
-          mingw-w64-x86_64-SDL3 mingw-w64-x86_64-SDL3_image mingw-w64-x86_64-SDL3_ttf \
-          mingw-w64-x86_64-curl mingw-w64-x86_64-zlib mingw-w64-x86_64-sqlite3 \
-          mingw-w64-x86_64-vulkan-headers mingw-w64-x86_64-vulkan-loader \
-          mingw-w64-x86_64-shaderc
+          mingw-w64-x86_64-sdl3 mingw-w64-x86_64-sdl3-image mingw-w64-x86_64-sdl3-ttf \
+          mingw-w64-x86_64-curl mingw-w64-x86_64-sqlite3 \
+          mingw-w64-x86_64-glslang
 ```
 
 MSVC is not supported. See [BUILD-WINDOWS.md](BUILD-WINDOWS.md) for a step-by-step walkthrough.
@@ -212,7 +212,7 @@ cmake --build --preset mingw-package -j
 
 The resulting `osect.exe` is self-contained: the only DLLs shipped alongside it are the MinGW C++ runtime (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`). Output: `build-mingw-package/OpenSectional-X.Y.Z-win64.exe`.
 
-To additionally include the experimental D3D12 backend, install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) on the build host so `dxc` is available; otherwise the configure step skips DXIL automatically and the binary builds Vulkan-only.
+The experimental D3D12 backend is included automatically: on a Linux x86_64 build host the configure step downloads a pinned prebuilt `dxc` to compile its shaders. On a macOS or Linux arm64 host, put `dxc` on `PATH` to include it; otherwise the binary builds Vulkan-only.
 
 ### Installer signing — macOS
 
@@ -302,14 +302,14 @@ export SDL_VULKAN_LIBRARY=/usr/local/lib/libvulkan.1.dylib
 
 The loader finds MoltenVK and the Khronos validation layer through the SDK's own ICD / layer manifests. Do **not** also `source setup-env.sh` from the SDK — it exports `DYLD_LIBRARY_PATH=$VULKAN_SDK/lib`, which intercepts every leaf-name `dlopen` in the process. Installing both the Vulkan SDK and a package-manager MoltenVK is redundant (the SDK also ships `glslangValidator` / `spirv-cross`, already covered by Homebrew/MacPorts) — pick one, and use the SDK only if you want the validation layer.
 
-A D3D12 backend is available on Windows but is **experimental** — Vulkan has shown better performance in testing and is the recommended Windows backend. The D3D12 path is built whenever `dxc` is available at configure time; pass `-DOSECT_ENABLE_D3D12=OFF` (or omit `dxc` from the toolchain) to skip it. Builds without DXIL reject `--gpu direct3d12` at startup with a descriptive error.
+A D3D12 backend is available on Windows but is **experimental** — Vulkan has shown better performance in testing and is the recommended Windows backend. It is built by default for Windows targets whenever `dxc` is available (see [Shader Compiler Toolchain](#shader-compiler-toolchain)); pass `-DOSECT_ENABLE_D3D12=OFF` to skip it. Builds without DXIL reject `--gpu direct3d12` at startup with a descriptive error.
 
 ### Shader Compiler Toolchain
 
 Shaders are written in HLSL and cross-compiled during the build. The build searches `$VULKAN_SDK/bin` (when set) before falling through to `PATH`, so distro / Homebrew / MacPorts packages work without any Vulkan SDK install. The pipeline:
 
 - **HLSL → SPIR-V**: `glslangValidator` (preferred) or `dxc`. The build picks whichever it finds; output is functionally equivalent.
-- **HLSL → DXIL**: `dxc`. Optional — only used when building with the experimental D3D12 backend (Windows targets, controlled by `-DOSECT_ENABLE_D3D12=ON`, default ON). DXIL is Microsoft-defined and has no alternative producer. The configure step auto-disables D3D12 if `dxc` is not found; the resulting Windows binary still runs via Vulkan. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) ships `dxc` on all platforms.
+- **HLSL → DXIL**: `dxc`. Optional — only used when building with the experimental D3D12 backend (Windows targets, controlled by `-DOSECT_ENABLE_D3D12=ON`, default ON). DXIL is Microsoft-defined and has no alternative producer. For Windows targets, the build downloads a pinned prebuilt `dxc` when the build host is Linux x86_64 or Windows (x64 / arm64); on other hosts (macOS, Linux arm64) it uses a `dxc` found on `PATH` or in `$VULKAN_SDK/bin`, and otherwise builds without D3D12 (the Windows binary still runs via Vulkan). The pin lives in `cmake/dxc.cmake`. `dxc` computes the DXIL validation hash itself, so no separate validator library is needed.
 - **SPIR-V → MSL**: the `spirv-cross` headers and libraries, linked into a small build-time tool (`shaders/spirv_to_msl.cpp`) that also remaps resource bindings for SDL GPU. Required only on macOS for the Metal backend. The `spirv-cross` command-line tool isn't used.
 - **xxd**: embeds shader bytecode as C headers. Ships with `vim` on most systems.
 - **Xcode** (macOS only): the build always embeds MSL source. When full Xcode is installed it also precompiles that MSL with `metal` / `metallib` to `.metallib` bytecode and embeds it, which catches MSL errors at build time and skips the runtime compile. With `--gpu metal` the app uses the `.metallib` when present, and otherwise has the Metal driver compile the embedded MSL at first use — same rendering, just a small per-shader compile on the first frame. The default Vulkan backend is unaffected either way (MoltenVK translates the SPIR-V itself). The build detects `metal` automatically; `-DOSECT_ENABLE_METALLIB=OFF` forces the MSL-only path even with Xcode installed, e.g. to test it. Because the choice follows the build machine, a DMG built with only the Command Line Tools ships MSL source only. (Apple no longer ships a standalone Metal compiler download.)
@@ -319,7 +319,7 @@ Shaders are written in HLSL and cross-compiled during the build. The build searc
 Shaders are cross-compiled automatically during the build:
 - macOS: HLSL → SPIR-V (always) + HLSL → SPIR-V → MSL source (always) + MSL → .metallib (when full Xcode is available)
 - Linux: HLSL → SPIR-V
-- Windows: HLSL → SPIR-V (always) + HLSL → DXIL (when `dxc` is available and `OSECT_ENABLE_D3D12=ON`, which is the default)
+- Windows: HLSL → SPIR-V (always) + HLSL → DXIL (when `OSECT_ENABLE_D3D12=ON`, the default, and `dxc` is available — downloaded automatically on Linux x86_64 and Windows build hosts)
 
 ## Data Preparation
 

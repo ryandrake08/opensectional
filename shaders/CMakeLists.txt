@@ -65,6 +65,15 @@ endif()
 find_program(GLSLANG glslangValidator HINTS "${VULKAN_SDK_BIN}")
 find_program(DXC dxc HINTS "${VULKAN_SDK_BIN}")
 
+# Windows targets with D3D12: prefer the pinned prebuilt dxc when Microsoft
+# publishes one for this build host (see cmake/dxc.cmake).
+if(WIN32 AND OSECT_ENABLE_D3D12)
+    include(${CMAKE_SOURCE_DIR}/cmake/dxc.cmake)
+    if(OSECT_DXC)
+        set(DXC "${OSECT_DXC}")
+    endif()
+endif()
+
 if(GLSLANG)
     set(SPIRV_COMPILER "glslang")
     message(STATUS "HLSL → SPIR-V: ${GLSLANG}")
@@ -77,18 +86,19 @@ else()
         "  Debian/Ubuntu: apt install glslang-tools\n"
         "  Alpine:        apk add glslang\n"
         "  macOS:         brew install glslang   (or 'sudo port install glslang')\n"
-        "  Windows:       install the Vulkan SDK and source its setup script")
+        "  MSYS2:         pacman -S mingw-w64-x86_64-glslang")
 endif()
 
-# D3D12 backend is experimental and opt-in. Built only on Windows when both the
-# OSECT_ENABLE_D3D12 option is ON and dxc is available (DXIL has no other producer).
-# Without DXIL the binary still runs on Windows via the Vulkan backend.
+# D3D12 backend (experimental). Built for Windows targets when OSECT_ENABLE_D3D12
+# is ON (the default) and dxc is available: the pinned prebuilt one on Linux
+# x86_64 / Windows build hosts, otherwise one on PATH (DXIL has no other
+# producer). Without DXIL the binary still runs on Windows via Vulkan.
 if(WIN32 AND OSECT_ENABLE_D3D12 AND DXC)
     set(OSECT_BUILD_D3D12 TRUE)
     message(STATUS "D3D12 backend: enabled (dxc=${DXC})")
 elseif(WIN32 AND OSECT_ENABLE_D3D12)
     set(OSECT_BUILD_D3D12 FALSE)
-    message(STATUS "D3D12 backend: disabled (OSECT_ENABLE_D3D12=ON but dxc not found)")
+    message(STATUS "D3D12 backend: disabled (no prebuilt dxc for this build host and none on PATH)")
 else()
     set(OSECT_BUILD_D3D12 FALSE)
 endif()
