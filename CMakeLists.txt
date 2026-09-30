@@ -695,7 +695,7 @@ if(OSECT_ENABLE_PACKAGING)
         install(DIRECTORY "${BUNDLED_TERRAIN}" DESTINATION "${_rsrc}")
 
         # Bundle MoltenVK so the .app's Vulkan backend works on a fresh Mac
-        # with no Vulkan SDK / Homebrew installed. SDL3 searches
+        # with no separately installed Vulkan runtime. SDL3 searches
         # @executable_path/../Frameworks/libMoltenVK.dylib first when loading
         # Vulkan on macOS, so this just works once the file is in place. The
         # precompiled universal dylib is fetched by cmake/vendored_deps.cmake;

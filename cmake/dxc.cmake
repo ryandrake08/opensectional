@@ -4,7 +4,7 @@
 # host) and Windows x64 / arm64 (native MSYS2 builds); on those hosts the
 # archive is fetched into <build>/_deps/ and OSECT_DXC is set to its dxc.
 # Other hosts (macOS, Linux arm64) have no prebuilt binary; OSECT_DXC stays
-# unset and the caller falls back to a dxc found on PATH / $VULKAN_SDK/bin.
+# unset and the caller falls back to a dxc found on PATH.
 #
 # dxc computes the DXIL validation hash itself, so the separate validator
 # library (dxil.dll / libdxil.so) isn't needed for D3D12 to accept shaders.

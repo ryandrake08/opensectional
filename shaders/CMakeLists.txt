@@ -46,24 +46,14 @@ if(APPLE)
     set(OSECT_BUILD_METALLIB ${OSECT_BUILD_METALLIB} PARENT_SCOPE)
 endif()
 
-# VULKAN_SDK is an optional hint for finding shader tools.
-# When set (typical on macOS/Windows), its bin/ directory is searched first.
-# When unset (e.g. Alpine), tools are found via the system PATH.
-if(DEFINED ENV{VULKAN_SDK})
-    set(VULKAN_SDK_PATH "$ENV{VULKAN_SDK}" CACHE PATH "Path to Vulkan SDK")
-    set(VULKAN_SDK_BIN "${VULKAN_SDK_PATH}/bin")
-else()
-    set(VULKAN_SDK_BIN "")
-endif()
-
 find_program(XXD xxd)
 if(NOT XXD)
     message(FATAL_ERROR "xxd not found - required for embedding shader bytecode")
 endif()
 
 # Find HLSL → SPIR-V compilers. Either works; glslang preferred if both present.
-find_program(GLSLANG glslangValidator HINTS "${VULKAN_SDK_BIN}")
-find_program(DXC dxc HINTS "${VULKAN_SDK_BIN}")
+find_program(GLSLANG glslangValidator)
+find_program(DXC dxc)
 
 # Windows targets with D3D12: prefer the pinned prebuilt dxc when Microsoft
 # publishes one for this build host (see cmake/dxc.cmake).
@@ -107,12 +97,12 @@ set(OSECT_BUILD_D3D12 ${OSECT_BUILD_D3D12} PARENT_SCOPE)
 if(APPLE)
     # SPIR-V → MSL runs through spirv_to_msl, a build-host tool linked against
     # the spirv-cross libraries; the spirv-cross CLI itself is not used.
-    find_path(SPIRV_CROSS_INCLUDE_DIR spirv_cross/spirv_msl.hpp HINTS "${VULKAN_SDK_PATH}/include")
-    find_library(SPIRV_CROSS_MSL_LIBRARY spirv-cross-msl HINTS "${VULKAN_SDK_PATH}/lib")
-    find_library(SPIRV_CROSS_GLSL_LIBRARY spirv-cross-glsl HINTS "${VULKAN_SDK_PATH}/lib")
-    find_library(SPIRV_CROSS_CORE_LIBRARY spirv-cross-core HINTS "${VULKAN_SDK_PATH}/lib")
+    find_path(SPIRV_CROSS_INCLUDE_DIR spirv_cross/spirv_msl.hpp)
+    find_library(SPIRV_CROSS_MSL_LIBRARY spirv-cross-msl)
+    find_library(SPIRV_CROSS_GLSL_LIBRARY spirv-cross-glsl)
+    find_library(SPIRV_CROSS_CORE_LIBRARY spirv-cross-core)
     if(NOT SPIRV_CROSS_INCLUDE_DIR OR NOT SPIRV_CROSS_MSL_LIBRARY OR NOT SPIRV_CROSS_GLSL_LIBRARY OR NOT SPIRV_CROSS_CORE_LIBRARY)
-        message(FATAL_ERROR "spirv-cross headers and libraries not found - required for Metal shader compilation. Install via 'brew install spirv-cross', 'sudo port install spirv-cross', or the Vulkan SDK.")
+        message(FATAL_ERROR "spirv-cross headers and libraries not found - required for Metal shader compilation. Install via 'brew install spirv-cross' or 'sudo port install spirv-cross'.")
     endif()
 
     add_executable(spirv_to_msl spirv_to_msl.cpp)

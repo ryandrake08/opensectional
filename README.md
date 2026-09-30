@@ -73,7 +73,7 @@ Two paths exist:
 | doctest | in-repo | Unit-test harness |
 | Noto Sans (Regular) | in-repo | Embedded UI font |
 
-Plus `xxd` (vim) for embedding shaders/font as C headers, and the shader cross-compilation toolchain — `glslangValidator` (or `dxc`) for HLSL → SPIR-V, and the `spirv-cross` headers and libraries on macOS for SPIR-V → MSL. Each per-platform package list below includes these. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) bundles all of them and is sufficient on its own, but is **not required** — the build searches `$VULKAN_SDK/bin` first when set, then falls through to `PATH`, so distro / Homebrew / MacPorts packages work without any Vulkan SDK install. The experimental D3D12 backend for Windows also needs `dxc` (the Microsoft compiler that produces DXIL bytecode); see [Shader Compiler Toolchain](#shader-compiler-toolchain). SDL3 must be 3.2 or newer.
+Plus `xxd` (vim) for embedding shaders/font as C headers, and the shader cross-compilation toolchain — `glslangValidator` (or `dxc`) for HLSL → SPIR-V, and the `spirv-cross` headers and libraries on macOS for SPIR-V → MSL. Each per-platform package list below includes these. The experimental D3D12 backend for Windows also needs `dxc` (the Microsoft compiler that produces DXIL bytecode); see [Shader Compiler Toolchain](#shader-compiler-toolchain). SDL3 must be 3.2 or newer.
 
 ### macOS (MacPorts)
 
@@ -198,7 +198,7 @@ cmake --preset macos-package
 cmake --build --preset macos-package -j
 ```
 
-Also fetches a precompiled universal MoltenVK dylib and ships it in `Contents/Frameworks/`, so the .app runs without requiring the user to install Vulkan SDK or Homebrew. Builds a universal (arm64+x86_64) binary via `cmake/macos-toolchain.cmake` (`CMAKE_OSX_ARCHITECTURES=arm64;x86_64`, `CMAKE_OSX_DEPLOYMENT_TARGET=11.0`). Build on a machine with full Xcode so the DMG includes precompiled `.metallib` shaders for the Metal backend (see [Shader Compiler Toolchain](#shader-compiler-toolchain)). Output: `build-macos-package/OpenSectional-X.Y.Z-Darwin.dmg`.
+Also fetches a precompiled universal MoltenVK dylib and ships it in `Contents/Frameworks/`, so the .app runs without a separately installed Vulkan runtime. Builds a universal (arm64+x86_64) binary via `cmake/macos-toolchain.cmake` (`CMAKE_OSX_ARCHITECTURES=arm64;x86_64`, `CMAKE_OSX_DEPLOYMENT_TARGET=11.0`). Build on a machine with full Xcode so the DMG includes precompiled `.metallib` shaders for the Metal backend (see [Shader Compiler Toolchain](#shader-compiler-toolchain)). Output: `build-macos-package/OpenSectional-X.Y.Z-Darwin.dmg`.
 
 The DMG is **not signed by a Developer ID and not notarized.** First-launch instructions and the optional Developer ID / notarization workflow are documented in [Installer signing](#installer-signing) below.
 
@@ -311,7 +311,7 @@ The macOS bundle additionally needs `osect.png` for icon generation (via `sips` 
 
 ### GPU Backend
 
-OpenSectional defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` to override on macOS. The shader format is selected at runtime based on the active backend. The packaged macOS build includes MoltenVK in `OpenSectional.app/Contents/Frameworks/`, so the .app runs out of the box without requiring the user to install Vulkan SDK or Homebrew.
+OpenSectional defaults to Vulkan on all platforms (via MoltenVK on macOS). Use `--gpu metal` to override on macOS. The shader format is selected at runtime based on the active backend. The packaged macOS build includes MoltenVK in `OpenSectional.app/Contents/Frameworks/`, so the .app runs out of the box without a separately installed Vulkan runtime.
 
 **Vulkan on macOS for development.** The bundled MoltenVK only lands in packaged builds (`OSECT_ENABLE_PACKAGING=ON`); a contributor build (`release`, `debug`, or `relwithdebinfo` preset) carries no MoltenVK of its own and needs one installed elsewhere:
 
@@ -329,23 +329,16 @@ export SDL_VULKAN_LIBRARY=/opt/local/lib/libMoltenVK.dylib   # MacPorts; adjust 
 
 None of this applies to Metal — `--gpu metal` links against Apple system frameworks with no extra deps and is the path of least resistance for day-to-day macOS dev.
 
-**Validation layers (`--gpu_debug`).** Pointing `SDL_VULKAN_LIBRARY` straight at `libMoltenVK.dylib` loads MoltenVK with no Vulkan loader in the chain, so there are no layers for `--gpu_debug` to enable. For validation, install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (keep its "System Install" component, which copies a loader to `/usr/local/lib`) and point the hint at the *loader* instead:
-
-```sh
-export SDL_VULKAN_LIBRARY=/usr/local/lib/libvulkan.1.dylib
-./build/osect --gpu vulkan --gpu_debug
-```
-
-The loader finds MoltenVK and the Khronos validation layer through the SDK's own ICD / layer manifests. Do **not** also `source setup-env.sh` from the SDK — it exports `DYLD_LIBRARY_PATH=$VULKAN_SDK/lib`, which intercepts every leaf-name `dlopen` in the process. Installing both the Vulkan SDK and a package-manager MoltenVK is redundant (the SDK also ships `glslangValidator` / `spirv-cross`, already covered by Homebrew/MacPorts) — pick one, and use the SDK only if you want the validation layer.
+**Validation layers (`--gpu_debug`).** Validation needs a Vulkan loader and the Khronos validation layer (from your package manager or the Vulkan SDK), with `SDL_VULKAN_LIBRARY` pointing at the loader rather than at `libMoltenVK.dylib`.
 
 A D3D12 backend is available on Windows but is **experimental** — Vulkan has shown better performance in testing and is the recommended Windows backend. It is built by default for Windows targets whenever `dxc` is available (see [Shader Compiler Toolchain](#shader-compiler-toolchain)); pass `-DOSECT_ENABLE_D3D12=OFF` to skip it. Builds without DXIL reject `--gpu direct3d12` at startup with a descriptive error.
 
 ### Shader Compiler Toolchain
 
-Shaders are written in HLSL and cross-compiled during the build. The build searches `$VULKAN_SDK/bin` (when set) before falling through to `PATH`, so distro / Homebrew / MacPorts packages work without any Vulkan SDK install. The pipeline:
+Shaders are written in HLSL and cross-compiled during the build, with tools found on `PATH` (distro, Homebrew, MacPorts, or MSYS2 packages). The pipeline:
 
 - **HLSL → SPIR-V**: `glslangValidator` (preferred) or `dxc`. The build picks whichever it finds; output is functionally equivalent.
-- **HLSL → DXIL**: `dxc`. Optional — only used when building with the experimental D3D12 backend (Windows targets, controlled by `-DOSECT_ENABLE_D3D12=ON`, default ON). DXIL is Microsoft-defined and has no alternative producer. For Windows targets, the build downloads a pinned prebuilt `dxc` when the build host is Linux x86_64 or Windows (x64 / arm64); on other hosts (macOS, Linux arm64) it uses a `dxc` found on `PATH` or in `$VULKAN_SDK/bin`, and otherwise builds without D3D12 (the Windows binary still runs via Vulkan). The pin lives in `cmake/dxc.cmake`. `dxc` computes the DXIL validation hash itself, so no separate validator library is needed.
+- **HLSL → DXIL**: `dxc`. Optional — only used when building with the experimental D3D12 backend (Windows targets, controlled by `-DOSECT_ENABLE_D3D12=ON`, default ON). DXIL is Microsoft-defined and has no alternative producer. For Windows targets, the build downloads a pinned prebuilt `dxc` when the build host is Linux x86_64 or Windows (x64 / arm64); on other hosts (macOS, Linux arm64) it uses a `dxc` found on `PATH`, and otherwise builds without D3D12 (the Windows binary still runs via Vulkan). The pin lives in `cmake/dxc.cmake`. `dxc` computes the DXIL validation hash itself, so no separate validator library is needed.
 - **SPIR-V → MSL**: the `spirv-cross` headers and libraries, linked into a small build-time tool (`shaders/spirv_to_msl.cpp`) that also remaps resource bindings for SDL GPU. Required only on macOS for the Metal backend. The `spirv-cross` command-line tool isn't used.
 - **xxd**: embeds shader bytecode as C headers. Ships with `vim` on most systems.
 - **Xcode** (macOS only): the build always embeds MSL source. When full Xcode is installed it also precompiles that MSL with `metal` / `metallib` to `.metallib` bytecode and embeds it, which catches MSL errors at build time and skips the runtime compile. With `--gpu metal` the app uses the `.metallib` when present, and otherwise has the Metal driver compile the embedded MSL at first use — same rendering, just a small per-shader compile on the first frame. The default Vulkan backend is unaffected either way (MoltenVK translates the SPIR-V itself). The build detects `metal` automatically; `-DOSECT_ENABLE_METALLIB=OFF` forces the MSL-only path even with Xcode installed, e.g. to test it. Because the choice follows the build machine, a DMG built with only the Command Line Tools ships MSL source only. (Apple no longer ships a standalone Metal compiler download.)
