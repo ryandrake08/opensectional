@@ -74,6 +74,12 @@ if(OSECT_VENDOR_DEPS)
     set(SDL_STATIC ON  CACHE BOOL "" FORCE)
     set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
     set(SDL_VULKAN ON CACHE BOOL "" FORCE)
+
+    # osect initializes only SDL's video subsystem, plus the GPU API and the
+    # renderer SDL_ttf's text engine uses.
+    foreach(_sdl_subsystem AUDIO CAMERA JOYSTICK HAPTIC HIDAPI POWER SENSOR DIALOG TRAY)
+        set(SDL_${_sdl_subsystem} OFF CACHE BOOL "" FORCE)
+    endforeach()
     add_subdirectory(${sdl3_SOURCE_DIR} ${sdl3_BINARY_DIR} EXCLUDE_FROM_ALL)
 
     # zlib — built in-tree as `zlibstatic`. Added before SDL_image and

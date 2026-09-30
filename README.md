@@ -216,32 +216,30 @@ The experimental D3D12 backend is included automatically: on a Linux x86_64 buil
 
 ### Linux AppImage
 
-The vendored SDL is compiled against the X11, Wayland, audio, D-Bus, and udev development headers (it loads those libraries from the user's system at runtime), and its configure step stops at the first one missing. On the build host, install SDL's documented dependency set plus the project's shader and embedding tools. Ubuntu 22.04+ / Debian 12+:
+The vendored SDL is built with only the subsystems osect uses (video, GPU, and the renderer), compiled against the X11, Wayland, D-Bus, and udev development headers; it loads those libraries from the user's system at runtime, and its configure step stops at the first one missing. On the build host, install those packages plus the project's shader and embedding tools. Ubuntu 22.04+ / Debian 12+:
 
 ```bash
 sudo apt install build-essential pkg-config xxd glslang-tools \
-    libasound2-dev libpulse-dev libaudio-dev libfribidi-dev libjack-dev libsndio-dev \
-    libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev \
+    libfribidi-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev \
     libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev \
     libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
     libdbus-1-dev libibus-1.0-dev libudev-dev libthai-dev \
-    libpipewire-0.3-dev libwayland-dev libdecor-0-dev liburing-dev
+    libwayland-dev libdecor-0-dev liburing-dev
 ```
 
 Fedora:
 
 ```bash
 sudo dnf install gcc-c++ make pkgconf vim-common glslang \
-    alsa-lib-devel fribidi-devel pulseaudio-libs-devel pipewire-devel \
-    libX11-devel libXext-devel libXrandr-devel libXcursor-devel libXfixes-devel \
+    fribidi-devel libX11-devel libXext-devel libXrandr-devel libXcursor-devel libXfixes-devel \
     libXi-devel libXScrnSaver-devel libXtst-devel dbus-devel ibus-devel \
     systemd-devel mesa-libGL-devel libxkbcommon-devel mesa-libGLES-devel \
     mesa-libEGL-devel vulkan-devel wayland-devel wayland-protocols-devel \
-    libdrm-devel mesa-libgbm-devel libusb1-devel libdecor-devel \
-    pipewire-jack-audio-connection-kit-devel libthai-devel liburing-devel
+    libdrm-devel mesa-libgbm-devel libdecor-devel \
+    libthai-devel liburing-devel
 ```
 
-The lists come from SDL's [Linux build dependencies](https://wiki.libsdl.org/SDL3/README-linux#build-dependencies); the same packages cover the `linux-vendored` preset.
+The lists are SDL's [Linux build dependencies](https://wiki.libsdl.org/SDL3/README-linux#build-dependencies) minus those of the subsystems osect's build disables (audio, camera, joystick, haptic, HIDAPI); the same packages cover the `linux-vendored` preset.
 
 Packaging also needs CMake 4.2 or newer for CPack's AppImage generator, newer than Ubuntu 22.04 (3.22) and 24.04 (3.28) ship. Install a current CMake from [Kitware's releases](https://cmake.org/download/) (the `cmake-*-linux-<arch>.tar.gz` archive runs from wherever it's unpacked) or Kitware's APT repository, or with `pipx install cmake`. Then:
 
