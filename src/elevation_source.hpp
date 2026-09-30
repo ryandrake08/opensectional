@@ -3,7 +3,6 @@
 #include "data_source.hpp"
 #include "elevation_tile.hpp"
 #include "tile_key.hpp"
-
 #include <filesystem>
 #include <list>
 #include <memory>
@@ -70,6 +69,7 @@ namespace osect
         // Samples one terrain tile and converts the result to feet.
         std::optional<double> elevation_ft(double lat, double lon, int zoom) const;
         // Returns the conservative maximum terrain elevation in a geographic box.
-        std::optional<double> maximum_elevation_ft(double lat_min, double lon_min, double lat_max, double lon_max) const;
+        std::optional<double> maximum_elevation_ft(double lat_min, double lon_min, double lat_max,
+                                                   double lon_max) const;
     };
 } // namespace osect

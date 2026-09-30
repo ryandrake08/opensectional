@@ -1,7 +1,7 @@
 #include "map_widget.hpp"
 #include "chart_style.hpp"
-#include "ephemeral_database.hpp"
 #include "elevation_source.hpp"
+#include "ephemeral_database.hpp"
 #include "feature_renderer.hpp"
 #include "feature_type.hpp"
 #include "ini_config.hpp"
@@ -10,9 +10,9 @@
 #include "nasr_database.hpp"
 #include "pick_result.hpp"
 #include "render_context.hpp"
-#include "tile_renderer.hpp"
 #include "terrain_renderer.hpp"
 #include "terrain_style.hpp"
+#include "tile_renderer.hpp"
 #include "ui_overlay.hpp"
 #include "ui_popup_manager.hpp"
 #include "user_database.hpp"
@@ -45,35 +45,35 @@
 #include <default_vert_spv.h>
 #include <line_frag_spv.h>
 #include <line_vert_spv.h>
-#include <textured_frag_spv.h>
-#include <textured_vert_spv.h>
 #include <terrain_frag_spv.h>
 #include <terrain_vert_spv.h>
+#include <textured_frag_spv.h>
+#include <textured_vert_spv.h>
 #ifdef __APPLE__
 #include <default_frag_metal.h>
 #include <default_vert_metal.h>
 #include <line_frag_metal.h>
 #include <line_vert_metal.h>
-#include <textured_frag_metal.h>
-#include <textured_vert_metal.h>
 #include <terrain_frag_metal.h>
 #include <terrain_vert_metal.h>
+#include <textured_frag_metal.h>
+#include <textured_vert_metal.h>
 #endif
 #ifdef OSECT_HAVE_METALLIB
 #include <default_metallib.h>
 #include <line_metallib.h>
-#include <textured_metallib.h>
 #include <terrain_metallib.h>
+#include <textured_metallib.h>
 #endif
 #ifdef OSECT_HAVE_DXIL
 #include <default_frag_dxil.h>
 #include <default_vert_dxil.h>
 #include <line_frag_dxil.h>
 #include <line_vert_dxil.h>
-#include <textured_frag_dxil.h>
-#include <textured_vert_dxil.h>
 #include <terrain_frag_dxil.h>
 #include <terrain_vert_dxil.h>
+#include <textured_frag_dxil.h>
+#include <textured_vert_dxil.h>
 #endif
 
 namespace
@@ -269,7 +269,6 @@ namespace osect
         waypoint
     };
 
-
     struct map_widget::impl : public sdl::event_listener
     {
         map_view view;
@@ -399,8 +398,8 @@ namespace osect
         double cursor_last_x = 0;
         double cursor_last_y = 0;
 
-        impl(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path, const elevation_source& terrain_source,
-             const std::filesystem::path& db_path, const ini_config& ini,
+        impl(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path,
+             const elevation_source& terrain_source, const std::filesystem::path& db_path, const ini_config& ini,
              int viewport_width, int viewport_height)
             : dev(dev),
               linelist_pipeline(dev, load_shader(dev, shader_id::DEFAULT, sdl::shader_stage::vertex),
@@ -421,8 +420,9 @@ namespace osect
               tiles(tile_path ? std::make_unique<tile_renderer>(dev, *tile_path) : nullptr),
               elevation(terrain_source),
               terrain_config(ini),
-              terrain(terrain_source.available() ? std::make_unique<terrain_renderer>(dev, terrain_source, terrain_config)
-                                                 : nullptr),
+              terrain(terrain_source.available()
+                          ? std::make_unique<terrain_renderer>(dev, terrain_source, terrain_config)
+                          : nullptr),
               features(dev, db_path, chart_style(ini)),
               labels(dev),
               pick_db(db_path),
@@ -725,7 +725,8 @@ namespace osect
             if(mode == route_drag_mode::segment)
             {
                 auto wp = resolve_release_waypoint();
-                sdl::log_info("route insert: index=" + std::to_string(route_drag.index) + " waypoint=" + waypoint_id(wp));
+                sdl::log_info("route insert: index=" + std::to_string(route_drag.index) +
+                              " waypoint=" + waypoint_id(wp));
                 r.insert_waypoint(route_drag.index, wp, pick_db);
             }
             else
@@ -841,8 +842,7 @@ namespace osect
         // highlight. `anchor`, when set, places the popup at those
         // world coordinates (typically the click point); when unset,
         // the popup is anchored at the route's centroid.
-        void select_route(std::optional<route_id> id,
-                          std::optional<std::pair<double, double>> anchor = std::nullopt)
+        void select_route(std::optional<route_id> id, std::optional<std::pair<double, double>> anchor = std::nullopt)
         {
             bool target_open = id.has_value();
             bool unchanged = popups.info_open_for_route() == target_open && selected_route_id() == id;
@@ -1140,7 +1140,7 @@ namespace osect
                         if(route_drag.route)
                         {
                             route_drag.mode = pick->part == route_pick::part_kind::waypoint ? route_drag_mode::waypoint
-                                                                                      : route_drag_mode::segment;
+                                                                                            : route_drag_mode::segment;
                             route_drag.index = pick->inner_index;
                             features.set_drag_preview(active_route_id, route_drag.route);
                             select_route(active_route_id, std::pair{lon, lat});
@@ -1317,8 +1317,7 @@ namespace osect
     };
 
     map_widget::map_widget(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path,
-                           const elevation_source& terrain,
-                           const std::filesystem::path& db_path, const ini_config& ini,
+                           const elevation_source& terrain, const std::filesystem::path& db_path, const ini_config& ini,
                            int viewport_width, int viewport_height)
         : pimpl(std::make_shared<impl>(dev, tile_path, terrain, db_path, ini, viewport_width, viewport_height))
     {
@@ -1498,8 +1497,8 @@ namespace osect
         }
 
         auto result = pimpl->needs_update || (pimpl->tiles && pimpl->tiles->needs_upload()) ||
-                      (pimpl->terrain && pimpl->terrain->needs_upload()) ||
-                      pimpl->features.needs_upload() || pimpl->labels.needs_upload();
+                      (pimpl->terrain && pimpl->terrain->needs_upload()) || pimpl->features.needs_upload() ||
+                      pimpl->labels.needs_upload();
 
         if(result)
         {
@@ -1702,9 +1701,9 @@ namespace osect
     bool map_widget::has_pending_actions() const
     {
         const auto& d = *pimpl;
-        return d.route_delete_request || d.route_profile_request || d.route_activate_request || d.create_waypoint_request ||
-               d.delete_waypoint_request || d.rename_waypoint_request || d.route_drag_result ||
-               d.waypoint_drag_result || d.popups_unsettled;
+        return d.route_delete_request || d.route_profile_request || d.route_activate_request ||
+               d.create_waypoint_request || d.delete_waypoint_request || d.rename_waypoint_request ||
+               d.route_drag_result || d.waypoint_drag_result || d.popups_unsettled;
     }
 
     void map_widget::show_waypoint_info(const user_waypoint& wp)

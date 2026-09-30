@@ -14,8 +14,7 @@ namespace sqlite
         {
             if(rc != SQLITE_OK)
             {
-                throw error("Failed to bind parameter " + std::to_string(index),
-                            sqlite3_db_handle(stmt));
+                throw error("Failed to bind parameter " + std::to_string(index), sqlite3_db_handle(stmt));
             }
         }
     } // namespace
@@ -79,14 +78,13 @@ namespace sqlite
 
     void statement::bind(int index, const std::string& value)
     {
-        check_bind(sqlite3_bind_text(pimpl->stmt, index, value.c_str(), -1, SQLITE_TRANSIENT), index,
-                   pimpl->stmt);
+        check_bind(sqlite3_bind_text(pimpl->stmt, index, value.c_str(), -1, SQLITE_TRANSIENT), index, pimpl->stmt);
     }
 
     void statement::bind(int index, const std::vector<int>& values)
     {
-        check_bind(sqlite3_bind_blob(pimpl->stmt, index, values.data(),
-                                     static_cast<int>(values.size() * sizeof(int)), SQLITE_TRANSIENT),
+        check_bind(sqlite3_bind_blob(pimpl->stmt, index, values.data(), static_cast<int>(values.size() * sizeof(int)),
+                                     SQLITE_TRANSIENT),
                    index, pimpl->stmt);
     }
 

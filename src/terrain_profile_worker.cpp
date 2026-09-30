@@ -1,9 +1,7 @@
 #include "terrain_profile_worker.hpp"
-
 #include "elevation_source.hpp"
 #include "nasr_database.hpp"
 #include "program.hpp"
-
 #include <atomic>
 #include <thread>
 
@@ -18,7 +16,8 @@ namespace osect
         std::optional<terrain_profile> result;
         std::string error;
 
-        impl(const elevation_source& terrain, const std::filesystem::path& db_path) : terrain(terrain), airports(db_path)
+        impl(const elevation_source& terrain, const std::filesystem::path& db_path)
+            : terrain(terrain), airports(db_path)
         {
         }
 
@@ -80,7 +79,8 @@ namespace osect
         }
     };
 
-    terrain_profile_worker::terrain_profile_worker(const elevation_source& terrain, const std::filesystem::path& db_path)
+    terrain_profile_worker::terrain_profile_worker(const elevation_source& terrain,
+                                                   const std::filesystem::path& db_path)
         : pimpl(std::make_unique<impl>(terrain, db_path))
     {
     }

@@ -40,8 +40,7 @@ namespace osect
         // Rebuild the visible set and request its tiles plus nearby tiles.
         // Returns true when the requested range changed.
         bool update(double vx_min, double vy_min, double vx_max, double vy_max, int viewport_height,
-                    const std::function<void()>& reset_requests,
-                    const std::function<void(const tile_key&)>& request)
+                    const std::function<void()>& reset_requests, const std::function<void(const tile_key&)>& request)
         {
             auto meters_per_pixel = (vy_max - vy_min) / viewport_height;
             auto world_size = 2.0 * HALF_CIRCUMFERENCE;

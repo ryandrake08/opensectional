@@ -1,8 +1,8 @@
 #include "ui_overlay.hpp"
 #include "feature_type.hpp"
 #include "route_plan_options.hpp"
-#include "ui_sectioned_list.hpp"
 #include "ui_profile_panel.hpp"
+#include "ui_sectioned_list.hpp"
 #include <imgui.h>
 #include <imgui/scoped.hpp>
 #include <algorithm>
@@ -276,7 +276,8 @@ namespace osect
         return pimpl->vis;
     }
 
-    ui_overlay_result ui_overlay::draw(float last_render_ms, const std::vector<std::unique_ptr<feature_type>>& feature_types,
+    ui_overlay_result ui_overlay::draw(float last_render_ms,
+                                       const std::vector<std::unique_ptr<feature_type>>& feature_types,
                                        bool terrain_available, const terrain_profile* profile, bool has_active_route,
                                        std::optional<std::string> profile_error, bool terrain_surface_model)
     {
@@ -400,10 +401,10 @@ namespace osect
         ImGui::SetNextWindowBgAlpha(0.6F);
         float terrain_shading_height = 0.0F;
         {
-            imgui::scoped_window window("Terrain shading", ImGuiWindowFlags_AlwaysAutoResize |
-                                                               ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
-                                                               ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                                                               ImGuiWindowFlags_NoSavedSettings);
+            imgui::scoped_window window("Terrain shading",
+                                        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing |
+                                            ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove |
+                                            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
 
             ImGui::BeginDisabled(!terrain_available);
             if(ImGui::RadioButton("Hillshade", d.terrain_mode == terrain_shading::hillshade))
@@ -608,7 +609,8 @@ namespace osect
                                 {
                                     std::size_t consumed = 0;
                                     const auto altitude = std::stod(p.cruise_altitude_text, &consumed);
-                                    if(consumed != p.cruise_altitude_text.size() || !std::isfinite(altitude) || altitude < 0.0)
+                                    if(consumed != p.cruise_altitude_text.size() || !std::isfinite(altitude) ||
+                                       altitude < 0.0)
                                     {
                                         throw std::invalid_argument("invalid cruise altitude");
                                     }
@@ -649,12 +651,11 @@ namespace osect
 
                         if(p.has_route && !p.planning)
                         {
-                            const bool incomplete_profile = profile && std::any_of(profile->samples.begin(), profile->samples.end(),
-                                                                                   [](const auto& sample)
-                                                                                   {
-                                                                                       return !sample.centreline_elevation_ft ||
-                                                                                              !sample.corridor_elevation_ft;
-                                                                                   });
+                            const bool incomplete_profile =
+                                profile &&
+                                std::any_of(
+                                    profile->samples.begin(), profile->samples.end(), [](const auto& sample)
+                                    { return !sample.centreline_elevation_ft || !sample.corridor_elevation_ft; });
                             const bool has_violations = profile && !profile->clearance_spans.empty();
                             const char* label = "Terrain profile";
                             ImU32 color = IM_COL32(255, 255, 255, 255);
@@ -799,7 +800,8 @@ namespace osect
             }
         }
 
-        d.profile_panel.draw(profile, std::move(profile_error), has_active_route, terrain_available, terrain_surface_model);
+        d.profile_panel.draw(profile, std::move(profile_error), has_active_route, terrain_available,
+                             terrain_surface_model);
 
         return result;
     }

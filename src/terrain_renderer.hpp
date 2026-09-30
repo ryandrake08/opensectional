@@ -1,7 +1,6 @@
 #pragma once
 
 #include "terrain_style.hpp"
-
 #include <glm/glm.hpp>
 #include <memory>
 

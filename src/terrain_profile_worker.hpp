@@ -2,7 +2,6 @@
 
 #include "flight_route.hpp"
 #include "terrain_profile.hpp"
-
 #include <filesystem>
 #include <memory>
 #include <optional>

@@ -26,7 +26,6 @@ namespace osect
         tile_key key;
         std::unique_ptr<sdl::buffer> vertex_buffer;
         std::unique_ptr<sdl::texture> tex;
-
     };
 } // namespace osect
 
@@ -166,13 +165,14 @@ namespace osect
     void tile_renderer::update(double vx_min, double vy_min, double vx_max, double vy_max, double /*half_extent_y*/,
                                int viewport_height, double /*aspect_ratio*/)
     {
-        pimpl->cache.update(vx_min, vy_min, vx_max, vy_max, viewport_height,
-                            [this]
-                            {
-                                pimpl->fallback_dirty = true;
-                                pimpl->loader.cancel();
-                            },
-                            [this](const tile_key& key) { pimpl->request_tile(key); });
+        pimpl->cache.update(
+            vx_min, vy_min, vx_max, vy_max, viewport_height,
+            [this]
+            {
+                pimpl->fallback_dirty = true;
+                pimpl->loader.cancel();
+            },
+            [this](const tile_key& key) { pimpl->request_tile(key); });
     }
 
     void tile_renderer::drain()

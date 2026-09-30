@@ -44,8 +44,8 @@ namespace osect
         std::filesystem::path app_cache_dir()
         {
 #if defined(__APPLE__)
-            const auto dir = std::filesystem::path(getenv_or_throw("HOME")) / "Library/Caches" /
-                             OSECT_BUNDLE_IDENTIFIER;
+            const auto dir =
+                std::filesystem::path(getenv_or_throw("HOME")) / "Library/Caches" / OSECT_BUNDLE_IDENTIFIER;
 #elif defined(_WIN32)
             const auto dir = std::filesystem::path(getenv_or_throw("LOCALAPPDATA")) / OSECT_APP_NAME;
 #else
@@ -210,10 +210,9 @@ namespace osect
             ) WITHOUT ROWID;
         )";
 
-        constexpr const char* TFR_GROUP_DROP_SQL =
-            "DROP TABLE IF EXISTS TFR_AREA_POINT;"
-            "DROP TABLE IF EXISTS TFR_AREA;"
-            "DROP TABLE IF EXISTS TFR;";
+        constexpr const char* TFR_GROUP_DROP_SQL = "DROP TABLE IF EXISTS TFR_AREA_POINT;"
+                                                   "DROP TABLE IF EXISTS TFR_AREA;"
+                                                   "DROP TABLE IF EXISTS TFR;";
 
         constexpr const char* TFR_GROUP_NAME = "tfr";
 
@@ -250,8 +249,7 @@ namespace osect
             int h = 0;
             int m = 0;
             int sec = 0;
-            if(s.size() != 20 ||
-               std::sscanf(s.c_str(), "%4d-%2d-%2dT%2d:%2d:%2dZ", &Y, &M, &D, &h, &m, &sec) != 6)
+            if(s.size() != 20 || std::sscanf(s.c_str(), "%4d-%2d-%2dT%2d:%2d:%2dZ", &Y, &M, &D, &h, &m, &sec) != 6)
             {
                 throw std::runtime_error("ephemeral.db: malformed timestamp '" + s + "'");
             }
@@ -300,7 +298,13 @@ namespace osect
             }
             catch(...)
             {
-                try { db.exec("ROLLBACK"); } catch(...) {}
+                try
+                {
+                    db.exec("ROLLBACK");
+                }
+                catch(...)
+                {
+                }
                 throw;
             }
         }
@@ -327,9 +331,8 @@ namespace osect
                     }
                     else
                     {
-                        sdl::log_warn(std::string("ephemeral.db: ") + TFR_GROUP_NAME +
-                                      " schema hash " + on_disk + " != " +
-                                      TFR_GROUP_SCHEMA_HASH + "; dropping and rebuilding");
+                        sdl::log_warn(std::string("ephemeral.db: ") + TFR_GROUP_NAME + " schema hash " + on_disk +
+                                      " != " + TFR_GROUP_SCHEMA_HASH + "; dropping and rebuilding");
                     }
                 }
             }
@@ -460,8 +463,8 @@ namespace osect
 
     ephemeral_database::~ephemeral_database() = default;
 
-    std::optional<std::chrono::system_clock::time_point>
-    ephemeral_database::last_refreshed(const std::string& source_name) const
+    std::optional<std::chrono::system_clock::time_point> ephemeral_database::last_refreshed(
+        const std::string& source_name) const
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);
         auto& stmt = pimpl->stmt_select_source_meta;
@@ -488,8 +491,7 @@ namespace osect
     }
 
     void ephemeral_database::set_source_meta(const std::string& source_name,
-                                             std::chrono::system_clock::time_point refreshed,
-                                             const std::string& etag)
+                                             std::chrono::system_clock::time_point refreshed, const std::string& etag)
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);
         auto& stmt = pimpl->stmt_upsert_source_meta;
@@ -511,27 +513,27 @@ namespace osect
         while(st.step())
         {
             tfr t{};
-            t.tfr_id              = st.column_int(0);
-            t.notam_id            = st.column_text(1);
-            t.tfr_type            = st.column_text(2);
-            t.facility            = st.column_text(3);
-            t.date_effective      = st.column_text(4);
-            t.date_expire         = st.column_text(5);
-            t.description         = st.column_text(6);
-            t.date_issued         = st.column_text(7);
-            t.city                = st.column_text(8);
-            t.state               = st.column_text(9);
-            t.coord_facility      = st.column_text(10);
+            t.tfr_id = st.column_int(0);
+            t.notam_id = st.column_text(1);
+            t.tfr_type = st.column_text(2);
+            t.facility = st.column_text(3);
+            t.date_effective = st.column_text(4);
+            t.date_expire = st.column_text(5);
+            t.description = st.column_text(6);
+            t.date_issued = st.column_text(7);
+            t.city = st.column_text(8);
+            t.state = st.column_text(9);
+            t.coord_facility = st.column_text(10);
             t.coord_facility_name = st.column_text(11);
             t.coord_facility_type = st.column_text(12);
-            t.coord_phone         = st.column_text(13);
-            t.coord_freq          = st.column_text(14);
-            t.poc_name            = st.column_text(15);
-            t.poc_org             = st.column_text(16);
-            t.poc_phone           = st.column_text(17);
-            t.poc_freq            = st.column_text(18);
-            t.time_zone           = st.column_text(19);
-            t.expire_time_zone    = st.column_text(20);
+            t.coord_phone = st.column_text(13);
+            t.coord_freq = st.column_text(14);
+            t.poc_name = st.column_text(15);
+            t.poc_org = st.column_text(16);
+            t.poc_phone = st.column_text(17);
+            t.poc_freq = st.column_text(18);
+            t.time_zone = st.column_text(19);
+            t.expire_time_zone = st.column_text(20);
             tfr_idx.emplace(t.tfr_id, tfrs.size());
             tfrs.push_back(std::move(t));
         }
@@ -546,25 +548,24 @@ namespace osect
         {
             const int tfr_id = sa.column_int(0);
             tfr_area a{};
-            a.area_id          = sa.column_int(1);
-            a.area_name        = sa.column_text(2);
-            a.upper_ft_val     = sa.column_int(3);
-            a.upper_ft_ref     = sa.column_text(4);
-            a.lower_ft_val     = sa.column_int(5);
-            a.lower_ft_ref     = sa.column_text(6);
-            a.date_effective   = sa.column_text(7);
-            a.date_expire      = sa.column_text(8);
-            a.start_time       = sa.column_text(9);
-            a.end_time         = sa.column_text(10);
+            a.area_id = sa.column_int(1);
+            a.area_name = sa.column_text(2);
+            a.upper_ft_val = sa.column_int(3);
+            a.upper_ft_ref = sa.column_text(4);
+            a.lower_ft_val = sa.column_int(5);
+            a.lower_ft_ref = sa.column_text(6);
+            a.date_effective = sa.column_text(7);
+            a.date_expire = sa.column_text(8);
+            a.start_time = sa.column_text(9);
+            a.end_time = sa.column_text(10);
             a.is_time_separate = sa.column_text(11);
-            a.day_code         = sa.column_text(12);
-            a.instructions     = sa.column_text(13);
+            a.day_code = sa.column_text(12);
+            a.instructions = sa.column_text(13);
 
             // FK CASCADE prevents orphan rows.
             const auto parent_pos = tfr_idx.at(tfr_id);
-            auto& parent          = tfrs[parent_pos];
-            area_idx.emplace(std::make_pair(tfr_id, a.area_id),
-                             std::make_pair(parent_pos, parent.areas.size()));
+            auto& parent = tfrs[parent_pos];
+            area_idx.emplace(std::make_pair(tfr_id, a.area_id), std::make_pair(parent_pos, parent.areas.size()));
             parent.areas.push_back(std::move(a));
         }
 
@@ -572,12 +573,12 @@ namespace osect
         sp.reset();
         while(sp.step())
         {
-            const int tfr_id  = sp.column_int(0);
+            const int tfr_id = sp.column_int(0);
             const int area_id = sp.column_int(1);
             airspace_point p{};
-            p.lat             = sp.column_double(2);
-            p.lon             = sp.column_double(3);
-            const auto loc    = area_idx.at(std::make_pair(tfr_id, area_id));
+            p.lat = sp.column_double(2);
+            p.lon = sp.column_double(3);
+            const auto loc = area_idx.at(std::make_pair(tfr_id, area_id));
             tfrs[loc.first].areas[loc.second].points.push_back(p);
         }
 
@@ -597,15 +598,15 @@ namespace osect
             {
                 auto& s = pimpl->stmt_insert_tfr;
                 s.reset();
-                s.bind(1,  t.tfr_id);
-                s.bind(2,  t.notam_id);
-                s.bind(3,  t.tfr_type);
-                s.bind(4,  t.facility);
-                s.bind(5,  t.date_effective);
-                s.bind(6,  t.date_expire);
-                s.bind(7,  t.description);
-                s.bind(8,  t.date_issued);
-                s.bind(9,  t.city);
+                s.bind(1, t.tfr_id);
+                s.bind(2, t.notam_id);
+                s.bind(3, t.tfr_type);
+                s.bind(4, t.facility);
+                s.bind(5, t.date_effective);
+                s.bind(6, t.date_expire);
+                s.bind(7, t.description);
+                s.bind(8, t.date_issued);
+                s.bind(9, t.city);
                 s.bind(10, t.state);
                 s.bind(11, t.coord_facility);
                 s.bind(12, t.coord_facility_name);
@@ -661,7 +662,13 @@ namespace osect
         }
         catch(...)
         {
-            try { pimpl->db.exec("ROLLBACK"); } catch(...) {}
+            try
+            {
+                pimpl->db.exec("ROLLBACK");
+            }
+            catch(...)
+            {
+            }
             throw;
         }
     }

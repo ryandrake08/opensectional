@@ -1,5 +1,4 @@
 #include "elevation_tile.hpp"
-
 #include <algorithm>
 #include <array>
 #include <cmath>

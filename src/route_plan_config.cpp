@@ -101,8 +101,7 @@ namespace osect
         // User-defined persistent waypoints. Default PREFER — when a
         // pilot places a waypoint they usually want the router to
         // pass through it. Matches g3xfplan's user-waypoint default.
-        o.wp_cost[static_cast<std::size_t>(ws::user)] =
-            pref_or(ini, "route_plan.route_waypoint_user", cost_prefer);
+        o.wp_cost[static_cast<std::size_t>(ws::user)] = pref_or(ini, "route_plan.route_waypoint_user", cost_prefer);
 
         // Airway classes. g3xfplan defaults: Victor PREFER, RNAV
         // INCLUDE, Jet/colored/other REJECT.

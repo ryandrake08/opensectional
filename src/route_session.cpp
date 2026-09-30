@@ -1,5 +1,4 @@
 #include "route_session.hpp"
-
 #include "elevation_source.hpp"
 #include "flight_route.hpp"
 #include "ini_config.hpp"
@@ -56,7 +55,10 @@ namespace osect
 
         impl(ui_overlay& ui, map_widget& map, user_database& udb, const elevation_source& terrain,
              const ini_config& ini, const std::filesystem::path& db_path)
-            : ui(ui), map(map), udb(udb), submitter(db_path),
+            : ui(ui),
+              map(map),
+              udb(udb),
+              submitter(db_path),
               profile_worker(terrain.available() ? std::make_unique<terrain_profile_worker>(terrain, db_path)
                                                  : nullptr),
               plan_options(load_route_plan_options(ini))
@@ -188,13 +190,13 @@ namespace osect
                 }
                 catch(const std::exception& e)
                 {
-                    sdl::log_warn("user.db: route_id=" + std::to_string(rec.route_id) +
-                                  " failed to load: " + e.what() + " — row retained, not loaded");
+                    sdl::log_warn("user.db: route_id=" + std::to_string(rec.route_id) + " failed to load: " + e.what() +
+                                  " — row retained, not loaded");
                     ++skipped;
                 }
             }
-            sdl::log_info("user.db: restored " + std::to_string(loaded) + " routes (" +
-                          std::to_string(skipped) + " skipped)");
+            sdl::log_info("user.db: restored " + std::to_string(loaded) + " routes (" + std::to_string(skipped) +
+                          " skipped)");
         }
 
         // Reverse lookup: which tab id (if any) owns route `rid`.
@@ -347,7 +349,8 @@ namespace osect
                 {
                     map.set_active_route(rid);
                     const auto altitude = ui.cruise_altitude_ft(tag);
-                    map.set_cruise_altitude_ft(altitude ? std::optional<float>(static_cast<float>(*altitude)) : std::nullopt);
+                    map.set_cruise_altitude_ft(altitude ? std::optional<float>(static_cast<float>(*altitude))
+                                                        : std::nullopt);
                     map.select_route(rid);
                     map.fit_view_to_route(rid);
                 }
@@ -451,7 +454,8 @@ namespace osect
             }
             catch(const std::exception& e)
             {
-                sdl::log_warn(std::string("terrain profile: route refresh after cruise altitude change failed: ") + e.what());
+                sdl::log_warn(std::string("terrain profile: route refresh after cruise altitude change failed: ") +
+                              e.what());
             }
             return true;
         }
@@ -546,8 +550,7 @@ namespace osect
     };
 
     route_session::route_session(ui_overlay& ui, map_widget& map, user_database& udb, const elevation_source& terrain,
-                                 const ini_config& ini,
-                                 const std::filesystem::path& db_path)
+                                 const ini_config& ini, const std::filesystem::path& db_path)
         : pimpl(std::make_unique<impl>(ui, map, udb, terrain, ini, db_path))
     {
     }

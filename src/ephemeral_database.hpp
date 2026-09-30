@@ -21,11 +21,11 @@ namespace osect
         std::string lower_ft_ref; // "MSL" / "SFC" / "AGL" / "STD" / "OTHER"
         std::string date_effective;
         std::string date_expire;
-        std::string start_time;        // daily window start, HHMM
-        std::string end_time;          // daily window end, HHMM
-        std::string is_time_separate;  // "TRUE" / "FALSE" — daily-recurring flag
-        std::string day_code;          // days-of-week mask (FAA encoding)
-        std::string instructions; // multiple <txtInstr> joined with '\n'
+        std::string start_time;       // daily window start, HHMM
+        std::string end_time;         // daily window end, HHMM
+        std::string is_time_separate; // "TRUE" / "FALSE" — daily-recurring flag
+        std::string day_code;         // days-of-week mask (FAA encoding)
+        std::string instructions;     // multiple <txtInstr> joined with '\n'
         std::vector<airspace_point> points;
     };
 
@@ -124,11 +124,9 @@ namespace osect
         // surfaced through data_source::name ("tfr", "notam", ...).
         // last_refreshed() returns nullopt when no row exists; etag()
         // returns "" in that case.
-        std::optional<std::chrono::system_clock::time_point>
-            last_refreshed(const std::string& source_name) const;
+        std::optional<std::chrono::system_clock::time_point> last_refreshed(const std::string& source_name) const;
         std::string etag(const std::string& source_name) const;
-        void set_source_meta(const std::string& source_name,
-                             std::chrono::system_clock::time_point refreshed,
+        void set_source_meta(const std::string& source_name, std::chrono::system_clock::time_point refreshed,
                              const std::string& etag);
 
         // ----- TFR -----

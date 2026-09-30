@@ -1,8 +1,8 @@
 #pragma once
 
+#include "ephemeral_database.hpp"
 #include "flight_route.hpp" // route_id
 #include "nasr_database.hpp"
-#include "ephemeral_database.hpp"
 #include "user_database.hpp" // user_waypoint
 #include <cstddef>
 #include <limits>

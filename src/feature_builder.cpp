@@ -1,11 +1,11 @@
 #include "feature_builder.hpp"
 #include "chart_style.hpp"
 #include "ephemeral_database.hpp"
-#include "user_database.hpp"
 #include "feature_type.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
 #include "program.hpp"
+#include "user_database.hpp"
 #include <algorithm>
 #include <cmath>
 #include <condition_variable>
@@ -60,8 +60,11 @@ namespace osect
         std::vector<label_candidate> labels;
 
         impl(const std::filesystem::path& db_path, chart_style cs)
-            : db(db_path), eph_db(ephemeral_database::default_path()),
-              udb(user_database::default_path()), styles(std::move(cs)), types(make_feature_types())
+            : db(db_path),
+              eph_db(ephemeral_database::default_path()),
+              udb(user_database::default_path()),
+              styles(std::move(cs)),
+              types(make_feature_types())
         {
         }
 

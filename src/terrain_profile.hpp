@@ -82,10 +82,8 @@ namespace osect
     // route waypoints. Airport waypoints use their NASR field elevations;
     // all other points use the terrain source. Throws when an airport
     // waypoint is present but cannot be resolved in `airports`.
-    terrain_profile build_terrain_profile(const std::vector<route_waypoint>& waypoints,
-                                          const elevation_source& terrain,
-                                          const nasr_database& airports,
-                                          std::optional<double> cruise_altitude_ft,
+    terrain_profile build_terrain_profile(const std::vector<route_waypoint>& waypoints, const elevation_source& terrain,
+                                          const nasr_database& airports, std::optional<double> cruise_altitude_ft,
                                           terrain_profile_gradients gradients = {},
                                           double corridor_half_width_nm = TERRAIN_PROFILE_CORRIDOR_HALF_WIDTH_NM,
                                           bool include_obstacles = true,

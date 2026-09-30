@@ -1,5 +1,4 @@
 #include "ui_profile_panel.hpp"
-
 #include "terrain_profile.hpp"
 #include <imgui.h>
 #include <algorithm>
@@ -19,8 +18,8 @@ namespace osect
             std::optional<double> maximum;
             for(const auto& sample : profile.samples)
             {
-                for(const auto elevation : {sample.centreline_elevation_ft, sample.corridor_elevation_ft,
-                                             sample.aircraft_altitude_ft})
+                for(const auto elevation :
+                    {sample.centreline_elevation_ft, sample.corridor_elevation_ft, sample.aircraft_altitude_ft})
                 {
                     if(elevation)
                     {
@@ -63,8 +62,8 @@ namespace osect
         const auto& io = ImGui::GetIO();
         ImGui::SetNextWindowPos(ImVec2(0.0F, io.DisplaySize.y), ImGuiCond_Always, ImVec2(0.0F, 1.0F));
         ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, DRAWER_HEIGHT_PX), ImGuiCond_Always);
-        if(!ImGui::Begin("Terrain profile", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                                     ImGuiWindowFlags_NoCollapse))
+        if(!ImGui::Begin("Terrain profile", nullptr,
+                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse))
         {
             ImGui::End();
             return;
@@ -232,9 +231,7 @@ namespace osect
                     continue;
                 }
                 const auto fraction_at = [&](double distance_nm)
-                {
-                    return (distance_nm - previous.distance_nm) / (current.distance_nm - previous.distance_nm);
-                };
+                { return (distance_nm - previous.distance_nm) / (current.distance_nm - previous.distance_nm); };
                 const auto altitude_at = [&](double distance_nm)
                 {
                     return *previous.aircraft_altitude_ft +
@@ -248,8 +245,10 @@ namespace osect
             }
         }
         ImGui::SetCursorScreenPos(ImVec2(origin.x, plot_max.y + ImGui::GetTextLineHeight() + 6.0F));
-        ImGui::TextUnformatted(surface_model ? "Elevation source: DSM  |  terrain: brown  corridor: orange  obstacle corridor: gray  aircraft: blue/white/magenta"
-                                             : "Elevation source: DTM  |  terrain: brown  corridor: orange  obstacle corridor: gray  aircraft: blue/white/magenta");
+        ImGui::TextUnformatted(surface_model ? "Elevation source: DSM  |  terrain: brown  corridor: orange  obstacle "
+                                               "corridor: gray  aircraft: blue/white/magenta"
+                                             : "Elevation source: DTM  |  terrain: brown  corridor: orange  obstacle "
+                                               "corridor: gray  aircraft: blue/white/magenta");
         ImGui::End();
     }
 } // namespace osect

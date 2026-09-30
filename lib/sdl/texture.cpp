@@ -26,7 +26,7 @@ namespace sdl
         }
 
         static SDL_GPUTextureCreateInfo sampled_texture_create_info(unsigned width, unsigned height,
-                                                                     texture_format_t format)
+                                                                    texture_format_t format)
         {
             SDL_GPUTextureCreateInfo info = {};
             info.type = SDL_GPU_TEXTURETYPE_2D;
@@ -72,8 +72,7 @@ namespace sdl
         impl& operator=(impl&&) = default;
     };
 
-    texture::texture(const device& dev, const surface& surf)
-        : pimpl(new impl(dev.get(), surf.texture_create_info()))
+    texture::texture(const device& dev, const surface& surf) : pimpl(new impl(dev.get(), surf.texture_create_info()))
     {
     }
 

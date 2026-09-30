@@ -217,8 +217,7 @@ namespace osect
             if(!pimpl->fill_vertices.empty())
             {
                 sdl::buffer buf(pimpl->dev, sdl::buffer_usage::vertex,
-                                static_cast<uint32_t>(pimpl->fill_vertices.size()),
-                                sizeof(sdl::vertex_t2f_c4ub_v3f));
+                                static_cast<uint32_t>(pimpl->fill_vertices.size()), sizeof(sdl::vertex_t2f_c4ub_v3f));
                 sdl::transfer_buffer transfer(pimpl->dev, buf.byte_size());
                 pass.upload_buffer(transfer, buf, pimpl->fill_vertices);
                 pimpl->fill_buffer = std::make_unique<sdl::buffer>(std::move(buf));
@@ -280,17 +279,17 @@ namespace osect
     }
 
     bool feature_renderer::set_terrain_warning_overlay(std::optional<route_id> id,
-                                                        std::vector<terrain_profile_clearance_span> spans)
+                                                       std::vector<terrain_profile_clearance_span> spans)
     {
-        const auto same_spans = pimpl->terrain_warning_spans.size() == spans.size() &&
-                                std::equal(pimpl->terrain_warning_spans.begin(), pimpl->terrain_warning_spans.end(),
-                                           spans.begin(),
-                                           [](const auto& left, const auto& right)
-                                           {
-                                               return left.start_distance_nm == right.start_distance_nm &&
-                                                      left.end_distance_nm == right.end_distance_nm &&
-                                                      left.phase == right.phase && left.severity == right.severity;
-                                           });
+        const auto same_spans =
+            pimpl->terrain_warning_spans.size() == spans.size() &&
+            std::equal(pimpl->terrain_warning_spans.begin(), pimpl->terrain_warning_spans.end(), spans.begin(),
+                       [](const auto& left, const auto& right)
+                       {
+                           return left.start_distance_nm == right.start_distance_nm &&
+                                  left.end_distance_nm == right.end_distance_nm && left.phase == right.phase &&
+                                  left.severity == right.severity;
+                       });
         if(pimpl->terrain_warning_route_id == id && same_spans)
         {
             return false;

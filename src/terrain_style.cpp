@@ -1,7 +1,5 @@
 #include "terrain_style.hpp"
-
 #include "ini_config.hpp"
-
 #include <array>
 #include <cmath>
 #include <cstddef>

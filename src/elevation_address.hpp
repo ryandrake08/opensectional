@@ -1,7 +1,6 @@
 #pragma once
 
 #include "tile_key.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>

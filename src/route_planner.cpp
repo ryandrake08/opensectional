@@ -338,7 +338,8 @@ namespace osect
         // runtime.
         std::size_t nasr_node_count = 0;
 
-        impl(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path) : db(db_path), udb(user_db_path)
+        impl(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path)
+            : db(db_path), udb(user_db_path)
         {
         }
 
@@ -584,7 +585,10 @@ namespace osect
         std::priority_queue<open_entry> open;
 
         auto heuristic = [&](std::size_t n) -> double
-        { return haversine_distance_nm(nodes[n].lat, nodes[n].lon, destination.lat, destination.lon) * heuristic_factor; };
+        {
+            return haversine_distance_nm(nodes[n].lat, nodes[n].lon, destination.lat, destination.lon) *
+                   heuristic_factor;
+        };
 
         // Cost factor of a single A* step. `from_st` is nullopt
         // when the step originates from the synthetic origin
@@ -658,7 +662,8 @@ namespace osect
                     {
                         continue;
                     }
-                    auto d = haversine_distance_nm(from_lat, from_lon, nodes[e.neighbor_index].lat, nodes[e.neighbor_index].lon);
+                    auto d = haversine_distance_nm(from_lat, from_lon, nodes[e.neighbor_index].lat,
+                                                   nodes[e.neighbor_index].lon);
                     if(d > max_leg)
                     {
                         continue;

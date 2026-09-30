@@ -6,8 +6,8 @@
 #include "geo_math.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
-#include "user_database.hpp"
 #include "ui_overlay.hpp" // for the layer enum
+#include "user_database.hpp"
 #include <glm/glm.hpp>
 #include <algorithm>
 #include <array>
@@ -656,8 +656,8 @@ namespace osect
             }
             for(const auto& w : ctx.udb.load_waypoints())
             {
-                if(w.lon >= ctx.pick_box.lon_min && w.lon <= ctx.pick_box.lon_max &&
-                   w.lat >= ctx.pick_box.lat_min && w.lat <= ctx.pick_box.lat_max)
+                if(w.lon >= ctx.pick_box.lon_min && w.lon <= ctx.pick_box.lon_max && w.lat >= ctx.pick_box.lat_min &&
+                   w.lat <= ctx.pick_box.lat_max)
                 {
                     out.push_back(w);
                 }
@@ -926,8 +926,8 @@ namespace osect
                 {
                     continue;
                 }
-                auto d = point_to_segment_distance_nm(seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon,
-                                                      ctx.click_lat, ctx.click_lon);
+                auto d = point_to_segment_distance_nm(seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon, ctx.click_lat,
+                                                      ctx.click_lon);
                 if(d <= ctx.pick_radius_nm)
                 {
                     out.push_back(seg);
@@ -947,8 +947,8 @@ namespace osect
                 {
                     continue;
                 }
-                auto d = point_to_segment_distance_nm(seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon,
-                                                      ctx.click_lat, ctx.click_lon);
+                auto d = point_to_segment_distance_nm(seg.from_lat, seg.from_lon, seg.to_lat, seg.to_lon, ctx.click_lat,
+                                                      ctx.click_lon);
                 if(d <= ctx.pick_radius_nm)
                 {
                     out.push_back(seg);
@@ -1395,7 +1395,10 @@ namespace osect
                 {"NOTAM ID", v.notam_id},        {"Type", v.tfr_type},       {"Facility", v.facility},
                 {"Effective", v.date_effective}, {"Expires", v.date_expire},
             };
-            if(!v.date_issued.empty()) { rows.push_back({"Issued", v.date_issued}); }
+            if(!v.date_issued.empty())
+            {
+                rows.push_back({"Issued", v.date_issued});
+            }
             // Affected location (city / state) — single combined row
             // when both present, otherwise whichever is non-empty.
             if(!v.city.empty() && !v.state.empty())
@@ -1422,14 +1425,35 @@ namespace osect
                 }
                 rows.push_back({"Coord facility", val});
             }
-            if(!v.coord_phone.empty()) { rows.push_back({"Coord phone", v.coord_phone}); }
-            if(!v.coord_freq.empty())  { rows.push_back({"Coord freq",  v.coord_freq}); }
+            if(!v.coord_phone.empty())
+            {
+                rows.push_back({"Coord phone", v.coord_phone});
+            }
+            if(!v.coord_freq.empty())
+            {
+                rows.push_back({"Coord freq", v.coord_freq});
+            }
             // Point of contact (security/VIP TFRs only).
-            if(!v.poc_name.empty())  { rows.push_back({"POC name",  v.poc_name}); }
-            if(!v.poc_org.empty())   { rows.push_back({"POC org",   v.poc_org}); }
-            if(!v.poc_phone.empty()) { rows.push_back({"POC phone", v.poc_phone}); }
-            if(!v.poc_freq.empty())  { rows.push_back({"POC freq",  v.poc_freq}); }
-            if(!v.time_zone.empty()) { rows.push_back({"Time zone", v.time_zone}); }
+            if(!v.poc_name.empty())
+            {
+                rows.push_back({"POC name", v.poc_name});
+            }
+            if(!v.poc_org.empty())
+            {
+                rows.push_back({"POC org", v.poc_org});
+            }
+            if(!v.poc_phone.empty())
+            {
+                rows.push_back({"POC phone", v.poc_phone});
+            }
+            if(!v.poc_freq.empty())
+            {
+                rows.push_back({"POC freq", v.poc_freq});
+            }
+            if(!v.time_zone.empty())
+            {
+                rows.push_back({"Time zone", v.time_zone});
+            }
             // Show the expiry TZ only when it differs — many TFRs
             // repeat the same code in both fields, which is noise.
             if(!v.expire_time_zone.empty() && v.expire_time_zone != v.time_zone)
@@ -3524,9 +3548,9 @@ namespace osect
         // route with that id is replaced by `override_route` — used
         // to surface an in-progress drag preview without committing
         // it to disk.
-        std::vector<std::pair<route_id, flight_route>>
-        load_parsed_routes(const user_database& udb, std::optional<route_id> override_id,
-                           const std::optional<flight_route>& override_route)
+        std::vector<std::pair<route_id, flight_route>> load_parsed_routes(
+            const user_database& udb, std::optional<route_id> override_id,
+            const std::optional<flight_route>& override_route)
         {
             std::vector<std::pair<route_id, flight_route>> out;
             const auto records = udb.load_routes();
@@ -3563,10 +3587,9 @@ namespace osect
                     auto d = equirectangular_distance_nm(ctx.click_lat, ctx.click_lon, wps[i].lat, wps[i].lon);
                     if(d <= ctx.pick_radius_nm)
                     {
-                        out.push_back(route_pick{rid, route_pick::part_kind::waypoint, i,
-                                                 route_pick_label(r, route_pick::part_kind::waypoint, i,
-                                                                  loaded[r].second),
-                                                 d});
+                        out.push_back(
+                            route_pick{rid, route_pick::part_kind::waypoint, i,
+                                       route_pick_label(r, route_pick::part_kind::waypoint, i, loaded[r].second), d});
                         found = true;
                         break;
                     }
@@ -3587,10 +3610,9 @@ namespace osect
                     }
                     if(best <= ctx.pick_radius_nm)
                     {
-                        out.push_back(route_pick{rid, route_pick::part_kind::leg, i - 1,
-                                                 route_pick_label(r, route_pick::part_kind::leg, i - 1,
-                                                                  loaded[r].second),
-                                                 best});
+                        out.push_back(
+                            route_pick{rid, route_pick::part_kind::leg, i - 1,
+                                       route_pick_label(r, route_pick::part_kind::leg, i - 1, loaded[r].second), best});
                         found = true;
                     }
                 }
@@ -3615,8 +3637,7 @@ namespace osect
             {
                 const auto apts = ctx.db.lookup_airports(wp.id);
                 const auto apt = nearest_to(apts, wp.lat, wp.lon);
-                return apt != apts.end() && airport_on_chart(*apt, chart) &&
-                        ctx.styles.airport_visible(*apt, zoom);
+                return apt != apts.end() && airport_on_chart(*apt, chart) && ctx.styles.airport_visible(*apt, zoom);
             }
             if(wp.kind == waypoint_kind::navaid)
             {
@@ -3775,11 +3796,8 @@ namespace osect
             {
                 return;
             }
-            const auto route = std::find_if(loaded.begin(), loaded.end(),
-                                            [&](const auto& entry)
-                                            {
-                                                return entry.first == *req.terrain_warning_route_id;
-                                            });
+            const auto route = std::find_if(loaded.begin(), loaded.end(), [&](const auto& entry)
+                                            { return entry.first == *req.terrain_warning_route_id; });
             if(route == loaded.end())
             {
                 return;
@@ -3815,7 +3833,8 @@ namespace osect
                     std::vector<glm::vec2> polyline;
                     for(const auto& point : arc)
                     {
-                        const auto distance_nm = leg_start_nm + haversine_distance_nm(from.lat, from.lon, point.lat, point.lon);
+                        const auto distance_nm =
+                            leg_start_nm + haversine_distance_nm(from.lat, from.lon, point.lat, point.lon);
                         if(distance_nm >= start_nm && distance_nm <= end_nm)
                         {
                             polyline.emplace_back(static_cast<float>(lon_to_mx(point.lon) + ctx.mx_offset),

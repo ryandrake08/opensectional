@@ -44,8 +44,8 @@ namespace osect
         // connections to the platform-default ephemeral.db, so
         // ephemeral data flows through SQLite rather than through
         // a passed-in facade.
-        map_widget(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path, const elevation_source& terrain,
-                   const std::filesystem::path& db_path, const ini_config& ini,
+        map_widget(sdl::device& dev, const std::optional<std::filesystem::path>& tile_path,
+                   const elevation_source& terrain, const std::filesystem::path& db_path, const ini_config& ini,
                    int viewport_width, int viewport_height);
         ~map_widget();
 
@@ -104,8 +104,7 @@ namespace osect
         void set_active_route(std::optional<route_id> id);
 
         // Highlight terrain-profile violations for the active route.
-        void set_terrain_warning_overlay(std::optional<route_id> id,
-                                         std::vector<terrain_profile_clearance_span> spans);
+        void set_terrain_warning_overlay(std::optional<route_id> id, std::vector<terrain_profile_clearance_span> spans);
 
         // The active route, or nullopt if none.
         std::optional<route_id> active_route() const;

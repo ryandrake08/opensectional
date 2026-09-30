@@ -1,5 +1,4 @@
 #include "waypoint_session.hpp"
-
 #include "map_widget.hpp"
 #include "user_database.hpp"
 #include <exception>
@@ -113,8 +112,7 @@ namespace osect
         }
     };
 
-    waypoint_session::waypoint_session(map_widget& map, user_database& udb)
-        : pimpl(std::make_unique<impl>(map, udb))
+    waypoint_session::waypoint_session(map_widget& map, user_database& udb) : pimpl(std::make_unique<impl>(map, udb))
     {
     }
 

@@ -1,8 +1,8 @@
 #include "program.hpp"
 #include "app_options.hpp"
+#include "elevation_source.hpp"
 #include "ephemeral_database.hpp"
 #include "ephemeral_source.hpp"
-#include "elevation_source.hpp"
 #include "feature_type.hpp"
 #include "ini_config.hpp"
 #include "map_widget.hpp"
@@ -144,8 +144,7 @@ namespace osect
                     }
                 }
             }
-            merged.insert(merged.end(), std::make_move_iterator(eph.begin()),
-                          std::make_move_iterator(eph.end()));
+            merged.insert(merged.end(), std::make_move_iterator(eph.begin()), std::make_move_iterator(eph.end()));
             ui.set_data_sources(std::move(merged));
         }
 
@@ -313,13 +312,16 @@ namespace osect
                 needs_render |= waypoints.process();
 
                 imgui_ctx.new_frame();
-                ui_result = ui.draw(last_render_ms, map.feature_types(), terrain.available(), routes.active_profile(),
-                                    routes.has_active_route(), routes.active_profile_error(), terrain.is_surface_model());
+                ui_result =
+                    ui.draw(last_render_ms, map.feature_types(), terrain.available(), routes.active_profile(),
+                            routes.has_active_route(), routes.active_profile_error(), terrain.is_surface_model());
                 needs_render |= map.draw_imgui();
                 imgui_ctx.end_frame();
 
                 if(!ui_result.any() && !map.has_pending_actions() && !imgui_ctx.has_pending_input_events())
+                {
                     break;
+                }
             }
 
             // Drain async results that arrived during the wait, and

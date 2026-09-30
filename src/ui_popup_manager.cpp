@@ -5,9 +5,9 @@
 #include "ui_sectioned_list.hpp"
 #include <imgui.h>
 #include <imgui/scoped.hpp>
-#include <misc/cpp/imgui_stdlib.h>
 #include <cmath>
 #include <string>
+#include <misc/cpp/imgui_stdlib.h>
 
 namespace osect
 {
@@ -398,7 +398,8 @@ namespace osect
                 auto rows = L.info_kv(p.payload);
                 if(p.terrain_elevation_ft)
                 {
-                    rows.emplace_back("Terrain elevation", std::to_string(std::lround(*p.terrain_elevation_ft)) + " ft");
+                    rows.emplace_back("Terrain elevation",
+                                      std::to_string(std::lround(*p.terrain_elevation_ft)) + " ft");
                 }
                 const ImGuiTableFlags flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX;
                 if(imgui::scoped_table table("info_kv", 2, flags); table)

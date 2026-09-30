@@ -37,8 +37,8 @@ namespace osect
         std::filesystem::path app_user_data_dir()
         {
 #if defined(__APPLE__)
-            const auto dir = std::filesystem::path(getenv_or_throw("HOME")) /
-                             "Library/Application Support" / OSECT_BUNDLE_IDENTIFIER;
+            const auto dir = std::filesystem::path(getenv_or_throw("HOME")) / "Library/Application Support" /
+                             OSECT_BUNDLE_IDENTIFIER;
 #elif defined(_WIN32)
             const auto dir = std::filesystem::path(getenv_or_throw("APPDATA")) / OSECT_APP_NAME;
 #else
@@ -179,11 +179,10 @@ namespace osect
 
             if(present && on_disk > version)
             {
-                throw std::runtime_error(
-                    std::string("user.db: '") + group_name + "' group is at version " +
-                    std::to_string(on_disk) + " but this build only understands version " +
-                    std::to_string(version) +
-                    ". Refusing to open — upgrade the application or restore a backup.");
+                throw std::runtime_error(std::string("user.db: '") + group_name + "' group is at version " +
+                                         std::to_string(on_disk) + " but this build only understands version " +
+                                         std::to_string(version) +
+                                         ". Refusing to open — upgrade the application or restore a backup.");
             }
 
             db.exec("BEGIN");
@@ -230,8 +229,7 @@ namespace osect
             // FK CASCADE is per-connection in SQLite — must be set every open.
             db.exec("PRAGMA foreign_keys = ON");
             db.exec(BOOTSTRAP_SQL);
-            ensure_group(db, ROUTES_GROUP_NAME, ROUTES_GROUP_VERSION, ROUTES_GROUP_DROP_SQL,
-                         ROUTES_GROUP_CREATE_SQL);
+            ensure_group(db, ROUTES_GROUP_NAME, ROUTES_GROUP_VERSION, ROUTES_GROUP_DROP_SQL, ROUTES_GROUP_CREATE_SQL);
             ensure_group(db, WAYPOINTS_GROUP_NAME, WAYPOINTS_GROUP_VERSION, WAYPOINTS_GROUP_DROP_SQL,
                          WAYPOINTS_GROUP_CREATE_SQL);
             return db;
@@ -244,11 +242,11 @@ namespace osect
         {
             route_waypoint_row r;
             r.element_index = st.column_int(base + 0);
-            r.kind          = st.column_text(base + 1);
-            r.identifier    = st.column_text(base + 2);
-            r.lat           = st.column_double(base + 3);
-            r.lon           = st.column_double(base + 4);
-            auto airway     = st.column_text(base + 5);
+            r.kind = st.column_text(base + 1);
+            r.identifier = st.column_text(base + 2);
+            r.lat = st.column_double(base + 3);
+            r.lon = st.column_double(base + 4);
+            auto airway = st.column_text(base + 5);
             r.airway_id = airway.empty() ? std::nullopt : std::optional<std::string>(std::move(airway));
             return r;
         }
@@ -396,8 +394,7 @@ namespace osect
         return app_user_data_dir() / "user.db";
     }
 
-    user_database::user_database(const std::filesystem::path& db_path)
-        : pimpl(std::make_unique<impl>(db_path))
+    user_database::user_database(const std::filesystem::path& db_path) : pimpl(std::make_unique<impl>(db_path))
     {
     }
 
@@ -415,8 +412,11 @@ namespace osect
         {
             route_record rec;
             rec.route_id = routes.column_int64(0);
-            rec.name     = routes.column_text(1);
-            if(!routes.column_is_null(2)) rec.cruise_altitude_ft = routes.column_double(2);
+            rec.name = routes.column_text(1);
+            if(!routes.column_is_null(2))
+            {
+                rec.cruise_altitude_ft = routes.column_double(2);
+            }
             rec.gradients.climb_ft_per_nm = routes.column_double(3);
             rec.gradients.descent_ft_per_nm = routes.column_double(4);
             index_by_id[rec.route_id] = out.size();
@@ -450,8 +450,11 @@ namespace osect
                 return std::nullopt;
             }
             rec.route_id = st.column_int64(0);
-            rec.name     = st.column_text(1);
-            if(!st.column_is_null(2)) rec.cruise_altitude_ft = st.column_double(2);
+            rec.name = st.column_text(1);
+            if(!st.column_is_null(2))
+            {
+                rec.cruise_altitude_ft = st.column_double(2);
+            }
             rec.gradients.climb_ft_per_nm = st.column_double(3);
             rec.gradients.descent_ft_per_nm = st.column_double(4);
             // A statement parked on SQLITE_ROW holds an implicit read
@@ -481,7 +484,14 @@ namespace osect
         {
             auto& s = pimpl->stmt_insert_route;
             s.reset();
-            if(cruise_altitude_ft) s.bind(1, *cruise_altitude_ft); else s.bind_null(1);
+            if(cruise_altitude_ft)
+            {
+                s.bind(1, *cruise_altitude_ft);
+            }
+            else
+            {
+                s.bind_null(1);
+            }
             s.bind(2, gradients.climb_ft_per_nm);
             s.bind(3, gradients.descent_ft_per_nm);
             s.bind(4, ts);
@@ -527,7 +537,14 @@ namespace osect
             {
                 auto& touch = pimpl->stmt_touch_route;
                 touch.reset();
-                if(cruise_altitude_ft) touch.bind(1, *cruise_altitude_ft); else touch.bind_null(1);
+                if(cruise_altitude_ft)
+                {
+                    touch.bind(1, *cruise_altitude_ft);
+                }
+                else
+                {
+                    touch.bind_null(1);
+                }
                 touch.bind(2, now_iso8601());
                 touch.bind(3, route_id);
                 touch.step();
@@ -554,8 +571,7 @@ namespace osect
         }
     }
 
-    void user_database::update_route_cruise_altitude(std::int64_t route_id,
-                                                      std::optional<double> cruise_altitude_ft)
+    void user_database::update_route_cruise_altitude(std::int64_t route_id, std::optional<double> cruise_altitude_ft)
     {
         std::lock_guard<std::mutex> lock(pimpl->mutex);
         pimpl->db.exec("BEGIN");
@@ -563,7 +579,14 @@ namespace osect
         {
             auto& update = pimpl->stmt_touch_route;
             update.reset();
-            if(cruise_altitude_ft) update.bind(1, *cruise_altitude_ft); else update.bind_null(1);
+            if(cruise_altitude_ft)
+            {
+                update.bind(1, *cruise_altitude_ft);
+            }
+            else
+            {
+                update.bind_null(1);
+            }
             update.bind(2, now_iso8601());
             update.bind(3, route_id);
             update.step();
@@ -601,9 +624,9 @@ namespace osect
         {
             user_waypoint w;
             w.waypoint_id = st.column_int64(0);
-            w.name        = st.column_text(1);
-            w.lat         = st.column_double(2);
-            w.lon         = st.column_double(3);
+            w.name = st.column_text(1);
+            w.lat = st.column_double(2);
+            w.lon = st.column_double(3);
             out.push_back(std::move(w));
         }
         return out;
@@ -621,9 +644,9 @@ namespace osect
         }
         user_waypoint w;
         w.waypoint_id = st.column_int64(0);
-        w.name        = st.column_text(1);
-        w.lat         = st.column_double(2);
-        w.lon         = st.column_double(3);
+        w.name = st.column_text(1);
+        w.lat = st.column_double(2);
+        w.lon = st.column_double(3);
         // Release the implicit read transaction held by a statement
         // parked on SQLITE_ROW — see query_route for the rationale.
         st.reset();

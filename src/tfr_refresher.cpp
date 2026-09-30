@@ -242,8 +242,7 @@ namespace osect
         }
     };
 
-    tfr_refresher::tfr_refresher(const std::filesystem::path& db_path)
-        : pimpl(std::make_unique<impl>(db_path))
+    tfr_refresher::tfr_refresher(const std::filesystem::path& db_path) : pimpl(std::make_unique<impl>(db_path))
     {
         pimpl->worker = std::thread(&impl::worker_loop, pimpl.get());
     }

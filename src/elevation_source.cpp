@@ -1,10 +1,8 @@
 #include "elevation_source.hpp"
-
 #include "elevation_address.hpp"
-
 #include <algorithm>
-#include <cstdint>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <optional>
 #include <stdexcept>
@@ -390,8 +388,8 @@ namespace osect
         }
         lock.unlock();
 
-        const std::filesystem::path tile_path = path_ / std::to_string(key.z) / std::to_string(key.x)
-                                                / (std::to_string(key.y) + ".png");
+        const std::filesystem::path tile_path =
+            path_ / std::to_string(key.z) / std::to_string(key.x) / (std::to_string(key.y) + ".png");
         std::shared_ptr<const elevation_tile> tile;
         if(std::filesystem::exists(tile_path))
         {
@@ -444,10 +442,10 @@ namespace osect
     }
 
     std::optional<double> elevation_source::maximum_elevation_ft(double lat_min, double lon_min, double lat_max,
-                                                                  double lon_max) const
+                                                                 double lon_max) const
     {
-        if(!available_ || !std::isfinite(lat_min) || !std::isfinite(lon_min) || !std::isfinite(lat_max)
-           || !std::isfinite(lon_max) || lat_min >= lat_max)
+        if(!available_ || !std::isfinite(lat_min) || !std::isfinite(lon_min) || !std::isfinite(lat_max) ||
+           !std::isfinite(lon_max) || lat_min >= lat_max)
         {
             return std::nullopt;
         }
@@ -515,18 +513,20 @@ namespace osect
             {
                 for(int64_t tile_x = first_x / tile_size_; tile_x <= last_x / tile_size_; tile_x++)
                 {
-                    const std::shared_ptr<const elevation_tile> tile = load_tile(
-                        {zoom, static_cast<int>(tile_x), static_cast<int>(tile_y)});
+                    const std::shared_ptr<const elevation_tile> tile =
+                        load_tile({zoom, static_cast<int>(tile_x), static_cast<int>(tile_y)});
                     if(!tile)
                     {
                         continue;
                     }
-                    const int x_min = skirt_ + static_cast<int>(std::max(first_x, tile_x * tile_size_) - tile_x * tile_size_);
-                    const int x_max = skirt_ + static_cast<int>(std::min(last_x, (tile_x + 1) * tile_size_ - 1)
-                                                               - tile_x * tile_size_);
-                    const int y_min = skirt_ + static_cast<int>(std::max(first_y, tile_y * tile_size_) - tile_y * tile_size_);
-                    const int y_max = skirt_ + static_cast<int>(std::min(last_y, (tile_y + 1) * tile_size_ - 1)
-                                                               - tile_y * tile_size_);
+                    const int x_min =
+                        skirt_ + static_cast<int>(std::max(first_x, tile_x * tile_size_) - tile_x * tile_size_);
+                    const int x_max = skirt_ + static_cast<int>(std::min(last_x, (tile_x + 1) * tile_size_ - 1) -
+                                                                tile_x * tile_size_);
+                    const int y_min =
+                        skirt_ + static_cast<int>(std::max(first_y, tile_y * tile_size_) - tile_y * tile_size_);
+                    const int y_max = skirt_ + static_cast<int>(std::min(last_y, (tile_y + 1) * tile_size_ - 1) -
+                                                                tile_y * tile_size_);
                     const float tile_maximum = tile->maximum_m(x_min, y_min, x_max, y_max);
                     if(!std::isnan(tile_maximum) && (std::isnan(maximum_m) || tile_maximum > maximum_m))
                     {

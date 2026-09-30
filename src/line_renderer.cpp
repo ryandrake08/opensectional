@@ -190,7 +190,7 @@ namespace osect
             sdl::buffer pts(dev, sdl::buffer_usage::graphics_storage_read, static_cast<uint32_t>(all_points.size()),
                             sizeof(glm::vec4));
             sdl::buffer meta(dev, sdl::buffer_usage::graphics_storage_read, static_cast<uint32_t>(all_metadata.size()),
-                            sizeof(polyline_metadata_gpu));
+                             sizeof(polyline_metadata_gpu));
             sdl::transfer_buffer transfer(dev, pts.byte_size() + meta.byte_size());
 
             pass.upload_buffer(transfer, pts, all_points);

@@ -258,10 +258,10 @@ namespace sdl
         float taws_clear_m;          // 4 bytes, offset 396 - metres below cruise where terrain stops drawing
 
         // Water-mask parameters (used by terrain shader)
-        int water_mode;              // 4 bytes, offset 400 - 0 no water mask, 1 flat-tint water fragments
-        float water_r;               // 4 bytes, offset 404 - flat water tint, 0..1
-        float water_g;               // 4 bytes, offset 408
-        float water_b;               // 4 bytes, offset 412
+        int water_mode; // 4 bytes, offset 400 - 0 no water mask, 1 flat-tint water fragments
+        float water_r;  // 4 bytes, offset 404 - flat water tint, 0..1
+        float water_g;  // 4 bytes, offset 408
+        float water_b;  // 4 bytes, offset 412
 
         // Default constructor: Initialize all fields to safe defaults
         uniform_buffer()

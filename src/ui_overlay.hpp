@@ -122,10 +122,10 @@ namespace osect
         // until a draw produces none.
         bool any() const
         {
-            return visibility_changed || search_query.has_value() ||
-                   selected_hit_index.has_value() || route_submit.has_value() || cruise_altitude_changed.has_value() ||
-                   terrain_shading_changed.has_value() || terrain_profile_open_changed ||
-                   tab_closed.has_value() || active_tab_changed.has_value();
+            return visibility_changed || search_query.has_value() || selected_hit_index.has_value() ||
+                   route_submit.has_value() || cruise_altitude_changed.has_value() ||
+                   terrain_shading_changed.has_value() || terrain_profile_open_changed || tab_closed.has_value() ||
+                   active_tab_changed.has_value();
         }
     };
 

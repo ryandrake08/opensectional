@@ -80,8 +80,8 @@ namespace sdl
 
     void copy_pass::upload_texture(transfer_buffer& tb, const texture& dest, const surface& surf)
     {
-        upload_texture(tb, dest, surf.pixels(), static_cast<uint32_t>(surf.width()), static_cast<uint32_t>(surf.height()),
-                       surf.size());
+        upload_texture(tb, dest, surf.pixels(), static_cast<uint32_t>(surf.width()),
+                       static_cast<uint32_t>(surf.height()), surf.size());
     }
 
     void copy_pass::upload_texture(transfer_buffer& tb, const texture& dest, const void* pixels, uint32_t width,

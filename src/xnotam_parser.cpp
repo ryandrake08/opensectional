@@ -181,11 +181,8 @@ namespace osect
                 return true;
             }
             const auto& prefs = ignored_prefixes();
-            return std::any_of(prefs.begin(), prefs.end(),
-                               [&](const std::string& pref) {
-                                   return path.size() >= pref.size() &&
-                                          path.compare(0, pref.size(), pref) == 0;
-                               });
+            return std::any_of(prefs.begin(), prefs.end(), [&](const std::string& pref)
+                               { return path.size() >= pref.size() && path.compare(0, pref.size(), pref) == 0; });
         }
 
         void report_unknown(const std::string& path, const std::string& notam_id)
@@ -367,25 +364,25 @@ namespace osect
 
         tfr out{};
         out.tfr_id = 0; // assigned by the caller (tfr_refresher)
-        out.notam_id            = child_text(notam.child("NotUid"), "txtLocalName");
-        out.date_issued         = child_text(notam.child("NotUid"), "dateIssued");
-        out.date_effective      = child_text(notam, "dateEffective");
-        out.date_expire         = child_text(notam, "dateExpire");
-        out.facility            = child_text(notam, "codeFacility");
-        out.description         = child_text(notam, "txtDescrUSNS");
-        out.city                = child_text(notam.child("AffLocGroup"), "txtNameCity");
-        out.state               = child_text(notam.child("AffLocGroup"), "txtNameUSState");
-        out.coord_facility      = child_text(notam, "codeCoordFacility");
+        out.notam_id = child_text(notam.child("NotUid"), "txtLocalName");
+        out.date_issued = child_text(notam.child("NotUid"), "dateIssued");
+        out.date_effective = child_text(notam, "dateEffective");
+        out.date_expire = child_text(notam, "dateExpire");
+        out.facility = child_text(notam, "codeFacility");
+        out.description = child_text(notam, "txtDescrUSNS");
+        out.city = child_text(notam.child("AffLocGroup"), "txtNameCity");
+        out.state = child_text(notam.child("AffLocGroup"), "txtNameUSState");
+        out.coord_facility = child_text(notam, "codeCoordFacility");
         out.coord_facility_name = child_text(notam, "txtNameCoordFacility");
         out.coord_facility_type = child_text(notam, "codeCoordFacilityType");
-        out.coord_phone         = child_text(notam, "txtAddrCoordPhone");
-        out.coord_freq          = child_text(notam, "valFreqCoord");
-        out.poc_name            = child_text(notam, "txtNamePOC");
-        out.poc_org             = child_text(notam, "txtNamePOCOrg");
-        out.poc_phone           = child_text(notam, "txtAddrPOCPhone");
-        out.poc_freq            = child_text(notam, "valFreqPOC");
-        out.time_zone           = child_text(notam, "codeTimeZone");
-        out.expire_time_zone    = child_text(notam, "codeExpirationTimeZone");
+        out.coord_phone = child_text(notam, "txtAddrCoordPhone");
+        out.coord_freq = child_text(notam, "valFreqCoord");
+        out.poc_name = child_text(notam, "txtNamePOC");
+        out.poc_org = child_text(notam, "txtNamePOCOrg");
+        out.poc_phone = child_text(notam, "txtAddrPOCPhone");
+        out.poc_freq = child_text(notam, "valFreqPOC");
+        out.time_zone = child_text(notam, "codeTimeZone");
+        out.expire_time_zone = child_text(notam, "codeExpirationTimeZone");
 
         const auto tfr_not = notam.child("TfrNot");
         if(!tfr_not)
