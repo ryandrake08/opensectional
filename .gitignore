@@ -1,19 +1,17 @@
-.DS_Store
-.cache
-.examples
-.vscode
-__pycache__
+# Build output
 /build*
+CMakeUserPresets.json
+.cache
+
+# Python tools
+__pycache__
 tools/env*
 tools/proj_grids
-nasr_data
-osect.db
-basemap
-vfr
-terrain
-terrain_source
-*_PLAN.md
-/elevation_plan
-REQUIREMENTS.md
-*.trace
-CMakeUserPresets.json
+
+# Data preparation output (see README "Data Preparation")
+/nasr_data
+/mapdata
+/osect.db
+/basemap
+/terrain
+/terrain_source
