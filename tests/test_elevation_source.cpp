@@ -14,18 +14,32 @@ namespace
         std::filesystem::path path_;
 
     public:
+        // Creates a new directory named <temp>/<name>-<n> for the first n
+        // not already taken; create_directory fails when the name exists, so
+        // concurrent runs never share a directory.
         temporary_tree(const std::string& name, const std::string& contents)
-            : path_(std::filesystem::temp_directory_path() / name)
         {
-            std::filesystem::remove_all(path_);
-            std::filesystem::create_directories(path_);
+            const auto base = std::filesystem::temp_directory_path() / (name + "-");
+            for(int i = 0; i < 1000 && path_.empty(); ++i)
+            {
+                const std::filesystem::path candidate = base.string() + std::to_string(i);
+                if(std::filesystem::create_directory(candidate))
+                {
+                    path_ = candidate;
+                }
+            }
+            REQUIRE_FALSE(path_.empty());
             std::ofstream(path_ / "manifest.json") << contents;
         }
 
         ~temporary_tree()
         {
-            std::filesystem::remove_all(path_);
+            std::error_code ec;
+            std::filesystem::remove_all(path_, ec);
         }
+
+        temporary_tree(const temporary_tree&) = delete;
+        temporary_tree& operator=(const temporary_tree&) = delete;
 
         const std::filesystem::path& path() const
         {
@@ -161,6 +175,42 @@ TEST_CASE("Elevation source decodes escaped manifest strings")
     const osect::elevation_source source(tree.path());
 
     CHECK(source.attribution() == "Agency \"quoted\" text");
+}
+
+TEST_CASE("Elevation source decodes \\u escapes in manifest strings")
+{
+    // e-acute (2 UTF-8 bytes), em dash (3), and U+1F5FA as a surrogate pair (4).
+    temporary_tree tree("osect-elevation-source-unicode",
+                        "{\n"
+                        "  \"dataset\": \"unicode\",\n"
+                        "  \"dataset_display_name\": \"Donn\\u00E9es \\u2014 \\ud83d\\uddfa\",\n"
+                        "  \"source_version\": \"2026-01-01\",\n"
+                        "  \"attribution\": \"Test data\",\n"
+                        "  \"is_surface_model\": false,\n"
+                        "  \"vertical_datum\": \"EGM2008\",\n"
+                        "  \"vertical_precision_m\": 1,\n"
+                        "  \"tile_pixels\": 256,\n"
+                        "  \"skirt_pixels\": 2,\n"
+                        "  \"min_zoom\": 0,\n"
+                        "  \"max_zoom\": 6\n"
+                        "}\n");
+
+    const osect::elevation_source source(tree.path());
+
+    CHECK(source.data_source_row().info == "Donn\xC3\xA9" "es \xE2\x80\x94 \xF0\x9F\x97\xBA 2026-01-01");
+}
+
+TEST_CASE("Elevation source rejects malformed \\u escapes")
+{
+    for(const std::string escape : {"\\u12G4", "\\u12", "\\ud83d", "\\ud83d\\u0041", "\\uddfa"})
+    {
+        CAPTURE(escape);
+        std::string json = manifest("bad", 256, 2, 0, 6, 1.0);
+        json.replace(json.find("Test data"), 9, escape);
+        temporary_tree tree("osect-elevation-source-bad-unicode", json);
+
+        CHECK_THROWS_AS(osect::elevation_source(tree.path()), std::runtime_error);
+    }
 }
 
 TEST_CASE("Elevation source rejects unsupported vertical data")

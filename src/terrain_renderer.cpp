@@ -303,7 +303,8 @@ namespace osect
               sampler(dev, sdl::filter::linear, sdl::filter::linear, sdl::sampler_address_mode::clamp_to_edge),
               water_sampler(dev, sdl::filter::nearest, sdl::filter::nearest,
                             sdl::sampler_address_mode::clamp_to_edge),
-              cache(source.max_zoom(), static_cast<std::size_t>(this->style.gpu_tile_cache)),
+              cache(source.min_zoom(), source.max_zoom(), source.tile_size(),
+                    static_cast<std::size_t>(this->style.gpu_tile_cache)),
               ramp(std::make_unique<sdl::texture>(dev, ramp_width, 1U, sdl::texture_format::r8g8b8a8_unorm)),
               no_water(std::make_unique<sdl::texture>(dev, 1U, 1U, sdl::texture_format::r8_unorm))
         {

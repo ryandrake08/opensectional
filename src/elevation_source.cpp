@@ -38,6 +38,66 @@ namespace
         return json.find_first_not_of(" \t\r\n", colon + 1);
     }
 
+    // The code unit spelled by the four hex digits at json[offset], if they
+    // are four hex digits.
+    std::optional<uint32_t> hex_code_unit(const std::string& json, size_t offset)
+    {
+        if(offset + 4 > json.size())
+        {
+            return std::nullopt;
+        }
+        uint32_t value = 0;
+        for(size_t i = offset; i < offset + 4; ++i)
+        {
+            const char c = json[i];
+            uint32_t digit = 0;
+            if(c >= '0' && c <= '9')
+            {
+                digit = c - '0';
+            }
+            else if(c >= 'a' && c <= 'f')
+            {
+                digit = c - 'a' + 10;
+            }
+            else if(c >= 'A' && c <= 'F')
+            {
+                digit = c - 'A' + 10;
+            }
+            else
+            {
+                return std::nullopt;
+            }
+            value = value * 16 + digit;
+        }
+        return value;
+    }
+
+    void append_utf8(std::string& out, uint32_t code_point)
+    {
+        if(code_point < 0x80)
+        {
+            out.push_back(static_cast<char>(code_point));
+        }
+        else if(code_point < 0x800)
+        {
+            out.push_back(static_cast<char>(0xC0 | (code_point >> 6)));
+            out.push_back(static_cast<char>(0x80 | (code_point & 0x3F)));
+        }
+        else if(code_point < 0x10000)
+        {
+            out.push_back(static_cast<char>(0xE0 | (code_point >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((code_point >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (code_point & 0x3F)));
+        }
+        else
+        {
+            out.push_back(static_cast<char>(0xF0 | (code_point >> 18)));
+            out.push_back(static_cast<char>(0x80 | ((code_point >> 12) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | ((code_point >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (code_point & 0x3F)));
+        }
+    }
+
     std::string string_value(const std::string& json, const std::string& key)
     {
         size_t offset = value_offset(json, key);
@@ -84,6 +144,30 @@ namespace
             case 't':
                 value.push_back('\t');
                 break;
+            case 'u':
+            {
+                // A code point above U+FFFF is a high surrogate escape
+                // followed by a low surrogate escape.
+                auto code = hex_code_unit(json, offset + 1);
+                if(!code || (*code >= 0xDC00 && *code <= 0xDFFF))
+                {
+                    throw std::runtime_error("manifest.json: invalid " + key);
+                }
+                offset += 4;
+                if(*code >= 0xD800 && *code <= 0xDBFF)
+                {
+                    const auto low =
+                        json.compare(offset + 1, 2, "\\u") == 0 ? hex_code_unit(json, offset + 3) : std::nullopt;
+                    if(!low || *low < 0xDC00 || *low > 0xDFFF)
+                    {
+                        throw std::runtime_error("manifest.json: invalid " + key);
+                    }
+                    code = 0x10000 + ((*code - 0xD800) << 10) + (*low - 0xDC00);
+                    offset += 6;
+                }
+                append_utf8(value, *code);
+                break;
+            }
             default:
                 throw std::runtime_error("manifest.json: invalid " + key);
             }

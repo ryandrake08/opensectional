@@ -86,7 +86,7 @@ namespace osect
             : dev(dev),
               sampler(dev, sdl::filter::linear, sdl::filter::linear, sdl::sampler_address_mode::clamp_to_edge),
               tile_path(std::move(tile_path)),
-              cache(15, 1024)
+              cache(0, 15, 256, 1024)
         {
         }
 

@@ -30,8 +30,10 @@ namespace osect
             std::shared_ptr<resource_t> resource;
         };
 
-        explicit tile_cache(int max_zoom, std::size_t capacity)
-            : max_zoom(max_zoom), capacity(capacity)
+        // Tiles exist at zoom levels min_zoom..max_zoom, each tile_pixels
+        // on a side.
+        tile_cache(int min_zoom, int max_zoom, int tile_pixels, std::size_t capacity)
+            : min_zoom(min_zoom), max_zoom(max_zoom), tile_pixels(tile_pixels), capacity(capacity)
         {
         }
 
@@ -43,8 +45,8 @@ namespace osect
         {
             auto meters_per_pixel = (vy_max - vy_min) / viewport_height;
             auto world_size = 2.0 * HALF_CIRCUMFERENCE;
-            auto ideal_zoom = std::log2(world_size / (256.0 * meters_per_pixel));
-            current_zoom = std::max(0, std::min(max_zoom, static_cast<int>(std::round(ideal_zoom))));
+            auto ideal_zoom = std::log2(world_size / (tile_pixels * meters_per_pixel));
+            current_zoom = std::max(min_zoom, std::min(max_zoom, static_cast<int>(std::round(ideal_zoom))));
 
             auto n = 1 << current_zoom;
             auto tile_size = world_size / n;
@@ -117,7 +119,7 @@ namespace osect
 
         bool find_ancestor(const tile_key& key, fallback& result)
         {
-            for(int ancestor_zoom = key.z - 1; ancestor_zoom >= 0; ancestor_zoom--)
+            for(int ancestor_zoom = key.z - 1; ancestor_zoom >= min_zoom; ancestor_zoom--)
             {
                 auto ancestor = ancestor_uv(key, ancestor_zoom, result.u0, result.v0, result.u1, result.v1);
                 auto resource = find(ancestor);
@@ -132,7 +134,9 @@ namespace osect
         }
 
     private:
+        int min_zoom;
         int max_zoom;
+        int tile_pixels;
         std::size_t capacity;
         int current_zoom = 0;
         std::vector<tile_key> visible;
@@ -183,7 +187,7 @@ namespace osect
         void request_range(int zoom, int tx_min, int tx_max, int ty_min, int ty_max,
                            const std::function<void(const tile_key&)>& request) const
         {
-            if(zoom < 0 || zoom > max_zoom)
+            if(zoom < min_zoom || zoom > max_zoom)
             {
                 return;
             }
@@ -201,7 +205,7 @@ namespace osect
         void request_range(int zoom, double vx_min, double vy_min, double vx_max, double vy_max,
                            const std::function<void(const tile_key&)>& request) const
         {
-            if(zoom < 0 || zoom > max_zoom)
+            if(zoom < min_zoom || zoom > max_zoom)
             {
                 return;
             }
