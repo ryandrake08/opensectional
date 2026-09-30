@@ -6,15 +6,13 @@
 #include "render_context.hpp"
 #include "tile_cache.hpp"
 #include "tile_key.hpp"
+#include "tile_loader.hpp"
 #include <algorithm>
 #include <cmath>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <filesystem>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
@@ -26,8 +24,7 @@
 #include <sdl/texture.hpp>
 #include <sdl/transfer_buffer.hpp>
 #include <sdl/uniform_buffer.hpp>
-#include <thread>
-#include <unordered_set>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -85,148 +82,24 @@ namespace osect
             return classes;
         }
 
-        class terrain_loader
+        // Loads the height tile for key and, when the tree has one, its
+        // water mask. Runs on the loader thread.
+        terrain_load_result load_terrain_tile(const elevation_source& source, const tile_key& key)
         {
-            struct request
+            const std::filesystem::path path = source.tile_path(key);
+            if(!std::filesystem::exists(path))
             {
-                tile_key key;
-                std::filesystem::path path;
-                std::filesystem::path water_path; // empty when there is no water mask
-            };
-
-            mutable std::mutex mutex_;
-            std::condition_variable cv_;
-            std::deque<request> requests_;
-            std::vector<terrain_load_result> results_;
-            std::unordered_set<tile_key> pending_;
-            std::unordered_set<tile_key> failed_;
-            std::thread worker_;
-            bool shutdown_ = false;
-            bool failure_pending_ = false;
-
-            void fail(const tile_key& key)
-            {
-                {
-                    std::scoped_lock lock(mutex_);
-                    pending_.erase(key);
-                    failed_.insert(key);
-                    failure_pending_ = true;
-                }
-                wake_main_thread();
+                throw std::runtime_error("no terrain tile at " + path.string());
             }
-
-            void run()
+            const auto tile = elevation_tile::load(path);
+            terrain_load_result result{key, tile.width(), tile.height(), tile.quantized_m(), 0, 0, {}};
+            const std::filesystem::path water_path = source.water_tile_path(key);
+            if(!water_path.empty() && std::filesystem::exists(water_path))
             {
-                while(true)
-                {
-                    request request;
-                    {
-                        std::unique_lock<std::mutex> lock(mutex_);
-                        cv_.wait(lock, [this] { return shutdown_ || !requests_.empty(); });
-                        if(shutdown_)
-                        {
-                            return;
-                        }
-                        request = std::move(requests_.front());
-                        requests_.pop_front();
-                    }
-
-                    try
-                    {
-                        if(!std::filesystem::exists(request.path))
-                        {
-                            fail(request.key);
-                            continue;
-                        }
-                        const auto tile = elevation_tile::load(request.path);
-                        terrain_load_result result{request.key, tile.width(), tile.height(), tile.quantized_m(), 0, 0,
-                                                   {}};
-                        if(!request.water_path.empty() && std::filesystem::exists(request.water_path))
-                        {
-                            result.water =
-                                load_water_classes(request.water_path, result.water_width, result.water_height);
-                        }
-                        {
-                            std::scoped_lock lock(mutex_);
-                            results_.push_back(std::move(result));
-                        }
-                        wake_main_thread();
-                    }
-                    catch(const std::exception&)
-                    {
-                        fail(request.key);
-                    }
-                }
+                result.water = load_water_classes(water_path, result.water_width, result.water_height);
             }
-
-        public:
-            terrain_loader() : worker_(&terrain_loader::run, this)
-            {
-            }
-
-            terrain_loader(const terrain_loader&) = delete;
-            terrain_loader& operator=(const terrain_loader&) = delete;
-            terrain_loader(terrain_loader&&) = delete;
-            terrain_loader& operator=(terrain_loader&&) = delete;
-
-            ~terrain_loader()
-            {
-                {
-                    std::scoped_lock lock(mutex_);
-                    shutdown_ = true;
-                }
-                cv_.notify_one();
-                worker_.join();
-            }
-
-            void request_tile(const tile_key& key, const std::filesystem::path& path,
-                              const std::filesystem::path& water_path)
-            {
-                std::scoped_lock lock(mutex_);
-                if(pending_.count(key) == 0 && failed_.count(key) == 0)
-                {
-                    pending_.insert(key);
-                    requests_.push_back({key, path, water_path});
-                    cv_.notify_one();
-                }
-            }
-
-            void cancel()
-            {
-                std::scoped_lock lock(mutex_);
-                for(const auto& request : requests_)
-                {
-                    pending_.erase(request.key);
-                }
-                requests_.clear();
-            }
-
-            bool failed(const tile_key& key) const
-            {
-                std::scoped_lock lock(mutex_);
-                return failed_.count(key) != 0;
-            }
-
-            std::vector<terrain_load_result> drain()
-            {
-                std::scoped_lock lock(mutex_);
-                for(const auto& result : results_)
-                {
-                    pending_.erase(result.key);
-                }
-                std::vector<terrain_load_result> result;
-                result.swap(results_);
-                return result;
-            }
-
-            bool drain_failures()
-            {
-                std::scoped_lock lock(mutex_);
-                const bool failed = failure_pending_;
-                failure_pending_ = false;
-                return failed;
-            }
-        };
+            return result;
+        }
 
         struct terrain_gpu
         {
@@ -276,7 +149,7 @@ namespace osect
         sdl::sampler sampler;
         sdl::sampler water_sampler; // nearest: the R8 value is an exact class index
         tile_cache<terrain_gpu> cache;
-        terrain_loader loader;
+        tile_loader<terrain_load_result> loader;
         std::vector<terrain_load_result> pending;
 
         struct fallback_quad
@@ -304,6 +177,7 @@ namespace osect
               water_sampler(dev, sdl::filter::nearest, sdl::filter::nearest, sdl::sampler_address_mode::clamp_to_edge),
               cache(source.min_zoom(), source.max_zoom(), source.tile_size(),
                     static_cast<std::size_t>(this->style.gpu_tile_cache)),
+              loader([&source](const tile_key& key) { return load_terrain_tile(source, key); }, wake_main_thread),
               ramp(dev, ramp_width, 1U, sdl::texture_format::r8g8b8a8_unorm),
               no_water(dev, 1U, 1U, sdl::texture_format::r8_unorm)
         {
@@ -333,7 +207,7 @@ namespace osect
             }
             if(!loader.failed(key))
             {
-                loader.request_tile(key, source.tile_path(key), source.water_tile_path(key));
+                loader.request(key);
                 return;
             }
             if(key.z > source.min_zoom())

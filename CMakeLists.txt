@@ -313,7 +313,6 @@ add_executable(osect
     src/route_planner.cpp
     src/route_session.cpp
     src/route_submitter.cpp
-    src/tile_loader.cpp
     src/chart_style.cpp
     src/chart_type.cpp
     src/data_source.cpp

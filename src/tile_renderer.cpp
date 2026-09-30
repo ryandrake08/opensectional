@@ -1,5 +1,6 @@
 #include "tile_renderer.hpp"
 #include "map_view.hpp"
+#include "program.hpp"
 #include "render_context.hpp"
 #include "tile_cache.hpp"
 #include "tile_key.hpp"
@@ -27,6 +28,13 @@ namespace osect
         tile_key key;
         sdl::buffer vertex_buffer;
         sdl::texture tex;
+    };
+
+    // A basemap tile image decoded on the loader thread.
+    struct tile_load_result
+    {
+        tile_key key;
+        sdl::surface surf;
     };
 } // namespace osect
 
@@ -64,11 +72,10 @@ namespace osect
     {
         sdl::device& dev;
         sdl::sampler sampler;
-        std::filesystem::path tile_path;
         tile_cache<tile_gpu> cache;
 
         // Background tile loader
-        tile_loader loader;
+        tile_loader<tile_load_result> loader;
 
         // Results drained from loader, staged for copy()
         std::vector<tile_load_result> pending_results;
@@ -85,8 +92,10 @@ namespace osect
         impl(sdl::device& dev, std::filesystem::path tile_path)
             : dev(dev),
               sampler(dev, sdl::filter::linear, sdl::filter::linear, sdl::sampler_address_mode::clamp_to_edge),
-              tile_path(std::move(tile_path)),
-              cache(0, 15, 256, 1024)
+              cache(0, 15, 256, 1024),
+              loader([root = std::move(tile_path)](const tile_key& key)
+                     { return tile_load_result{key, sdl::surface(tile_file_path(root, key).string().c_str())}; },
+                     wake_main_thread)
         {
         }
 
@@ -99,9 +108,9 @@ namespace osect
                 return;
             }
 
-            if(!loader.is_failed(key))
+            if(!loader.failed(key))
             {
-                loader.request(key, tile_file_path(tile_path, key));
+                loader.request(key);
                 return;
             }
 
@@ -168,7 +177,7 @@ namespace osect
 
     void tile_renderer::drain()
     {
-        auto results = pimpl->loader.drain_results();
+        auto results = pimpl->loader.drain();
         if(!results.empty())
         {
             pimpl->fallback_dirty = true;
