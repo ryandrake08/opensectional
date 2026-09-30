@@ -2,8 +2,10 @@
 #include "doctest/doctest.h"
 
 #include "app_options.hpp"
+#include "sdl/filesystem.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 
@@ -112,4 +114,65 @@ TEST_CASE("resolve_terrain_path: --terrain is used verbatim")
     options.terrain_path = "command-line-terrain";
 
     CHECK(resolve_terrain_path(options) == std::filesystem::path("command-line-terrain"));
+}
+
+TEST_CASE("resolve_bundled_asset: finds the Linux package layout under ../share/<dir>/")
+{
+    // base_path() is the directory holding this test binary; plant an asset
+    // in its ../share/<unique dir>/ and remove the tree afterwards.
+    const std::filesystem::path base = sdl::base_path();
+    REQUIRE(!base.empty());
+    const std::string share_dir = "osect_test_share_lookup";
+    const auto dir = base / ".." / "share" / share_dir;
+    std::filesystem::create_directories(dir);
+    std::ofstream(dir / "probe.txt") << "x";
+
+    const auto found = sdl::resolve_bundled_asset("probe.txt", share_dir.c_str());
+    CHECK(std::filesystem::equivalent(found, dir / "probe.txt"));
+    // Without a share dir the FHS location isn't searched.
+    CHECK(sdl::resolve_bundled_asset("probe.txt").empty());
+
+    std::filesystem::remove_all(dir);
+    std::error_code ec;
+    std::filesystem::remove(base / ".." / "share", ec); // only if now empty
+}
+
+// Plants terrain/ under the test binary's ../share/<app>/, which the bundled
+// asset lookup searches before the working directory (the repo root, which
+// may hold a real terrain/), and removes it afterwards.
+struct planted_terrain
+{
+    std::filesystem::path share = std::filesystem::path(sdl::base_path()) / ".." / "share";
+    std::filesystem::path dir = share / OSECT_APP_NAME / "terrain";
+
+    explicit planted_terrain(bool with_manifest)
+    {
+        std::filesystem::create_directories(dir);
+        if(with_manifest)
+        {
+            std::ofstream(dir / "manifest.json") << "{}";
+        }
+    }
+    ~planted_terrain()
+    {
+        std::filesystem::remove_all(share / OSECT_APP_NAME);
+        std::error_code ec;
+        std::filesystem::remove(share, ec); // only if now empty
+    }
+    planted_terrain(const planted_terrain&) = delete;
+    planted_terrain& operator=(const planted_terrain&) = delete;
+};
+
+TEST_CASE("resolve_terrain_path: bundled terrain/ with a manifest is used")
+{
+    planted_terrain terrain(true);
+    auto resolved = resolve_terrain_path(parsed_options{});
+    REQUIRE(resolved);
+    CHECK(std::filesystem::equivalent(*resolved, terrain.dir));
+}
+
+TEST_CASE("resolve_terrain_path: bundled terrain/ without a manifest means no terrain")
+{
+    planted_terrain terrain(false);
+    CHECK(!resolve_terrain_path(parsed_options{}));
 }

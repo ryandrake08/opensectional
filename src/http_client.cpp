@@ -2,6 +2,8 @@
 #include <curl/curl.h>
 #include <atomic>
 #include <cctype>
+#include <cstdlib>
+#include <filesystem>
 #include <mutex>
 #include <stdexcept>
 #include <string_view>
@@ -20,6 +22,43 @@ namespace osect
             static std::once_flag global_init_flag;
             std::call_once(global_init_flag, []() { curl_global_init(CURL_GLOBAL_DEFAULT); });
         }
+
+#if defined(__linux__)
+        // CA bundle for a curl built without a configured CA location. The
+        // static curl in Linux packages is built that way on purpose,
+        // because the trust store's path differs between distros; system
+        // curl (contributor builds) reports its own and is left alone.
+        // Checks SSL_CERT_FILE, then each major distro family's bundle.
+        // Empty when curl has a default or nothing is found.
+        std::string system_ca_bundle()
+        {
+            const curl_version_info_data* info = curl_version_info(CURLVERSION_NOW);
+            if(info->cainfo || info->capath)
+            {
+                return {};
+            }
+            std::error_code ec;
+            const char* env = std::getenv("SSL_CERT_FILE");
+            if(env && *env && std::filesystem::is_regular_file(env, ec))
+            {
+                return env;
+            }
+            for(const char* candidate : {
+                    "/etc/ssl/certs/ca-certificates.crt",                // Debian, Ubuntu, Arch, Gentoo
+                    "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // Fedora, RHEL 7+
+                    "/etc/pki/tls/certs/ca-bundle.crt",                  // older Fedora / RHEL
+                    "/etc/ssl/ca-bundle.pem",                            // openSUSE
+                    "/etc/ssl/cert.pem",                                 // Alpine, Void
+                })
+            {
+                if(std::filesystem::is_regular_file(candidate, ec))
+                {
+                    return candidate;
+                }
+            }
+            return {};
+        }
+#endif
 
         CURL* make_curl_handle()
         {
@@ -156,6 +195,12 @@ namespace osect
         curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+#if defined(__linux__)
+        if(const auto ca = system_ca_bundle(); !ca.empty())
+        {
+            curl_easy_setopt(curl, CURLOPT_CAINFO, ca.c_str());
+        }
+#endif
         // We're embedding curl into a GUI app where SIGPIPE handling is
         // already centralized; keep curl from installing its own.
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);

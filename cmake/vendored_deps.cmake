@@ -88,6 +88,16 @@ FetchContent_Declare(curl
     URL_HASH SHA256=4a093979a3c2d02de2fbc00549a32771007f2e78032c6faa5ecd2f7a9e152025
     ${_osect_populate_only})
 
+# mbedTLS: curl's TLS library on Linux (macOS and Windows use the OS's).
+# 3.6 is the long-term-support line that curl 8.13 supports.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    FetchContent_Declare(mbedtls
+        URL      https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2
+        URL_HASH SHA256=a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6
+        ${_osect_populate_only})
+    FetchContent_MakeAvailable(mbedtls)
+endif()
+
 # SQLite amalgamation: no CMake project; built by the top-level CMakeLists.
 FetchContent_Declare(sqlite
     URL      https://www.sqlite.org/2025/sqlite-autoconf-3490100.tar.gz

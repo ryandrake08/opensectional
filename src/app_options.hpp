@@ -50,7 +50,7 @@ namespace osect
     std::optional<std::filesystem::path> resolve_tile_path(const parsed_options& opts);
 
     // Resolve the terrain tile directory: --terrain, else the bundled
-    // set (or the single dataset subdirectory inside it). nullopt means
+    // terrain/ tile tree (a directory with manifest.json). nullopt means
     // "no terrain" — the layer is optional.
     std::optional<std::filesystem::path> resolve_terrain_path(const parsed_options& opts);
 

@@ -55,26 +55,11 @@ option(OSECT_ENABLE_PACKAGING "Configure platform installer packaging" OFF)
 if(OSECT_ENABLE_PACKAGING AND NOT OSECT_VENDOR_DEPS)
     message(FATAL_ERROR
         "OSECT_ENABLE_PACKAGING requires OSECT_VENDOR_DEPS=ON. "
-        "Use the macos-package or mingw-package preset.")
+        "Use the macos-package, mingw-package, or linux-package preset.")
 endif()
 
 if(OSECT_VENDOR_DEPS)
-    # Vendored mode is supported on macOS and MinGW.
-    # On Linux native, curl's OpenSSL probe fails inside CMake try_compile
-    # because our ZLIB::ZLIB ALIAS target cannot be reproduced in the
-    # sub-build (the underlying non-imported zlibstatic target isn't
-    # visible there). Linux has no installer story right now, so vendoring
-    # provides no benefit over the system-deps path. Refuse here with a
-    # helpful pointer rather than failing deep in curl's configure.
-    if(UNIX AND NOT APPLE AND NOT MINGW)
-        message(FATAL_ERROR
-            "OSECT_VENDOR_DEPS=ON is only supported on macOS and MinGW "
-            "(the platforms with a packaged release). On Linux, use the "
-            "default system-deps build:\n"
-            "  cmake --preset release && cmake --build --preset release -j\n"
-            "and install the dependency packages listed in the README.")
-    endif()
-
+    # Vendored mode is supported on macOS, MinGW, and Linux.
     # Fetch the pinned dependency sources into <build>/_deps/.
     include(cmake/vendored_deps.cmake)
 
@@ -117,6 +102,11 @@ if(OSECT_VENDOR_DEPS)
     set(SDLIMAGE_PNG_LIBPNG  OFF CACHE BOOL "" FORCE)
     set(SDLIMAGE_TESTS       OFF CACHE BOOL "" FORCE)
     set(SDLIMAGE_SAMPLES     OFF CACHE BOOL "" FORCE)
+
+    # SDL_image turns off its vendored libtiff's zlib support, and libtiff
+    # warns when it then finds a libdeflate it can't use (e.g. the build
+    # host's). Don't let it look for one.
+    set(CMAKE_DISABLE_FIND_PACKAGE_Deflate TRUE)
     add_subdirectory(${sdl3_image_SOURCE_DIR} ${sdl3_image_BINARY_DIR} EXCLUDE_FROM_ALL)
 
     set(SDLTTF_VENDORED ON CACHE BOOL "" FORCE)
@@ -172,6 +162,27 @@ if(OSECT_VENDOR_DEPS)
     elseif(WIN32)
         set(CURL_USE_SCHANNEL  ON  CACHE BOOL "" FORCE)
         set(CURL_USE_OPENSSL   OFF CACHE BOOL "" FORCE)
+    else()
+        # Linux has no OS TLS library with a stable ABI across distros, so
+        # TLS is vendored mbedTLS, linked statically. (curl's OpenSSL
+        # detection also can't work here: its try_compile checks link
+        # ZLIB::ZLIB, an alias of our non-imported zlibstatic.)
+        set(ENABLE_PROGRAMS        OFF CACHE BOOL "" FORCE)
+        set(ENABLE_TESTING         OFF CACHE BOOL "" FORCE)
+        set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+        add_subdirectory(${mbedtls_SOURCE_DIR} ${mbedtls_BINARY_DIR} EXCLUDE_FROM_ALL)
+        set(CURL_USE_MBEDTLS   ON  CACHE BOOL "" FORCE)
+        set(CURL_USE_OPENSSL   OFF CACHE BOOL "" FORCE)
+        # Pre-set what curl's FindMbedTLS would search for, naming the
+        # vendored targets, so it links them instead of system libraries.
+        set(MBEDTLS_INCLUDE_DIR "${mbedtls_SOURCE_DIR}/include" CACHE PATH "" FORCE)
+        set(MBEDTLS_LIBRARY     mbedtls    CACHE STRING "" FORCE)
+        set(MBEDX509_LIBRARY    mbedx509   CACHE STRING "" FORCE)
+        set(MBEDCRYPTO_LIBRARY  mbedcrypto CACHE STRING "" FORCE)
+        # No build-time CA location: the trust store's path differs per
+        # distro, so http_client finds it at runtime instead.
+        set(CURL_CA_BUNDLE      none CACHE STRING "" FORCE)
+        set(CURL_CA_PATH        none CACHE STRING "" FORCE)
     endif()
     add_subdirectory(${curl_SOURCE_DIR} ${curl_BINARY_DIR} EXCLUDE_FROM_ALL)
     # Restore BUILD_TESTING (see save above) so the osect tests block
@@ -193,6 +204,20 @@ if(OSECT_VENDOR_DEPS)
         SQLITE_ENABLE_FTS5=1)
     target_compile_options(sqlite3 PRIVATE -O2)
     set(SQLITE3_TARGET sqlite3)
+
+    # Warnings newer GCC (16) raises in vendored code, silenced where they
+    # occur. glibc 2.43's C23 string functions return const-qualified
+    # pointers for const inputs, which curl and SQLite assign to plain
+    # pointers.
+    target_compile_options(libcurl_static PRIVATE $<$<C_COMPILER_ID:GNU>:-Wno-discarded-qualifiers>)
+    target_compile_options(sqlite3 PRIVATE $<$<C_COMPILER_ID:GNU>:-Wno-discarded-qualifiers>)
+
+    # glibc 2.43 also defines strstr as a macro, which SDL_image's SVG
+    # loader redefines without #undef. GCC has no flag for plain macro
+    # redefinition, so this one file gets -w.
+    set_source_files_properties("${sdl3_image_SOURCE_DIR}/src/IMG_svg.c"
+        DIRECTORY "${sdl3_image_SOURCE_DIR}"
+        PROPERTIES COMPILE_OPTIONS $<$<C_COMPILER_ID:GNU>:-w>)
 else()
     # System mode (default for contributor builds). Each dependency
     # comes from the host's package manager — apt, brew, pacman/MSYS2.
@@ -394,6 +419,13 @@ target_link_options(osect PRIVATE
 # console subsystem so stdout/stderr remain visible for diagnostics.
 if(MINGW)
     target_link_options(osect PRIVATE $<$<CONFIG:Release>:-mwindows>)
+endif()
+
+# Vendored Linux builds are meant to run on other distros, so link the GCC
+# runtime statically and depend only on glibc (SDL loads X11 / Wayland /
+# audio / Vulkan libraries from the running system).
+if(OSECT_VENDOR_DEPS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_options(osect PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 
 # Link libraries. CURL::libcurl is the in-tree static libcurl whose
@@ -732,6 +764,55 @@ elseif(WIN32 AND OSECT_ENABLE_PACKAGING)
         "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\${APPLICATION_NAME}.lnk' '$INSTDIR\\\\osect.exe'")
     set(CPACK_NSIS_DELETE_ICONS_EXTRA
         "Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\${APPLICATION_NAME}.lnk'")
+
+    _require_asset("${BUNDLED_DB}")
+    _require_asset("${BUNDLED_BASEMAP}")
+    _require_asset("${BUNDLED_TERRAIN}")
+    include(CPack)
+
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND OSECT_ENABLE_PACKAGING)
+    # =========================================================================
+    # Linux: AppImage + .tar.xz of the same tree
+    # =========================================================================
+    if(CMAKE_VERSION VERSION_LESS 4.2)
+        message(FATAL_ERROR "Linux packaging needs CMake 4.2 or newer (CPack AppImage generator); this is ${CMAKE_VERSION}.")
+    endif()
+    # bin/osect with its data under share/osect/, which the runtime asset
+    # lookup finds relative to the executable. The tree is the AppDir for
+    # the AppImage and the contents of the tarball.
+    install(TARGETS osect RUNTIME DESTINATION bin)
+    install(FILES "${BUNDLED_DB}"  DESTINATION share/${APP_SHORT_NAME})
+    install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION share/${APP_SHORT_NAME})
+    install(DIRECTORY "${BUNDLED_TERRAIN}" DESTINATION share/${APP_SHORT_NAME})
+
+    # The AppImage generator requires a desktop entry whose Exec and Icon
+    # name installed files; it links both to the AppDir's top level.
+    set(_desktop_file "${CMAKE_BINARY_DIR}/${APP_SHORT_NAME}.desktop")
+    file(WRITE "${_desktop_file}"
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=${APPLICATION_NAME}\n"
+        "Comment=Aeronautical chart viewer and flight planner\n"
+        "Exec=${APP_SHORT_NAME}\n"
+        "Icon=${APP_SHORT_NAME}\n"
+        "Categories=Science;Geography;Maps;\n"
+        "Terminal=false\n")
+    install(FILES "${_desktop_file}" DESTINATION share/applications)
+    install(FILES "${ICON_PNG}" DESTINATION share/icons/hicolor/1024x1024/apps
+            RENAME "${APP_SHORT_NAME}.png")
+
+    include(cmake/appimage_tools.cmake)
+
+    set(CPACK_GENERATOR "AppImage;TXZ")
+    set(CPACK_PACKAGE_NAME "${APPLICATION_NAME}")
+    set(CPACK_PACKAGE_VENDOR "existens.org")
+    set(CPACK_PACKAGE_VERSION_MAJOR "${MAJOR_VERSION}")
+    set(CPACK_PACKAGE_VERSION_MINOR "${MINOR_VERSION}")
+    set(CPACK_PACKAGE_VERSION_PATCH "${BUILD_VERSION}")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Open source chart viewer and flight planner")
+    set(CPACK_PACKAGE_FILE_NAME "${APPLICATION_NAME}-${APPLICATION_VERSION}-${CMAKE_SYSTEM_PROCESSOR}")
+    set(CPACK_PACKAGE_ICON "${APP_SHORT_NAME}.png")
+    set(CPACK_APPIMAGE_NO_APPSTREAM ON)
 
     _require_asset("${BUNDLED_DB}")
     _require_asset("${BUNDLED_BASEMAP}")

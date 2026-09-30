@@ -10,9 +10,11 @@ namespace sdl
     std::string base_path();
 
     // Look up an asset (file or directory) that ships with the application.
-    // First checks base_path()/name, then the current working directory.
-    // Returns the full path if found, empty string otherwise.
-    std::string resolve_bundled_asset(const char* name);
+    // Checks base_path()/name, then (when share_dir is given) the FHS layout
+    // base_path()/../share/<share_dir>/name used by Linux packages, then the
+    // current working directory. Returns the full path if found, empty string
+    // otherwise.
+    std::string resolve_bundled_asset(const char* name, const char* share_dir = nullptr);
 
     // Per-platform directory segment for the embedding application's user
     // files. macOS conventionally uses a reverse-DNS bundle identifier;

@@ -60,6 +60,31 @@
             }
         },
         {
+            "name": "linux-vendored",
+            "displayName": "Linux (vendored dependencies)",
+            "description": "Static Linux release binary without an installer; depends only on glibc. Dependency sources are fetched into the build directory at configure time. Portable to distros whose glibc is at least the build host's.",
+            "binaryDir": "${sourceDir}/build-linux-vendored",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "OSECT_VENDOR_DEPS": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "linux-package",
+            "inherits": "linux-vendored",
+            "displayName": "Linux AppImage and tarball",
+            "description": "linux-vendored plus installer configuration. Building it produces an AppImage and a .tar.xz of the same tree. Requires the bundled data assets and CMake 4.2+.",
+            "binaryDir": "${sourceDir}/build-linux-package",
+            "cacheVariables": {
+                "OSECT_ENABLE_PACKAGING": "ON"
+            }
+        },
+        {
             "name": "mingw-vendored",
             "displayName": "Windows x86_64 cross-compile (vendored dependencies)",
             "description": "Static MinGW-w64 release binary without an installer, cross-compiled from Linux or macOS. Dependency sources are fetched into the build directory at configure time.",
@@ -92,6 +117,8 @@
         { "name": "relwithdebinfo", "configurePreset": "relwithdebinfo" },
         { "name": "macos-vendored", "configurePreset": "macos-vendored" },
         { "name": "macos-package",  "configurePreset": "macos-package", "targets": ["package"] },
+        { "name": "linux-vendored", "configurePreset": "linux-vendored" },
+        { "name": "linux-package",  "configurePreset": "linux-package", "targets": ["package"] },
         { "name": "mingw-vendored", "configurePreset": "mingw-vendored" },
         { "name": "mingw-package",  "configurePreset": "mingw-package", "targets": ["package"] }
     ],

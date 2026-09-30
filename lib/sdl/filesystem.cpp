@@ -26,7 +26,7 @@ namespace sdl
         return p ? std::string(p) : std::string();
     }
 
-    std::string resolve_bundled_asset(const char* name)
+    std::string resolve_bundled_asset(const char* name, const char* share_dir)
     {
         // SDL_GetBasePath returns a trailing path separator on all platforms
         // it supports, so a plain concatenation works for both / and \.
@@ -37,6 +37,14 @@ namespace sdl
             if(path_exists(candidate))
             {
                 return candidate;
+            }
+            if(share_dir)
+            {
+                candidate = base + "../share/" + share_dir + "/" + name;
+                if(path_exists(candidate))
+                {
+                    return candidate;
+                }
             }
         }
         if(path_exists(name))

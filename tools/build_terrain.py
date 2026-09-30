@@ -6,7 +6,7 @@ child interiors, then copy skirts from same-zoom neighbours.
 
 Usage:
     python3 tools/build_terrain.py --dataset gmted2010-30 --zoom 0-6 \\
-        terrain_source/gmted2010-30 terrain/gmted2010-30
+        terrain_source/gmted2010-30 terrain
 """
 
 import argparse

@@ -29,7 +29,7 @@ tools/env/bin/python3 tools/build_basemap.py mapdata/natural_earth_vector.gpkg.z
 # 8. Build the bundled GMTED2010 z0-z6 global terrain set into terrain/
 tools/env/bin/python3 tools/download_terrain.py --dataset gmted2010-30 terrain_source/gmted2010-30
 tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010-30 --zoom 0-6 \
-    terrain_source/gmted2010-30 terrain/gmted2010-30
+    terrain_source/gmted2010-30 terrain
 
 # 9. Run. With no options, osect looks for osect.db and basemap/ next
 #    to the executable (installer layout) or in the current working
@@ -39,7 +39,7 @@ tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010-30 --zoom 0-6 \
 ./build/osect
 
 # Override any asset path explicitly:
-./build/osect -d osect.db -b basemap -t terrain/gmted2010-30 -c osect.ini
+./build/osect -d osect.db -b basemap -t terrain -c osect.ini
 
 # Verbosity: -v (warnings), -vv (info), -vvv (debug)
 ./build/osect -vv
@@ -169,11 +169,11 @@ tools/check-sources.sh [-t]                                 # clangd diagnostics
 
 ## Cutting a release
 
-The macOS DMG and Windows NSIS installers ship a self-contained binary with all C/C++ dependencies (SDL3, SDL3_image, SDL3_ttf, libcurl, zlib, SQLite3) built from pinned sources and linked statically. TLS comes from the OS-native backend on each platform (SecureTransport on macOS, Schannel on Windows).
+The macOS DMG, Windows NSIS installer, and Linux AppImage ship a self-contained binary with all C/C++ dependencies (SDL3, SDL3_image, SDL3_ttf, libcurl, zlib, SQLite3) built from pinned sources and linked statically. TLS comes from the OS-native backend on macOS (SecureTransport) and Windows (Schannel), and from vendored mbedTLS on Linux.
 
 Each installer is one preset. Configuring it fetches the pinned dependency sources (SHA-256-pinned archives; no git needed) into `<build>/_deps/`, which needs network access the first time; building it compiles everything and runs CPack. Nothing is written outside the build directory.
 
-The `macos-vendored` and `mingw-vendored` presets build the same self-contained binary without configuring an installer, so they don't need the bundled data assets below.
+The `macos-vendored` and `mingw-vendored` presets build the same self-contained binary without configuring an installer, so they don't need the bundled data assets below. `linux-vendored` builds the Linux equivalent: a binary that depends only on glibc (TLS from vendored mbedTLS; the system's CA bundle is located at runtime), runnable on distros whose glibc is at least the build host's.
 
 ### Prerequisite: build the bundled data assets
 
@@ -185,7 +185,7 @@ running a package script:
 |---|---|---|
 | `osect.db` | `download_faa.py nasr_data` → `build_faa.py` (use the command the download prints) | [NASR Database](#1-nasr-database) |
 | `basemap/` | `download_basemap.py mapdata` → `build_basemap.py mapdata/natural_earth_vector.gpkg.zip basemap/` | [Basemap Tiles](#2-basemap-tiles) |
-| `terrain/` | `download_terrain.py --dataset gmted2010-30 terrain_source/gmted2010-30` → `build_terrain.py --dataset gmted2010-30 --zoom 0-6 terrain_source/gmted2010-30 terrain/gmted2010-30` | [Bundled Terrain Tiles](#3-bundled-terrain-tiles) |
+| `terrain/` | `download_terrain.py --dataset gmted2010-30 terrain_source/gmted2010-30` → `build_terrain.py --dataset gmted2010-30 --zoom 0-6 terrain_source/gmted2010-30 terrain` | [Bundled Terrain Tiles](#3-bundled-terrain-tiles) |
 
 If any of the three is missing, CMake configuration under `OSECT_ENABLE_PACKAGING=ON`
 aborts with `Installer asset missing: ...`. These assets are not in source control
@@ -213,6 +213,44 @@ cmake --build --preset mingw-package -j
 The resulting `osect.exe` is self-contained: the only DLLs shipped alongside it are the MinGW C++ runtime (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`). Output: `build-mingw-package/OpenSectional-X.Y.Z-win64.exe`.
 
 The experimental D3D12 backend is included automatically: on a Linux x86_64 build host the configure step downloads a pinned prebuilt `dxc` to compile its shaders. On a macOS or Linux arm64 host, put `dxc` on `PATH` to include it; otherwise the binary builds Vulkan-only.
+
+### Linux AppImage
+
+The vendored SDL is compiled against the X11, Wayland, audio, D-Bus, and udev development headers (it loads those libraries from the user's system at runtime), and its configure step stops at the first one missing. On the build host, install SDL's documented dependency set plus the project's shader and embedding tools. Ubuntu 22.04+ / Debian 12+:
+
+```bash
+sudo apt install build-essential pkg-config xxd glslang-tools \
+    libasound2-dev libpulse-dev libaudio-dev libfribidi-dev libjack-dev libsndio-dev \
+    libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev \
+    libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev \
+    libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
+    libdbus-1-dev libibus-1.0-dev libudev-dev libthai-dev \
+    libpipewire-0.3-dev libwayland-dev libdecor-0-dev liburing-dev
+```
+
+Fedora:
+
+```bash
+sudo dnf install gcc-c++ make pkgconf vim-common glslang \
+    alsa-lib-devel fribidi-devel pulseaudio-libs-devel pipewire-devel \
+    libX11-devel libXext-devel libXrandr-devel libXcursor-devel libXfixes-devel \
+    libXi-devel libXScrnSaver-devel libXtst-devel dbus-devel ibus-devel \
+    systemd-devel mesa-libGL-devel libxkbcommon-devel mesa-libGLES-devel \
+    mesa-libEGL-devel vulkan-devel wayland-devel wayland-protocols-devel \
+    libdrm-devel mesa-libgbm-devel libusb1-devel libdecor-devel \
+    pipewire-jack-audio-connection-kit-devel libthai-devel liburing-devel
+```
+
+The lists come from SDL's [Linux build dependencies](https://wiki.libsdl.org/SDL3/README-linux#build-dependencies); the same packages cover the `linux-vendored` preset.
+
+Packaging also needs CMake 4.2 or newer for CPack's AppImage generator, newer than Ubuntu 22.04 (3.22) and 24.04 (3.28) ship. Install a current CMake from [Kitware's releases](https://cmake.org/download/) (the `cmake-*-linux-<arch>.tar.gz` archive runs from wherever it's unpacked) or Kitware's APT repository, or with `pipx install cmake`. Then:
+
+```bash
+cmake --preset linux-package
+cmake --build --preset linux-package -j
+```
+
+This produces `build-linux-package/OpenSectional-X.Y.Z-<arch>.AppImage` and `OpenSectional-X.Y.Z-<arch>.tar.xz`, both holding `bin/osect` with its data under `share/osect/`, plus a desktop entry and icon. The configure step downloads pinned `appimagetool`, `patchelf`, and AppImage runtime binaries for the build host's architecture (x86_64 or aarch64); packaging needs no FUSE and no network. `osect` depends only on glibc, so the packages run on distros whose glibc is at least the build host's: build on the oldest distribution you intend to support. Running an AppImage needs FUSE (`fusermount`), which desktop distributions include; the `.tar.xz` is the alternative, run in place as `bin/osect`.
 
 ### Installer signing — macOS
 
@@ -269,7 +307,7 @@ For a clean signed installer, sign `osect.exe` *before* CPack runs (so the NSIS 
 
 ### Installer assets and packaging notes
 
-The package scripts run `cpack` against three pre-generated runtime assets that aren't checked in — `osect.db`, `basemap/`, and `terrain/`. Build them first (see [Prerequisite: build the bundled data assets](#prerequisite-build-the-bundled-data-assets)); packaging configuration aborts with `Installer asset missing: ...` until they exist.
+The package presets run CPack against three pre-generated runtime assets that aren't checked in — `osect.db`, `basemap/`, and `terrain/`. Build them first (see [Prerequisite: build the bundled data assets](#prerequisite-build-the-bundled-data-assets)); packaging configuration aborts with `Installer asset missing: ...` until they exist.
 
 The macOS bundle additionally needs `osect.png` for icon generation (via `sips` + `iconutil`); the Windows installer uses the same PNG via ImageMagick `magick`. If the icon-generation tool is missing the installer still builds, just without a custom icon.
 
@@ -437,9 +475,9 @@ and feeds the shaded-relief map layer and route terrain profile.
 # Download the GMTED2010 grid plus the GSHHG shoreline archive (149 MB, once)
 tools/env/bin/python3 tools/download_terrain.py --dataset gmted2010-30 terrain_source/gmted2010-30
 
-# Build the z0-z6 Terrarium tile tree, water mask and manifest.json into terrain/gmted2010-30/
+# Build the z0-z6 Terrarium tile tree, water mask and manifest.json into terrain/
 tools/env/bin/python3 tools/build_terrain.py --dataset gmted2010-30 --zoom 0-6 \
-    terrain_source/gmted2010-30 terrain/gmted2010-30
+    terrain_source/gmted2010-30 terrain
 ```
 
 The build also writes a `water/` sidecar tree so the terrain layer can
@@ -462,11 +500,9 @@ hypsometric terrain while no route is active, without changing the selected
 radio mode.
 
 Larger, finer sets are downloaded and built with the same two tools by
-passing a different `--dataset` and `--zoom` range, then pointed at with
-`-t <path>`. With no `-t`, osect uses `terrain/` next to the executable
-or in the working directory: either a tile tree directly, or a single
-dataset subdirectory inside it (so `terrain/gmted2010-30/` is found
-automatically).
+passing a different `--dataset` and `--zoom` range into a directory of your
+choice, then selected with `-t <path>`. With no `-t`, osect uses the tile tree in
+`terrain/` next to the executable or in the working directory.
 
 | `--dataset` | Coverage | Post spacing | Model | Licence | Source download | Max `--zoom` |
 |---|---|---|---|---|---|---|
@@ -718,6 +754,7 @@ Contributor builds link the SDL trio, libcurl, zlib, and SQLite3 from the host's
 | zlib | 1.3.1 (release archive, sha256-pinned) | zlib | https://github.com/madler/zlib |
 | libcurl | 8.13.0 (release archive, sha256-pinned) | curl (MIT-style) | https://github.com/curl/curl |
 | SQLite3 | 3.49.1 (tarball, sha256-pinned) | Public domain | https://www.sqlite.org |
+| mbedTLS | 3.6.7 (release archive, Linux vendored builds only, sha256-pinned) | Apache-2.0 | https://github.com/Mbed-TLS/mbedtls |
 | MoltenVK | 1.3.0 (binary tarball, macOS only, sha256-pinned) | Apache-2.0 | https://github.com/KhronosGroup/MoltenVK |
 | Dear ImGui | tracked | MIT | https://github.com/ocornut/imgui |
 | GLM | 1.0.1 | MIT (or Happy Bunny) | https://github.com/g-truc/glm |

@@ -1,5 +1,4 @@
 #include "app_options.hpp"
-
 #include <iostream>
 #include <sdl/filesystem.hpp>
 #include <sdl/log.hpp>
@@ -31,9 +30,8 @@ namespace osect
                 << "  --offline                  Skip all network fetches; use cached ephemeral data only\n"
                 << "\n"
                 << "When -b/-d are omitted, the asset is loaded from next to the\n"
-                << "executable (installer layout) or the current directory. -c is\n"
-                << "fully optional; chart-style and routing defaults are baked in,\n"
-                << "with bundled / per-user / -c override files cascading on top.\n";
+                << "executable (installer layout), from ../share/" OSECT_APP_NAME "/ relative to\n"
+                << "it (Linux package layout), or the current directory.\n";
         }
     }
 
@@ -131,12 +129,13 @@ namespace osect
         {
             return *opts.db_path;
         }
-        auto resolved = sdl::resolve_bundled_asset("osect.db");
+        auto resolved = sdl::resolve_bundled_asset("osect.db", OSECT_APP_NAME);
         if(resolved.empty())
         {
             print_usage(std::cerr, prog);
             throw std::runtime_error(
-                "No osect.db supplied and none found next to the executable or in the current directory.");
+                "No osect.db supplied and none found next to the executable, in ../share/" OSECT_APP_NAME
+                "/ relative to it, or in the current directory.");
         }
         return resolved;
     }
@@ -148,7 +147,7 @@ namespace osect
             return *opts.tile_path;
         }
         // Tiles are optional — nullopt means "no basemap".
-        auto bundled = sdl::resolve_bundled_asset("basemap");
+        auto bundled = sdl::resolve_bundled_asset("basemap", OSECT_APP_NAME);
         if(bundled.empty())
         {
             return std::nullopt;
@@ -162,37 +161,23 @@ namespace osect
         {
             return *opts.terrain_path;
         }
-        auto bundled = sdl::resolve_bundled_asset("terrain");
+        auto bundled = sdl::resolve_bundled_asset("terrain", OSECT_APP_NAME);
         if(bundled.empty())
         {
             return std::nullopt;
         }
         std::filesystem::path root{std::move(bundled)};
-        if(std::filesystem::exists(root / "manifest.json"))
+        if(!std::filesystem::exists(root / "manifest.json"))
         {
-            return root;
+            return std::nullopt;
         }
-
-        std::optional<std::filesystem::path> dataset;
-        for(const auto& entry : std::filesystem::directory_iterator(root))
-        {
-            if(!entry.is_directory() || !std::filesystem::exists(entry.path() / "manifest.json"))
-            {
-                continue;
-            }
-            if(dataset)
-            {
-                return std::nullopt;
-            }
-            dataset = entry.path();
-        }
-        return dataset;
+        return root;
     }
 
     ini_config build_ini(const parsed_options& opts)
     {
         ini_config ini;
-        auto bundled = sdl::resolve_bundled_asset("osect.ini");
+        auto bundled = sdl::resolve_bundled_asset("osect.ini", OSECT_APP_NAME);
         if(!bundled.empty())
         {
             sdl::log_info("ini merge: bundled " + bundled);
@@ -239,10 +224,9 @@ namespace osect
 #ifdef OSECT_HAVE_DXIL
             return d;
 #elif defined(_WIN32)
-            throw std::runtime_error(
-                "--gpu direct3d12 not available: this build was configured without D3D12 support."
-                " Rebuild with -DOSECT_ENABLE_D3D12=ON (the default); on build hosts without a"
-                " prebuilt dxc (macOS, Linux arm64), dxc must also be on PATH.");
+            throw std::runtime_error("--gpu direct3d12 not available: this build was configured without D3D12 support."
+                                     " Rebuild with -DOSECT_ENABLE_D3D12=ON (the default); on build hosts without a"
+                                     " prebuilt dxc (macOS, Linux arm64), dxc must also be on PATH.");
 #else
             throw std::runtime_error("--gpu direct3d12 not available: D3D12 is supported on Windows only.");
 #endif
