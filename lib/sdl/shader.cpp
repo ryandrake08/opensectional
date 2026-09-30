@@ -5,15 +5,28 @@
 
 namespace sdl
 {
-    struct shader::impl
+    namespace shader_stage
     {
-        SDL_GPUDevice* device; // Non-owning
-        SDL_GPUShader* handle; // Owning
+        const shader_stage_t vertex(SDL_GPU_SHADERSTAGE_VERTEX);
+        const shader_stage_t fragment(SDL_GPU_SHADERSTAGE_FRAGMENT);
+    }
 
-        static SDL_GPUShader* create_shader(const sdl::device& dev, const void* code, size_t code_size,
-                                            const std::string& entrypoint, SDL_GPUShaderStage stage,
-                                            SDL_GPUShaderFormat format, uint32_t num_samplers,
-                                            uint32_t num_storage_buffers)
+    namespace shader_format
+    {
+        const shader_format_t invalid(SDL_GPU_SHADERFORMAT_INVALID);
+        const shader_format_t private_(SDL_GPU_SHADERFORMAT_PRIVATE);
+        const shader_format_t spirv(SDL_GPU_SHADERFORMAT_SPIRV);
+        const shader_format_t dxbc(SDL_GPU_SHADERFORMAT_DXBC);
+        const shader_format_t dxil(SDL_GPU_SHADERFORMAT_DXIL);
+        const shader_format_t msl(SDL_GPU_SHADERFORMAT_MSL);
+        const shader_format_t metallib(SDL_GPU_SHADERFORMAT_METALLIB);
+    }
+
+    namespace
+    {
+        SDL_GPUShader* create_shader(const sdl::device& dev, const void* code, size_t code_size,
+                                     const std::string& entrypoint, SDL_GPUShaderStage stage,
+                                     SDL_GPUShaderFormat format, uint32_t num_samplers, uint32_t num_storage_buffers)
         {
             // Auto-detect format if not specified
             if(format == SDL_GPU_SHADERFORMAT_INVALID)
@@ -33,14 +46,7 @@ namespace sdl
             shader_info.num_storage_buffers = num_storage_buffers;
             shader_info.num_uniform_buffers = 1; // Most shaders use one uniform buffer
 
-            return SDL_CreateGPUShader(dev.get(), &shader_info);
-        }
-
-        impl(const sdl::device& dev, const void* code, size_t code_size, const std::string& entrypoint,
-             SDL_GPUShaderStage stage, SDL_GPUShaderFormat format, uint32_t num_samplers, uint32_t num_storage_buffers)
-            : device(dev.get()),
-              handle(create_shader(dev, code, code_size, entrypoint, stage, format, num_samplers, num_storage_buffers))
-        {
+            SDL_GPUShader* handle = SDL_CreateGPUShader(dev.get(), &shader_info);
             if(!handle)
             {
                 throw error("Failed to create shader");
@@ -48,46 +54,28 @@ namespace sdl
 
             SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Shader created: %s, %lu bytes",
                          stage == SDL_GPU_SHADERSTAGE_VERTEX ? "vertex" : "fragment", (unsigned long)code_size);
+            return handle;
         }
+    } // namespace
 
-        ~impl() noexcept
-        {
-            SDL_ReleaseGPUShader(device, handle);
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
+    void shader::release::operator()(SDL_GPUShader* handle) const
+    {
+        SDL_ReleaseGPUShader(device, handle);
+    }
 
     shader::shader(const device& dev, const unsigned char* code_array, unsigned int code_len,
                    const std::string& entrypoint, shader_stage_t stage, shader_format_t format, uint32_t num_samplers,
                    uint32_t num_storage_buffers)
-        : pimpl(new impl(dev, static_cast<const void*>(code_array), code_len, entrypoint,
-                         static_cast<SDL_GPUShaderStage>(stage.value), static_cast<SDL_GPUShaderFormat>(format.value),
-                         num_samplers, num_storage_buffers))
+        : handle_(create_shader(dev, static_cast<const void*>(code_array), code_len, entrypoint,
+                                static_cast<SDL_GPUShaderStage>(stage.value),
+                                static_cast<SDL_GPUShaderFormat>(format.value), num_samplers, num_storage_buffers),
+                  release{dev.get()})
     {
-    }
-
-    shader::~shader() = default;
-
-    shader::shader(shader&& other) noexcept : pimpl(std::move(other.pimpl))
-    {
-    }
-
-    shader& shader::operator=(shader&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     SDL_GPUShader* shader::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 
 } // namespace sdl

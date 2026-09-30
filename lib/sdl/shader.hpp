@@ -1,11 +1,45 @@
 #pragma once
-#include "types.hpp"
+#include "bitflags.hpp"
+#include "opaque_typedef.hpp"
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 
+struct SDL_GPUDevice;
+struct SDL_GPUShader;
+
 namespace sdl
 {
+    // ========================================================================
+    // GPU Shader Stage (opaque typedef)
+    // ========================================================================
+
+    opaque_typedef(uint32_t, shader_stage_t);
+
+    namespace shader_stage
+    {
+        extern const shader_stage_t vertex;
+        extern const shader_stage_t fragment;
+    }
+
+    // ========================================================================
+    // GPU Shader Format (bitflags)
+    // ========================================================================
+
+    bitflags_typedef(uint32_t, shader_format_t);
+
+    namespace shader_format
+    {
+        extern const shader_format_t invalid;
+        extern const shader_format_t private_;
+        extern const shader_format_t spirv;
+        extern const shader_format_t dxbc;
+        extern const shader_format_t dxil;
+        extern const shader_format_t msl;
+        extern const shader_format_t metallib;
+    }
+
     class device;
 
     /**
@@ -16,8 +50,14 @@ namespace sdl
      */
     class shader
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Releases the handle on the device that created it.
+        struct release
+        {
+            SDL_GPUDevice* device;
+            void operator()(SDL_GPUShader* handle) const;
+        };
+
+        std::unique_ptr<SDL_GPUShader, release> handle_;
 
     public:
         /**
@@ -36,18 +76,13 @@ namespace sdl
                shader_stage_t stage, shader_format_t format = shader_format::invalid, uint32_t num_samplers = 0,
                uint32_t num_storage_buffers = 0);
 
-        /**
-         * Destroy shader.
-         */
-        ~shader();
-
         // Non-copyable
         shader(const shader&) = delete;
         shader& operator=(const shader&) = delete;
 
         // Moveable
-        shader(shader&& other) noexcept;
-        shader& operator=(shader&& other) noexcept;
+        shader(shader&& other) noexcept = default;
+        shader& operator=(shader&& other) noexcept = default;
 
         /**
          * Get underlying SDL_GPUShader handle.

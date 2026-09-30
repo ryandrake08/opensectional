@@ -1,8 +1,9 @@
 #pragma once
 
 #include "optional.hpp"
-#include "types.hpp"
 #include <memory>
+
+struct SDL_GPUCommandBuffer;
 
 namespace sdl
 {
@@ -18,8 +19,13 @@ namespace sdl
      */
     class command_buffer
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Submits the command buffer, which also hands it back to SDL.
+        struct release
+        {
+            void operator()(SDL_GPUCommandBuffer* handle) const;
+        };
+
+        std::unique_ptr<SDL_GPUCommandBuffer, release> handle_;
 
     public:
         /**
@@ -30,18 +36,13 @@ namespace sdl
          */
         explicit command_buffer(const device& dev);
 
-        /**
-         * Submit command buffer and destroy.
-         */
-        ~command_buffer();
-
         // Non-copyable
         command_buffer(const command_buffer&) = delete;
         command_buffer& operator=(const command_buffer&) = delete;
 
         // Moveable
-        command_buffer(command_buffer&& other) noexcept;
-        command_buffer& operator=(command_buffer&& other) noexcept;
+        command_buffer(command_buffer&& other) noexcept = default;
+        command_buffer& operator=(command_buffer&& other) noexcept = default;
 
         /**
          * Get underlying command buffer handle.

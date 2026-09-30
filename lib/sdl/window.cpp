@@ -5,13 +5,20 @@
 
 namespace sdl
 {
-    struct window::impl
+    namespace window_flags
     {
-        SDL_Window* handle;
+        const window_flags_t resizable(SDL_WINDOW_RESIZABLE);
+        const window_flags_t borderless(SDL_WINDOW_BORDERLESS);
+        const window_flags_t fullscreen(SDL_WINDOW_FULLSCREEN);
+        const window_flags_t high_pixel_density(SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        const window_flags_t hidden(SDL_WINDOW_HIDDEN);
+    }
 
-        impl(const char* title, int width, int height, SDL_WindowFlags flags)
-            : handle(SDL_CreateWindow(title, width, height, flags))
+    namespace
+    {
+        SDL_Window* create_window(const char* title, int width, int height, SDL_WindowFlags flags)
         {
+            SDL_Window* handle = SDL_CreateWindow(title, width, height, flags);
             if(!handle)
             {
                 throw error("Failed to create window");
@@ -22,41 +29,22 @@ namespace sdl
             const char* display_name = SDL_GetDisplayName(display_id);
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Window created: \"%s\" (%dx%d) on display: %s", title, width,
                         height, display_name ? display_name : "Unknown");
+            return handle;
         }
+    } // namespace
 
-        ~impl() noexcept
-        {
-            SDL_DestroyWindow(handle);
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
+    void window::release::operator()(SDL_Window* handle) const
+    {
+        SDL_DestroyWindow(handle);
+    }
 
     window::window(const instance& /* inst */, const char* title, int width, int height, window_flags_t flags)
-        : pimpl(new impl(title, width, height, static_cast<SDL_WindowFlags>(flags.value)))
+        : handle_(create_window(title, width, height, static_cast<SDL_WindowFlags>(flags.value)))
     {
-    }
-
-    window::~window() = default;
-
-    window::window(window&& other) noexcept : pimpl(std::move(other.pimpl))
-    {
-    }
-
-    window& window::operator=(window&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     SDL_Window* window::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 } // namespace sdl

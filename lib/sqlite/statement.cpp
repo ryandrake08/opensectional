@@ -19,85 +19,67 @@ namespace sqlite
         }
     } // namespace
 
-    struct statement::impl
+    void statement::release::operator()(sqlite3_stmt* stmt) const
     {
-        sqlite3_stmt* stmt;
+        sqlite3_finalize(stmt);
+    }
 
-        explicit impl(sqlite3_stmt* s) : stmt(s)
-        {
-        }
-
-        ~impl()
-        {
-            sqlite3_finalize(stmt);
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
-
-    statement::statement(sqlite3_stmt* stmt) : pimpl(new impl(stmt))
+    statement::statement(sqlite3_stmt* stmt) : stmt_(stmt)
     {
     }
 
-    statement::~statement() = default;
-    statement::statement(statement&& other) noexcept = default;
-    statement& statement::operator=(statement&& other) noexcept = default;
-
     void statement::reset()
     {
-        sqlite3_reset(pimpl->stmt);
+        sqlite3_reset(stmt_.get());
     }
 
     void statement::bind_null(int index)
     {
-        check_bind(sqlite3_bind_null(pimpl->stmt, index), index, pimpl->stmt);
+        check_bind(sqlite3_bind_null(stmt_.get(), index), index, stmt_.get());
     }
 
     void statement::bind(int index, int value)
     {
-        check_bind(sqlite3_bind_int(pimpl->stmt, index, value), index, pimpl->stmt);
+        check_bind(sqlite3_bind_int(stmt_.get(), index, value), index, stmt_.get());
     }
 
     void statement::bind(int index, std::int64_t value)
     {
-        check_bind(sqlite3_bind_int64(pimpl->stmt, index, value), index, pimpl->stmt);
+        check_bind(sqlite3_bind_int64(stmt_.get(), index, value), index, stmt_.get());
     }
 
     void statement::bind(int index, double value)
     {
-        check_bind(sqlite3_bind_double(pimpl->stmt, index, value), index, pimpl->stmt);
+        check_bind(sqlite3_bind_double(stmt_.get(), index, value), index, stmt_.get());
     }
 
     void statement::bind(int index, const char* value)
     {
-        check_bind(sqlite3_bind_text(pimpl->stmt, index, value, -1, SQLITE_TRANSIENT), index, pimpl->stmt);
+        check_bind(sqlite3_bind_text(stmt_.get(), index, value, -1, SQLITE_TRANSIENT), index, stmt_.get());
     }
 
     void statement::bind(int index, const std::string& value)
     {
-        check_bind(sqlite3_bind_text(pimpl->stmt, index, value.c_str(), -1, SQLITE_TRANSIENT), index, pimpl->stmt);
+        check_bind(sqlite3_bind_text(stmt_.get(), index, value.c_str(), -1, SQLITE_TRANSIENT), index, stmt_.get());
     }
 
     void statement::bind(int index, const std::vector<int>& values)
     {
-        check_bind(sqlite3_bind_blob(pimpl->stmt, index, values.data(), static_cast<int>(values.size() * sizeof(int)),
+        check_bind(sqlite3_bind_blob(stmt_.get(), index, values.data(), static_cast<int>(values.size() * sizeof(int)),
                                      SQLITE_TRANSIENT),
-                   index, pimpl->stmt);
+                   index, stmt_.get());
     }
 
     void statement::bind(int index, const std::vector<double>& values)
     {
-        check_bind(sqlite3_bind_blob(pimpl->stmt, index, values.data(),
+        check_bind(sqlite3_bind_blob(stmt_.get(), index, values.data(),
                                      static_cast<int>(values.size() * sizeof(double)), SQLITE_TRANSIENT),
-                   index, pimpl->stmt);
+                   index, stmt_.get());
     }
 
     bool statement::step()
     {
-        int rc = sqlite3_step(pimpl->stmt);
+        int rc = sqlite3_step(stmt_.get());
         if(rc == SQLITE_ROW)
         {
             return true;
@@ -106,37 +88,37 @@ namespace sqlite
         {
             return false;
         }
-        throw error("sqlite3_step failed", sqlite3_db_handle(pimpl->stmt));
+        throw error("sqlite3_step failed", sqlite3_db_handle(stmt_.get()));
     }
 
     int statement::column_count() const
     {
-        return sqlite3_column_count(pimpl->stmt);
+        return sqlite3_column_count(stmt_.get());
     }
 
     int statement::column_int(int col)
     {
-        return sqlite3_column_int(pimpl->stmt, col);
+        return sqlite3_column_int(stmt_.get(), col);
     }
 
     std::int64_t statement::column_int64(int col)
     {
-        return sqlite3_column_int64(pimpl->stmt, col);
+        return sqlite3_column_int64(stmt_.get(), col);
     }
 
     double statement::column_double(int col)
     {
-        return sqlite3_column_double(pimpl->stmt, col);
+        return sqlite3_column_double(stmt_.get(), col);
     }
 
     bool statement::column_is_null(int col)
     {
-        return sqlite3_column_type(pimpl->stmt, col) == SQLITE_NULL;
+        return sqlite3_column_type(stmt_.get(), col) == SQLITE_NULL;
     }
 
     std::string statement::column_text(int col)
     {
-        const unsigned char* text = sqlite3_column_text(pimpl->stmt, col);
+        const unsigned char* text = sqlite3_column_text(stmt_.get(), col);
         return text ? std::string(reinterpret_cast<const char*>(text)) : std::string();
     }
 

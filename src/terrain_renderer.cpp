@@ -19,12 +19,13 @@
 #include <sdl/buffer.hpp>
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
+#include <sdl/pipeline.hpp>
 #include <sdl/render_pass.hpp>
 #include <sdl/sampler.hpp>
 #include <sdl/surface.hpp>
 #include <sdl/texture.hpp>
 #include <sdl/transfer_buffer.hpp>
-#include <sdl/types.hpp>
+#include <sdl/uniform_buffer.hpp>
 #include <thread>
 #include <unordered_set>
 #include <utility>

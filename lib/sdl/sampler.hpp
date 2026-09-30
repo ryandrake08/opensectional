@@ -1,10 +1,39 @@
 #pragma once
 
-#include "types.hpp"
+#include "opaque_typedef.hpp"
+#include <cstdint>
 #include <memory>
+
+struct SDL_GPUDevice;
+struct SDL_GPUSampler;
 
 namespace sdl
 {
+    // ========================================================================
+    // GPU Texture Filtering (opaque typedef)
+    // ========================================================================
+
+    opaque_typedef(uint32_t, filter_t);
+
+    namespace filter
+    {
+        extern const filter_t nearest;
+        extern const filter_t linear;
+    }
+
+    // ========================================================================
+    // GPU Sampler Address Mode (opaque typedef)
+    // ========================================================================
+
+    opaque_typedef(uint32_t, sampler_address_mode_t);
+
+    namespace sampler_address_mode
+    {
+        extern const sampler_address_mode_t repeat;
+        extern const sampler_address_mode_t mirrored_repeat;
+        extern const sampler_address_mode_t clamp_to_edge;
+    }
+
     class device;
 
     /**
@@ -16,8 +45,14 @@ namespace sdl
      */
     class sampler
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Releases the handle on the device that created it.
+        struct release
+        {
+            SDL_GPUDevice* device;
+            void operator()(SDL_GPUSampler* handle) const;
+        };
+
+        std::unique_ptr<SDL_GPUSampler, release> handle_;
 
     public:
         /**
@@ -32,18 +67,13 @@ namespace sdl
         sampler(const device& dev, filter_t min_filter = filter::linear, filter_t mag_filter = filter::linear,
                 sampler_address_mode_t address_mode = sampler_address_mode::clamp_to_edge);
 
-        /**
-         * Destroy sampler.
-         */
-        ~sampler();
-
         // Non-copyable
         sampler(const sampler&) = delete;
         sampler& operator=(const sampler&) = delete;
 
         // Moveable
-        sampler(sampler&& other) noexcept;
-        sampler& operator=(sampler&& other) noexcept;
+        sampler(sampler&& other) noexcept = default;
+        sampler& operator=(sampler&& other) noexcept = default;
 
         /**
          * Get underlying SDL_GPUSampler handle.

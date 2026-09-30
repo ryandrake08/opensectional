@@ -5,21 +5,15 @@
 
 namespace sdl
 {
-    struct depth_buffer::impl
+    namespace
     {
-        SDL_GPUDevice* device; // Non-owning
-        SDL_GPUTextureFormat fmt;
-        Uint32 width;
-        Uint32 height;
-        texture tex;
-
-        static texture create_texture(SDL_GPUDevice* device, SDL_GPUTextureFormat format, Uint32 width, Uint32 height)
+        texture create_texture(SDL_GPUDevice* device, texture_format_t format, unsigned width, unsigned height)
         {
             SDL_GPUTextureCreateInfo createInfo = {};
             createInfo.type = SDL_GPU_TEXTURETYPE_2D;
-            createInfo.format = format;
-            createInfo.width = width;
-            createInfo.height = height;
+            createInfo.format = static_cast<SDL_GPUTextureFormat>(format.value);
+            createInfo.width = static_cast<Uint32>(width);
+            createInfo.height = static_cast<Uint32>(height);
             createInfo.layer_count_or_depth = 1;
             createInfo.num_levels = 1;
             createInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
@@ -28,57 +22,37 @@ namespace sdl
             // Use owning texture constructor with raw device pointer
             return {device, SDL_CreateGPUTexture(device, &createInfo)};
         }
-
-        impl(SDL_GPUDevice* dev, Uint32 w, Uint32 h, SDL_GPUTextureFormat format)
-            : device(dev), fmt(format), width(w), height(h), tex(create_texture(dev, fmt, width, height))
-        {
-        }
-    };
+    } // namespace
 
     depth_buffer::depth_buffer(device& dev, unsigned width, unsigned height, texture_format_t format)
-        : pimpl(new impl(dev.get(), static_cast<Uint32>(width), static_cast<Uint32>(height),
-                         static_cast<SDL_GPUTextureFormat>(format.value)))
+        : device_(dev.get()),
+          format_(format),
+          width_(width),
+          height_(height),
+          tex_(create_texture(device_, format_, width_, height_))
     {
-    }
-
-    depth_buffer::~depth_buffer() = default;
-
-    depth_buffer::depth_buffer(depth_buffer&& other) noexcept : pimpl(std::move(other.pimpl))
-    {
-    }
-
-    depth_buffer& depth_buffer::operator=(depth_buffer&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     const texture& depth_buffer::get() const
     {
-        return pimpl->tex;
+        return tex_;
     }
 
     texture_format_t depth_buffer::format() const
     {
-        return texture_format_t(pimpl->fmt);
+        return format_;
     }
 
     void depth_buffer::set_size(unsigned width, unsigned height)
     {
-        auto w = static_cast<Uint32>(width);
-        auto h = static_cast<Uint32>(height);
-
-        if(pimpl->width == w && pimpl->height == h)
+        if(width_ == width && height_ == height)
         {
             return;
         }
 
-        pimpl->width = w;
-        pimpl->height = h;
-        pimpl->tex = impl::create_texture(pimpl->device, pimpl->fmt, w, h);
+        width_ = width;
+        height_ = height;
+        tex_ = create_texture(device_, format_, width, height);
     }
 
 } // namespace sdl

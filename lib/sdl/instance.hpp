@@ -1,14 +1,12 @@
 #pragma once
 
-#include <memory>
-
 namespace sdl
 {
     /**
      * RAII wrapper for SDL initialization and cleanup.
      *
      * Manages SDL_Init/SDL_Quit lifecycle.
-     * Non-copyable, moveable.
+     * Non-copyable, non-movable.
      *
      * Usage:
      *   sdl::instance sdl_ctx;
@@ -18,9 +16,6 @@ namespace sdl
      */
     class instance
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
-
     public:
         /**
          * Initialize SDL subsystems.
@@ -39,13 +34,11 @@ namespace sdl
          */
         ~instance();
 
-        // Non-copyable
+        // Non-copyable, non-movable: SDL is initialized once per instance
         instance(const instance&) = delete;
         instance& operator=(const instance&) = delete;
-
-        // Moveable
-        instance(instance&& other) noexcept;
-        instance& operator=(instance&& other) noexcept;
+        instance(instance&&) = delete;
+        instance& operator=(instance&&) = delete;
     };
 
 } // namespace sdl

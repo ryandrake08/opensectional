@@ -1,19 +1,27 @@
 #include "sampler.hpp"
 #include "device.hpp"
 #include "error.hpp"
-#include "types.hpp"
 #include <SDL3/SDL.h>
 
 namespace sdl
 {
-    // Sampler implementation
-    struct sampler::impl
+    namespace filter
     {
-        SDL_GPUDevice* device;  // Non-owning
-        SDL_GPUSampler* handle; // Owning
+        const filter_t nearest(SDL_GPU_FILTER_NEAREST);
+        const filter_t linear(SDL_GPU_FILTER_LINEAR);
+    }
 
-        static SDL_GPUSampler* create_sampler(SDL_GPUDevice* dev, SDL_GPUFilter min_filter, SDL_GPUFilter mag_filter,
-                                              SDL_GPUSamplerAddressMode address_mode)
+    namespace sampler_address_mode
+    {
+        const sampler_address_mode_t repeat(SDL_GPU_SAMPLERADDRESSMODE_REPEAT);
+        const sampler_address_mode_t mirrored_repeat(SDL_GPU_SAMPLERADDRESSMODE_MIRRORED_REPEAT);
+        const sampler_address_mode_t clamp_to_edge(SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE);
+    }
+
+    namespace
+    {
+        SDL_GPUSampler* create_sampler(SDL_GPUDevice* dev, SDL_GPUFilter min_filter, SDL_GPUFilter mag_filter,
+                                       SDL_GPUSamplerAddressMode address_mode)
         {
             SDL_GPUSamplerCreateInfo sampler_info = {};
             sampler_info.min_filter = min_filter;
@@ -30,54 +38,30 @@ namespace sdl
             sampler_info.enable_anisotropy = false;
             sampler_info.enable_compare = false;
 
-            return SDL_CreateGPUSampler(dev, &sampler_info);
-        }
-
-        impl(SDL_GPUDevice* dev, SDL_GPUFilter min_filter, SDL_GPUFilter mag_filter,
-             SDL_GPUSamplerAddressMode address_mode)
-            : device(dev), handle(create_sampler(dev, min_filter, mag_filter, address_mode))
-        {
+            SDL_GPUSampler* handle = SDL_CreateGPUSampler(dev, &sampler_info);
             if(!handle)
             {
                 throw error("Failed to create GPU sampler");
             }
+            return handle;
         }
+    } // namespace
 
-        ~impl() noexcept
-        {
-            SDL_ReleaseGPUSampler(device, handle);
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
+    void sampler::release::operator()(SDL_GPUSampler* handle) const
+    {
+        SDL_ReleaseGPUSampler(device, handle);
+    }
 
     sampler::sampler(const device& dev, filter_t min_filter, filter_t mag_filter, sampler_address_mode_t address_mode)
-        : pimpl(new impl(dev.get(), static_cast<SDL_GPUFilter>(min_filter.value),
-                         static_cast<SDL_GPUFilter>(mag_filter.value),
-                         static_cast<SDL_GPUSamplerAddressMode>(address_mode.value)))
+        : handle_(create_sampler(dev.get(), static_cast<SDL_GPUFilter>(min_filter.value),
+                                 static_cast<SDL_GPUFilter>(mag_filter.value),
+                                 static_cast<SDL_GPUSamplerAddressMode>(address_mode.value)),
+                  release{dev.get()})
     {
-    }
-
-    sampler::~sampler() = default;
-
-    sampler::sampler(sampler&& other) noexcept : pimpl(std::move(other.pimpl))
-    {
-    }
-
-    sampler& sampler::operator=(sampler&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     SDL_GPUSampler* sampler::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 } // namespace sdl

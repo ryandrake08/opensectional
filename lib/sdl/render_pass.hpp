@@ -1,7 +1,10 @@
 #pragma once
 
-#include "types.hpp"
+#include <cstdint>
 #include <memory>
+
+struct SDL_GPUCommandBuffer;
+struct SDL_GPURenderPass;
 
 namespace sdl
 {
@@ -23,8 +26,14 @@ namespace sdl
      */
     class render_pass
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Ends the render pass.
+        struct release
+        {
+            void operator()(SDL_GPURenderPass* handle) const;
+        };
+
+        SDL_GPUCommandBuffer* cmd_buffer_; // Non-owning (for push uniforms)
+        std::unique_ptr<SDL_GPURenderPass, release> handle_;
 
     public:
         /**
@@ -57,18 +66,13 @@ namespace sdl
         render_pass(command_buffer& cmd, const texture& color_target, const texture& depth_target, float clear_r = 0.0F,
                     float clear_g = 0.0F, float clear_b = 0.0F, float clear_a = 1.0F, float clear_depth = 1.0F);
 
-        /**
-         * End render pass.
-         */
-        ~render_pass();
-
         // Non-copyable
         render_pass(const render_pass&) = delete;
         render_pass& operator=(const render_pass&) = delete;
 
         // Moveable
-        render_pass(render_pass&& other) noexcept;
-        render_pass& operator=(render_pass&& other) noexcept;
+        render_pass(render_pass&& other) noexcept = default;
+        render_pass& operator=(render_pass&& other) noexcept = default;
 
         /**
          * Bind graphics pipeline.

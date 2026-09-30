@@ -2,12 +2,26 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <functional>
-#include <memory>
 #include <unordered_map>
 #include <vector>
 
 namespace sdl
 {
+    namespace input_action
+    {
+        const input_action_t release(0); // SDL uses 0 for release
+        const input_action_t press(1);   // SDL uses 1 for press
+        const input_action_t repeat(2);  // Custom value for key repeat
+    }
+
+    namespace input_mod
+    {
+        const input_mod_t shift(SDL_KMOD_SHIFT);
+        const input_mod_t control(SDL_KMOD_CTRL);
+        const input_mod_t alt(SDL_KMOD_ALT);
+        const input_mod_t super(SDL_KMOD_GUI);
+    }
+
     void event_listener::key_event(input_key_t /*key*/, input_action_t /*action*/, input_mod_t /*mods*/)
     {
     }
@@ -24,112 +38,91 @@ namespace sdl
     {
     }
 
-    struct event_manager::impl
+    bool event_manager::dispatch(const SDL_Event& event)
     {
-        std::vector<event_listener*> listeners;
-        std::function<void(const void*)> raw_event_hook;
-        // Handlers for custom typed events allocated through
-        // register_event_type(). The default case in dispatch()
-        // checks this map after the built-in event types so a
-        // SDL_EVENT_USER + N can route to per-app callbacks.
-        std::unordered_map<std::uint32_t, std::function<void(int)>> typed_handlers;
-
-        // Dispatch a single SDL event to listeners
-        bool dispatch(const SDL_Event& event)
+        if(raw_event_hook_)
         {
-            if(raw_event_hook)
-            {
-                raw_event_hook(&event);
-            }
-
-            switch(event.type)
-            {
-            case SDL_EVENT_QUIT:
-                return true;
-
-            case SDL_EVENT_WINDOW_RESIZED:
-                for(const auto& listener : listeners)
-                {
-                    listener->framebuffer_size_event(event.window.data1, event.window.data2);
-                }
-                break;
-
-            case SDL_EVENT_KEY_DOWN:
-            case SDL_EVENT_KEY_UP:
-            {
-                input_action_t action =
-                    (event.type == SDL_EVENT_KEY_DOWN) ? input_action::press : input_action::release;
-                for(const auto& listener : listeners)
-                {
-                    listener->key_event(input_key_t(event.key.key), action, input_mod_t(event.key.mod));
-                }
-                break;
-            }
-
-            case SDL_EVENT_MOUSE_BUTTON_DOWN:
-            case SDL_EVENT_MOUSE_BUTTON_UP:
-            {
-                input_action_t action =
-                    (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) ? input_action::press : input_action::release;
-                for(const auto& listener : listeners)
-                {
-                    listener->button_event(input_button_t(event.button.button), action, input_mod_t(0));
-                }
-                break;
-            }
-
-            case SDL_EVENT_MOUSE_MOTION:
-                for(const auto& listener : listeners)
-                {
-                    listener->cursor_position_event(event.motion.x, event.motion.y);
-                }
-                break;
-
-            case SDL_EVENT_MOUSE_WHEEL:
-                for(const auto& listener : listeners)
-                {
-                    listener->scroll_event(event.wheel.x, event.wheel.y);
-                }
-                break;
-
-            default:
-            {
-                // Custom user events live in the SDL_EVENT_USER+N
-                // range and are routed by exact type match.
-                auto it = typed_handlers.find(event.type);
-                if(it != typed_handlers.end())
-                {
-                    it->second(event.user.code);
-                }
-                break;
-            }
-            }
-
-            return false;
+            raw_event_hook_(&event);
         }
-    };
 
-    event_manager::event_manager() : pimpl(new impl())
-    {
+        switch(event.type)
+        {
+        case SDL_EVENT_QUIT:
+            return true;
+
+        case SDL_EVENT_WINDOW_RESIZED:
+            for(const auto& listener : listeners_)
+            {
+                listener->framebuffer_size_event(event.window.data1, event.window.data2);
+            }
+            break;
+
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_UP:
+        {
+            input_action_t action = (event.type == SDL_EVENT_KEY_DOWN) ? input_action::press : input_action::release;
+            for(const auto& listener : listeners_)
+            {
+                listener->key_event(input_key_t(event.key.key), action, input_mod_t(event.key.mod));
+            }
+            break;
+        }
+
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+        {
+            input_action_t action =
+                (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) ? input_action::press : input_action::release;
+            for(const auto& listener : listeners_)
+            {
+                listener->button_event(input_button_t(event.button.button), action, input_mod_t(0));
+            }
+            break;
+        }
+
+        case SDL_EVENT_MOUSE_MOTION:
+            for(const auto& listener : listeners_)
+            {
+                listener->cursor_position_event(event.motion.x, event.motion.y);
+            }
+            break;
+
+        case SDL_EVENT_MOUSE_WHEEL:
+            for(const auto& listener : listeners_)
+            {
+                listener->scroll_event(event.wheel.x, event.wheel.y);
+            }
+            break;
+
+        default:
+        {
+            // Custom user events live in the SDL_EVENT_USER+N
+            // range and are routed by exact type match.
+            auto it = typed_handlers_.find(event.type);
+            if(it != typed_handlers_.end())
+            {
+                it->second(event.user.code);
+            }
+            break;
+        }
+        }
+
+        return false;
     }
-
-    event_manager::~event_manager() = default;
 
     void event_manager::add_listener(event_listener& listener)
     {
-        this->pimpl->listeners.push_back(&listener);
+        listeners_.push_back(&listener);
     }
 
     void event_manager::remove_listener(event_listener& listener)
     {
-        this->pimpl->listeners.erase(
-            std::remove(this->pimpl->listeners.begin(), this->pimpl->listeners.end(), &listener),
-            this->pimpl->listeners.end());
+        listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), &listener), listeners_.end());
     }
 
     void event_manager::set_raw_event_hook(std::function<void(const void*)> hook)
     {
-        this->pimpl->raw_event_hook = std::move(hook);
+        raw_event_hook_ = std::move(hook);
     }
 
     bool event_manager::poll_and_dispatch()
@@ -137,7 +130,7 @@ namespace sdl
         SDL_Event event;
         while(SDL_PollEvent(&event))
         {
-            if(pimpl->dispatch(event))
+            if(dispatch(event))
             {
                 return true;
             }
@@ -152,14 +145,14 @@ namespace sdl
         // Block until any event arrives.
         SDL_WaitEvent(&event);
 
-        if(pimpl->dispatch(event))
+        if(dispatch(event))
         {
             return true;
         }
 
         while(SDL_PollEvent(&event))
         {
-            if(pimpl->dispatch(event))
+            if(dispatch(event))
             {
                 return true;
             }
@@ -190,7 +183,7 @@ namespace sdl
 
     void event_manager::set_event_handler(std::uint32_t type, std::function<void(int)> handler)
     {
-        pimpl->typed_handlers[type] = std::move(handler);
+        typed_handlers_[type] = std::move(handler);
     }
 
 } // namespace sdl

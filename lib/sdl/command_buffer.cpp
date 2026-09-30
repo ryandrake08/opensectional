@@ -8,62 +8,40 @@
 
 namespace sdl
 {
-    // Command buffer implementation
-    struct command_buffer::impl
+    namespace
     {
-        SDL_GPUDevice* device;        // Non-owning
-        SDL_GPUCommandBuffer* handle; // Owning (submitted on destruction)
-
-        impl(SDL_GPUDevice* dev) : device(dev), handle(SDL_AcquireGPUCommandBuffer(device))
+        SDL_GPUCommandBuffer* acquire_command_buffer(SDL_GPUDevice* dev)
         {
+            SDL_GPUCommandBuffer* handle = SDL_AcquireGPUCommandBuffer(dev);
             if(!handle)
             {
                 throw error("Failed to acquire command buffer");
             }
+            return handle;
         }
+    } // namespace
 
-        ~impl() noexcept
-        {
-            if(!SDL_SubmitGPUCommandBuffer(handle))
-            {
-                SDL_LogError(SDL_LOG_CATEGORY_GPU, "Failed to submit GPU command buffer: %s", SDL_GetError());
-            }
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
-
-    command_buffer::command_buffer(const device& dev) : pimpl(new impl(dev.get()))
+    void command_buffer::release::operator()(SDL_GPUCommandBuffer* handle) const
     {
+        if(!SDL_SubmitGPUCommandBuffer(handle))
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_GPU, "Failed to submit GPU command buffer: %s", SDL_GetError());
+        }
     }
 
-    command_buffer::~command_buffer() = default;
-
-    command_buffer::command_buffer(command_buffer&& other) noexcept : pimpl(std::move(other.pimpl))
+    command_buffer::command_buffer(const device& dev) : handle_(acquire_command_buffer(dev.get()))
     {
-    }
-
-    command_buffer& command_buffer::operator=(command_buffer&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     SDL_GPUCommandBuffer* command_buffer::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 
     optional<texture> command_buffer::acquire_swapchain(const window& win)
     {
         SDL_GPUTexture* swapchain = nullptr;
-        if(!SDL_WaitAndAcquireGPUSwapchainTexture(pimpl->handle, win.get(), &swapchain, nullptr, nullptr))
+        if(!SDL_WaitAndAcquireGPUSwapchainTexture(handle_.get(), win.get(), &swapchain, nullptr, nullptr))
         {
             throw error("Failed to acquire swapchain texture");
         }
@@ -82,7 +60,7 @@ namespace sdl
         SDL_GPUTexture* swapchain = nullptr;
         Uint32 swapchain_texture_width = 0;
         Uint32 swapchain_texture_height = 0;
-        if(!SDL_WaitAndAcquireGPUSwapchainTexture(pimpl->handle, win.get(), &swapchain, &swapchain_texture_width,
+        if(!SDL_WaitAndAcquireGPUSwapchainTexture(handle_.get(), win.get(), &swapchain, &swapchain_texture_width,
                                                   &swapchain_texture_height))
         {
             throw error("Failed to acquire swapchain texture");

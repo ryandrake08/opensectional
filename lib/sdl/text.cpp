@@ -2,7 +2,6 @@
 #include "error.hpp"
 #include "font.hpp"
 #include "text_engine.hpp"
-#include "types.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
 #include <algorithm>
@@ -10,58 +9,37 @@
 
 namespace sdl
 {
-    struct text::impl
+    namespace
     {
-        TTF_Text* handle; // Owning
-
-        impl(TTF_TextEngine* engine, TTF_Font* font, const char* str, size_t length)
-            : handle(TTF_CreateText(engine, font, str, length))
+        TTF_Text* create_text(TTF_TextEngine* engine, TTF_Font* font, const char* str, size_t length)
         {
+            TTF_Text* handle = TTF_CreateText(engine, font, str, length);
             if(!handle)
             {
                 throw error("Failed to create text");
             }
+            return handle;
         }
+    } // namespace
 
-        ~impl() noexcept
-        {
-            TTF_DestroyText(handle);
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
+    void text::release::operator()(TTF_Text* handle) const
+    {
+        TTF_DestroyText(handle);
+    }
 
     text::text(const text_engine& engine, const font& f, const char* str, size_t length)
-        : pimpl(new impl(engine.get(), f.get(), str, length))
+        : handle_(create_text(engine.get(), f.get(), str, length))
     {
-    }
-
-    text::~text() = default;
-
-    text::text(text&& other) noexcept : pimpl(std::move(other.pimpl))
-    {
-    }
-
-    text& text::operator=(text&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     TTF_Text* text::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 
     SDL_GPUTexture* text::atlas_texture() const
     {
-        TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(pimpl->handle);
+        TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(handle_.get());
         if(sequences)
         {
             return sequences->atlas_texture;
@@ -71,7 +49,7 @@ namespace sdl
 
     bool text::set_string(const char* str, size_t length)
     {
-        return TTF_SetTextString(pimpl->handle, str, length);
+        return TTF_SetTextString(handle_.get(), str, length);
     }
 
     text_bounds text::get_bounds() const
@@ -79,7 +57,7 @@ namespace sdl
         text_bounds bounds = {0.0F, 0.0F, 0.0F, 0.0F};
 
         // Get draw data from SDL3_ttf
-        TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(pimpl->handle);
+        TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(handle_.get());
         if(!sequences)
         {
             return bounds;
@@ -127,7 +105,7 @@ namespace sdl
                                const glm::vec3& center, float angle, unsigned char r, unsigned char g, unsigned char b,
                                unsigned char a) const
     {
-        TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(pimpl->handle);
+        TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(handle_.get());
         if(!sequences)
         {
             return;
@@ -187,7 +165,7 @@ namespace sdl
                                       const glm::vec3& position, float scale, unsigned char r, unsigned char g,
                                       unsigned char b, unsigned char a) const
     {
-        TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(pimpl->handle);
+        TTF_GPUAtlasDrawSequence* sequences = TTF_GetGPUTextDrawData(handle_.get());
         if(!sequences)
         {
             return;

@@ -1,17 +1,13 @@
 #include "device.hpp"
 #include "error.hpp"
-#include "types.hpp"
 #include "window.hpp"
 #include <SDL3/SDL.h>
 
 namespace sdl
 {
-    struct device::impl
+    namespace
     {
-        SDL_Window* window;
-        SDL_GPUDevice* handle;
-
-        static SDL_GPUDevice* create_device(SDL_Window* win, const char* preferred_driver, bool vsync, bool debug_mode)
+        SDL_GPUDevice* create_device(SDL_Window* win, const char* preferred_driver, bool vsync, bool debug_mode)
         {
             SDL_GPUShaderFormat formats_mask = SDL_GPU_SHADERFORMAT_SPIRV;
 #ifdef __APPLE__
@@ -100,53 +96,28 @@ namespace sdl
 
             return dev;
         }
+    } // namespace
 
-        impl(SDL_Window* win, const char* preferred_driver, bool vsync, bool debug_mode)
-            : window(win), handle(create_device(win, preferred_driver, vsync, debug_mode))
-        {
-        }
-
-        ~impl() noexcept
-        {
-            SDL_ReleaseWindowFromGPUDevice(handle, window);
-            SDL_DestroyGPUDevice(handle);
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
+    void device::release::operator()(SDL_GPUDevice* handle) const
+    {
+        SDL_ReleaseWindowFromGPUDevice(handle, window);
+        SDL_DestroyGPUDevice(handle);
+    }
 
     device::device(const sdl::window& win, const char* preferred_driver, bool vsync, bool debug_mode)
-        : pimpl(new impl(win.get(), preferred_driver, vsync, debug_mode))
+        : window_(win.get()), handle_(create_device(win.get(), preferred_driver, vsync, debug_mode), release{win.get()})
     {
-    }
-
-    device::~device() = default;
-
-    device::device(device&& other) noexcept : pimpl(std::move(other.pimpl))
-    {
-    }
-
-    device& device::operator=(device&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     SDL_GPUDevice* device::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 
     shader_format_t device::get_shader_format() const
     {
         // Query supported shader formats
-        SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(pimpl->handle);
+        SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(handle_.get());
 
         // Return the first supported format in order of preference.
         // METALLIB > MSL > SPIRV > DXIL. METALLIB is gated by whether the
@@ -179,12 +150,12 @@ namespace sdl
 
     texture_format_t device::get_swapchain_format() const
     {
-        return texture_format_t(SDL_GetGPUSwapchainTextureFormat(pimpl->handle, pimpl->window));
+        return texture_format_t(SDL_GetGPUSwapchainTextureFormat(handle_.get(), window_));
     }
 
     std::string device::get_backend_name() const
     {
-        const char* driver = SDL_GetGPUDeviceDriver(pimpl->handle);
+        const char* driver = SDL_GetGPUDeviceDriver(handle_.get());
         return driver ? std::string(driver) : std::string("Unknown");
     }
 } // namespace sdl

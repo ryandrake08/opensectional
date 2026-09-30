@@ -1,5 +1,5 @@
 #pragma once
-#include <string_view>
+#include <string>
 
 namespace sdl
 {
@@ -7,9 +7,9 @@ namespace sdl
     // priority follows the verbosity set in sdl::instance and output
     // is consistent with the wrapper's own diagnostics. Caller pre-
     // formats the message; embedded % chars are safe.
-    void log_info(std::string_view msg);
-    void log_warn(std::string_view msg);
-    void log_error(std::string_view msg);
-    void log_debug(std::string_view msg);
+    void log_info(const std::string& msg);
+    void log_warn(const std::string& msg);
+    void log_error(const std::string& msg);
+    void log_debug(const std::string& msg);
 
 } // namespace sdl

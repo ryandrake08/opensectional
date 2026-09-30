@@ -5,78 +5,57 @@
 
 namespace sdl
 {
-    // Buffer implementation
-    struct buffer::impl
+    namespace buffer_usage
     {
-        SDL_GPUDevice* device; // Non-owning
-        SDL_GPUBuffer* handle; // Owning
-        Uint32 count;          // Store SDL type internally
-        Uint32 byte_size;
+        const buffer_usage_t vertex(SDL_GPU_BUFFERUSAGE_VERTEX);
+        const buffer_usage_t index(SDL_GPU_BUFFERUSAGE_INDEX);
+        const buffer_usage_t indirect(SDL_GPU_BUFFERUSAGE_INDIRECT);
+        const buffer_usage_t graphics_storage_read(SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ);
+        const buffer_usage_t compute_storage_read(SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ);
+        const buffer_usage_t compute_storage_write(SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE);
+    }
 
-        static SDL_GPUBuffer* create_buffer(SDL_GPUDevice* dev, SDL_GPUBufferUsageFlags usage, uint32_t size)
+    namespace
+    {
+        SDL_GPUBuffer* create_buffer(SDL_GPUDevice* dev, buffer_usage_t usage, uint32_t byte_size)
         {
             SDL_GPUBufferCreateInfo info = {};
-            info.usage = usage;
-            info.size = size;
+            info.usage = static_cast<SDL_GPUBufferUsageFlags>(usage.value);
+            info.size = byte_size;
 
-            return SDL_CreateGPUBuffer(dev, &info);
-        }
-
-        impl(SDL_GPUDevice* dev, SDL_GPUBufferUsageFlags usage, uint32_t num, uint32_t size)
-            : device(dev), handle(create_buffer(dev, usage, num * size)), count(num), byte_size(num * size)
-        {
+            SDL_GPUBuffer* handle = SDL_CreateGPUBuffer(dev, &info);
             if(!handle)
             {
                 throw error("Failed to create GPU buffer");
             }
 
-            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "GPU buffer created: %u bytes", num * size);
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "GPU buffer created: %u bytes", byte_size);
+            return handle;
         }
+    } // namespace
 
-        ~impl() noexcept
-        {
-            SDL_ReleaseGPUBuffer(device, handle);
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
+    void buffer::release::operator()(SDL_GPUBuffer* handle) const
+    {
+        SDL_ReleaseGPUBuffer(device, handle);
+    }
 
     buffer::buffer(const device& dev, buffer_usage_t usage, uint32_t num, uint32_t size)
-        : pimpl(new impl(dev.get(), static_cast<SDL_GPUBufferUsageFlags>(usage.value), static_cast<Uint32>(num),
-                         static_cast<Uint32>(size)))
+        : handle_(create_buffer(dev.get(), usage, num * size), release{dev.get()}), count_(num), byte_size_(num * size)
     {
-    }
-
-    buffer::~buffer() = default;
-
-    buffer::buffer(buffer&& other) noexcept : pimpl(std::move(other.pimpl))
-    {
-    }
-
-    buffer& buffer::operator=(buffer&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     SDL_GPUBuffer* buffer::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 
     uint32_t buffer::count() const
     {
-        return static_cast<uint32_t>(pimpl->count);
+        return count_;
     }
 
     uint32_t buffer::byte_size() const
     {
-        return static_cast<uint32_t>(pimpl->byte_size);
+        return byte_size_;
     }
 } // namespace sdl

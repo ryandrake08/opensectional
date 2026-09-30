@@ -360,10 +360,9 @@ add_library(sdl_wrapper STATIC
     lib/sdl/texture.cpp
     lib/sdl/timer.cpp
     lib/sdl/transfer_buffer.cpp
-    lib/sdl/types.cpp
     lib/sdl/window.cpp
 )
-target_compile_features(sdl_wrapper PRIVATE cxx_std_11)
+set_target_properties(sdl_wrapper PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 target_include_directories(sdl_wrapper PUBLIC
     ${CMAKE_SOURCE_DIR}/lib
     ${CMAKE_SOURCE_DIR}/thirdparty/glm-1.0.1
@@ -382,7 +381,7 @@ add_library(imgui_wrapper STATIC
     lib/imgui/context.cpp
     lib/imgui/scoped.cpp
 )
-target_compile_features(imgui_wrapper PRIVATE cxx_std_11)
+set_target_properties(imgui_wrapper PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 target_include_directories(imgui_wrapper PRIVATE ${CMAKE_SOURCE_DIR}/lib)
 target_link_libraries(imgui_wrapper PUBLIC sdl_wrapper imgui)
 target_compile_options(imgui_wrapper PRIVATE -Wall -Wextra)
@@ -398,7 +397,7 @@ add_library(sqlite_wrapper STATIC
     lib/sqlite/error.cpp
     lib/sqlite/statement.cpp
 )
-target_compile_features(sqlite_wrapper PRIVATE cxx_std_11)
+set_target_properties(sqlite_wrapper PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 target_include_directories(sqlite_wrapper PUBLIC ${CMAKE_SOURCE_DIR}/lib)
 target_link_libraries(sqlite_wrapper PUBLIC ${SQLITE3_TARGET})
 target_compile_options(sqlite_wrapper PRIVATE -Wall -Wextra)

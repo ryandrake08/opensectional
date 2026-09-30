@@ -3,7 +3,6 @@
 
 #include "sdl/copy_pass.hpp"
 #include "sdl/texture.hpp"
-#include "sdl/types.hpp"
 #include <SDL3/SDL.h>
 #include <type_traits>
 

@@ -1,9 +1,27 @@
 #pragma once
-#include "types.hpp"
+#include "bitflags.hpp"
+#include <cstdint>
 #include <memory>
+
+struct SDL_Window;
 
 namespace sdl
 {
+    // ========================================================================
+    // Window Flags (bitflags)
+    // ========================================================================
+
+    bitflags_typedef(uint64_t, window_flags_t);
+
+    namespace window_flags
+    {
+        extern const window_flags_t resizable;
+        extern const window_flags_t borderless;
+        extern const window_flags_t fullscreen;
+        extern const window_flags_t high_pixel_density;
+        extern const window_flags_t hidden;
+    }
+
     // Forward declaration
     class instance;
 
@@ -24,8 +42,13 @@ namespace sdl
      */
     class window
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Destroys the window.
+        struct release
+        {
+            void operator()(SDL_Window* handle) const;
+        };
+
+        std::unique_ptr<SDL_Window, release> handle_;
 
     public:
         /**
@@ -40,18 +63,13 @@ namespace sdl
          */
         window(const instance& inst, const char* title, int width, int height, window_flags_t flags);
 
-        /**
-         * Destroy window.
-         */
-        ~window();
-
         // Non-copyable
         window(const window&) = delete;
         window& operator=(const window&) = delete;
 
         // Moveable
-        window(window&& other) noexcept;
-        window& operator=(window&& other) noexcept;
+        window(window&& other) noexcept = default;
+        window& operator=(window&& other) noexcept = default;
 
         /**
          * Get underlying SDL_Window handle.

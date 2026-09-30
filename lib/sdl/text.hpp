@@ -1,8 +1,11 @@
 #pragma once
-#include "types.hpp"
+#include "pipeline.hpp"
 #include <glm/glm.hpp>
 #include <memory>
 #include <vector>
+
+struct SDL_GPUTexture;
+struct TTF_Text;
 
 namespace sdl
 {
@@ -47,8 +50,13 @@ namespace sdl
      */
     class text
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Destroys the text.
+        struct release
+        {
+            void operator()(TTF_Text* handle) const;
+        };
+
+        std::unique_ptr<TTF_Text, release> handle_;
 
     public:
         /**
@@ -62,18 +70,13 @@ namespace sdl
          */
         text(const text_engine& engine, const font& font, const char* str, size_t length = 0);
 
-        /**
-         * Destroy text object.
-         */
-        ~text();
-
         // Non-copyable
         text(const text&) = delete;
         text& operator=(const text&) = delete;
 
         // Moveable
-        text(text&& other) noexcept;
-        text& operator=(text&& other) noexcept;
+        text(text&& other) noexcept = default;
+        text& operator=(text&& other) noexcept = default;
 
         /**
          * Get underlying TTF_Text handle.

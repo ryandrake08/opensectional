@@ -1,9 +1,39 @@
 #pragma once
-#include "types.hpp"
+#include "opaque_typedef.hpp"
+#include "texture.hpp"
+#include <cstdint>
 #include <memory>
+
+struct SDL_GPUDevice;
+struct SDL_GPUGraphicsPipeline;
 
 namespace sdl
 {
+    // ========================================================================
+    // GPU Primitive Type (opaque typedef)
+    // ========================================================================
+
+    opaque_typedef(uint32_t, primitive_type_t);
+
+    namespace primitive_type
+    {
+        extern const primitive_type_t triangle_list;
+        extern const primitive_type_t triangle_strip;
+        extern const primitive_type_t line_list;
+        extern const primitive_type_t line_strip;
+        extern const primitive_type_t point_list;
+    }
+
+    // ========================================================================
+    // Vertex Structure
+    // ========================================================================
+    struct vertex_t2f_c4ub_v3f
+    {
+        float s, t;         // Texture coordinates (8 bytes)
+        uint8_t r, g, b, a; // Color (4 bytes)
+        float x, y, z;      // Position (12 bytes)
+    };
+
     class device;
     class shader;
 
@@ -16,8 +46,14 @@ namespace sdl
      */
     class pipeline
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Releases the handle on the device that created it.
+        struct release
+        {
+            SDL_GPUDevice* device;
+            void operator()(SDL_GPUGraphicsPipeline* handle) const;
+        };
+
+        std::unique_ptr<SDL_GPUGraphicsPipeline, release> handle_;
 
     public:
         /**
@@ -43,18 +79,13 @@ namespace sdl
         pipeline(const device& dev, shader&& vertex_shader, shader&& fragment_shader, primitive_type_t topology,
                  texture_format_t depth_format = texture_format_t(0), bool vertex_input = true);
 
-        /**
-         * Destroy pipeline.
-         */
-        ~pipeline();
-
         // Non-copyable
         pipeline(const pipeline&) = delete;
         pipeline& operator=(const pipeline&) = delete;
 
         // Moveable
-        pipeline(pipeline&& other) noexcept;
-        pipeline& operator=(pipeline&& other) noexcept;
+        pipeline(pipeline&& other) noexcept = default;
+        pipeline& operator=(pipeline&& other) noexcept = default;
 
         /**
          * Get underlying SDL_GPUGraphicsPipeline handle.

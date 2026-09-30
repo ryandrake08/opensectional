@@ -15,21 +15,24 @@ namespace sqlite
     {
         friend class database;
 
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Finalizes the statement.
+        struct release
+        {
+            void operator()(sqlite3_stmt* stmt) const;
+        };
+
+        std::unique_ptr<sqlite3_stmt, release> stmt_;
 
         explicit statement(sqlite3_stmt* stmt);
 
     public:
-        ~statement();
-
         // Non-copyable
         statement(const statement&) = delete;
         statement& operator=(const statement&) = delete;
 
         // Moveable
-        statement(statement&& other) noexcept;
-        statement& operator=(statement&& other) noexcept;
+        statement(statement&& other) noexcept = default;
+        statement& operator=(statement&& other) noexcept = default;
 
         // Reset for re-execution with new bindings
         void reset();

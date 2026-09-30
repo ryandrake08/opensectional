@@ -1,10 +1,37 @@
 #pragma once
 
-#include "types.hpp"
+#include "opaque_typedef.hpp"
+#include <cstdint>
 #include <memory>
+
+struct SDL_GPUDevice;
+struct SDL_GPUTexture;
 
 namespace sdl
 {
+    // ========================================================================
+    // GPU Texture Format (opaque typedef)
+    // ========================================================================
+
+    opaque_typedef(uint32_t, texture_format_t);
+
+    namespace texture_format
+    {
+        extern const texture_format_t r8_unorm;
+        extern const texture_format_t r8g8_unorm;
+        extern const texture_format_t r8g8b8a8_unorm;
+        extern const texture_format_t r16_unorm;
+        extern const texture_format_t r16g16_unorm;
+        extern const texture_format_t r16g16b16a16_unorm;
+        extern const texture_format_t r10g10b10a2_unorm;
+        extern const texture_format_t r8g8b8a8_unorm_srgb;
+        extern const texture_format_t d16_unorm;
+        extern const texture_format_t d24_unorm;
+        extern const texture_format_t d32_float;
+        extern const texture_format_t d24_unorm_s8_uint;
+        extern const texture_format_t d32_float_s8_uint;
+    }
+
     class device;
     class surface;
     class copy_pass;
@@ -17,8 +44,15 @@ namespace sdl
      */
     class texture
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Releases the handle on its device. A wrapped (non-owning) texture
+        // has a null device and is left to its owner.
+        struct release
+        {
+            SDL_GPUDevice* device;
+            void operator()(SDL_GPUTexture* handle) const;
+        };
+
+        std::unique_ptr<SDL_GPUTexture, release> handle_;
 
     public:
         /**
@@ -62,18 +96,13 @@ namespace sdl
          */
         texture(SDL_GPUDevice* dev, SDL_GPUTexture* raw_texture);
 
-        /**
-         * Destroy texture.
-         */
-        ~texture();
-
         // Non-copyable
         texture(const texture&) = delete;
         texture& operator=(const texture&) = delete;
 
         // Moveable
-        texture(texture&& other) noexcept;
-        texture& operator=(texture&& other) noexcept;
+        texture(texture&& other) noexcept = default;
+        texture& operator=(texture&& other) noexcept = default;
 
         /**
          * Get underlying SDL_GPUTexture handle.

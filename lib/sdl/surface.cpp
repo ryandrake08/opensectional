@@ -6,11 +6,9 @@
 
 namespace sdl
 {
-    struct surface::impl
+    namespace
     {
-        SDL_Surface* handle; // Owning
-
-        static SDL_Surface* load_image(const char* file_path, bool as_alpha_mask)
+        SDL_Surface* load_image(const char* file_path, bool as_alpha_mask)
         {
             SDL_Surface* loaded_surface = IMG_Load(file_path);
             if(!loaded_surface)
@@ -75,67 +73,40 @@ namespace sdl
                          loaded_surface->h);
             return loaded_surface;
         }
+    } // namespace
 
-        impl(const char* file_path, bool as_alpha_mask) : handle(load_image(file_path, as_alpha_mask))
-        {
-        }
-
-        ~impl() noexcept
-        {
-            if(handle)
-            {
-                SDL_DestroySurface(handle);
-            }
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
-
-    surface::surface(const char* file_path, bool as_alpha_mask) : pimpl(new impl(file_path, as_alpha_mask))
+    void surface::release::operator()(SDL_Surface* handle) const
     {
+        SDL_DestroySurface(handle);
     }
 
-    surface::~surface() = default;
-
-    surface::surface(surface&& other) noexcept : pimpl(std::move(other.pimpl))
+    surface::surface(const char* file_path, bool as_alpha_mask) : handle_(load_image(file_path, as_alpha_mask))
     {
-    }
-
-    surface& surface::operator=(surface&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     int surface::width() const
     {
-        return pimpl->handle->w;
+        return handle_->w;
     }
 
     int surface::height() const
     {
-        return pimpl->handle->h;
+        return handle_->h;
     }
 
     uint32_t surface::size() const
     {
-        return static_cast<uint32_t>(pimpl->handle->w * pimpl->handle->h * 4); // ABGR8888 = 4 bytes per pixel
+        return static_cast<uint32_t>(handle_->w * handle_->h * 4); // ABGR8888 = 4 bytes per pixel
     }
 
     const void* surface::pixels() const
     {
-        return pimpl->handle->pixels;
+        return handle_->pixels;
     }
 
     SDL_Surface* surface::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 
     SDL_GPUTextureCreateInfo surface::texture_create_info() const
@@ -144,8 +115,8 @@ namespace sdl
         info.type = SDL_GPU_TEXTURETYPE_2D;
         info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
         info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        info.width = static_cast<uint32_t>(pimpl->handle->w);
-        info.height = static_cast<uint32_t>(pimpl->handle->h);
+        info.width = static_cast<uint32_t>(handle_->w);
+        info.height = static_cast<uint32_t>(handle_->h);
         info.layer_count_or_depth = 1;
         info.num_levels = 1;
         info.sample_count = SDL_GPU_SAMPLECOUNT_1;

@@ -9,12 +9,13 @@
 #include <sdl/copy_pass.hpp>
 #include <sdl/device.hpp>
 #include <sdl/font.hpp>
+#include <sdl/pipeline.hpp>
 #include <sdl/render_pass.hpp>
 #include <sdl/sampler.hpp>
 #include <sdl/text.hpp>
 #include <sdl/text_engine.hpp>
 #include <sdl/transfer_buffer.hpp>
-#include <sdl/types.hpp>
+#include <sdl/uniform_buffer.hpp>
 #include <vector>
 #include <NotoSans_Regular_ttf.h>
 

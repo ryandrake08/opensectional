@@ -1,8 +1,12 @@
 #pragma once
 
-#include "types.hpp"
+#include "shader.hpp"
+#include "texture.hpp"
 #include <memory>
 #include <string>
+
+struct SDL_GPUDevice;
+struct SDL_Window;
 
 namespace sdl
 {
@@ -19,8 +23,15 @@ namespace sdl
      */
     class device
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Releases the window from the device, then destroys the device.
+        struct release
+        {
+            SDL_Window* window;
+            void operator()(SDL_GPUDevice* handle) const;
+        };
+
+        SDL_Window* window_; // Non-owning
+        std::unique_ptr<SDL_GPUDevice, release> handle_;
 
     public:
         /**
@@ -39,18 +50,13 @@ namespace sdl
         explicit device(const sdl::window& win, const char* preferred_driver, bool vsync = false,
                         bool debug_mode = false);
 
-        /**
-         * Destroy device and release window.
-         */
-        ~device();
-
         // Non-copyable
         device(const device&) = delete;
         device& operator=(const device&) = delete;
 
         // Moveable
-        device(device&& other) noexcept;
-        device& operator=(device&& other) noexcept;
+        device(device&& other) noexcept = default;
+        device& operator=(device&& other) noexcept = default;
 
         /**
          * Get underlying SDL_GPUDevice handle.

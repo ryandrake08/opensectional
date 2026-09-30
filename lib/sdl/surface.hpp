@@ -1,7 +1,10 @@
 #pragma once
 
-#include "types.hpp"
+#include <cstdint>
 #include <memory>
+
+struct SDL_GPUTextureCreateInfo;
+struct SDL_Surface;
 
 namespace sdl
 {
@@ -13,8 +16,13 @@ namespace sdl
      */
     class surface
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Destroys the surface.
+        struct release
+        {
+            void operator()(SDL_Surface* handle) const;
+        };
+
+        std::unique_ptr<SDL_Surface, release> handle_;
 
     public:
         /**
@@ -38,18 +46,13 @@ namespace sdl
          */
         explicit surface(const char* file_path, bool as_alpha_mask = false);
 
-        /**
-         * Destroy surface.
-         */
-        ~surface();
-
         // Non-copyable
         surface(const surface&) = delete;
         surface& operator=(const surface&) = delete;
 
         // Moveable
-        surface(surface&& other) noexcept;
-        surface& operator=(surface&& other) noexcept;
+        surface(surface&& other) noexcept = default;
+        surface& operator=(surface&& other) noexcept = default;
 
         /**
          * Get surface width in pixels.

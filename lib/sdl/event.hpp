@@ -1,11 +1,38 @@
 #pragma once
-#include "types.hpp"
+#include "bitflags.hpp"
+#include "opaque_typedef.hpp"
 #include <cstdint>
 #include <functional>
-#include <memory>
+#include <unordered_map>
+#include <vector>
+
+union SDL_Event;
 
 namespace sdl
 {
+    // ========================================================================
+    // Input Types (opaque typedef)
+    // ========================================================================
+
+    opaque_typedef(int32_t, input_key_t);
+    opaque_typedef(uint8_t, input_button_t);
+    opaque_typedef(int, input_action_t);
+    bitflags_typedef(uint16_t, input_mod_t);
+
+    namespace input_action
+    {
+        extern const input_action_t release;
+        extern const input_action_t press;
+        extern const input_action_t repeat;
+    }
+
+    namespace input_mod
+    {
+        extern const input_mod_t shift;
+        extern const input_mod_t control;
+        extern const input_mod_t alt;
+        extern const input_mod_t super;
+    }
 
     // Event listener interface for handling input and window events
     struct event_listener
@@ -25,13 +52,25 @@ namespace sdl
     // Event manager that polls SDL events and dispatches to registered listeners
     class event_manager
     {
-        // pimpl
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        std::vector<event_listener*> listeners_;
+        std::function<void(const void*)> raw_event_hook_;
+        // Handlers for custom typed events allocated through
+        // register_event_type(). The default case in dispatch()
+        // checks this map after the built-in event types so a
+        // SDL_EVENT_USER + N can route to per-app callbacks.
+        std::unordered_map<std::uint32_t, std::function<void(int)>> typed_handlers_;
+
+        // Dispatch a single SDL event to listeners
+        bool dispatch(const SDL_Event& event);
 
     public:
-        event_manager();
-        ~event_manager();
+        event_manager() = default;
+
+        // Non-copyable, non-movable: listeners are registered by reference
+        event_manager(const event_manager&) = delete;
+        event_manager& operator=(const event_manager&) = delete;
+        event_manager(event_manager&&) = delete;
+        event_manager& operator=(event_manager&&) = delete;
 
         // Register/unregister event listeners. The manager keeps a
         // reference, so a listener must stay alive while registered.

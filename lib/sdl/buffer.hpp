@@ -1,10 +1,30 @@
 #pragma once
 
-#include "types.hpp"
+#include "bitflags.hpp"
+#include <cstdint>
 #include <memory>
+
+struct SDL_GPUBuffer;
+struct SDL_GPUDevice;
 
 namespace sdl
 {
+    // ========================================================================
+    // GPU Buffer Usage Flags (bitflags)
+    // ========================================================================
+
+    bitflags_typedef(uint32_t, buffer_usage_t);
+
+    namespace buffer_usage
+    {
+        extern const buffer_usage_t vertex;
+        extern const buffer_usage_t index;
+        extern const buffer_usage_t indirect;
+        extern const buffer_usage_t graphics_storage_read;
+        extern const buffer_usage_t compute_storage_read;
+        extern const buffer_usage_t compute_storage_write;
+    }
+
     class device;
 
     /**
@@ -15,8 +35,16 @@ namespace sdl
      */
     class buffer
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Releases the handle on the device that created it.
+        struct release
+        {
+            SDL_GPUDevice* device;
+            void operator()(SDL_GPUBuffer* handle) const;
+        };
+
+        std::unique_ptr<SDL_GPUBuffer, release> handle_;
+        uint32_t count_;
+        uint32_t byte_size_;
 
     public:
         /**
@@ -30,18 +58,13 @@ namespace sdl
          */
         buffer(const device& dev, buffer_usage_t usage, uint32_t num, uint32_t size);
 
-        /**
-         * Destroy buffer.
-         */
-        ~buffer();
-
         // Non-copyable
         buffer(const buffer&) = delete;
         buffer& operator=(const buffer&) = delete;
 
         // Moveable
-        buffer(buffer&& other) noexcept;
-        buffer& operator=(buffer&& other) noexcept;
+        buffer(buffer&& other) noexcept = default;
+        buffer& operator=(buffer&& other) noexcept = default;
 
         /**
          * Get underlying SDL_GPUBuffer handle.

@@ -1,7 +1,8 @@
 #pragma once
-#include "types.hpp"
 #include <glm/glm.hpp>
 #include <memory>
+
+struct TTF_TextEngine;
 
 namespace sdl
 {
@@ -24,8 +25,13 @@ namespace sdl
      */
     class text_engine
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Destroys the text engine.
+        struct release
+        {
+            void operator()(TTF_TextEngine* handle) const;
+        };
+
+        std::unique_ptr<TTF_TextEngine, release> handle_;
 
     public:
         /**
@@ -36,18 +42,13 @@ namespace sdl
          */
         explicit text_engine(const device& dev);
 
-        /**
-         * Destroy text engine.
-         */
-        ~text_engine();
-
         // Non-copyable
         text_engine(const text_engine&) = delete;
         text_engine& operator=(const text_engine&) = delete;
 
         // Moveable
-        text_engine(text_engine&& other) noexcept;
-        text_engine& operator=(text_engine&& other) noexcept;
+        text_engine(text_engine&& other) noexcept = default;
+        text_engine& operator=(text_engine&& other) noexcept = default;
 
         /**
          * Get underlying TTF_TextEngine handle.

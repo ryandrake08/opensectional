@@ -1,8 +1,11 @@
 #pragma once
 
-#include "types.hpp"
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+
+struct SDL_GPUDevice;
+struct SDL_GPUTransferBuffer;
 
 namespace sdl
 {
@@ -19,8 +22,17 @@ namespace sdl
      */
     class transfer_buffer
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Releases the handle on the device that created it.
+        struct release
+        {
+            SDL_GPUDevice* device;
+            void operator()(SDL_GPUTransferBuffer* handle) const;
+        };
+
+        SDL_GPUDevice* device_; // Non-owning (for map/unmap)
+        std::unique_ptr<SDL_GPUTransferBuffer, release> handle_;
+        uint32_t capacity_;
+        uint32_t offset_ = 0;
 
     public:
         /**
@@ -42,8 +54,8 @@ namespace sdl
         transfer_buffer& operator=(const transfer_buffer&) = delete;
 
         // Moveable
-        transfer_buffer(transfer_buffer&& other) noexcept;
-        transfer_buffer& operator=(transfer_buffer&& other) noexcept;
+        transfer_buffer(transfer_buffer&& other) noexcept = default;
+        transfer_buffer& operator=(transfer_buffer&& other) noexcept = default;
 
         /**
          * Append data to the transfer buffer.

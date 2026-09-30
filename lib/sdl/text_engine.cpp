@@ -6,50 +6,30 @@
 
 namespace sdl
 {
-    struct text_engine::impl
+    namespace
     {
-        TTF_TextEngine* handle; // Owning
-
-        explicit impl(const device& dev) : handle(TTF_CreateGPUTextEngine(dev.get()))
+        TTF_TextEngine* create_text_engine(const device& dev)
         {
+            TTF_TextEngine* handle = TTF_CreateGPUTextEngine(dev.get());
             if(!handle)
             {
                 throw error("Failed to create GPU text engine");
             }
+            return handle;
         }
+    } // namespace
 
-        ~impl() noexcept
-        {
-            TTF_DestroyGPUTextEngine(handle);
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
-
-    text_engine::text_engine(const device& dev) : pimpl(new impl(dev))
+    void text_engine::release::operator()(TTF_TextEngine* handle) const
     {
+        TTF_DestroyGPUTextEngine(handle);
     }
 
-    text_engine::~text_engine() = default;
-
-    text_engine::text_engine(text_engine&& other) noexcept : pimpl(std::move(other.pimpl))
+    text_engine::text_engine(const device& dev) : handle_(create_text_engine(dev))
     {
-    }
-
-    text_engine& text_engine::operator=(text_engine&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     TTF_TextEngine* text_engine::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 } // namespace sdl

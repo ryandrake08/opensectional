@@ -1,9 +1,13 @@
 #pragma once
 
 #include "buffer.hpp"
-#include "types.hpp"
+#include "transfer_buffer.hpp"
+#include <cstdint>
 #include <memory>
 #include <vector>
+
+struct SDL_GPUCopyPass;
+struct SDL_GPUTransferBuffer;
 
 namespace sdl
 {
@@ -11,7 +15,6 @@ namespace sdl
     class device;
     class surface;
     class texture;
-    class transfer_buffer;
 
     /**
      * RAII wrapper for SDL_GPUCopyPass
@@ -29,8 +32,15 @@ namespace sdl
      */
     class copy_pass
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Ends the copy pass.
+        struct release
+        {
+            void operator()(SDL_GPUCopyPass* handle) const;
+        };
+
+        // Declared before handle_ so the pass ends before these are released.
+        std::vector<transfer_buffer> transfers_;
+        std::unique_ptr<SDL_GPUCopyPass, release> handle_;
 
     public:
         /**
@@ -41,18 +51,13 @@ namespace sdl
          */
         copy_pass(command_buffer& cmd);
 
-        /**
-         * End copy pass.
-         */
-        ~copy_pass();
-
         // Non-copyable
         copy_pass(const copy_pass&) = delete;
         copy_pass& operator=(const copy_pass&) = delete;
 
         // Moveable
-        copy_pass(copy_pass&& other) noexcept;
-        copy_pass& operator=(copy_pass&& other) noexcept;
+        copy_pass(copy_pass&& other) noexcept = default;
+        copy_pass& operator=(copy_pass&& other) noexcept = default;
 
         /**
          * Get underlying copy pass handle.

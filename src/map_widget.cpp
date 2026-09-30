@@ -33,8 +33,9 @@
 #include <sdl/pipeline.hpp>
 #include <sdl/render_pass.hpp>
 #include <sdl/shader.hpp>
+#include <sdl/texture.hpp>
 #include <sdl/transfer_buffer.hpp>
-#include <sdl/types.hpp>
+#include <sdl/uniform_buffer.hpp>
 #include <sstream>
 #include <string>
 #include <unordered_set>

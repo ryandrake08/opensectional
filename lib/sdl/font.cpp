@@ -7,11 +7,9 @@
 
 namespace sdl
 {
-    struct font::impl
+    namespace
     {
-        TTF_Font* handle; // Owning
-
-        static TTF_Font* load_from_path(const char* path, int ptsize)
+        TTF_Font* load_from_path(const char* path, int ptsize)
         {
             if(!path)
             {
@@ -28,7 +26,7 @@ namespace sdl
             return font;
         }
 
-        static TTF_Font* load_from_memory(const void* data, size_t size, int ptsize)
+        TTF_Font* load_from_memory(const void* data, size_t size, int ptsize)
         {
             SDL_IOStream* io = SDL_IOFromConstMem(data, size);
             if(!io)
@@ -45,62 +43,35 @@ namespace sdl
             SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Font loaded from memory (%dpt)", ptsize);
             return font;
         }
+    } // namespace
 
-        impl(const char* path, int ptsize) : handle(load_from_path(path, ptsize))
-        {
-        }
-        impl(const void* data, size_t size, int ptsize) : handle(load_from_memory(data, size, ptsize))
-        {
-        }
+    void font::release::operator()(TTF_Font* handle) const
+    {
+        TTF_CloseFont(handle);
+    }
 
-        ~impl() noexcept
-        {
-            TTF_CloseFont(handle);
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
-
-    font::font(const text_engine& /* engine */, const char* path, int ptsize) : pimpl(new impl(path, ptsize))
+    font::font(const text_engine& /* engine */, const char* path, int ptsize) : handle_(load_from_path(path, ptsize))
     {
         // Note: engine parameter is unused, but enforces initialization order at compile time
     }
 
     font::font(const text_engine& /* engine */, const void* data, size_t size, int ptsize)
-        : pimpl(new impl(data, size, ptsize))
+        : handle_(load_from_memory(data, size, ptsize))
     {
-    }
-
-    font::~font() = default;
-
-    font::font(font&& other) noexcept : pimpl(std::move(other.pimpl))
-    {
-    }
-
-    font& font::operator=(font&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     TTF_Font* font::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 
     void font::set_outline(int outline)
     {
-        TTF_SetFontOutline(pimpl->handle, outline);
+        TTF_SetFontOutline(handle_.get(), outline);
     }
 
     int font::get_outline() const
     {
-        return TTF_GetFontOutline(pimpl->handle);
+        return TTF_GetFontOutline(handle_.get());
     }
 } // namespace sdl

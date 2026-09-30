@@ -1,6 +1,7 @@
 #pragma once
-#include "types.hpp"
 #include <memory>
+
+struct TTF_Font;
 
 namespace sdl
 {
@@ -23,8 +24,13 @@ namespace sdl
      */
     class font
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        // Closes the font.
+        struct release
+        {
+            void operator()(TTF_Font* handle) const;
+        };
+
+        std::unique_ptr<TTF_Font, release> handle_;
 
     public:
         /**
@@ -48,18 +54,13 @@ namespace sdl
          */
         font(const text_engine& engine, const void* data, size_t size, int ptsize);
 
-        /**
-         * Close font.
-         */
-        ~font();
-
         // Non-copyable
         font(const font&) = delete;
         font& operator=(const font&) = delete;
 
         // Moveable
-        font(font&& other) noexcept;
-        font& operator=(font&& other) noexcept;
+        font(font&& other) noexcept = default;
+        font& operator=(font&& other) noexcept = default;
 
         /**
          * Get underlying TTF_Font handle.

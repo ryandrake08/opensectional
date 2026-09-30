@@ -11,14 +11,20 @@
 namespace sdl
 {
     // Render pass implementation
-    struct render_pass::impl
+    namespace
     {
-        SDL_GPURenderPass* handle;        // Owning (ended on destruction)
-        SDL_GPUCommandBuffer* cmd_buffer; // Non-owning (for push uniforms)
+        SDL_GPURenderPass* check(SDL_GPURenderPass* handle)
+        {
+            if(!handle)
+            {
+                throw error("Failed to begin render pass");
+            }
+            return handle;
+        }
 
-        static SDL_GPURenderPass* begin_render_pass(SDL_GPUCommandBuffer* command_buffer, SDL_GPUTexture* color_target,
-                                                    SDL_GPUTexture* depth_target, const SDL_FColor& clear_color,
-                                                    float clear_depth)
+        SDL_GPURenderPass* begin_render_pass(SDL_GPUCommandBuffer* command_buffer, SDL_GPUTexture* color_target,
+                                             SDL_GPUTexture* depth_target, const SDL_FColor& clear_color,
+                                             float clear_depth)
         {
             if(!color_target)
             {
@@ -44,64 +50,37 @@ namespace sdl
                 depth_target_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
                 depth_target_info.clear_depth = clear_depth;
                 depth_target_info.cycle = false;
-                return SDL_BeginGPURenderPass(command_buffer, &color_target_info, 1, &depth_target_info);
+                return check(SDL_BeginGPURenderPass(command_buffer, &color_target_info, 1, &depth_target_info));
             }
 
-            return SDL_BeginGPURenderPass(command_buffer, &color_target_info, 1, nullptr);
+            return check(SDL_BeginGPURenderPass(command_buffer, &color_target_info, 1, nullptr));
         }
+    } // namespace
 
-        impl(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* color_target, SDL_GPUTexture* depth_target,
-             const SDL_FColor& clear_color, float clear_depth)
-            : handle(begin_render_pass(cmd, color_target, depth_target, clear_color, clear_depth)), cmd_buffer(cmd)
-        {
-            if(!handle)
-            {
-                throw error("Failed to begin render pass");
-            }
-        }
-
-        ~impl() noexcept
-        {
-            SDL_EndGPURenderPass(handle);
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
+    void render_pass::release::operator()(SDL_GPURenderPass* handle) const
+    {
+        SDL_EndGPURenderPass(handle);
+    }
 
     render_pass::render_pass(command_buffer& cmd, const texture& color_target, float clear_r, float clear_g,
                              float clear_b, float clear_a)
-        : pimpl(new impl(cmd.get(), color_target.get(), nullptr, SDL_FColor{clear_r, clear_g, clear_b, clear_a}, 1.0F))
+        : cmd_buffer_(cmd.get()),
+          handle_(begin_render_pass(cmd.get(), color_target.get(), nullptr,
+                                    SDL_FColor{clear_r, clear_g, clear_b, clear_a}, 1.0F))
     {
     }
 
     render_pass::render_pass(command_buffer& cmd, const texture& color_target, const texture& depth_target,
                              float clear_r, float clear_g, float clear_b, float clear_a, float clear_depth)
-        : pimpl(new impl(cmd.get(), color_target.get(), depth_target.get(),
-                         SDL_FColor{clear_r, clear_g, clear_b, clear_a}, clear_depth))
+        : cmd_buffer_(cmd.get()),
+          handle_(begin_render_pass(cmd.get(), color_target.get(), depth_target.get(),
+                                    SDL_FColor{clear_r, clear_g, clear_b, clear_a}, clear_depth))
     {
-    }
-
-    render_pass::~render_pass() = default;
-
-    render_pass::render_pass(render_pass&& other) noexcept : pimpl(std::move(other.pimpl))
-    {
-    }
-
-    render_pass& render_pass::operator=(render_pass&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     void render_pass::bind_pipeline(const pipeline& pipe)
     {
-        SDL_BindGPUGraphicsPipeline(pimpl->handle, pipe.get());
+        SDL_BindGPUGraphicsPipeline(handle_.get(), pipe.get());
     }
 
     void render_pass::bind_vertex_buffer(const buffer& buf, uint32_t offset)
@@ -109,7 +88,7 @@ namespace sdl
         SDL_GPUBufferBinding binding = {};
         binding.buffer = buf.get();
         binding.offset = offset;
-        SDL_BindGPUVertexBuffers(pimpl->handle, 0, &binding, 1);
+        SDL_BindGPUVertexBuffers(handle_.get(), 0, &binding, 1);
     }
 
     void render_pass::bind_index_buffer(const buffer& buf, uint32_t offset)
@@ -117,29 +96,29 @@ namespace sdl
         SDL_GPUBufferBinding binding = {};
         binding.buffer = buf.get();
         binding.offset = offset;
-        SDL_BindGPUIndexBuffer(pimpl->handle, &binding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        SDL_BindGPUIndexBuffer(handle_.get(), &binding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
     }
 
     void render_pass::push_vertex_uniforms(uint32_t slot, const void* data, uint32_t size)
     {
-        SDL_PushGPUVertexUniformData(pimpl->cmd_buffer, slot, data, size);
+        SDL_PushGPUVertexUniformData(cmd_buffer_, slot, data, size);
     }
 
     void render_pass::push_fragment_uniforms(uint32_t slot, const void* data, uint32_t size)
     {
-        SDL_PushGPUFragmentUniformData(pimpl->cmd_buffer, slot, data, size);
+        SDL_PushGPUFragmentUniformData(cmd_buffer_, slot, data, size);
     }
 
     void render_pass::bind_vertex_storage_buffer(uint32_t slot, const buffer& buf)
     {
         SDL_GPUBuffer* buffer_ptr = buf.get();
-        SDL_BindGPUVertexStorageBuffers(pimpl->handle, slot, &buffer_ptr, 1);
+        SDL_BindGPUVertexStorageBuffers(handle_.get(), slot, &buffer_ptr, 1);
     }
 
     void render_pass::bind_fragment_storage_buffer(uint32_t slot, const buffer& buf)
     {
         SDL_GPUBuffer* buffer_ptr = buf.get();
-        SDL_BindGPUFragmentStorageBuffers(pimpl->handle, slot, &buffer_ptr, 1);
+        SDL_BindGPUFragmentStorageBuffers(handle_.get(), slot, &buffer_ptr, 1);
     }
 
     void render_pass::bind_fragment_texture_sampler(uint32_t slot, const texture& tex, const sampler& samp)
@@ -147,7 +126,7 @@ namespace sdl
         SDL_GPUTextureSamplerBinding binding = {};
         binding.texture = tex.get();
         binding.sampler = samp.get();
-        SDL_BindGPUFragmentSamplers(pimpl->handle, slot, &binding, 1);
+        SDL_BindGPUFragmentSamplers(handle_.get(), slot, &binding, 1);
     }
 
     void render_pass::bind_fragment_texture_sampler(uint32_t slot, const text& txt, const sampler& samp)
@@ -158,31 +137,31 @@ namespace sdl
             SDL_GPUTextureSamplerBinding binding = {};
             binding.texture = atlas;
             binding.sampler = samp.get();
-            SDL_BindGPUFragmentSamplers(pimpl->handle, slot, &binding, 1);
+            SDL_BindGPUFragmentSamplers(handle_.get(), slot, &binding, 1);
         }
     }
 
     void render_pass::draw(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex,
                            uint32_t first_instance)
     {
-        SDL_DrawGPUPrimitives(pimpl->handle, vertex_count, instance_count, first_vertex, first_instance);
+        SDL_DrawGPUPrimitives(handle_.get(), vertex_count, instance_count, first_vertex, first_instance);
     }
 
     void render_pass::draw_indexed(uint32_t index_count, uint32_t instance_count, uint32_t first_index,
                                    int32_t vertex_offset, uint32_t first_instance)
     {
-        SDL_DrawGPUIndexedPrimitives(pimpl->handle, index_count, instance_count, first_index, vertex_offset,
+        SDL_DrawGPUIndexedPrimitives(handle_.get(), index_count, instance_count, first_index, vertex_offset,
                                      first_instance);
     }
 
     void render_pass::set_scissor(int x, int y, int w, int h)
     {
         SDL_Rect rect = {x, y, w, h};
-        SDL_SetGPUScissor(pimpl->handle, &rect);
+        SDL_SetGPUScissor(handle_.get(), &rect);
     }
 
     SDL_GPURenderPass* render_pass::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 } // namespace sdl

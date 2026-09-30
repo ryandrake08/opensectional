@@ -9,16 +9,21 @@
 
 namespace sdl
 {
-    // Pipeline implementation
-    struct pipeline::impl
+    namespace primitive_type
     {
-        SDL_GPUDevice* device;           // Non-owning
-        SDL_GPUGraphicsPipeline* handle; // Owning
+        const primitive_type_t triangle_list(SDL_GPU_PRIMITIVETYPE_TRIANGLELIST);
+        const primitive_type_t triangle_strip(SDL_GPU_PRIMITIVETYPE_TRIANGLESTRIP);
+        const primitive_type_t line_list(SDL_GPU_PRIMITIVETYPE_LINELIST);
+        const primitive_type_t line_strip(SDL_GPU_PRIMITIVETYPE_LINESTRIP);
+        const primitive_type_t point_list(SDL_GPU_PRIMITIVETYPE_POINTLIST);
+    }
 
-        static SDL_GPUGraphicsPipeline* create_pipeline(SDL_GPUDevice* dev, SDL_GPUShader* vs, SDL_GPUShader* fs,
-                                                        SDL_GPUTextureFormat swapchain_format,
-                                                        SDL_GPUPrimitiveType topology,
-                                                        SDL_GPUTextureFormat depth_format, bool use_vertex_input)
+    namespace
+    {
+        // The shaders are released when this returns; SDL allows releasing them once the pipeline exists.
+        SDL_GPUGraphicsPipeline* create_pipeline(SDL_GPUDevice* dev, shader vs, shader fs,
+                                                 SDL_GPUTextureFormat swapchain_format, SDL_GPUPrimitiveType topology,
+                                                 SDL_GPUTextureFormat depth_format, bool use_vertex_input)
         {
             // Set up standard vertex attributes for vertex_t2f_c4ub_v3f
             std::array<SDL_GPUVertexAttribute, 3> attributes = {};
@@ -82,8 +87,8 @@ namespace sdl
 
             // Set up graphics pipeline create info
             SDL_GPUGraphicsPipelineCreateInfo info = {};
-            info.vertex_shader = vs;
-            info.fragment_shader = fs;
+            info.vertex_shader = vs.get();
+            info.fragment_shader = fs.get();
             info.vertex_input_state = vertex_input_state;
             info.primitive_type = topology;
             info.rasterizer_state = rasterizer_state;
@@ -94,19 +99,7 @@ namespace sdl
             info.target_info.has_depth_stencil_target = has_depth;
             info.target_info.depth_stencil_format = depth_format;
 
-            return SDL_CreateGPUGraphicsPipeline(dev, &info);
-        }
-
-        impl(SDL_GPUDevice* dev,
-             shader&&
-                 vs, // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved) — consumed at scope end, not stored
-             shader&& fs, // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
-             SDL_GPUTextureFormat swapchain_format, SDL_GPUPrimitiveType topology, SDL_GPUTextureFormat depth_format,
-             bool use_vertex_input)
-            : device(dev),
-              handle(
-                  create_pipeline(dev, vs.get(), fs.get(), swapchain_format, topology, depth_format, use_vertex_input))
-        {
+            SDL_GPUGraphicsPipeline* handle = SDL_CreateGPUGraphicsPipeline(dev, &info);
             if(!handle)
             {
                 throw error("Failed to create graphics pipeline");
@@ -132,46 +125,28 @@ namespace sdl
             }();
             SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Pipeline created: %s, depth: %s", topo_name,
                          (depth_format != SDL_GPU_TEXTUREFORMAT_INVALID) ? "yes" : "no");
+            return handle;
         }
+    } // namespace
 
-        ~impl() noexcept
-        {
-            SDL_ReleaseGPUGraphicsPipeline(device, handle);
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
-
-    pipeline::~pipeline() = default;
-
-    pipeline::pipeline(pipeline&& other) noexcept : pimpl(std::move(other.pimpl))
+    void pipeline::release::operator()(SDL_GPUGraphicsPipeline* handle) const
     {
-    }
-
-    pipeline& pipeline::operator=(pipeline&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
+        SDL_ReleaseGPUGraphicsPipeline(device, handle);
     }
 
     SDL_GPUGraphicsPipeline* pipeline::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 
     // Constructor from vertex and fragment shaders
     pipeline::pipeline(const device& dev, shader&& vertex_shader, shader&& fragment_shader, primitive_type_t topology,
                        texture_format_t depth_format, bool vertex_input)
-        : pimpl(new impl(dev.get(), std::move(vertex_shader), std::move(fragment_shader),
-                         static_cast<SDL_GPUTextureFormat>(dev.get_swapchain_format().value),
-                         static_cast<SDL_GPUPrimitiveType>(topology.value),
-                         static_cast<SDL_GPUTextureFormat>(depth_format.value), vertex_input))
+        : handle_(create_pipeline(dev.get(), std::move(vertex_shader), std::move(fragment_shader),
+                                  static_cast<SDL_GPUTextureFormat>(dev.get_swapchain_format().value),
+                                  static_cast<SDL_GPUPrimitiveType>(topology.value),
+                                  static_cast<SDL_GPUTextureFormat>(depth_format.value), vertex_input),
+                  release{dev.get()})
     {
     }
 } // namespace sdl

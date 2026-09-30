@@ -1,12 +1,13 @@
 #pragma once
 
-#include "types.hpp"
+#include "texture.hpp"
 #include <memory>
+
+struct SDL_GPUDevice;
 
 namespace sdl
 {
     class device;
-    class texture;
 
     /**
      * RAII wrapper for depth buffer texture.
@@ -17,8 +18,11 @@ namespace sdl
      */
     class depth_buffer
     {
-        struct impl;
-        std::unique_ptr<impl> pimpl;
+        SDL_GPUDevice* device_; // Non-owning
+        texture_format_t format_;
+        unsigned width_;
+        unsigned height_;
+        texture tex_;
 
     public:
         /**
@@ -31,15 +35,13 @@ namespace sdl
          */
         depth_buffer(device& dev, unsigned width, unsigned height, texture_format_t format);
 
-        ~depth_buffer();
-
         // Non-copyable
         depth_buffer(const depth_buffer&) = delete;
         depth_buffer& operator=(const depth_buffer&) = delete;
 
         // Moveable
-        depth_buffer(depth_buffer&& other) noexcept;
-        depth_buffer& operator=(depth_buffer&& other) noexcept;
+        depth_buffer(depth_buffer&& other) noexcept = default;
+        depth_buffer& operator=(depth_buffer&& other) noexcept = default;
 
         /**
          * Get the depth texture.

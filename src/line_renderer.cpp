@@ -6,7 +6,6 @@
 #include <sdl/copy_pass.hpp>
 #include <sdl/render_pass.hpp>
 #include <sdl/transfer_buffer.hpp>
-#include <sdl/types.hpp>
 
 namespace osect
 {

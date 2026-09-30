@@ -6,59 +6,37 @@
 #include "surface.hpp"
 #include "texture.hpp"
 #include "transfer_buffer.hpp"
-#include "types.hpp"
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
 #include <vector>
 
 namespace sdl
 {
-    struct copy_pass::impl
+    namespace
     {
-        SDL_GPUCopyPass* handle;
-        std::vector<transfer_buffer> transfers;
-
-        explicit impl(SDL_GPUCommandBuffer* cmd) : handle(SDL_BeginGPUCopyPass(cmd))
+        SDL_GPUCopyPass* begin_copy_pass(SDL_GPUCommandBuffer* cmd)
         {
+            SDL_GPUCopyPass* handle = SDL_BeginGPUCopyPass(cmd);
             if(!handle)
             {
                 throw error("Failed to begin copy pass");
             }
+            return handle;
         }
+    } // namespace
 
-        ~impl() noexcept
-        {
-            SDL_EndGPUCopyPass(handle);
-        }
-
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        impl(impl&&) = default;
-        impl& operator=(impl&&) = default;
-    };
-
-    copy_pass::copy_pass(command_buffer& cmd) : pimpl(new impl(cmd.get()))
+    void copy_pass::release::operator()(SDL_GPUCopyPass* handle) const
     {
+        SDL_EndGPUCopyPass(handle);
     }
 
-    copy_pass::~copy_pass() = default;
-
-    copy_pass::copy_pass(copy_pass&& other) noexcept : pimpl(std::move(other.pimpl))
+    copy_pass::copy_pass(command_buffer& cmd) : handle_(begin_copy_pass(cmd.get()))
     {
-    }
-
-    copy_pass& copy_pass::operator=(copy_pass&& other) noexcept
-    {
-        if(this != &other)
-        {
-            pimpl = std::move(other.pimpl);
-        }
-        return *this;
     }
 
     SDL_GPUCopyPass* copy_pass::get() const
     {
-        return pimpl->handle;
+        return handle_.get();
     }
 
     void copy_pass::upload_buffer(transfer_buffer& tb, const buffer& dest, const void* data)
@@ -75,7 +53,7 @@ namespace sdl
         destination.offset = 0;
         destination.size = byte_size;
 
-        SDL_UploadToGPUBuffer(pimpl->handle, &source, &destination, false);
+        SDL_UploadToGPUBuffer(handle_.get(), &source, &destination, false);
     }
 
     void copy_pass::upload_texture(transfer_buffer& tb, const texture& dest, const surface& surf)
@@ -108,14 +86,14 @@ namespace sdl
         destination.h = height;
         destination.d = 1;
 
-        SDL_UploadToGPUTexture(pimpl->handle, &source, &destination, false);
+        SDL_UploadToGPUTexture(handle_.get(), &source, &destination, false);
     }
 
     texture copy_pass::create_and_upload_texture(const device& dev, const surface& surf)
     {
         texture tex(dev, surf);
-        pimpl->transfers.emplace_back(dev, surf.size());
-        upload_texture(pimpl->transfers.back(), tex, surf);
+        transfers_.emplace_back(dev, surf.size());
+        upload_texture(transfers_.back(), tex, surf);
         return tex;
     }
 
@@ -128,8 +106,8 @@ namespace sdl
         }
 
         buffer buf(dev, usage, count, element_size);
-        pimpl->transfers.emplace_back(dev, buf.byte_size());
-        upload_buffer(pimpl->transfers.back(), buf, data);
+        transfers_.emplace_back(dev, buf.byte_size());
+        upload_buffer(transfers_.back(), buf, data);
         return buf;
     }
 
