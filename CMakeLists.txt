@@ -619,203 +619,184 @@ if(WIN32 AND OSECT_ENABLE_PACKAGING AND EXISTS "${ICON_PNG}")
     endif()
 endif()
 
-function(_require_asset path)
-    if(NOT EXISTS "${path}")
-        message(FATAL_ERROR
-            "Installer asset missing: ${path}\n"
-            "Generate prebuilt assets (see README 'Data Preparation') before running cpack.")
-    endif()
-endfunction()
-
-if(APPLE AND OSECT_ENABLE_PACKAGING)
-    # =========================================================================
-    # macOS: bundle + DragNDrop DMG
-    # =========================================================================
-    set_target_properties(osect PROPERTIES
-        OUTPUT_NAME "${APPLICATION_NAME}"
-        MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_BUNDLE_NAME "${APPLICATION_NAME}"
-        MACOSX_BUNDLE_BUNDLE_VERSION "${APPLICATION_VERSION}"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "${APPLICATION_VERSION}"
-        MACOSX_BUNDLE_GUI_IDENTIFIER "${BUNDLE_IDENTIFIER}"
-        MACOSX_BUNDLE_COPYRIGHT "existens.org"
-    )
-    if(TARGET app_icon)
-        set_target_properties(osect PROPERTIES
-            MACOSX_BUNDLE_ICON_FILE "osect.icns")
-        target_sources(osect PRIVATE "${INSTALLER_ICON_ICNS}")
-        set_source_files_properties("${INSTALLER_ICON_ICNS}" PROPERTIES
-            MACOSX_PACKAGE_LOCATION Resources
-            GENERATED TRUE)
-    endif()
-
-    install(TARGETS osect BUNDLE DESTINATION .)
-
-    # Bundled assets go into Contents/Resources/ alongside the icon
-    set(_rsrc "${APPLICATION_NAME}.app/Contents/Resources")
-    install(FILES "${BUNDLED_DB}"  DESTINATION "${_rsrc}")
-    install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION "${_rsrc}")
-    install(DIRECTORY "${BUNDLED_TERRAIN}" DESTINATION "${_rsrc}")
-
-    # Bundle MoltenVK so the .app's Vulkan backend works on a fresh Mac
-    # with no Vulkan SDK / Homebrew installed. SDL3 searches
-    # @executable_path/../Frameworks/libMoltenVK.dylib first when loading
-    # Vulkan on macOS, so this just works once the file is in place. The
-    # precompiled universal dylib is fetched by cmake/vendored_deps.cmake;
-    # the paths below match the pinned release's archive layout.
-    install(FILES "${moltenvk_SOURCE_DIR}/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib"
-            DESTINATION "${APPLICATION_NAME}.app/Contents/Frameworks")
-    # Apache-2.0 requires shipping the LICENSE alongside the binary.
-    install(FILES "${moltenvk_SOURCE_DIR}/LICENSE"
-            DESTINATION "${_rsrc}"
-            RENAME "LICENSE-MoltenVK.txt")
-
-    # Ad-hoc sign the installed bundle as a whole (executable, bundled
-    # MoltenVK, Info.plist and resources) so it launches on Apple Silicon.
-    # Runs inside the install prefix, after every file is in place.
-    install(CODE "
-        set(_bundle \"\${CMAKE_INSTALL_PREFIX}/${APPLICATION_NAME}.app\")
-        execute_process(
-            COMMAND codesign --force --deep --sign - \"\${_bundle}\"
-            RESULT_VARIABLE _codesign_rc)
-        if(NOT _codesign_rc EQUAL 0)
-            message(FATAL_ERROR \"codesign --sign - failed (rc=\${_codesign_rc})\")
-        endif()
-    " COMPONENT applications)
-
-    set(CPACK_GENERATOR "DragNDrop")
-    set(CPACK_PACKAGE_NAME "${APPLICATION_NAME}")
-    set(CPACK_PACKAGE_VENDOR "existens.org")
-    set(CPACK_PACKAGE_VERSION_MAJOR "${MAJOR_VERSION}")
-    set(CPACK_PACKAGE_VERSION_MINOR "${MINOR_VERSION}")
-    set(CPACK_PACKAGE_VERSION_PATCH "${BUILD_VERSION}")
-    set(CPACK_DMG_VOLUME_NAME "${APPLICATION_NAME} ${APPLICATION_VERSION}")
-    set(CPACK_DMG_FORMAT "UDZO")
-    # Avoids `hdiutil create -srcfolder`, which needs root authorization
-    # when the build tree's files belong to another uid (network shares);
-    # see the script header.
-    set(CPACK_COMMAND_HDIUTIL "${CMAKE_SOURCE_DIR}/cmake/hdiutil_wrapper.sh")
-    if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE")
-        set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
-    endif()
-
-    _require_asset("${BUNDLED_DB}")
-    _require_asset("${BUNDLED_BASEMAP}")
-    _require_asset("${BUNDLED_TERRAIN}")
-    include(CPack)
-
-elseif(WIN32 AND OSECT_ENABLE_PACKAGING)
-    # =========================================================================
-    # Windows: flat install tree + NSIS installer
-    # =========================================================================
-    # Everything lands directly in $INSTDIR (e.g. C:\Program Files\OpenSectional).
-    # This is the conventional Windows layout for a single-binary app: the
-    # exe sits next to its DLLs (Windows resolves them from the exe's dir)
-    # and next to its data assets (osect's runtime asset resolution looks
-    # alongside the executable). No bin/ subdir, which is a Unix-ism.
-    install(TARGETS osect RUNTIME DESTINATION .)
-    install(FILES "${BUNDLED_DB}"  DESTINATION .)
-    install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION .)
-    install(DIRECTORY "${BUNDLED_TERRAIN}" DESTINATION .)
-
-    # MinGW runtime DLLs (SDL3/SDL3_image/SDL3_ttf/sqlite3 are statically
-    # linked when OSECT_VENDOR_DEPS=ON, so only
-    # libstdc++/libgcc/winpthread need to ship).
-    set(_mingw_runtime_dlls
-        libgcc_s_seh-1.dll
-        libstdc++-6.dll
-        libwinpthread-1.dll
-    )
-    foreach(_dll ${_mingw_runtime_dlls})
-        execute_process(
-            COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=${_dll}
-            OUTPUT_VARIABLE _dll_path
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-        if(_dll_path AND NOT _dll_path STREQUAL "${_dll}" AND EXISTS "${_dll_path}")
-            install(FILES "${_dll_path}" DESTINATION .)
+if(OSECT_ENABLE_PACKAGING)
+    foreach(_asset "${BUNDLED_DB}" "${BUNDLED_BASEMAP}" "${BUNDLED_TERRAIN}")
+        if(NOT EXISTS "${_asset}")
+            message(FATAL_ERROR
+                "Installer asset missing: ${_asset}\n"
+                "Generate prebuilt assets (see README 'Data Preparation') before packaging.")
         endif()
     endforeach()
 
-    set(CPACK_GENERATOR "NSIS")
+    # Settings every installer shares; each platform branch below adds its
+    # install layout and generator settings.
     set(CPACK_PACKAGE_NAME "${APPLICATION_NAME}")
     set(CPACK_PACKAGE_VENDOR "existens.org")
     set(CPACK_PACKAGE_VERSION_MAJOR "${MAJOR_VERSION}")
     set(CPACK_PACKAGE_VERSION_MINOR "${MINOR_VERSION}")
     set(CPACK_PACKAGE_VERSION_PATCH "${BUILD_VERSION}")
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "${APPLICATION_NAME}")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Open source chart viewer and flight planner")
     if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE")
         set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
     endif()
 
-    set(CPACK_NSIS_DISPLAY_NAME "${APPLICATION_NAME}")
-    set(CPACK_NSIS_PACKAGE_NAME "${APPLICATION_NAME}")
-    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
-    set(CPACK_NSIS_MODIFY_PATH OFF)
-    set(CPACK_NSIS_INSTALLED_ICON_NAME "osect.exe")
-    if(TARGET app_icon)
-        set(CPACK_NSIS_MUI_ICON    "${INSTALLER_ICON_ICO}")
-        set(CPACK_NSIS_MUI_UNIICON "${INSTALLER_ICON_ICO}")
+    if(APPLE)
+        # =========================================================================
+        # macOS: bundle + DragNDrop DMG
+        # =========================================================================
+        set_target_properties(osect PROPERTIES
+            OUTPUT_NAME "${APPLICATION_NAME}"
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_BUNDLE_NAME "${APPLICATION_NAME}"
+            MACOSX_BUNDLE_BUNDLE_VERSION "${APPLICATION_VERSION}"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${APPLICATION_VERSION}"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "${BUNDLE_IDENTIFIER}"
+            MACOSX_BUNDLE_COPYRIGHT "existens.org"
+        )
+        if(TARGET app_icon)
+            set_target_properties(osect PROPERTIES
+                MACOSX_BUNDLE_ICON_FILE "osect.icns")
+            target_sources(osect PRIVATE "${INSTALLER_ICON_ICNS}")
+            set_source_files_properties("${INSTALLER_ICON_ICNS}" PROPERTIES
+                MACOSX_PACKAGE_LOCATION Resources
+                GENERATED TRUE)
+        endif()
+
+        install(TARGETS osect BUNDLE DESTINATION .)
+
+        # Bundled assets go into Contents/Resources/ alongside the icon
+        set(_rsrc "${APPLICATION_NAME}.app/Contents/Resources")
+        install(FILES "${BUNDLED_DB}"  DESTINATION "${_rsrc}")
+        install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION "${_rsrc}")
+        install(DIRECTORY "${BUNDLED_TERRAIN}" DESTINATION "${_rsrc}")
+
+        # Bundle MoltenVK so the .app's Vulkan backend works on a fresh Mac
+        # with no Vulkan SDK / Homebrew installed. SDL3 searches
+        # @executable_path/../Frameworks/libMoltenVK.dylib first when loading
+        # Vulkan on macOS, so this just works once the file is in place. The
+        # precompiled universal dylib is fetched by cmake/vendored_deps.cmake;
+        # the paths below match the pinned release's archive layout.
+        install(FILES "${moltenvk_SOURCE_DIR}/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib"
+                DESTINATION "${APPLICATION_NAME}.app/Contents/Frameworks")
+        # Apache-2.0 requires shipping the LICENSE alongside the binary.
+        install(FILES "${moltenvk_SOURCE_DIR}/LICENSE"
+                DESTINATION "${_rsrc}"
+                RENAME "LICENSE-MoltenVK.txt")
+
+        # Ad-hoc sign the installed bundle as a whole (executable, bundled
+        # MoltenVK, Info.plist and resources) so it launches on Apple Silicon.
+        # Runs inside the install prefix, after every file is in place.
+        install(CODE "
+            set(_bundle \"\${CMAKE_INSTALL_PREFIX}/${APPLICATION_NAME}.app\")
+            execute_process(
+                COMMAND codesign --force --deep --sign - \"\${_bundle}\"
+                RESULT_VARIABLE _codesign_rc)
+            if(NOT _codesign_rc EQUAL 0)
+                message(FATAL_ERROR \"codesign --sign - failed (rc=\${_codesign_rc})\")
+            endif()
+        " COMPONENT applications)
+
+        set(CPACK_GENERATOR "DragNDrop")
+        set(CPACK_DMG_VOLUME_NAME "${APPLICATION_NAME} ${APPLICATION_VERSION}")
+        set(CPACK_DMG_FORMAT "UDZO")
+        # Avoids `hdiutil create -srcfolder`, which needs root authorization
+        # when the build tree's files belong to another uid (network shares);
+        # see the script header.
+        set(CPACK_COMMAND_HDIUTIL "${CMAKE_SOURCE_DIR}/cmake/hdiutil_wrapper.sh")
+
+    elseif(WIN32)
+        # =========================================================================
+        # Windows: flat install tree + NSIS installer
+        # =========================================================================
+        # Everything lands directly in $INSTDIR (e.g. C:\Program Files\OpenSectional).
+        # This is the conventional Windows layout for a single-binary app: the
+        # exe sits next to its DLLs (Windows resolves them from the exe's dir)
+        # and next to its data assets (osect's runtime asset resolution looks
+        # alongside the executable). No bin/ subdir, which is a Unix-ism.
+        install(TARGETS osect RUNTIME DESTINATION .)
+        install(FILES "${BUNDLED_DB}"  DESTINATION .)
+        install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION .)
+        install(DIRECTORY "${BUNDLED_TERRAIN}" DESTINATION .)
+
+        # MinGW runtime DLLs (SDL3/SDL3_image/SDL3_ttf/sqlite3 are statically
+        # linked when OSECT_VENDOR_DEPS=ON, so only
+        # libstdc++/libgcc/winpthread need to ship).
+        set(_mingw_runtime_dlls
+            libgcc_s_seh-1.dll
+            libstdc++-6.dll
+            libwinpthread-1.dll
+        )
+        foreach(_dll ${_mingw_runtime_dlls})
+            execute_process(
+                COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=${_dll}
+                OUTPUT_VARIABLE _dll_path
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            if(_dll_path AND NOT _dll_path STREQUAL "${_dll}" AND EXISTS "${_dll_path}")
+                install(FILES "${_dll_path}" DESTINATION .)
+            endif()
+        endforeach()
+
+        set(CPACK_GENERATOR "NSIS")
+        set(CPACK_PACKAGE_INSTALL_DIRECTORY "${APPLICATION_NAME}")
+
+        set(CPACK_NSIS_DISPLAY_NAME "${APPLICATION_NAME}")
+        set(CPACK_NSIS_PACKAGE_NAME "${APPLICATION_NAME}")
+        set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+        set(CPACK_NSIS_MODIFY_PATH OFF)
+        set(CPACK_NSIS_INSTALLED_ICON_NAME "osect.exe")
+        if(TARGET app_icon)
+            set(CPACK_NSIS_MUI_ICON    "${INSTALLER_ICON_ICO}")
+            set(CPACK_NSIS_MUI_UNIICON "${INSTALLER_ICON_ICO}")
+        endif()
+
+        # Start menu shortcut
+        set(CPACK_NSIS_CREATE_ICONS_EXTRA
+            "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\${APPLICATION_NAME}.lnk' '$INSTDIR\\\\osect.exe'")
+        set(CPACK_NSIS_DELETE_ICONS_EXTRA
+            "Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\${APPLICATION_NAME}.lnk'")
+
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        # =========================================================================
+        # Linux: AppImage + .tar.xz of the same tree
+        # =========================================================================
+        if(CMAKE_VERSION VERSION_LESS 4.2)
+            message(FATAL_ERROR "Linux packaging needs CMake 4.2 or newer (CPack AppImage generator); this is ${CMAKE_VERSION}.")
+        endif()
+        # bin/osect with its data under share/osect/, which the runtime asset
+        # lookup finds relative to the executable. The tree is the AppDir for
+        # the AppImage and the contents of the tarball.
+        install(TARGETS osect RUNTIME DESTINATION bin)
+        install(FILES "${BUNDLED_DB}"  DESTINATION share/${APP_SHORT_NAME})
+        install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION share/${APP_SHORT_NAME})
+        install(DIRECTORY "${BUNDLED_TERRAIN}" DESTINATION share/${APP_SHORT_NAME})
+
+        # The AppImage generator requires a desktop entry whose Exec and Icon
+        # name installed files; it links both to the AppDir's top level.
+        set(_desktop_file "${CMAKE_BINARY_DIR}/${APP_SHORT_NAME}.desktop")
+        file(WRITE "${_desktop_file}"
+            "[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=${APPLICATION_NAME}\n"
+            "Comment=Aeronautical chart viewer and flight planner\n"
+            "Exec=${APP_SHORT_NAME}\n"
+            "Icon=${APP_SHORT_NAME}\n"
+            "Categories=Science;Geography;Maps;\n"
+            "Terminal=false\n")
+        install(FILES "${_desktop_file}" DESTINATION share/applications)
+        install(FILES "${ICON_PNG}" DESTINATION share/icons/hicolor/1024x1024/apps
+                RENAME "${APP_SHORT_NAME}.png")
+
+        include(cmake/appimage_tools.cmake)
+
+        set(CPACK_GENERATOR "AppImage;TXZ")
+        set(CPACK_PACKAGE_FILE_NAME "${APPLICATION_NAME}-${APPLICATION_VERSION}-${CMAKE_SYSTEM_PROCESSOR}")
+        set(CPACK_PACKAGE_ICON "${APP_SHORT_NAME}.png")
+        set(CPACK_APPIMAGE_NO_APPSTREAM ON)
+
+    else()
+        message(FATAL_ERROR "OSECT_ENABLE_PACKAGING: no installer is defined for ${CMAKE_SYSTEM_NAME}.")
     endif()
 
-    # Start menu shortcut
-    set(CPACK_NSIS_CREATE_ICONS_EXTRA
-        "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\${APPLICATION_NAME}.lnk' '$INSTDIR\\\\osect.exe'")
-    set(CPACK_NSIS_DELETE_ICONS_EXTRA
-        "Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\${APPLICATION_NAME}.lnk'")
-
-    _require_asset("${BUNDLED_DB}")
-    _require_asset("${BUNDLED_BASEMAP}")
-    _require_asset("${BUNDLED_TERRAIN}")
-    include(CPack)
-
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND OSECT_ENABLE_PACKAGING)
-    # =========================================================================
-    # Linux: AppImage + .tar.xz of the same tree
-    # =========================================================================
-    if(CMAKE_VERSION VERSION_LESS 4.2)
-        message(FATAL_ERROR "Linux packaging needs CMake 4.2 or newer (CPack AppImage generator); this is ${CMAKE_VERSION}.")
-    endif()
-    # bin/osect with its data under share/osect/, which the runtime asset
-    # lookup finds relative to the executable. The tree is the AppDir for
-    # the AppImage and the contents of the tarball.
-    install(TARGETS osect RUNTIME DESTINATION bin)
-    install(FILES "${BUNDLED_DB}"  DESTINATION share/${APP_SHORT_NAME})
-    install(DIRECTORY "${BUNDLED_BASEMAP}" DESTINATION share/${APP_SHORT_NAME})
-    install(DIRECTORY "${BUNDLED_TERRAIN}" DESTINATION share/${APP_SHORT_NAME})
-
-    # The AppImage generator requires a desktop entry whose Exec and Icon
-    # name installed files; it links both to the AppDir's top level.
-    set(_desktop_file "${CMAKE_BINARY_DIR}/${APP_SHORT_NAME}.desktop")
-    file(WRITE "${_desktop_file}"
-        "[Desktop Entry]\n"
-        "Type=Application\n"
-        "Name=${APPLICATION_NAME}\n"
-        "Comment=Aeronautical chart viewer and flight planner\n"
-        "Exec=${APP_SHORT_NAME}\n"
-        "Icon=${APP_SHORT_NAME}\n"
-        "Categories=Science;Geography;Maps;\n"
-        "Terminal=false\n")
-    install(FILES "${_desktop_file}" DESTINATION share/applications)
-    install(FILES "${ICON_PNG}" DESTINATION share/icons/hicolor/1024x1024/apps
-            RENAME "${APP_SHORT_NAME}.png")
-
-    include(cmake/appimage_tools.cmake)
-
-    set(CPACK_GENERATOR "AppImage;TXZ")
-    set(CPACK_PACKAGE_NAME "${APPLICATION_NAME}")
-    set(CPACK_PACKAGE_VENDOR "existens.org")
-    set(CPACK_PACKAGE_VERSION_MAJOR "${MAJOR_VERSION}")
-    set(CPACK_PACKAGE_VERSION_MINOR "${MINOR_VERSION}")
-    set(CPACK_PACKAGE_VERSION_PATCH "${BUILD_VERSION}")
-    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Open source chart viewer and flight planner")
-    set(CPACK_PACKAGE_FILE_NAME "${APPLICATION_NAME}-${APPLICATION_VERSION}-${CMAKE_SYSTEM_PROCESSOR}")
-    set(CPACK_PACKAGE_ICON "${APP_SHORT_NAME}.png")
-    set(CPACK_APPIMAGE_NO_APPSTREAM ON)
-
-    _require_asset("${BUNDLED_DB}")
-    _require_asset("${BUNDLED_BASEMAP}")
-    _require_asset("${BUNDLED_TERRAIN}")
     include(CPack)
 endif()
