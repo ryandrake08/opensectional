@@ -22,6 +22,9 @@ function(add_osect_test name)
         $<$<CONFIG:Debug>:${DEBUG_COMPILE_OPTIONS}>
         $<$<CONFIG:RelWithDebInfo>:${RELWITHDEBINFO_COMPILE_OPTIONS}>
     )
+    # Several src/ modules start std::threads; FreeBSD's libc (unlike glibc)
+    # needs the threads library linked explicitly for pthread_create.
+    target_link_libraries(test_${name} PRIVATE Threads::Threads)
     add_test(NAME ${name}
              COMMAND test_${name}
              WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
