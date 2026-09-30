@@ -27,17 +27,24 @@ endfunction()
 # Export compile commands
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Build-type-specific compiler options (MinGW lacks ASan support).
-# RelWithDebInfo keeps frame pointers so sampling profilers can walk
-# stacks without DWARF unwinding — free on AArch64 where the ABI
-# already requires it, ~1% on x86_64.
-if(MINGW)
-    set(DEBUG_COMPILE_OPTIONS -O0 -g)
-    set(RELWITHDEBINFO_COMPILE_OPTIONS -O2 -g -fno-omit-frame-pointer)
-else()
+# Build-type-specific compiler options. Debug builds use AddressSanitizer
+# when the toolchain can link a program with it (MinGW has no ASan runtime,
+# and Alpine's musl libasan fails to link). RelWithDebInfo keeps frame
+# pointers so sampling profilers can walk stacks without DWARF unwinding —
+# free on AArch64 where the ABI already requires it, ~1% on x86_64.
+include(CheckCXXSourceCompiles)
+set(CMAKE_REQUIRED_FLAGS -fsanitize=address)
+set(CMAKE_REQUIRED_LINK_OPTIONS -fsanitize=address)
+check_cxx_source_compiles("int main() { return 0; }" OSECT_HAVE_ASAN)
+unset(CMAKE_REQUIRED_FLAGS)
+unset(CMAKE_REQUIRED_LINK_OPTIONS)
+if(OSECT_HAVE_ASAN)
     set(DEBUG_COMPILE_OPTIONS -O0 -ggdb -fsanitize=address)
-    set(RELWITHDEBINFO_COMPILE_OPTIONS -O2 -g -fno-omit-frame-pointer)
+else()
+    message(STATUS "AddressSanitizer: not available with this toolchain; Debug builds run without it")
+    set(DEBUG_COMPILE_OPTIONS -O0 -ggdb)
 endif()
+set(RELWITHDEBINFO_COMPILE_OPTIONS -O2 -g -fno-omit-frame-pointer)
 
 find_package(Threads REQUIRED)
 

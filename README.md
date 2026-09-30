@@ -141,7 +141,7 @@ ctest --preset release
 | Preset | Build directory | Purpose |
 |---|---|---|
 | `release` | `build/` | Optimized contributor build |
-| `debug` | `build-debug/` | Unoptimized, with AddressSanitizer on Linux/macOS/FreeBSD |
+| `debug` | `build-debug/` | Unoptimized, with AddressSanitizer when the toolchain can link it (not MinGW or Alpine/musl) |
 | `relwithdebinfo` | `build-relwithdebinfo/` | Optimized with debug info and frame pointers, for profiling |
 
 `cmake --list-presets` shows every preset available on the current host, including the release presets described in [Cutting a release](#cutting-a-release). Extra `-D` options can be appended to any configure command, e.g. `cmake --preset release -DBUILD_TESTING=OFF`. Put personal presets in `CMakeUserPresets.json`, which is git-ignored.
