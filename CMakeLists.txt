@@ -319,6 +319,7 @@ add_executable(osect
     src/data_source.cpp
     src/elevation_source.cpp
     src/elevation_tile.cpp
+    src/elevation_tile_cache.cpp
     src/terrain_profile.cpp
     src/terrain_profile_worker.cpp
     src/terrain_renderer.cpp

@@ -1,18 +1,16 @@
 #include "elevation_source.hpp"
 #include "elevation_address.hpp"
 #include "elevation_tile.hpp"
+#include "elevation_tile_cache.hpp"
 #include "tile_key.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
-#include <list>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <utility>
 
 namespace
@@ -276,73 +274,34 @@ namespace osect
         std::string status_name;
         std::string source_version;
         bool surface_model = false;
-        size_t cache_capacity;
+        elevation_tile_cache cache;
 
-        struct cache_entry
-        {
-            std::shared_ptr<const elevation_tile> tile;
-            std::list<tile_key>::iterator recency;
-        };
-        std::mutex cache_mutex;
-        std::unordered_map<tile_key, cache_entry> cache;
-        std::list<tile_key> recency;
-
-        impl(std::filesystem::path path, size_t cache_capacity) : path(std::move(path)), cache_capacity(cache_capacity)
+        impl(std::filesystem::path path, size_t cache_capacity) : path(std::move(path)), cache(cache_capacity)
         {
         }
 
-        // Loads a tile on demand and retains it in the LRU cache.
+        // Returns the tile at key from the cache, loading it from the tree
+        // on a miss. A tile missing from the tree comes back null.
         std::shared_ptr<const elevation_tile> load_tile(const tile_key& key)
         {
-            std::unique_lock<std::mutex> lock(cache_mutex);
-            const auto cached = cache.find(key);
-            if(cached != cache.end())
-            {
-                touch(cached);
-                return cached->second.tile;
-            }
-            lock.unlock();
-
-            const std::filesystem::path tile_path =
-                path / std::to_string(key.z) / std::to_string(key.x) / (std::to_string(key.y) + ".png");
-            std::shared_ptr<const elevation_tile> tile;
-            if(std::filesystem::exists(tile_path))
-            {
-                tile = std::make_shared<elevation_tile>(elevation_tile::load(tile_path));
-            }
-
-            lock.lock();
-            const auto inserted = cache.emplace(key, cache_entry{tile, recency.end()});
-            if(!inserted.second)
-            {
-                touch(inserted.first);
-                return inserted.first->second.tile;
-            }
-            recency.push_front(key);
-            inserted.first->second.recency = recency.begin();
-            if(cache.size() > cache_capacity)
-            {
-                const tile_key oldest = recency.back();
-                cache.erase(oldest);
-                recency.pop_back();
-            }
-            return tile;
-        }
-
-        void touch(std::unordered_map<tile_key, cache_entry>::iterator entry)
-        {
-            recency.splice(recency.begin(), recency, entry->second.recency);
-            entry->second.recency = recency.begin();
+            return cache.get(key,
+                             [this, &key]() -> std::shared_ptr<const elevation_tile>
+                             {
+                                 const std::filesystem::path tile_path = path / std::to_string(key.z) /
+                                                                         std::to_string(key.x) /
+                                                                         (std::to_string(key.y) + ".png");
+                                 if(!std::filesystem::exists(tile_path))
+                                 {
+                                     return nullptr;
+                                 }
+                                 return std::make_shared<elevation_tile>(elevation_tile::load(tile_path));
+                             });
         }
     };
 
     elevation_source::elevation_source(std::filesystem::path path, size_t cache_capacity)
         : pimpl(std::make_unique<impl>(std::move(path), cache_capacity))
     {
-        if(pimpl->cache_capacity == 0)
-        {
-            throw std::invalid_argument("elevation tile cache capacity must be positive");
-        }
         if(pimpl->path.empty())
         {
             return;

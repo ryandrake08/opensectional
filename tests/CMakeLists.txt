@@ -38,11 +38,16 @@ add_osect_test(texture_format)
 target_link_libraries(test_texture_format PRIVATE sdl_wrapper)
 add_osect_test(elevation_tile ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp)
 target_link_libraries(test_elevation_tile PRIVATE sdl_wrapper)
+add_osect_test(elevation_tile_cache
+    ${CMAKE_SOURCE_DIR}/src/elevation_tile_cache.cpp
+    ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp)
+target_link_libraries(test_elevation_tile_cache PRIVATE sdl_wrapper)
 add_osect_test(elevation_address)
 add_osect_test(terrain_profile)
 add_osect_test(elevation_source
     ${CMAKE_SOURCE_DIR}/src/elevation_source.cpp
     ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp
+    ${CMAKE_SOURCE_DIR}/src/elevation_tile_cache.cpp
     ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
 target_link_libraries(test_elevation_source PRIVATE sdl_wrapper)
 
@@ -89,6 +94,7 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/osect.db")
         ${CMAKE_SOURCE_DIR}/src/geo_math.cpp
         ${CMAKE_SOURCE_DIR}/src/elevation_source.cpp
         ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_tile_cache.cpp
         ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
         ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
     target_link_libraries(test_terrain_profile_sampling PRIVATE sqlite_wrapper sdl_wrapper)
@@ -100,6 +106,7 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/osect.db")
         ${CMAKE_SOURCE_DIR}/src/geo_math.cpp
         ${CMAKE_SOURCE_DIR}/src/elevation_source.cpp
         ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_tile_cache.cpp
         ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
         ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
     target_link_libraries(test_terrain_profile_worker PRIVATE sqlite_wrapper sdl_wrapper)
