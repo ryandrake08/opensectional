@@ -1,10 +1,10 @@
 #include "tile_renderer.hpp"
-#include "map_view.hpp"
 #include "program.hpp"
 #include "render_context.hpp"
 #include "tile_cache.hpp"
 #include "tile_key.hpp"
 #include "tile_loader.hpp"
+#include "tile_quad.hpp"
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -40,33 +40,6 @@ namespace osect
 
 namespace osect
 {
-    // Generate 6 vertices for a tile quad in Web Mercator meters.
-    // UV coordinates specify the sub-region of the texture to sample
-    // (normally 0-1 for the full tile, smaller range when using a
-    // parent tile as a fallback).
-    static void get_tile_vertices(const tile_key& key, float u0, float v0, float u1, float v1,
-                                  sdl::vertex_t2f_c4ub_v3f* verts)
-    {
-        auto [mx_min, my_min, mx_max, my_max] = tile_bounds_meters(key.x, key.y, key.z);
-
-        auto x0 = static_cast<float>(mx_min);
-        auto x1 = static_cast<float>(mx_max);
-        auto y0 = static_cast<float>(my_min);
-        auto y1 = static_cast<float>(my_max);
-
-        uint8_t r = 255;
-        uint8_t g = 255;
-        uint8_t b = 255;
-        uint8_t a = 255;
-
-        // Two triangles forming a quad
-        verts[0] = {u0, v1, r, g, b, a, x0, y0, 0.0F};
-        verts[1] = {u1, v1, r, g, b, a, x1, y0, 0.0F};
-        verts[2] = {u0, v0, r, g, b, a, x0, y1, 0.0F};
-        verts[3] = {u0, v0, r, g, b, a, x0, y1, 0.0F};
-        verts[4] = {u1, v1, r, g, b, a, x1, y0, 0.0F};
-        verts[5] = {u1, v0, r, g, b, a, x1, y1, 0.0F};
-    }
 
     struct tile_renderer::impl
     {
@@ -99,28 +72,6 @@ namespace osect
         {
         }
 
-        // Request a tile for loading. If it previously failed, walk up
-        // the zoom tree and request the nearest untried ancestor.
-        void request_tile(const tile_key& key)
-        {
-            if(cache.find(key))
-            {
-                return;
-            }
-
-            if(!loader.failed(key))
-            {
-                loader.request(key);
-                return;
-            }
-
-            // This tile has no data — request its parent
-            if(key.z > 0)
-            {
-                request_tile(key.parent());
-            }
-        }
-
         // Plan one copy() call: resolve fallback ancestors for the current
         // visible set and sum up every byte the transfer buffer will carry
         // (vertex buffers + tile texture pixels + fallback vertex buffers).
@@ -128,21 +79,7 @@ namespace osect
         {
             constexpr uint32_t vbuf_bytes = 6 * sizeof(sdl::vertex_t2f_c4ub_v3f);
 
-            std::vector<typename tile_cache<tile_gpu>::fallback> fallbacks;
-            fallbacks.reserve(cache.visible_tiles().size());
-            for(const auto& key : cache.visible_tiles())
-            {
-                if(cache.find(key))
-                {
-                    continue;
-                }
-                typename tile_cache<tile_gpu>::fallback fallback{};
-                if(!cache.find_ancestor(key, fallback))
-                {
-                    continue;
-                }
-                fallbacks.push_back(std::move(fallback));
-            }
+            auto fallbacks = cache.fallbacks();
 
             uint32_t total_bytes = 0;
             for(const auto& result : pending_results)
@@ -162,17 +99,12 @@ namespace osect
 
     tile_renderer::~tile_renderer() = default;
 
-    void tile_renderer::update(double vx_min, double vy_min, double vx_max, double vy_max, double /*half_extent_y*/,
-                               int viewport_height, double /*aspect_ratio*/)
+    void tile_renderer::update(double vx_min, double vy_min, double vx_max, double vy_max, int viewport_height)
     {
-        pimpl->cache.update(
-            vx_min, vy_min, vx_max, vy_max, viewport_height,
-            [this]
-            {
-                pimpl->fallback_dirty = true;
-                pimpl->loader.cancel();
-            },
-            [this](const tile_key& key) { pimpl->request_tile(key); });
+        if(pimpl->cache.update(vx_min, vy_min, vx_max, vy_max, viewport_height, pimpl->loader))
+        {
+            pimpl->fallback_dirty = true;
+        }
     }
 
     void tile_renderer::drain()
@@ -209,11 +141,9 @@ namespace osect
         // Upload newly loaded tiles
         for(auto& result : pimpl->pending_results)
         {
-            auto vertices = std::vector<sdl::vertex_t2f_c4ub_v3f>(6);
-            get_tile_vertices(result.key, 0.0F, 0.0F, 1.0F, 1.0F, vertices.data());
-
+            const auto vertices = tile_quad(result.key, 0.0F, 0.0F, 1.0F, 1.0F);
             sdl::buffer vbuf(pimpl->dev, sdl::buffer_usage::vertex, 6, sizeof(sdl::vertex_t2f_c4ub_v3f));
-            pass.upload_buffer(transfer, vbuf, vertices);
+            pass.upload_buffer(transfer, vbuf, vertices.data());
 
             sdl::texture tex(pimpl->dev, result.surf);
             pass.upload_texture(transfer, tex, result.surf);
@@ -226,11 +156,9 @@ namespace osect
 
         for(auto& fallback : fallbacks)
         {
-            auto verts = std::vector<sdl::vertex_t2f_c4ub_v3f>(6);
-            get_tile_vertices(fallback.key, fallback.u0, fallback.v0, fallback.u1, fallback.v1, verts.data());
-
+            const auto vertices = tile_quad(fallback.key, fallback.u0, fallback.v0, fallback.u1, fallback.v1);
             sdl::buffer vbuf(pimpl->dev, sdl::buffer_usage::vertex, 6, sizeof(sdl::vertex_t2f_c4ub_v3f));
-            pass.upload_buffer(transfer, vbuf, verts);
+            pass.upload_buffer(transfer, vbuf, vertices.data());
 
             pimpl->fallback_quads.push_back({std::move(vbuf), std::move(fallback.resource)});
         }

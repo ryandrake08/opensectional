@@ -32,7 +32,6 @@ namespace osect
         // Requested, loading, or loaded but not yet drained.
         std::unordered_set<tile_key> pending_;
         std::unordered_set<tile_key> failed_;
-        bool failure_pending_ = false;
         bool shutdown_ = false;
 
         // Declared last so the members above exist before the thread starts.
@@ -68,7 +67,6 @@ namespace osect
                     std::scoped_lock lock(mutex_);
                     pending_.erase(key);
                     failed_.insert(key);
-                    failure_pending_ = true;
                 }
                 on_ready_();
             }
@@ -137,15 +135,6 @@ namespace osect
             }
             results_.clear();
             return drained;
-        }
-
-        // True if any load has failed since the last call.
-        bool drain_failures()
-        {
-            std::scoped_lock lock(mutex_);
-            const bool failed = failure_pending_;
-            failure_pending_ = false;
-            return failed;
         }
     };
 } // namespace osect

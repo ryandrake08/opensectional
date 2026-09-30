@@ -34,6 +34,8 @@ endfunction()
 add_osect_test(altitude_filter)
 add_osect_test(tile_cache)
 add_osect_test(tile_key)
+add_osect_test(tile_quad ${CMAKE_SOURCE_DIR}/src/tile_quad.cpp ${CMAKE_SOURCE_DIR}/src/map_view.cpp)
+target_link_libraries(test_tile_quad PRIVATE sdl_wrapper)
 # tile_loader logs failed loads through the sdl wrapper.
 add_osect_test(tile_loader)
 target_link_libraries(test_tile_loader PRIVATE sdl_wrapper)

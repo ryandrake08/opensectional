@@ -103,8 +103,6 @@ TEST_CASE("tile_loader marks a failed key and never loads it again")
 
     loader.request({4, 2, 0});
     REQUIRE(wait_for_failure(loader, {4, 2, 0}));
-    CHECK(loader.drain_failures());
-    CHECK_FALSE(loader.drain_failures());
 
     loader.request({4, 2, 0});
     loader.request({4, 5, 0});

@@ -327,6 +327,7 @@ add_executable(osect
     src/ephemeral_source.cpp
     src/http_client.cpp
     src/tfr_refresher.cpp
+    src/tile_quad.cpp
     src/tile_renderer.cpp
     src/ui_overlay.cpp
     src/ui_profile_panel.cpp

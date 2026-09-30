@@ -7,7 +7,9 @@
 #include "tile_cache.hpp"
 #include "tile_key.hpp"
 #include "tile_loader.hpp"
+#include "tile_quad.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -32,26 +34,6 @@ namespace osect
 {
     namespace
     {
-        void tile_vertices(const tile_key& key, float u0, float v0, float u1, float v1, float texture_offset,
-                           float texture_scale, sdl::vertex_t2f_c4ub_v3f* vertices)
-        {
-            const auto [x0_m, y0_m, x1_m, y1_m] = tile_bounds_meters(key.x, key.y, key.z);
-            const auto x0 = static_cast<float>(x0_m);
-            const auto x1 = static_cast<float>(x1_m);
-            const auto y0 = static_cast<float>(y0_m);
-            const auto y1 = static_cast<float>(y1_m);
-            constexpr uint8_t white = 255;
-            u0 = texture_offset + u0 * texture_scale;
-            v0 = texture_offset + v0 * texture_scale;
-            u1 = texture_offset + u1 * texture_scale;
-            v1 = texture_offset + v1 * texture_scale;
-            vertices[0] = {u0, v1, white, white, white, white, x0, y0, 0.0F};
-            vertices[1] = {u1, v1, white, white, white, white, x1, y0, 0.0F};
-            vertices[2] = {u0, v0, white, white, white, white, x0, y1, 0.0F};
-            vertices[3] = vertices[2];
-            vertices[4] = vertices[1];
-            vertices[5] = {u1, v0, white, white, white, white, x1, y1, 0.0F};
-        }
 
         struct terrain_load_result
         {
@@ -199,21 +181,12 @@ namespace osect
             return static_cast<float>(source.tile_size()) / (source.tile_size() + 2.0F * source.skirt());
         }
 
-        void request(const tile_key& key)
+        // The tile's quad, with texture coordinates inset past the skirt.
+        std::array<sdl::vertex_t2f_c4ub_v3f, 6> quad(const tile_key& key, float u0, float v0, float u1, float v1) const
         {
-            if(cache.find(key))
-            {
-                return;
-            }
-            if(!loader.failed(key))
-            {
-                loader.request(key);
-                return;
-            }
-            if(key.z > source.min_zoom())
-            {
-                request(key.parent());
-            }
+            const float offset = texture_offset();
+            const float scale = texture_scale();
+            return tile_quad(key, offset + u0 * scale, offset + v0 * scale, offset + u1 * scale, offset + v1 * scale);
         }
     };
 
@@ -226,17 +199,9 @@ namespace osect
 
     void terrain_renderer::update(double x_min, double y_min, double x_max, double y_max, int viewport_height)
     {
-        pimpl->cache.update(
-            x_min, y_min, x_max, y_max, viewport_height,
-            [this]
-            {
-                pimpl->fallback_dirty = true;
-                pimpl->loader.cancel();
-            },
-            [this](const tile_key& key) { pimpl->request(key); });
-        for(const auto& key : pimpl->cache.visible_tiles())
+        if(pimpl->cache.update(x_min, y_min, x_max, y_max, viewport_height, pimpl->loader))
         {
-            pimpl->request(key);
+            pimpl->fallback_dirty = true;
         }
     }
 
@@ -252,10 +217,6 @@ namespace osect
 
     void terrain_renderer::drain()
     {
-        if(pimpl->loader.drain_failures())
-        {
-            pimpl->fallback_dirty = true;
-        }
         auto results = pimpl->loader.drain();
         if(!results.empty())
         {
@@ -275,25 +236,12 @@ namespace osect
         pimpl->fallbacks.clear();
         pimpl->fallback_dirty = false;
         constexpr uint32_t vertex_bytes = 6 * sizeof(sdl::vertex_t2f_c4ub_v3f);
-        std::vector<typename tile_cache<terrain_gpu>::fallback> fallbacks;
-        uint32_t bytes = 0;
+        auto fallbacks = pimpl->cache.fallbacks();
+        uint32_t bytes = static_cast<uint32_t>(fallbacks.size()) * vertex_bytes;
         for(const auto& result : pimpl->pending)
         {
             bytes += vertex_bytes + static_cast<uint32_t>(result.elevations.size() * sizeof(uint16_t)) +
                      static_cast<uint32_t>(result.water.size());
-        }
-        for(const auto& key : pimpl->cache.visible_tiles())
-        {
-            if(pimpl->cache.find(key))
-            {
-                continue;
-            }
-            typename tile_cache<terrain_gpu>::fallback fallback;
-            if(pimpl->cache.find_ancestor(key, fallback))
-            {
-                fallbacks.push_back(std::move(fallback));
-                bytes += vertex_bytes;
-            }
         }
         const bool upload_ramp = !pimpl->ramp_uploaded;
         if(upload_ramp)
@@ -326,10 +274,7 @@ namespace osect
         for(auto& result : pimpl->pending)
         {
             sdl::buffer vertices(pimpl->dev, sdl::buffer_usage::vertex, 6, sizeof(sdl::vertex_t2f_c4ub_v3f));
-            std::vector<sdl::vertex_t2f_c4ub_v3f> quad(6);
-            tile_vertices(result.key, 0.0F, 0.0F, 1.0F, 1.0F, pimpl->texture_offset(), pimpl->texture_scale(),
-                          quad.data());
-            pass.upload_buffer(transfer, vertices, quad);
+            pass.upload_buffer(transfer, vertices, pimpl->quad(result.key, 0.0F, 0.0F, 1.0F, 1.0F).data());
             sdl::texture heights(pimpl->dev, static_cast<unsigned>(result.width), static_cast<unsigned>(result.height),
                                  sdl::texture_format::r16_unorm);
             pass.upload_texture(transfer, heights, result.elevations.data(), static_cast<uint32_t>(result.width),
@@ -352,10 +297,8 @@ namespace osect
         for(auto& fallback : fallbacks)
         {
             sdl::buffer vertices(pimpl->dev, sdl::buffer_usage::vertex, 6, sizeof(sdl::vertex_t2f_c4ub_v3f));
-            std::vector<sdl::vertex_t2f_c4ub_v3f> quad(6);
-            tile_vertices(fallback.key, fallback.u0, fallback.v0, fallback.u1, fallback.v1, pimpl->texture_offset(),
-                          pimpl->texture_scale(), quad.data());
-            pass.upload_buffer(transfer, vertices, quad);
+            pass.upload_buffer(transfer, vertices,
+                               pimpl->quad(fallback.key, fallback.u0, fallback.v0, fallback.u1, fallback.v1).data());
             // fallback.key is the display tile; its texels span (u1-u0) of an
             // ancestor texel, so scale up to the ancestor's ground resolution.
             const float texel_m = pimpl->texel_meters(fallback.key) / (fallback.u1 - fallback.u0);

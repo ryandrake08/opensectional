@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <functional>
 #include <list>
 #include <memory>
 #include <unordered_map>
@@ -37,10 +36,16 @@ namespace osect
         {
         }
 
-        // Rebuild the visible set and request its tiles plus nearby tiles.
-        // Returns true when the requested range changed.
-        bool update(double vx_min, double vy_min, double vx_max, double vy_max, int viewport_height,
-                    const std::function<void()>& reset_requests, const std::function<void(const tile_key&)>& request)
+        // Rebuilds the visible set for the view and requests tiles from
+        // loader. When the visible range changes, drops loader's queued
+        // loads and requests the new range: the visible tiles, a one-tile
+        // ring around them, and the adjacent zoom levels. Otherwise
+        // re-requests the visible tiles, so a tile that failed to load is
+        // replaced by its nearest unfailed ancestor as soon as the failure
+        // is known. loader provides failed(key), request(key), and cancel().
+        // Returns true when the range changed.
+        template <typename loader_t>
+        bool update(double vx_min, double vy_min, double vx_max, double vy_max, int viewport_height, loader_t& loader)
         {
             auto meters_per_pixel = (vy_max - vy_min) / viewport_height;
             auto world_size = 2.0 * HALF_CIRCUMFERENCE;
@@ -66,6 +71,7 @@ namespace osect
             if(has_cached_range && current_zoom == cached_zoom && tx_min == cached_tx_min && tx_max == cached_tx_max &&
                ty_min == cached_ty_min && ty_max == cached_ty_max)
             {
+                request_visible(loader);
                 return false;
             }
 
@@ -76,16 +82,11 @@ namespace osect
             cached_ty_max = ty_max;
             has_cached_range = true;
 
-            reset_requests();
-
-            for(const auto& key : visible)
-            {
-                request(key);
-            }
-
-            request_range(current_zoom, tx_min - 1, tx_max + 1, ty_min - 1, ty_max + 1, request);
-            request_range(current_zoom + 1, vx_min, vy_min, vx_max, vy_max, request);
-            request_range(current_zoom - 1, vx_min, vy_min, vx_max, vy_max, request);
+            loader.cancel();
+            request_visible(loader);
+            request_range(current_zoom, tx_min - 1, tx_max + 1, ty_min - 1, ty_max + 1, loader);
+            request_range(current_zoom + 1, vx_min, vy_min, vx_max, vy_max, loader);
+            request_range(current_zoom - 1, vx_min, vy_min, vx_max, vy_max, loader);
             return true;
         }
 
@@ -130,6 +131,44 @@ namespace osect
                 }
             }
             return false;
+        }
+
+        // For each visible tile that isn't cached, the nearest cached
+        // ancestor to draw in its place. Tiles with no cached ancestor are
+        // left out.
+        std::vector<fallback> fallbacks()
+        {
+            std::vector<fallback> result;
+            for(const auto& key : visible)
+            {
+                fallback entry{};
+                if(!find(key) && find_ancestor(key, entry))
+                {
+                    result.push_back(std::move(entry));
+                }
+            }
+            return result;
+        }
+
+        // Requests key from loader unless it's cached. A key that already
+        // failed to load is replaced by its nearest ancestor that hasn't,
+        // stopping at min_zoom. loader provides failed(key) and request(key).
+        template <typename loader_t>
+        void request_tile(tile_key key, loader_t& loader)
+        {
+            while(!find(key))
+            {
+                if(!loader.failed(key))
+                {
+                    loader.request(key);
+                    return;
+                }
+                if(key.z <= min_zoom)
+                {
+                    return;
+                }
+                key = key.parent();
+            }
         }
 
     private:
@@ -182,8 +221,17 @@ namespace osect
             }
         }
 
-        void request_range(int zoom, int tx_min, int tx_max, int ty_min, int ty_max,
-                           const std::function<void(const tile_key&)>& request) const
+        template <typename loader_t>
+        void request_visible(loader_t& loader)
+        {
+            for(const auto& key : visible)
+            {
+                request_tile(key, loader);
+            }
+        }
+
+        template <typename loader_t>
+        void request_range(int zoom, int tx_min, int tx_max, int ty_min, int ty_max, loader_t& loader)
         {
             if(zoom < min_zoom || zoom > max_zoom)
             {
@@ -195,13 +243,13 @@ namespace osect
             {
                 for(int tx = tx_min; tx <= tx_max; tx++)
                 {
-                    request({zoom, tx, ty});
+                    request_tile({zoom, tx, ty}, loader);
                 }
             }
         }
 
-        void request_range(int zoom, double vx_min, double vy_min, double vx_max, double vy_max,
-                           const std::function<void(const tile_key&)>& request) const
+        template <typename loader_t>
+        void request_range(int zoom, double vx_min, double vy_min, double vx_max, double vy_max, loader_t& loader)
         {
             if(zoom < min_zoom || zoom > max_zoom)
             {
@@ -214,7 +262,7 @@ namespace osect
             auto tx_max = static_cast<int>(std::floor((vx_max + HALF_CIRCUMFERENCE) / tile_size));
             auto ty_min = static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_max) / tile_size));
             auto ty_max = static_cast<int>(std::floor((HALF_CIRCUMFERENCE - vy_min) / tile_size));
-            request_range(zoom, tx_min, tx_max, ty_min, ty_max, request);
+            request_range(zoom, tx_min, tx_max, ty_min, ty_max, loader);
         }
     };
 } // namespace osect

@@ -521,7 +521,7 @@ namespace osect
             if(tiles)
             {
                 tiles->update(view.view_x_min(), view.view_y_min(), view.view_x_max(), view.view_y_max(),
-                              view.half_extent_y, view.viewport_height, view.aspect_ratio());
+                              view.viewport_height);
             }
             if(terrain)
             {
