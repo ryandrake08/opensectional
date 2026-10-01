@@ -110,6 +110,7 @@ TEST_CASE("Elevation source decodes escaped manifest strings")
                         "  \"is_surface_model\": false,\n"
                         "  \"vertical_datum\": \"EGM2008\",\n"
                         "  \"vertical_precision_m\": 1,\n"
+                        "  \"bbox\": [-180, -85, 180, 85],\n"
                         "  \"tile_pixels\": 256,\n"
                         "  \"skirt_pixels\": 2,\n"
                         "  \"min_zoom\": 0,\n"
@@ -133,6 +134,7 @@ TEST_CASE("Elevation source decodes \\u escapes in manifest strings")
                         "  \"is_surface_model\": false,\n"
                         "  \"vertical_datum\": \"EGM2008\",\n"
                         "  \"vertical_precision_m\": 1,\n"
+                        "  \"bbox\": [-180, -85, 180, 85],\n"
                         "  \"tile_pixels\": 256,\n"
                         "  \"skirt_pixels\": 2,\n"
                         "  \"min_zoom\": 0,\n"
@@ -153,6 +155,66 @@ TEST_CASE("Elevation source rejects malformed \\u escapes")
         json.replace(json.find("Test data"), 9, escape);
         temporary_tree tree("osect-elevation-source-bad-unicode", json);
 
+        CHECK_THROWS_AS(osect::elevation_source(tree.path()), std::runtime_error);
+    }
+}
+
+TEST_CASE("Elevation source covers boxes inside the manifest bbox")
+{
+    temporary_tree tree("osect-elevation-source-regional",
+                        manifest("regional", 256, 2, 0, 6, 1.0, "EGM2008", {}, false, "[-125, 24, -66, 50]"));
+    const osect::elevation_source source(tree.path());
+
+    CHECK(source.covers(40.0, -110.0, 41.0, -109.0));
+    CHECK(source.covers(24.0, -125.0, 50.0, -66.0));
+}
+
+TEST_CASE("Elevation source does not cover boxes reaching past the manifest bbox")
+{
+    temporary_tree tree("osect-elevation-source-regional-edge",
+                        manifest("regional", 256, 2, 0, 6, 1.0, "EGM2008", {}, false, "[-125, 24, -66, 50]"));
+    const osect::elevation_source source(tree.path());
+
+    CHECK_FALSE(source.covers(40.0, -67.0, 41.0, -65.0));
+    CHECK_FALSE(source.covers(49.5, -110.0, 50.5, -109.0));
+    CHECK_FALSE(source.covers(40.0, -126.0, 41.0, -124.0));
+}
+
+TEST_CASE("Elevation source covers boxes across the antimeridian of a global tree")
+{
+    // The bbox a global build writes: pulled 1e-7 degrees inside +-180.
+    temporary_tree tree("osect-elevation-source-global",
+                        manifest("global", 256, 2, 0, 6, 1.0, "EGM2008", {}, false,
+                                 "[-179.9999999, -58.8, 179.9999999, 84.5]"));
+    const osect::elevation_source source(tree.path());
+
+    CHECK(source.covers(51.0, 179.5, 52.0, 180.5));
+    CHECK(source.covers(51.0, -180.5, 52.0, -179.5));
+    CHECK_FALSE(source.covers(-60.0, 10.0, -59.0, 11.0));
+}
+
+TEST_CASE("Elevation source covers wrapped longitudes inside a regional tree")
+{
+    temporary_tree tree("osect-elevation-source-aleutians",
+                        manifest("aleutians", 256, 2, 0, 6, 1.0, "EGM2008", {}, false, "[-180, 50, -170, 55]"));
+    const osect::elevation_source source(tree.path());
+
+    CHECK(source.covers(51.0, 183.0, 52.0, 184.0));
+    CHECK_FALSE(source.covers(51.0, 179.5, 52.0, 180.5));
+}
+
+TEST_CASE("Unavailable elevation source covers nothing")
+{
+    const osect::elevation_source source("missing-terrain-tree");
+    CHECK_FALSE(source.covers(40.0, -110.0, 41.0, -109.0));
+}
+
+TEST_CASE("Elevation source rejects a malformed manifest bbox")
+{
+    for(const char* bbox : {"[-125, 24, -66]", "[-66, 24, -125, 50]", "\"world\""})
+    {
+        temporary_tree tree("osect-elevation-source-bad-bbox",
+                            manifest("bad", 256, 2, 0, 6, 1.0, "EGM2008", {}, false, bbox));
         CHECK_THROWS_AS(osect::elevation_source(tree.path()), std::runtime_error);
     }
 }

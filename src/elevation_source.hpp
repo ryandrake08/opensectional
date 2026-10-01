@@ -51,6 +51,11 @@ namespace osect
         data_source data_source_row() const;
         // Samples one terrain tile and converts the result to feet.
         std::optional<double> elevation_ft(double lat, double lon, int zoom) const;
+        // True when the geographic box lies inside the tree's coverage (the
+        // manifest's bbox, the extent of its finest-zoom tiles). Longitudes
+        // may lie outside [-180, 180] and the box may cross the
+        // antimeridian. False when the source is unavailable.
+        bool covers(double lat_min, double lon_min, double lat_max, double lon_max) const;
         // Returns the conservative maximum terrain elevation in a geographic
         // box, read from the coarsest pyramid level at which the box spans
         // ELEVATION_BBOX_MIN_TEXELS texels on each axis.

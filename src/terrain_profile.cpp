@@ -3,6 +3,7 @@
 #include "flight_route.hpp"
 #include "geo_math.hpp"
 #include "nasr_database.hpp"
+#include "terrain_corridor.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -10,46 +11,6 @@
 
 namespace
 {
-    std::vector<osect::obstacle> obstacles_in_bbox(const osect::nasr_database& airports, const osect::geo_bbox& bbox)
-    {
-        if(bbox.lon_min >= -180.0 && bbox.lon_max <= 180.0)
-        {
-            return airports.query_obstacles(bbox);
-        }
-
-        std::vector<osect::obstacle> obstacles;
-        if(bbox.lon_min < -180.0)
-        {
-            auto west = airports.query_obstacles({bbox.lon_min + 360.0, bbox.lat_min, 180.0, bbox.lat_max});
-            auto east = airports.query_obstacles({-180.0, bbox.lat_min, bbox.lon_max, bbox.lat_max});
-            obstacles.insert(obstacles.end(), west.begin(), west.end());
-            obstacles.insert(obstacles.end(), east.begin(), east.end());
-        }
-        else
-        {
-            auto west = airports.query_obstacles({bbox.lon_min, bbox.lat_min, 180.0, bbox.lat_max});
-            auto east = airports.query_obstacles({-180.0, bbox.lat_min, bbox.lon_max - 360.0, bbox.lat_max});
-            obstacles.insert(obstacles.end(), west.begin(), west.end());
-            obstacles.insert(obstacles.end(), east.begin(), east.end());
-        }
-        return obstacles;
-    }
-
-    bool inside_bbox(const osect::obstacle& obstacle, const osect::geo_bbox& bbox)
-    {
-        double longitude = obstacle.lon;
-        while(longitude < bbox.lon_min)
-        {
-            longitude += 360.0;
-        }
-        while(longitude > bbox.lon_max)
-        {
-            longitude -= 360.0;
-        }
-        return obstacle.lat >= bbox.lat_min && obstacle.lat <= bbox.lat_max && longitude >= bbox.lon_min &&
-               longitude <= bbox.lon_max;
-    }
-
     std::optional<double> airport_elevation_ft(const osect::route_waypoint& waypoint,
                                                const osect::nasr_database& airports)
     {
@@ -91,12 +52,6 @@ namespace
             return lon + 360.0;
         }
         return lon;
-    }
-
-    osect::geo_bbox bbox_union(const osect::geo_bbox& a, const osect::geo_bbox& b)
-    {
-        return {std::min(a.lon_min, b.lon_min), std::min(a.lat_min, b.lat_min), std::max(a.lon_max, b.lon_max),
-                std::max(a.lat_max, b.lat_max)};
     }
 
     std::optional<double> optional_max(const std::optional<double>& a, const std::optional<double>& b)
@@ -382,57 +337,20 @@ namespace osect
         }
 
         const auto corridor_half_width_at = [&](double distance_nm)
-        {
-            const auto distance_from_terminal_nm = std::min(distance_nm, route_distance_nm - distance_nm);
-            return margins.corridor_width_nm / 2.0 *
-                   std::clamp(distance_from_terminal_nm / TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM, 0.0, 1.0);
-        };
+        { return corridor_half_width_nm(margins.corridor_width_nm, distance_nm, route_distance_nm - distance_nm); };
 
         // Each interval's terrain and obstacle maxima cover the corridor
         // swept between its two stations, and each station takes the larger
         // of its two intervals, so a line between adjacent stations never
         // falls below the terrain or obstacles anywhere in the corridor
         // between them.
-        std::vector<geo_bbox> interval_windows;
-        std::vector<std::optional<double>> interval_maxima_ft;
-        for(std::size_t station_index = 0; station_index + 1 < stations.size(); ++station_index)
+        std::vector<corridor_station> corridor;
+        corridor.reserve(stations.size());
+        for(const auto& station : stations)
         {
-            const auto& start = stations[station_index];
-            const auto& end = stations[station_index + 1];
-            const geo_bbox window =
-                bbox_union(bbox_around(start.point.lat, start.point.lon, corridor_half_width_at(start.distance_nm)),
-                           bbox_around(end.point.lat, end.point.lon, corridor_half_width_at(end.distance_nm)));
-            interval_windows.push_back(window);
-            interval_maxima_ft.push_back(
-                terrain.maximum_elevation_ft(window.lat_min, window.lon_min, window.lat_max, window.lon_max));
+            corridor.push_back({station.distance_nm, station.point, corridor_half_width_at(station.distance_nm)});
         }
-
-        // Obstacles are fetched for runs of consecutive intervals and
-        // assigned to each interval whose window contains them.
-        std::vector<std::optional<double>> interval_obstacle_maxima_ft(interval_windows.size());
-        for(std::size_t first = 0; include_obstacles && first < interval_windows.size();)
-        {
-            geo_bbox run_window = interval_windows[first];
-            std::size_t end = first + 1;
-            while(end < interval_windows.size() &&
-                  stations[end + 1].distance_nm - stations[first].distance_nm <= TERRAIN_PROFILE_OBSTACLE_QUERY_SPAN_NM)
-            {
-                run_window = bbox_union(run_window, interval_windows[end]);
-                ++end;
-            }
-            for(const auto& obstacle : obstacles_in_bbox(airports, run_window))
-            {
-                for(std::size_t interval = first; interval < end; ++interval)
-                {
-                    if(inside_bbox(obstacle, interval_windows[interval]))
-                    {
-                        interval_obstacle_maxima_ft[interval] =
-                            optional_max(interval_obstacle_maxima_ft[interval], static_cast<double>(obstacle.amsl_ht));
-                    }
-                }
-            }
-            first = end;
-        }
+        const auto intervals = corridor_intervals(corridor, terrain, airports, include_obstacles);
 
         for(std::size_t station_index = 0; station_index < stations.size(); ++station_index)
         {
@@ -449,11 +367,11 @@ namespace osect
             const bool has_previous = station_index > 0;
             const bool has_next = station_index + 1 < stations.size();
             sample.corridor_elevation_ft =
-                optional_max(has_previous ? interval_maxima_ft[station_index - 1] : std::nullopt,
-                             has_next ? interval_maxima_ft[station_index] : std::nullopt);
+                optional_max(has_previous ? intervals[station_index - 1].terrain_ft : std::nullopt,
+                             has_next ? intervals[station_index].terrain_ft : std::nullopt);
             const auto obstacle_maximum_ft =
-                optional_max(has_previous ? interval_obstacle_maxima_ft[station_index - 1] : std::nullopt,
-                             has_next ? interval_obstacle_maxima_ft[station_index] : std::nullopt);
+                optional_max(has_previous ? intervals[station_index - 1].obstacle_ft : std::nullopt,
+                             has_next ? intervals[station_index].obstacle_ft : std::nullopt);
             if(obstacle_maximum_ft)
             {
                 sample.has_obstacle = true;

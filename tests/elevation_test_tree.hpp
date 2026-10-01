@@ -52,7 +52,8 @@ namespace osect::test
 
     inline std::string manifest(const std::string& dataset, int tile_pixels, int skirt_pixels, int min_zoom,
                                 int max_zoom, double precision, const std::string& datum = "EGM2008",
-                                const std::string& water_mask = {}, bool surface_model = false)
+                                const std::string& water_mask = {}, bool surface_model = false,
+                                const std::string& bbox = "[-180, -85.0511287798066, 180, 85.0511287798066]")
     {
         return "{\n"
                "  \"dataset\": \"" + dataset + "\",\n"
@@ -62,6 +63,7 @@ namespace osect::test
                "  \"is_surface_model\": " + std::string(surface_model ? "true" : "false") + ",\n"
                "  \"vertical_datum\": \"" + datum + "\",\n"
                "  \"vertical_precision_m\": " + std::to_string(precision) + ",\n"
+               "  \"bbox\": " + bbox + ",\n"
                "  \"tile_pixels\": " + std::to_string(tile_pixels) + ",\n"
                "  \"skirt_pixels\": " + std::to_string(skirt_pixels) + ",\n"
                "  \"min_zoom\": " + std::to_string(min_zoom) + ",\n"

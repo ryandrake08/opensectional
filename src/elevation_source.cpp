@@ -2,8 +2,10 @@
 #include "elevation_address.hpp"
 #include "elevation_tile.hpp"
 #include "elevation_tile_cache.hpp"
+#include "geo_types.hpp"
 #include "tile_key.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -16,6 +18,10 @@
 namespace
 {
     constexpr double FEET_PER_METRE = 3.280839895013123;
+
+    // The manifest's bbox is pulled inside its edge tiles by 1e-7 degrees;
+    // covers() accepts boxes reaching that far past it.
+    constexpr double COVERAGE_TOLERANCE_DEG = 1e-6;
 
     std::string read_file(const std::filesystem::path& path)
     {
@@ -202,6 +208,51 @@ namespace
         }
     }
 
+    // A [lon_min, lat_min, lon_max, lat_max] array of four numbers.
+    osect::geo_bbox bbox_value(const std::string& json, const std::string& key)
+    {
+        size_t offset = value_offset(json, key);
+        if(offset == std::string::npos || json[offset] != '[')
+        {
+            throw std::runtime_error("manifest.json: invalid " + key);
+        }
+        std::array<double, 4> values{};
+        for(double& value : values)
+        {
+            const size_t close = json.find(']', offset + 1);
+            const size_t comma = json.find(',', offset + 1);
+            const size_t end = std::min(close, comma);
+            if(end == std::string::npos)
+            {
+                throw std::runtime_error("manifest.json: invalid " + key);
+            }
+            try
+            {
+                size_t used = 0;
+                value = std::stod(json.substr(offset + 1, end - offset - 1), &used);
+                if(used == 0 || !std::isfinite(value))
+                {
+                    throw std::runtime_error("manifest.json: invalid " + key);
+                }
+            }
+            catch(const std::logic_error&)
+            {
+                throw std::runtime_error("manifest.json: invalid " + key);
+            }
+            offset = end;
+        }
+        if(json[offset] != ']')
+        {
+            throw std::runtime_error("manifest.json: invalid " + key);
+        }
+        const osect::geo_bbox bbox{values[0], values[1], values[2], values[3]};
+        if(!(bbox.lon_min < bbox.lon_max) || !(bbox.lat_min < bbox.lat_max))
+        {
+            throw std::runtime_error("manifest.json: invalid " + key);
+        }
+        return bbox;
+    }
+
     int integer_value(const std::string& json, const std::string& key)
     {
         const double value = number_value(json, key);
@@ -270,6 +321,7 @@ namespace osect
         bool has_water_mask = false;
         int water_min_zoom = 0;
         int water_max_zoom = 0;
+        geo_bbox coverage{};
         double vertical_precision_m = 0.0;
         std::string attribution;
         std::string display_name;
@@ -328,6 +380,7 @@ namespace osect
         pimpl->skirt = integer_value(manifest, "skirt_pixels");
         pimpl->min_zoom = integer_value(manifest, "min_zoom");
         pimpl->max_zoom = integer_value(manifest, "max_zoom");
+        pimpl->coverage = bbox_value(manifest, "bbox");
         if(pimpl->vertical_precision_m <= 0.0 || pimpl->tile_size == 0 || pimpl->max_zoom < pimpl->min_zoom ||
            pimpl->max_zoom > 30)
         {
@@ -450,6 +503,41 @@ namespace osect
             return std::nullopt;
         }
         return elevation_m * FEET_PER_METRE;
+    }
+
+    bool elevation_source::covers(double lat_min, double lon_min, double lat_max, double lon_max) const
+    {
+        if(!pimpl->available)
+        {
+            return false;
+        }
+        const geo_bbox& coverage = pimpl->coverage;
+        if(lat_min < coverage.lat_min - COVERAGE_TOLERANCE_DEG || lat_max > coverage.lat_max + COVERAGE_TOLERANCE_DEG)
+        {
+            return false;
+        }
+        const auto spans = [&coverage](double west, double east)
+        {
+            return west >= coverage.lon_min - COVERAGE_TOLERANCE_DEG &&
+                   east <= coverage.lon_max + COVERAGE_TOLERANCE_DEG;
+        };
+        const double width = lon_max - lon_min;
+        if(width >= 360.0)
+        {
+            return spans(-180.0, 180.0);
+        }
+        double west = std::fmod(lon_min + 180.0, 360.0);
+        if(west < 0.0)
+        {
+            west += 360.0;
+        }
+        west -= 180.0;
+        const double east = west + width;
+        if(east <= 180.0)
+        {
+            return spans(west, east);
+        }
+        return spans(west, 180.0) && spans(-180.0, east - 360.0);
     }
 
     std::optional<double> elevation_source::maximum_elevation_ft(double lat_min, double lon_min, double lat_max,
