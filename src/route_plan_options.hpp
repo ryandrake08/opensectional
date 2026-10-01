@@ -78,8 +78,8 @@ namespace osect
     // planner per submission).
     struct route_plan_options
     {
-        // Maximum direct-leg length, in nautical miles. A direct
-        // step longer than this is multiplied by `cost_reject`.
+        // Maximum direct-leg length, in nautical miles. The planner
+        // takes no step longer than this.
         double max_leg_length_nm = default_max_leg_length_nm;
 
         // Per-subtype cost modifier. Default-initialized to

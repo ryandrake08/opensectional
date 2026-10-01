@@ -360,10 +360,9 @@ namespace osect
         double edge_cost(std::optional<wp_subtype> from_st, wp_subtype to_st, double dist_nm, double airway_factor,
                          const route_planner::options& opts)
         {
-            auto over_max = (dist_nm > opts.max_leg_length_nm) ? cost_reject : 1.0;
             auto from_mod = from_st ? effective_wp_cost(*from_st, opts) : 1.0;
             auto to_mod = effective_wp_cost(to_st, opts);
-            return dist_nm * from_mod * to_mod * airway_factor * over_max;
+            return dist_nm * from_mod * to_mod * airway_factor;
         }
     }
 
