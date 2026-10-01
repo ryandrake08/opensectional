@@ -180,6 +180,7 @@ namespace osect
         read_into(ini, "terrain.cruise_caution", cruise_caution_ft);
         read_into(ini, "terrain.cruise_clear", cruise_clear_ft);
         read_into(ini, "terrain.gpu_cache", gpu_tile_cache);
+        read_into(ini, "terrain.cpu_cache", cpu_tile_cache);
         if(ini.exists("terrain.ramp"))
         {
             ramp = parse_ramp(ini.get<std::string>("terrain.ramp"));
@@ -230,6 +231,10 @@ namespace osect
         if(gpu_tile_cache < 1)
         {
             reject("gpu_cache", "must be >= 1", std::to_string(gpu_tile_cache));
+        }
+        if(cpu_tile_cache < 1)
+        {
+            reject("cpu_cache", "must be >= 1", std::to_string(cpu_tile_cache));
         }
     }
 } // namespace osect

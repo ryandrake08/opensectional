@@ -53,6 +53,7 @@ TEST_CASE("defaults-only terrain_style")
     CHECK(s.cruise_caution_ft == 1000.0F);
     CHECK(s.cruise_clear_ft == 2000.0F);
     CHECK(s.gpu_tile_cache == 128);
+    CHECK(s.cpu_tile_cache == 128);
 
     REQUIRE(s.ramp.size() >= 2);
     CHECK(s.ramp.front().elevation_m == 0.0F);
@@ -92,6 +93,7 @@ TEST_CASE("terrain_style overrides")
         "cruise_caution = 800\n"
         "cruise_clear = 1600\n"
         "gpu_cache = 64\n"
+        "cpu_cache = 32\n"
         "ramp = 0:#204030, 1000:#a0b070, 3000:#ffffff\n");
     osect::terrain_style s(ini.load());
 
@@ -104,6 +106,7 @@ TEST_CASE("terrain_style overrides")
     CHECK(s.cruise_caution_ft == 800.0F);
     CHECK(s.cruise_clear_ft == 1600.0F);
     CHECK(s.gpu_tile_cache == 64);
+    CHECK(s.cpu_tile_cache == 32);
 
     REQUIRE(s.ramp.size() == 3);
     CHECK(s.ramp[0].elevation_m == 0.0F);
@@ -143,6 +146,7 @@ TEST_CASE("terrain_style rejects bad values")
     rejects("exaggeration = -2\n");
     rejects("mode = shaded\n");
     rejects("gpu_cache = 0\n");
+    rejects("cpu_cache = 0\n");
     rejects("cruise_warning = 1500\n"); // exceeds default caution (1000)
     rejects("ramp = 1000:#ffffff\n");   // single stop
     rejects("ramp = 1000:#fff, 500:#000\n"); // descending

@@ -51,5 +51,9 @@ namespace osect
 
         // GPU tile LRU capacity.
         int gpu_tile_cache = 128;
+
+        // Decoded-tile LRU capacity for CPU elevation queries (route
+        // profiles and point elevation).
+        int cpu_tile_cache = 128;
     };
 } // namespace osect

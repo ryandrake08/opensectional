@@ -8,6 +8,7 @@
 #include "map_widget.hpp"
 #include "nasr_database.hpp"
 #include "route_session.hpp"
+#include "terrain_style.hpp"
 #include "tfr_refresher.hpp"
 #include "ui_overlay.hpp"
 #include "user_database.hpp"
@@ -98,7 +99,8 @@ namespace osect
               tfrs(opts.offline ? std::nullopt : std::make_optional<tfr_refresher>(ephemeral_database::default_path())),
               ini(build_ini(opts)),
               terrain_path(resolve_terrain_path(opts)),
-              terrain(terrain_path ? *terrain_path : std::filesystem::path{}),
+              terrain(terrain_path ? *terrain_path : std::filesystem::path{},
+                      static_cast<std::size_t>(terrain_style(ini).cpu_tile_cache)),
               udb(user_database::default_path()),
               map(dev, tile_path, terrain, db_path, ini, 1280, 1024),
               waypoints(map, udb),
