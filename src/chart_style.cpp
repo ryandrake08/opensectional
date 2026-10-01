@@ -1,4 +1,5 @@
 #include "chart_style.hpp"
+#include "hex_color.hpp"
 #include "ini_config.hpp"
 #include "nasr_database.hpp"
 #include <algorithm>
@@ -11,8 +12,6 @@ namespace osect
     // Parse a CSS color name or hex string (#RGB, #RRGGBB, #RRGGBBAA)
     static bool parse_css_color(const std::string& name, float& r, float& g, float& b, float& a)
     {
-        auto to_float = [](int v) { return v / 255.0F; };
-
         // Resolve CSS named colors to their hex values
         // CSS Color Module Level 4: https://www.w3.org/TR/css-color-4/#named-colors
         static const std::unordered_map<std::string, std::string> names = {
@@ -187,71 +186,16 @@ namespace osect
             hex = it->second;
         }
 
-        // Parse hex: #RGB, #RRGGBB, #RRGGBBAA
-        auto hex_digit = [](char c) -> int
+        const auto color = parse_hex_color(hex);
+        if(!color)
         {
-            if(c >= '0' && c <= '9')
-            {
-                return c - '0';
-            }
-            if(c >= 'a' && c <= 'f')
-            {
-                return c - 'a' + 10;
-            }
-            if(c >= 'A' && c <= 'F')
-            {
-                return c - 'A' + 10;
-            }
-            return -1;
-        };
-
-        if(hex.size() == 4) // #RGB
-        {
-            auto ri = hex_digit(hex[1]);
-            auto gi = hex_digit(hex[2]);
-            auto bi = hex_digit(hex[3]);
-            if(ri < 0 || gi < 0 || bi < 0)
-            {
-                return false;
-            }
-            r = to_float(ri * 17);
-            g = to_float(gi * 17);
-            b = to_float(bi * 17);
-            a = 1.0F;
-            return true;
+            return false;
         }
-        if(hex.size() == 7) // #RRGGBB
-        {
-            auto ri = hex_digit(hex[1]) * 16 + hex_digit(hex[2]);
-            auto gi = hex_digit(hex[3]) * 16 + hex_digit(hex[4]);
-            auto bi = hex_digit(hex[5]) * 16 + hex_digit(hex[6]);
-            if(ri < 0 || gi < 0 || bi < 0)
-            {
-                return false;
-            }
-            r = to_float(ri);
-            g = to_float(gi);
-            b = to_float(bi);
-            a = 1.0F;
-            return true;
-        }
-        if(hex.size() == 9) // #RRGGBBAA
-        {
-            auto ri = hex_digit(hex[1]) * 16 + hex_digit(hex[2]);
-            auto gi = hex_digit(hex[3]) * 16 + hex_digit(hex[4]);
-            auto bi = hex_digit(hex[5]) * 16 + hex_digit(hex[6]);
-            auto ai = hex_digit(hex[7]) * 16 + hex_digit(hex[8]);
-            if(ri < 0 || gi < 0 || bi < 0 || ai < 0)
-            {
-                return false;
-            }
-            r = to_float(ri);
-            g = to_float(gi);
-            b = to_float(bi);
-            a = to_float(ai);
-            return true;
-        }
-        return false;
+        r = color->r;
+        g = color->g;
+        b = color->b;
+        a = color->a;
+        return true;
     }
 
     template <typename T>

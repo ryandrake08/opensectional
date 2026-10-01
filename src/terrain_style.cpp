@@ -1,6 +1,6 @@
 #include "terrain_style.hpp"
+#include "hex_color.hpp"
 #include "ini_config.hpp"
-#include <array>
 #include <cmath>
 #include <cstddef>
 #include <sstream>
@@ -35,68 +35,17 @@ namespace osect
             return s.substr(a, s.find_last_not_of(" \t") - a + 1);
         }
 
-        bool parse_hex_color(const std::string& text, float& r, float& g, float& b)
+        // #RGB or #RRGGBB; terrain colors have no alpha.
+        bool parse_rgb(const std::string& text, float& r, float& g, float& b)
         {
-            if(text.size() < 2 || text[0] != '#')
+            const auto color = parse_hex_color(text);
+            if(!color || color->has_alpha)
             {
                 return false;
             }
-            const std::string hex = text.substr(1);
-            const auto nibble = [](char c) -> int
-            {
-                if(c >= '0' && c <= '9')
-                {
-                    return c - '0';
-                }
-                if(c >= 'a' && c <= 'f')
-                {
-                    return c - 'a' + 10;
-                }
-                if(c >= 'A' && c <= 'F')
-                {
-                    return c - 'A' + 10;
-                }
-                return -1;
-            };
-
-            std::array<int, 3> channels{};
-            if(hex.size() == 6)
-            {
-                size_t channel_index = 0;
-                for(auto& channel : channels)
-                {
-                    const int hi = nibble(hex[channel_index * 2]);
-                    const int lo = nibble(hex[channel_index * 2 + 1]);
-                    if(hi < 0 || lo < 0)
-                    {
-                        return false;
-                    }
-                    channel = hi * 16 + lo;
-                    ++channel_index;
-                }
-            }
-            else if(hex.size() == 3)
-            {
-                size_t channel_index = 0;
-                for(auto& channel : channels)
-                {
-                    const int v = nibble(hex[channel_index]);
-                    if(v < 0)
-                    {
-                        return false;
-                    }
-                    channel = v * 17;
-                    ++channel_index;
-                }
-            }
-            else
-            {
-                return false;
-            }
-
-            r = static_cast<float>(channels[0]) / 255.0F;
-            g = static_cast<float>(channels[1]) / 255.0F;
-            b = static_cast<float>(channels[2]) / 255.0F;
+            r = color->r;
+            g = color->g;
+            b = color->b;
             return true;
         }
 
@@ -126,7 +75,7 @@ namespace osect
                 {
                     reject("ramp", "bad elevation", entry);
                 }
-                if(!parse_hex_color(trim(entry.substr(colon + 1)), stop.r, stop.g, stop.b))
+                if(!parse_rgb(trim(entry.substr(colon + 1)), stop.r, stop.g, stop.b))
                 {
                     reject("ramp", "color must be #RRGGBB or #RGB", entry);
                 }
@@ -190,7 +139,7 @@ namespace osect
         if(ini.exists("terrain.water_color"))
         {
             const std::string spec = trim(ini.get<std::string>("terrain.water_color"));
-            if(!parse_hex_color(spec, water_r, water_g, water_b))
+            if(!parse_rgb(spec, water_r, water_g, water_b))
             {
                 reject("water_color", "must be #RRGGBB or #RGB", spec);
             }

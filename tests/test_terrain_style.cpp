@@ -172,6 +172,7 @@ TEST_CASE("terrain_style rejects bad values")
     rejects("ramp = 1000:#ffffff\n");   // single stop
     rejects("ramp = 1000:#fff, 500:#000\n"); // descending
     rejects("ramp = 1000:teal\n");           // not a hex color
+    rejects("water_color = #3366cc80\n");    // alpha
     rejects("ramp = high:#fff, low:#000\n"); // non-numeric elevation
     rejects_route("corridor_width = 0\n");
     rejects_route("corridor_width = -4\n");

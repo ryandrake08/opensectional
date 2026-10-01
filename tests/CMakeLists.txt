@@ -64,11 +64,14 @@ add_osect_test(chart_membership ${CMAKE_SOURCE_DIR}/src/chart_type.cpp)
 add_osect_test(geo_math        ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
 add_osect_test(map_view        ${CMAKE_SOURCE_DIR}/src/map_view.cpp)
 add_osect_test(ini_config      ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
+add_osect_test(hex_color       ${CMAKE_SOURCE_DIR}/src/hex_color.cpp)
 add_osect_test(chart_style
     ${CMAKE_SOURCE_DIR}/src/chart_style.cpp
+    ${CMAKE_SOURCE_DIR}/src/hex_color.cpp
     ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
 add_osect_test(terrain_style
     ${CMAKE_SOURCE_DIR}/src/terrain_style.cpp
+    ${CMAKE_SOURCE_DIR}/src/hex_color.cpp
     ${CMAKE_SOURCE_DIR}/src/ini_config.cpp)
 add_osect_test(data_source     ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
 # ephemeral_database links the sqlite wrapper and sdl_wrapper (for log_warn).
