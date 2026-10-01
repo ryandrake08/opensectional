@@ -352,6 +352,19 @@ namespace osect
             }
             return opts.wp_cost.at(static_cast<std::size_t>(st));
         }
+
+        // Cost of a single A* step of `dist_nm`. `from_st` is nullopt when
+        // the step originates from the synthetic origin endpoint; in that
+        // case only the destination subtype contributes. `airway_factor`
+        // is 1.0 for non-airway edges.
+        double edge_cost(std::optional<wp_subtype> from_st, wp_subtype to_st, double dist_nm, double airway_factor,
+                         const route_planner::options& opts)
+        {
+            auto over_max = (dist_nm > opts.max_leg_length_nm) ? cost_reject : 1.0;
+            auto from_mod = from_st ? effective_wp_cost(*from_st, opts) : 1.0;
+            auto to_mod = effective_wp_cost(to_st, opts);
+            return dist_nm * from_mod * to_mod * airway_factor * over_max;
+        }
     }
 
     struct route_planner::impl
@@ -443,6 +456,27 @@ namespace osect
                 text += token;
             }
             return flight_route(text, db, user_route_waypoints()).total_distance_nm();
+        }
+
+        // Resolve a point-waypoint token to (lat, lon). Accepts a
+        // coordinate literal or any waypoint ID in the planner's
+        // catalog. Airway tokens fail — that's intentional; the
+        // caller is expected to classify the token before calling.
+        std::pair<double, double> resolve_point(const std::string& tok, int token_index) const
+        {
+            if(auto ll = parse_latlon(tok))
+            {
+                return {ll->lat, ll->lon};
+            }
+            if(auto it = index_by_id.find(tok); it != index_by_id.end())
+            {
+                const auto& n = nodes[it->second];
+                return {n.lat, n.lon};
+            }
+            throw route_parse_error("'" + tok +
+                                        "' cannot be used as a route waypoint — "
+                                        "expected airport / navaid / fix / lat-lon",
+                                    tok, token_index);
         }
 
         // True when neither `terrain_ft`, the terrain maximum in
@@ -860,19 +894,6 @@ namespace osect
 
         std::priority_queue<open_entry> open;
 
-        // Cost factor of a single A* step. `from_st` is nullopt
-        // when the step originates from the synthetic origin
-        // endpoint; in that case only the destination subtype
-        // contributes. `airway_factor` is 1.0 for non-airway
-        // edges.
-        auto edge_cost = [&](std::optional<wp_subtype> from_st, wp_subtype to_st, double dist_nm, double airway_factor)
-        {
-            auto over_max = (dist_nm > max_leg) ? cost_reject : 1.0;
-            auto from_mod = from_st ? effective_wp_cost(*from_st, opts) : 1.0;
-            auto to_mod = effective_wp_cost(to_st, opts);
-            return dist_nm * from_mod * to_mod * airway_factor * over_max;
-        };
-
         // `from_lat`, `from_lon`, and `from_along_nm` locate `from`,
         // which may be the origin; `dist_nm` is the edge's length.
         auto relax = [&](std::size_t from, std::size_t to, double cost, double from_lat, double from_lon,
@@ -942,7 +963,7 @@ namespace osect
                 {
                     continue;
                 }
-                auto cost = edge_cost(from_st, nodes[to_idx].subtype, d, 1.0);
+                auto cost = edge_cost(from_st, nodes[to_idx].subtype, d, 1.0, opts);
                 relax(from_index, to_idx, cost, from_lat, from_lon, from_along_nm, d);
             }
 
@@ -969,7 +990,7 @@ namespace osect
                     {
                         awy_factor = e.is_gap ? opts.gap_cost : opts.awy_cost.at(static_cast<std::size_t>(e.type));
                     }
-                    auto cost = edge_cost(from_st, nodes[e.neighbor_index].subtype, d, awy_factor);
+                    auto cost = edge_cost(from_st, nodes[e.neighbor_index].subtype, d, awy_factor, opts);
                     relax(from_index, e.neighbor_index, cost, from_lat, from_lon, from_along_nm, d);
                 }
             }
@@ -1154,27 +1175,6 @@ namespace osect
             }
         }
 
-        // Resolve a point-waypoint token to (lat, lon). Accepts a
-        // coordinate literal or any waypoint ID in the planner's
-        // catalog. Airway tokens fail — that's intentional; the
-        // caller is expected to classify the token before calling.
-        auto resolve_point = [&](const std::string& tok, int token_index) -> std::pair<double, double>
-        {
-            if(auto ll = parse_latlon(tok))
-            {
-                return {ll->lat, ll->lon};
-            }
-            if(auto idx = node_index(tok))
-            {
-                const auto& n = pimpl->nodes[*idx];
-                return {n.lat, n.lon};
-            }
-            throw route_parse_error("'" + tok +
-                                        "' cannot be used as a route waypoint — "
-                                        "expected airport / navaid / fix / lat-lon",
-                                    tok, token_index);
-        };
-
         // Look for the point waypoint on the side of an airway
         // opposite to the sigil. `airway_pos` is the index of the
         // airway token; `direction` is +1 (look past the airway's
@@ -1200,7 +1200,7 @@ namespace osect
                                             tokens[airway_pos], static_cast<int>(airway_pos));
                 }
             }
-            return resolve_point(tokens[idx], static_cast<int>(idx));
+            return pimpl->resolve_point(tokens[idx], static_cast<int>(idx));
         };
 
         std::vector<std::string> out;
@@ -1222,7 +1222,8 @@ namespace osect
             ends.before_origin_nm = pimpl->route_distance_nm(out);
             if(std::find(rest.begin(), rest.end(), "?") != rest.end())
             {
-                const auto [last_lat, last_lon] = resolve_point(tokens.back(), static_cast<int>(tokens.size() - 1));
+                const auto [last_lat, last_lon] =
+                    pimpl->resolve_point(tokens.back(), static_cast<int>(tokens.size() - 1));
                 ends.after_destination_nm = haversine_distance_nm(destination_lat, destination_lon, last_lat, last_lon);
             }
             else
@@ -1303,8 +1304,8 @@ namespace osect
             if(!left_airway && !right_airway)
             {
                 // Point-to-point planning.
-                auto [fl, gl] = resolve_point(left_tok, static_cast<int>(s - 1));
-                auto [fr, gr] = resolve_point(right_tok, static_cast<int>(s + 1));
+                auto [fl, gl] = pimpl->resolve_point(left_tok, static_cast<int>(s - 1));
+                auto [fr, gr] = pimpl->resolve_point(right_tok, static_cast<int>(s + 1));
                 const endpoint origin{synthetic, fl, gl};
                 const endpoint destination{synthetic, fr, gr};
                 const auto ends = ends_for(fr, gr, tokens_from(s + 1));
@@ -1328,7 +1329,7 @@ namespace osect
                 // Pattern: A ? X. Plan A → entry_fix of X, where
                 // entry_fix is project-and-walk from A using the
                 // point past X as the direction reference.
-                auto [fl, gl] = resolve_point(left_tok, static_cast<int>(s - 1));
+                auto [fl, gl] = pimpl->resolve_point(left_tok, static_cast<int>(s - 1));
                 auto [tl, gtl] = point_past_airway(s + 1, +1);
                 auto entry = project_and_walk(right_tok, fl, gl, tl, gtl, pimpl->db);
                 const endpoint origin{synthetic, fl, gl};
@@ -1359,7 +1360,7 @@ namespace osect
             {
                 // Pattern: X ? B. Pick exit_fix of X via
                 // project-and-walk from B, then plan exit_fix → B.
-                auto [fr, gr] = resolve_point(right_tok, static_cast<int>(s + 1));
+                auto [fr, gr] = pimpl->resolve_point(right_tok, static_cast<int>(s + 1));
                 auto [tl, gtl] = point_past_airway(s - 1, -1);
                 auto exit = project_and_walk(left_tok, fr, gr, tl, gtl, pimpl->db);
                 out.push_back(exit.fix_id);
