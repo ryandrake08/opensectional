@@ -10,6 +10,8 @@
 
 namespace osect
 {
+    class elevation_source;
+
     // Outcome of a completed submission. Exactly one of `route` or
     // `error` is populated when this is delivered via route_status.
     // `tag` echoes back the value passed to submit(), letting the
@@ -19,6 +21,8 @@ namespace osect
     {
         // Set on success.
         std::optional<flight_route> route;
+        // Set on success: planned_route::terrain_unchecked_nm.
+        double terrain_unchecked_nm = 0.0;
         // Set on failure: the message from route_parse_error::what()
         // (or any other std::exception thrown by the parser).
         std::string error;
@@ -54,9 +58,10 @@ namespace osect
         // planner's database handle is distinct from the rendering
         // thread's so the worker doesn't contend on its mutex. The
         // overload taking a user_db_path is for tests that need a
-        // disposable user.db.
-        explicit route_submitter(const std::filesystem::path& db_path);
-        route_submitter(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path);
+        // disposable user.db. `terrain` must outlive the submitter.
+        route_submitter(const std::filesystem::path& db_path, const elevation_source& terrain);
+        route_submitter(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path,
+                        const elevation_source& terrain);
         ~route_submitter();
 
         route_submitter(const route_submitter&) = delete;

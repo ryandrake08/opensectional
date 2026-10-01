@@ -89,4 +89,7 @@ namespace osect
     // need exactness must still filter results by true distance.
     geo_bbox bbox_around(double lat, double lon, double radius_nm);
 
+    // `lon` shifted by a whole turn to within 180 degrees of `reference`.
+    double unwrap_longitude(double lon, double reference);
+
 } // namespace osect

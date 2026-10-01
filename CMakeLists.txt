@@ -308,6 +308,7 @@ add_executable(osect
     src/main.cpp
     src/program.cpp
     src/nasr_database.cpp
+    src/obstacle_index.cpp
     src/ui_popup_manager.cpp
     src/route_plan_config.cpp
     src/route_planner.cpp

@@ -137,6 +137,11 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/osect.db")
         ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
         ${CMAKE_SOURCE_DIR}/src/data_source.cpp
         ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
+        ${CMAKE_SOURCE_DIR}/src/obstacle_index.cpp
+        ${CMAKE_SOURCE_DIR}/src/terrain_corridor.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_source.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_tile_cache.cpp
         ${CMAKE_SOURCE_DIR}/src/user_database.cpp
         ${CMAKE_SOURCE_DIR}/src/geo_math.cpp)
     target_link_libraries(test_flight_route PRIVATE sqlite_wrapper sdl_wrapper)
@@ -144,6 +149,11 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/osect.db")
 
     add_osect_test(route_planner
         ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
+        ${CMAKE_SOURCE_DIR}/src/obstacle_index.cpp
+        ${CMAKE_SOURCE_DIR}/src/terrain_corridor.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_source.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_tile_cache.cpp
         ${CMAKE_SOURCE_DIR}/src/route_plan_config.cpp
         ${CMAKE_SOURCE_DIR}/src/ini_config.cpp
         ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
@@ -154,9 +164,36 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/osect.db")
     target_link_libraries(test_route_planner PRIVATE sqlite_wrapper sdl_wrapper)
     osect_apply_app_definitions(test_route_planner)
 
+    add_osect_test(obstacle_index
+        ${CMAKE_SOURCE_DIR}/src/obstacle_index.cpp
+        ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
+        ${CMAKE_SOURCE_DIR}/src/data_source.cpp)
+    target_link_libraries(test_obstacle_index PRIVATE sqlite_wrapper sdl_wrapper)
+    osect_apply_app_definitions(test_obstacle_index)
+
+    add_osect_test(route_planner_terrain
+        ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
+        ${CMAKE_SOURCE_DIR}/src/obstacle_index.cpp
+        ${CMAKE_SOURCE_DIR}/src/terrain_corridor.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_source.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_tile_cache.cpp
+        ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
+        ${CMAKE_SOURCE_DIR}/src/data_source.cpp
+        ${CMAKE_SOURCE_DIR}/src/geo_math.cpp
+        ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
+        ${CMAKE_SOURCE_DIR}/src/user_database.cpp)
+    target_link_libraries(test_route_planner_terrain PRIVATE sqlite_wrapper sdl_wrapper)
+    osect_apply_app_definitions(test_route_planner_terrain)
+
     add_osect_test(route_submitter
         ${CMAKE_SOURCE_DIR}/src/route_submitter.cpp
         ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
+        ${CMAKE_SOURCE_DIR}/src/obstacle_index.cpp
+        ${CMAKE_SOURCE_DIR}/src/terrain_corridor.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_source.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_tile.cpp
+        ${CMAKE_SOURCE_DIR}/src/elevation_tile_cache.cpp
         ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
         ${CMAKE_SOURCE_DIR}/src/data_source.cpp
         ${CMAKE_SOURCE_DIR}/src/geo_math.cpp

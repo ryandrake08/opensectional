@@ -39,6 +39,27 @@ namespace osect
                                      "' (expected PREFER / INCLUDE / AVOID / REJECT)");
         }
 
+        // Read a true / false key (case-insensitive) with a default.
+        // Throws on any other value.
+        bool bool_or(const ini_config& ini, const std::string& key, bool fallback)
+        {
+            if(!ini.exists(key))
+            {
+                return fallback;
+            }
+            const auto value = ini.get<std::string>(key);
+            const auto v = upper(value);
+            if(v == "TRUE")
+            {
+                return true;
+            }
+            if(v == "FALSE")
+            {
+                return false;
+            }
+            throw std::runtime_error("route_plan: '" + value + "' for key '" + key + "' (expected true / false)");
+        }
+
         // Helper: read a preference key with a default. The default
         // applies when the key is absent from the ini.
         double pref_or(const ini_config& ini, const std::string& key, double fallback)
@@ -121,6 +142,8 @@ namespace osect
         // by default so a freshly-loaded ini reproduces the
         // previous (uniform) behavior.
         o.use_airways = default_use_airways;
+
+        o.avoid_terrain = bool_or(ini, "route_plan.avoid_terrain", default_avoid_terrain);
 
         if(auto err = validate_route_plan_options(o); !err.empty())
         {

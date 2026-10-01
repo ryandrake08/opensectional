@@ -12,7 +12,26 @@
 
 namespace osect
 {
+    class elevation_source;
     class nasr_database;
+
+    // A route string with its `?` sigils expanded. With terrain
+    // avoidance on, `terrain_unchecked_nm` is the length of planned legs
+    // whose corridor reached outside the terrain tree's coverage, where
+    // terrain was not checked; otherwise it is 0.
+    struct sigil_expansion
+    {
+        std::string text;
+        double terrain_unchecked_nm = 0.0;
+    };
+
+    // A planned route, resolved, with sigil_expansion's
+    // `terrain_unchecked_nm`.
+    struct planned_route
+    {
+        flight_route route;
+        double terrain_unchecked_nm = 0.0;
+    };
 
     // Thrown by route_planner::expand_sigils and route_planner::parse
     // after route_planner::request_cancel.
@@ -51,9 +70,11 @@ namespace osect
         // APT_BASE / NAV_BASE / FIX_BASE / AWY_SEG. The user-waypoint
         // database opens at user_database::default_path(); the
         // overload taking a user_db_path is for tests that need a
-        // disposable user.db.
-        explicit route_planner(const std::filesystem::path& db_path);
-        route_planner(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path);
+        // disposable user.db. `terrain` is read for terrain avoidance
+        // and must outlive the planner.
+        route_planner(const std::filesystem::path& db_path, const elevation_source& terrain);
+        route_planner(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path,
+                      const elevation_source& terrain);
         ~route_planner();
 
         route_planner(const route_planner&) = delete;
@@ -88,15 +109,15 @@ namespace osect
         // Throws route_parse_error on invalid sigil placement or
         // when no path can be found, and route_plan_cancelled at the
         // next A* step or sigil segment while a cancel is requested.
-        std::string expand_sigils(const std::string& text, const options& opts) const;
+        sigil_expansion expand_sigils(const std::string& text, const options& opts) const;
 
         // Convenience: expand sigils and parse the result into a
         // flight_route resolved against the planner's database.
-        // Equivalent to `flight_route(expand_sigils(text, opts), db)`
-        // but doesn't expose the database. Throws route_parse_error
+        // Equivalent to `flight_route(expand_sigils(text, opts).text,
+        // db)` but doesn't expose the database. Throws route_parse_error
         // on sigil-grammar errors, A* failure, or token-resolution
         // failure, and route_plan_cancelled as expand_sigils does.
-        flight_route parse(const std::string& text, const options& opts) const;
+        planned_route parse(const std::string& text, const options& opts) const;
 
         // Makes a plan running on another thread, and any plan started
         // later, throw route_plan_cancelled until clear_cancel().
@@ -146,6 +167,17 @@ namespace osect
         };
         static constexpr std::size_t synthetic = static_cast<std::size_t>(-1);
 
+        // Where a plan segment lies in the whole route, for the
+        // terrain corridor's terminal tapers: the along-track distance
+        // from the route's first waypoint to the segment's origin, and
+        // from the segment's destination to the route's last waypoint
+        // (a lower bound when later legs are still to be planned).
+        struct route_ends
+        {
+            double before_origin_nm = 0.0;
+            double after_destination_nm = 0.0;
+        };
+
         std::size_t node_count() const;
         const node& get_node(std::size_t index) const;
         std::optional<std::size_t> node_index(const std::string& id) const;
@@ -156,24 +188,29 @@ namespace osect
         // intermediate waypoints in order. Origin and destination
         // are NOT included. Empty result means a direct leg
         // satisfies `max_leg_length_nm`. nullopt means no viable
-        // path within that constraint. Throws route_plan_cancelled
-        // at an A* step while a cancel is requested.
+        // path within that constraint. With `opts.avoid_terrain`, no
+        // edge, including the direct leg and the final leg into
+        // `destination`, fails the terrain test; throws
+        // route_parse_error when there is no cruise altitude or no
+        // terrain data. Throws route_plan_cancelled at an A* step
+        // while a cancel is requested.
         std::optional<std::vector<std::size_t>> plan_segment(const endpoint& origin, const endpoint& destination,
-                                                             const options& opts) const;
+                                                             const options& opts, const route_ends& ends) const;
 
         friend struct route_planner_test_access;
     };
 
     // Test-only proxy granting access to the catalog and A*
     // primitives. Defined inline so tests don't need a separate
-    // translation unit; intended for use only by
-    // tests/test_route_planner.cpp.
+    // translation unit; intended for use only by the route planner
+    // tests.
     struct route_planner_test_access
     {
         using node_kind = route_planner::node_kind;
         using node = route_planner::node;
         using airway_edge = route_planner::airway_edge;
         using endpoint = route_planner::endpoint;
+        using route_ends = route_planner::route_ends;
         static constexpr std::size_t synthetic = route_planner::synthetic;
 
         static std::size_t node_count(const route_planner& p)
@@ -194,9 +231,10 @@ namespace osect
         }
         static std::optional<std::vector<std::size_t>> plan_segment(const route_planner& p, const endpoint& origin,
                                                                     const endpoint& destination,
-                                                                    const route_planner::options& opts)
+                                                                    const route_planner::options& opts,
+                                                                    const route_ends& ends = {})
         {
-            return p.plan_segment(origin, destination, opts);
+            return p.plan_segment(origin, destination, opts, ends);
         }
     };
 

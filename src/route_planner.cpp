@@ -1,13 +1,17 @@
 #include "route_planner.hpp"
+#include "elevation_source.hpp"
 #include "flight_route.hpp" // parse_latlon, route_parse_error
 #include "geo_math.hpp"
 #include "geo_types.hpp"
 #include "nasr_database.hpp"
+#include "obstacle_index.hpp"
+#include "terrain_corridor.hpp"
 #include "user_database.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <queue>
 #include <sdl/log.hpp>
@@ -19,6 +23,10 @@ namespace osect
 {
     namespace
     {
+        // The terrain test splits an edge into corridor pieces no longer
+        // than this, the terrain profile's maximum station interval.
+        constexpr double TERRAIN_EDGE_PIECE_NM = TERRAIN_PROFILE_MAX_SAMPLE_INTERVAL_NM;
+
         // Uniform 1°×1° grid over the routable-waypoint catalog.
         // Replaces three SQLite R*Tree queries per A* expansion with
         // direct cell indexing into in-memory vectors. Built once at
@@ -142,10 +150,51 @@ namespace osect
         struct astar_scratch
         {
             std::vector<double> g;
+            // Along-path distance from the segment origin, in NM.
+            std::vector<double> along;
             std::vector<std::size_t> came_from;
             std::vector<std::uint8_t> closed;
             std::vector<std::size_t> dirty;
             std::vector<std::size_t> hits; // reused per expansion
+        };
+
+        // Outcome of the terrain test for one edge. `unchecked_nm` is
+        // the length of the edge whose corridor reached outside the
+        // terrain tree's coverage; it is complete only for a clear edge,
+        // since the test stops at the first failing piece.
+        struct edge_terrain
+        {
+            bool clear = true;
+            double unchecked_nm = 0.0;
+        };
+
+        // An edge by its end coordinates, so synthetic endpoints key
+        // the same way as graph nodes.
+        struct edge_key
+        {
+            double from_lat;
+            double from_lon;
+            double to_lat;
+            double to_lon;
+
+            bool operator==(const edge_key& o) const
+            {
+                return from_lat == o.from_lat && from_lon == o.from_lon && to_lat == o.to_lat && to_lon == o.to_lon;
+            }
+        };
+
+        struct edge_key_hash
+        {
+            std::size_t operator()(const edge_key& k) const
+            {
+                const std::hash<double> h;
+                std::size_t seed = h(k.from_lat);
+                for(const double v : {k.from_lon, k.to_lat, k.to_lon})
+                {
+                    seed ^= h(v) + 0x9e3779b97f4a7c15ULL + (seed << 6U) + (seed >> 2U);
+                }
+                return seed;
+            }
         };
 
         // Classify an airport SITE_TYPE_CODE into a wp_subtype.
@@ -340,6 +389,16 @@ namespace osect
         }
 
         const nasr_database db;
+        const elevation_source& terrain;
+        obstacle_index obstacles;
+        // Terrain-test results for edges outside both terminal tapers,
+        // whose outcome depends only on their ends and the options.
+        // Cleared at the start of each plan_segment.
+        std::unordered_map<edge_key, edge_terrain, edge_key_hash> terrain_memo;
+        // Per node: 0 untested, 1 clear, 2 blocked (see node_blocked).
+        // Reset at the start of each plan_segment via the touched list.
+        std::vector<std::uint8_t> node_terrain;
+        std::vector<std::size_t> node_terrain_touched;
         // Read-only handle to user.db. The user-waypoint set is read
         // fresh on each parse() so a waypoint created since
         // construction still resolves in route text.
@@ -351,9 +410,181 @@ namespace osect
         // runtime.
         std::size_t nasr_node_count = 0;
 
-        impl(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path)
-            : db(db_path), udb(user_db_path)
+        impl(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path,
+             const elevation_source& terrain)
+            : db(db_path), terrain(terrain), obstacles(db), udb(user_db_path)
         {
+        }
+
+        // The current user waypoints, for resolving route text with
+        // flight_route.
+        std::vector<route_waypoint> user_route_waypoints() const
+        {
+            std::vector<route_waypoint> waypoints;
+            for(const auto& w : udb.load_waypoints())
+            {
+                waypoints.push_back({waypoint_kind::user, w.name, w.lat, w.lon});
+            }
+            return waypoints;
+        }
+
+        // Along-track length of route text given as tokens, 0 for fewer
+        // than two.
+        double route_distance_nm(const std::vector<std::string>& tokens) const
+        {
+            if(tokens.size() < 2)
+            {
+                return 0.0;
+            }
+            std::string text;
+            for(const auto& token : tokens)
+            {
+                text += text.empty() ? "" : " ";
+                text += token;
+            }
+            return flight_route(text, db, user_route_waypoints()).total_distance_nm();
+        }
+
+        // True when neither `terrain_ft`, the terrain maximum in
+        // `window`, nor any obstacle in it exceeds `limit_ft`. Obstacles
+        // come from the in-memory index rather than corridor_intervals'
+        // database queries: A* tests far more corridors than a profile
+        // draws.
+        bool passes(const geo_bbox& window, const std::optional<double>& terrain_ft, double limit_ft)
+        {
+            if(terrain_ft && *terrain_ft > limit_ft)
+            {
+                return false;
+            }
+            const auto obstacle_ft = obstacles.maximum_ft(window);
+            return !obstacle_ft || *obstacle_ft <= limit_ft;
+        }
+
+        // Forgets every node's node_blocked result.
+        void reset_node_terrain()
+        {
+            node_terrain.resize(nodes.size(), 0);
+            for(const auto idx : node_terrain_touched)
+            {
+                node_terrain[idx] = 0;
+            }
+            node_terrain_touched.clear();
+        }
+
+        // True when the full-width corridor box around node `idx` holds
+        // terrain or an obstacle above cruise less the required
+        // clearance. Any edge into or out of the node at a point outside
+        // both terminal tapers has that box in its corridor with the
+        // clearance applied, so it fails the edge test.
+        bool node_blocked(std::size_t idx, const route_plan_options& opts)
+        {
+            if(node_terrain[idx] == 0)
+            {
+                const auto box = bbox_around(nodes[idx].lat, nodes[idx].lon, opts.margins.corridor_width_nm / 2.0);
+                const bool clear =
+                    passes(box, terrain.maximum_elevation_ft(box.lat_min, box.lon_min, box.lat_max, box.lon_max),
+                           *opts.cruise_altitude_ft - opts.margins.required_clearance_ft);
+                node_terrain[idx] = clear ? 1 : 2;
+                node_terrain_touched.push_back(idx);
+            }
+            return node_terrain[idx] == 2;
+        }
+
+        // Tests the terrain corridor of the edge `from` -> `to` against
+        // the cruise altitude. The corridor is built from pieces of at
+        // most TERRAIN_EDGE_PIECE_NM with the terrain profile's tapers:
+        // `from_departure_nm` is the along-track distance from the
+        // route's first waypoint to `from`, and a point's distance to
+        // the route's last waypoint is its great-circle distance to
+        // `destination` plus `after_destination_nm`. A piece fails when
+        // its corridor maximum exceeds cruise less the required
+        // clearance, or only cruise when both its ends lie within a
+        // taper.
+        //
+        // An edge first gets one check over the box enclosing its whole
+        // corridor against the strictest limit, cruise less the required
+        // clearance; terrain maxima never under-report, so passing it
+        // means every piece passes. Otherwise pieces are tested in order
+        // until one fails.
+        edge_terrain test_edge(const geo_point& from, const geo_point& to, double from_departure_nm,
+                               const geo_point& destination, double after_destination_nm,
+                               const route_plan_options& opts)
+        {
+            const double length_nm = haversine_distance_nm(from.lat, from.lon, to.lat, to.lon);
+            const geo_point end{to.lat, unwrap_longitude(to.lon, from.lon)};
+            const int pieces = std::max(1, static_cast<int>(std::ceil(length_nm / TERRAIN_EDGE_PIECE_NM)));
+
+            std::vector<corridor_station> stations;
+            std::vector<bool> in_taper;
+            stations.reserve(pieces + 1);
+            in_taper.reserve(pieces + 1);
+            bool any_in_taper = false;
+            for(int i = 0; i <= pieces; ++i)
+            {
+                const double fraction = static_cast<double>(i) / pieces;
+                geo_point point = from;
+                if(i == pieces)
+                {
+                    point = end;
+                }
+                else if(i > 0)
+                {
+                    point = geodesic_point(from.lat, from.lon, end.lat, end.lon, fraction);
+                }
+                const double departure_nm = from_departure_nm + length_nm * fraction;
+                const double arrival_nm =
+                    haversine_distance_nm(point.lat, point.lon, destination.lat, destination.lon) +
+                    after_destination_nm;
+                stations.push_back({departure_nm, point,
+                                    corridor_half_width_nm(opts.margins.corridor_width_nm, departure_nm, arrival_nm)});
+                const bool tapered = departure_nm < TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM ||
+                                     arrival_nm < TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM;
+                in_taper.push_back(tapered);
+                any_in_taper = any_in_taper || tapered;
+            }
+
+            const edge_key key{from.lat, from.lon, to.lat, to.lon};
+            if(!any_in_taper)
+            {
+                if(const auto it = terrain_memo.find(key); it != terrain_memo.end())
+                {
+                    return it->second;
+                }
+            }
+
+            const double strictest_limit_ft = *opts.cruise_altitude_ft - opts.margins.required_clearance_ft;
+            geo_bbox whole = bbox_around(from.lat, from.lon, stations.front().half_width_nm);
+            for(const auto& station : stations)
+            {
+                const auto box = bbox_around(station.point.lat, station.point.lon, station.half_width_nm);
+                whole = {std::min(whole.lon_min, box.lon_min), std::min(whole.lat_min, box.lat_min),
+                         std::max(whole.lon_max, box.lon_max), std::max(whole.lat_max, box.lat_max)};
+            }
+
+            edge_terrain result;
+            if(!terrain.covers(whole.lat_min, whole.lon_min, whole.lat_max, whole.lon_max) ||
+               !passes(whole, terrain.maximum_elevation_ft(whole.lat_min, whole.lon_min, whole.lat_max, whole.lon_max),
+                       strictest_limit_ft))
+            {
+                for(int i = 0; i < pieces && result.clear; ++i)
+                {
+                    const auto interval =
+                        corridor_intervals({stations[i], stations[i + 1]}, terrain, db, false).front();
+                    const double clearance_ft =
+                        in_taper[i] && in_taper[i + 1] ? 0.0 : opts.margins.required_clearance_ft;
+                    result.clear =
+                        passes(interval.window, interval.terrain_ft, *opts.cruise_altitude_ft - clearance_ft);
+                    if(!interval.covered)
+                    {
+                        result.unchecked_nm += length_nm / pieces;
+                    }
+                }
+            }
+            if(!any_in_taper)
+            {
+                terrain_memo.emplace(key, result);
+            }
+            return result;
         }
 
         // Reload user waypoints from user.db and refresh the catalog,
@@ -424,13 +655,14 @@ namespace osect
         }
     };
 
-    route_planner::route_planner(const std::filesystem::path& db_path)
-        : route_planner(db_path, user_database::default_path())
+    route_planner::route_planner(const std::filesystem::path& db_path, const elevation_source& terrain)
+        : route_planner(db_path, user_database::default_path(), terrain)
     {
     }
 
-    route_planner::route_planner(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path)
-        : pimpl(std::make_unique<impl>(db_path, user_db_path))
+    route_planner::route_planner(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path,
+                                 const elevation_source& terrain)
+        : pimpl(std::make_unique<impl>(db_path, user_db_path, terrain))
     {
         auto add_node = [&](std::string id, node_kind kind, wp_subtype sub, double lat, double lon)
         {
@@ -535,16 +767,45 @@ namespace osect
 
     std::optional<std::vector<std::size_t>> route_planner::plan_segment(const endpoint& origin,
                                                                         const endpoint& destination,
-                                                                        const options& opts) const
+                                                                        const options& opts,
+                                                                        const route_ends& ends) const
     {
         const auto& nodes = pimpl->nodes;
         const auto max_leg = opts.max_leg_length_nm;
+
+        if(opts.avoid_terrain)
+        {
+            if(!opts.cruise_altitude_ft)
+            {
+                throw route_parse_error("terrain avoidance needs a cruise altitude");
+            }
+            if(!pimpl->terrain.available())
+            {
+                throw route_parse_error("terrain avoidance needs terrain data");
+            }
+        }
+        pimpl->terrain_memo.clear();
+        pimpl->reset_node_terrain();
+
+        // True when terrain avoidance is off or the edge passes the
+        // terrain test. `from_along_nm` is the along-path distance from
+        // the segment origin to the edge's start.
+        const geo_point destination_point{destination.lat, destination.lon};
+        auto terrain_clear = [&](double from_lat, double from_lon, double from_along_nm, double to_lat, double to_lon)
+        {
+            return !opts.avoid_terrain ||
+                   pimpl
+                       ->test_edge({from_lat, from_lon}, {to_lat, to_lon}, ends.before_origin_nm + from_along_nm,
+                                   destination_point, ends.after_destination_nm, opts)
+                       .clear;
+        };
 
         // Direct leg short-circuit. Note: even at uniform cost,
         // this is correct because no intermediate path can be
         // cheaper than the direct great-circle when the heuristic
         // is admissible.
-        if(haversine_distance_nm(origin.lat, origin.lon, destination.lat, destination.lon) <= max_leg)
+        if(haversine_distance_nm(origin.lat, origin.lon, destination.lat, destination.lon) <= max_leg &&
+           terrain_clear(origin.lat, origin.lon, 0.0, destination.lat, destination.lon))
         {
             return std::vector<std::size_t>{};
         }
@@ -579,6 +840,7 @@ namespace osect
         if(sc.g.size() != N)
         {
             sc.g.assign(N, INF);
+            sc.along.assign(N, 0.0);
             sc.came_from.assign(N, NPOS);
             sc.closed.assign(N, 0);
             sc.dirty.clear();
@@ -589,6 +851,7 @@ namespace osect
             for(auto i : sc.dirty)
             {
                 sc.g[i] = INF;
+                sc.along[i] = 0.0;
                 sc.came_from[i] = NPOS;
                 sc.closed[i] = 0;
             }
@@ -616,11 +879,32 @@ namespace osect
             return dist_nm * from_mod * to_mod * airway_factor * over_max;
         };
 
-        auto relax = [&](std::size_t from, std::size_t to, double cost)
+        // `from_lat`, `from_lon`, and `from_along_nm` locate `from`,
+        // which may be the origin; `dist_nm` is the edge's length.
+        auto relax = [&](std::size_t from, std::size_t to, double cost, double from_lat, double from_lon,
+                         double from_along_nm, double dist_nm)
         {
             auto from_g = (from == PREV_FROM_ORIGIN) ? 0.0 : sc.g[from];
             auto tentative = from_g + cost;
             if(tentative >= sc.g[to])
+            {
+                return;
+            }
+            // A blocked node outside both tapers fails every edge into
+            // it; one cached lookup spares the full edge test.
+            if(opts.avoid_terrain)
+            {
+                const double departure_nm = ends.before_origin_nm + from_along_nm + dist_nm;
+                const double arrival_nm =
+                    haversine_distance_nm(nodes[to].lat, nodes[to].lon, destination.lat, destination.lon) +
+                    ends.after_destination_nm;
+                if(departure_nm >= TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM &&
+                   arrival_nm >= TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM && pimpl->node_blocked(to, opts))
+                {
+                    return;
+                }
+            }
+            if(!terrain_clear(from_lat, from_lon, from_along_nm, nodes[to].lat, nodes[to].lon))
             {
                 return;
             }
@@ -629,6 +913,7 @@ namespace osect
                 sc.dirty.push_back(to);
             }
             sc.g[to] = tentative;
+            sc.along[to] = from_along_nm + dist_nm;
             sc.came_from[to] = from;
             open.push({tentative + heuristic(to), to});
         };
@@ -641,6 +926,7 @@ namespace osect
             {
                 from_st = nodes[from_index].subtype;
             }
+            const double from_along_nm = from_index == PREV_FROM_ORIGIN ? 0.0 : sc.along[from_index];
 
             sc.hits.clear();
             pimpl->grid.query(bbox, sc.hits);
@@ -660,7 +946,7 @@ namespace osect
                     continue;
                 }
                 auto cost = edge_cost(from_st, nodes[to_idx].subtype, d, 1.0);
-                relax(from_index, to_idx, cost);
+                relax(from_index, to_idx, cost, from_lat, from_lon, from_along_nm, d);
             }
 
             // Airway neighbors get an alternate cost path that
@@ -687,7 +973,7 @@ namespace osect
                         awy_factor = e.is_gap ? opts.gap_cost : opts.awy_cost.at(static_cast<std::size_t>(e.type));
                     }
                     auto cost = edge_cost(from_st, nodes[e.neighbor_index].subtype, d, awy_factor);
-                    relax(from_index, e.neighbor_index, cost);
+                    relax(from_index, e.neighbor_index, cost, from_lat, from_lon, from_along_nm, d);
                 }
             }
         };
@@ -708,8 +994,10 @@ namespace osect
             sc.closed[n] = 1;
 
             // Goal test: if the final direct leg from n to destination
-            // fits within max_leg, n is the last intermediate node.
-            if(haversine_distance_nm(nodes[n].lat, nodes[n].lon, destination.lat, destination.lon) <= max_leg)
+            // fits within max_leg and passes the terrain test, n is the
+            // last intermediate node.
+            if(haversine_distance_nm(nodes[n].lat, nodes[n].lon, destination.lat, destination.lon) <= max_leg &&
+               terrain_clear(nodes[n].lat, nodes[n].lon, sc.along[n], destination.lat, destination.lon))
             {
                 std::vector<std::size_t> path;
                 auto cur = n;
@@ -825,7 +1113,7 @@ namespace osect
         }
     }
 
-    std::string route_planner::expand_sigils(const std::string& text, const options& opts) const
+    sigil_expansion route_planner::expand_sigils(const std::string& text, const options& opts) const
     {
         // Pull the current user waypoints into the catalog and grid
         // so A* and resolve_point can see them. User waypoints are
@@ -846,7 +1134,7 @@ namespace osect
         // Fast path: no sigils → unchanged.
         if(sigils.empty())
         {
-            return text;
+            return {text, 0.0};
         }
 
         // Validate basic sigil grammar. Airway-adjacency is checked
@@ -921,6 +1209,58 @@ namespace osect
         std::vector<std::string> out;
         out.reserve(tokens.size());
         std::size_t cursor = 0;
+        double terrain_unchecked_nm = 0.0;
+
+        // Taper context for a segment whose origin ends `out` and whose
+        // destination is `destination`, followed by the route text
+        // `rest` (starting with the destination). Only computed with
+        // terrain avoidance on.
+        auto ends_for = [&](double destination_lat, double destination_lon, const std::vector<std::string>& rest)
+        {
+            route_ends ends;
+            if(!opts.avoid_terrain)
+            {
+                return ends;
+            }
+            ends.before_origin_nm = pimpl->route_distance_nm(out);
+            if(std::find(rest.begin(), rest.end(), "?") != rest.end())
+            {
+                const auto [last_lat, last_lon] = resolve_point(tokens.back(), static_cast<int>(tokens.size() - 1));
+                ends.after_destination_nm = haversine_distance_nm(destination_lat, destination_lon, last_lat, last_lon);
+            }
+            else
+            {
+                ends.after_destination_nm = pimpl->route_distance_nm(rest);
+            }
+            return ends;
+        };
+
+        // Adds the unchecked terrain length of a planned segment's legs.
+        auto add_unchecked = [&](const endpoint& origin, const std::vector<std::size_t>& path,
+                                 const endpoint& destination, const route_ends& ends)
+        {
+            if(!opts.avoid_terrain)
+            {
+                return;
+            }
+            std::vector<geo_point> points{{origin.lat, origin.lon}};
+            for(const auto idx : path)
+            {
+                points.push_back({pimpl->nodes[idx].lat, pimpl->nodes[idx].lon});
+            }
+            points.push_back({destination.lat, destination.lon});
+            double along_nm = 0.0;
+            for(std::size_t i = 0; i + 1 < points.size(); ++i)
+            {
+                terrain_unchecked_nm += pimpl
+                                            ->test_edge(points[i], points[i + 1], ends.before_origin_nm + along_nm,
+                                                        points.back(), ends.after_destination_nm, opts)
+                                            .unchecked_nm;
+                along_nm += haversine_distance_nm(points[i].lat, points[i].lon, points[i + 1].lat, points[i + 1].lon);
+            }
+        };
+        const auto tokens_from = [&](std::size_t first)
+        { return std::vector<std::string>(tokens.begin() + static_cast<std::ptrdiff_t>(first), tokens.end()); };
 
         for(auto s : sigils)
         {
@@ -951,7 +1291,10 @@ namespace osect
                 // Point-to-point planning.
                 auto [fl, gl] = resolve_point(left_tok, static_cast<int>(s - 1));
                 auto [fr, gr] = resolve_point(right_tok, static_cast<int>(s + 1));
-                auto path = plan_segment(endpoint{synthetic, fl, gl}, endpoint{synthetic, fr, gr}, opts);
+                const endpoint origin{synthetic, fl, gl};
+                const endpoint destination{synthetic, fr, gr};
+                const auto ends = ends_for(fr, gr, tokens_from(s + 1));
+                auto path = plan_segment(origin, destination, opts, ends);
                 if(!path)
                 {
                     std::string msg = "no route from ";
@@ -960,6 +1303,7 @@ namespace osect
                     msg += right_tok;
                     throw route_parse_error(msg);
                 }
+                add_unchecked(origin, *path, destination, ends);
                 for(auto idx : *path)
                 {
                     out.push_back(pimpl->nodes[idx].id);
@@ -973,7 +1317,12 @@ namespace osect
                 auto [fl, gl] = resolve_point(left_tok, static_cast<int>(s - 1));
                 auto [tl, gtl] = point_past_airway(s + 1, +1);
                 auto entry = project_and_walk(right_tok, fl, gl, tl, gtl, pimpl->db);
-                auto path = plan_segment(endpoint{synthetic, fl, gl}, endpoint{synthetic, entry.lat, entry.lon}, opts);
+                const endpoint origin{synthetic, fl, gl};
+                const endpoint destination{synthetic, entry.lat, entry.lon};
+                auto rest = tokens_from(s + 1);
+                rest.insert(rest.begin(), entry.fix_id);
+                const auto ends = ends_for(entry.lat, entry.lon, rest);
+                auto path = plan_segment(origin, destination, opts, ends);
                 if(!path)
                 {
                     std::string msg = "no route from ";
@@ -985,6 +1334,7 @@ namespace osect
                     msg += ")";
                     throw route_parse_error(msg);
                 }
+                add_unchecked(origin, *path, destination, ends);
                 for(auto idx : *path)
                 {
                     out.push_back(pimpl->nodes[idx].id);
@@ -999,7 +1349,10 @@ namespace osect
                 auto [tl, gtl] = point_past_airway(s - 1, -1);
                 auto exit = project_and_walk(left_tok, fr, gr, tl, gtl, pimpl->db);
                 out.push_back(exit.fix_id);
-                auto path = plan_segment(endpoint{synthetic, exit.lat, exit.lon}, endpoint{synthetic, fr, gr}, opts);
+                const endpoint origin{synthetic, exit.lat, exit.lon};
+                const endpoint destination{synthetic, fr, gr};
+                const auto ends = ends_for(fr, gr, tokens_from(s + 1));
+                auto path = plan_segment(origin, destination, opts, ends);
                 if(!path)
                 {
                     std::string msg = "no route from ";
@@ -1010,6 +1363,7 @@ namespace osect
                     msg += right_tok;
                     throw route_parse_error(msg);
                 }
+                add_unchecked(origin, *path, destination, ends);
                 for(auto idx : *path)
                 {
                     out.push_back(pimpl->nodes[idx].id);
@@ -1034,22 +1388,18 @@ namespace osect
             joined += out[k];
         }
         sdl::log_info("sigils expanded: \"" + text + "\" -> \"" + joined + "\"");
-        return joined;
+        return {joined, terrain_unchecked_nm};
     }
 
-    flight_route route_planner::parse(const std::string& text, const options& opts) const
+    planned_route route_planner::parse(const std::string& text, const options& opts) const
     {
         // User waypoints are runtime data — snapshot them per parse so
         // a waypoint created since construction still resolves.
         // expand_sigils refreshes the planner's catalog with the same
         // set so A* can route through them; flight_route's separate
         // copy here gives the post-expansion resolver matching IDs.
-        std::vector<route_waypoint> user_waypoints;
-        for(const auto& w : pimpl->udb.load_waypoints())
-        {
-            user_waypoints.push_back({waypoint_kind::user, w.name, w.lat, w.lon});
-        }
-        return {expand_sigils(text, opts), pimpl->db, user_waypoints};
+        auto expansion = expand_sigils(text, opts);
+        return {flight_route(expansion.text, pimpl->db, pimpl->user_route_waypoints()), expansion.terrain_unchecked_nm};
     }
 
     void route_planner::request_cancel()

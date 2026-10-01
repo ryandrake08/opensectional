@@ -1,8 +1,10 @@
 #pragma once
 
+#include "terrain_profile.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 namespace osect
 {
@@ -20,6 +22,7 @@ namespace osect
     // place. max_leg matches g3xfplan.
     inline constexpr double default_max_leg_length_nm = 80.0;
     inline constexpr bool default_use_airways = false;
+    inline constexpr bool default_avoid_terrain = false;
 
     // Fine-grained per-node classification. Drives the
     // per-waypoint cost modifier in the A* search. Layout matters:
@@ -102,6 +105,20 @@ namespace osect
         // edges. When false: `wp_cost` is honored verbatim and
         // airway edges receive no special treatment.
         bool use_airways = default_use_airways;
+
+        // When true, an edge whose terrain corridor (`margins`) fails
+        // the clearance test at `cruise_altitude_ft` is never taken.
+        // Planning a `?` with this set and no cruise altitude, or with
+        // no terrain data, fails with route_parse_error.
+        bool avoid_terrain = default_avoid_terrain;
+
+        // Cruise altitude, feet MSL. Unset when the route panel tab
+        // has none.
+        std::optional<double> cruise_altitude_ft;
+
+        // Corridor width and required clearance, shared with the
+        // terrain profile.
+        terrain_profile_margins margins;
 
         route_plan_options() : wp_cost{}, awy_cost{}
         {

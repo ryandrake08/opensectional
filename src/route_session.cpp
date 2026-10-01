@@ -9,6 +9,7 @@
 #include "terrain_style.hpp"
 #include "ui_overlay.hpp"
 #include "user_database.hpp"
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -59,12 +60,15 @@ namespace osect
             : ui(ui),
               map(map),
               udb(udb),
-              submitter(db_path),
+              submitter(db_path, terrain),
               profile_worker(terrain.available() ? std::make_optional<terrain_profile_worker>(
                                                        terrain, db_path, terrain_style(ini).margins)
                                                  : std::nullopt),
               plan_options(load_route_plan_options(ini))
         {
+            // Without terrain data, terrain avoidance is off.
+            plan_options.avoid_terrain = plan_options.avoid_terrain && terrain.available();
+            plan_options.margins = terrain_style(ini).margins;
             ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
         }
 
@@ -251,11 +255,12 @@ namespace osect
 
             // Snapshot the GUI knobs into the planner options for
             // this submission. ini-driven preferences are already in
-            // plan_options; we just overlay max_leg and use-airways
-            // from the panel that submitted.
+            // plan_options; we just overlay max_leg, use-airways, and
+            // the cruise altitude from the panel that submitted.
             auto opts = plan_options;
             opts.max_leg_length_nm = req.max_leg_nm;
             opts.use_airways = req.use_airways;
+            opts.cruise_altitude_ft = ui.cruise_altitude_ft(req.tab_id);
             if(auto err = validate_route_plan_options(opts); !err.empty())
             {
                 sdl::log_warn("route submit rejected: " + err);
@@ -264,7 +269,8 @@ namespace osect
             }
             sdl::log_info("route submit: tab=" + std::to_string(req.tab_id) + " \"" + req.text +
                           "\" (max_leg=" + std::to_string(static_cast<int>(opts.max_leg_length_nm)) +
-                          "nm airways=" + (opts.use_airways ? "true" : "false") + ")");
+                          "nm airways=" + (opts.use_airways ? "true" : "false") +
+                          " avoid_terrain=" + (opts.avoid_terrain ? "true" : "false") + ")");
             submitter.submit(req.text, opts, req.tab_id);
             ui.set_route_planning(req.tab_id, true);
             return true;
@@ -296,6 +302,12 @@ namespace osect
                 sdl::log_info("route planned: tab=" + std::to_string(tag) + " " +
                               std::to_string(route.waypoints.size()) + " waypoints, " +
                               std::to_string(static_cast<int>(route.total_distance_nm())) + " nm");
+                if(status.completion->terrain_unchecked_nm > 0.0)
+                {
+                    sdl::log_warn("route planned: tab=" + std::to_string(tag) + " terrain not checked along " +
+                                  std::to_string(static_cast<int>(std::ceil(status.completion->terrain_unchecked_nm))) +
+                                  " nm of planned legs outside terrain coverage");
+                }
                 ui.set_route_state(tag, route);
 
                 auto it = tab_to_route.find(tag);

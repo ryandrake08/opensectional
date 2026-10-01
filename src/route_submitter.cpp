@@ -12,16 +12,17 @@ namespace osect
         route_planner planner;
         std::thread worker;
         std::atomic<bool> done{false};
-        std::optional<flight_route> result;
+        std::optional<planned_route> result;
         std::string error;
         std::uint64_t tag = 0;
 
-        explicit impl(const std::filesystem::path& db_path) : planner(db_path)
+        impl(const std::filesystem::path& db_path, const elevation_source& terrain) : planner(db_path, terrain)
         {
         }
 
-        impl(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path)
-            : planner(db_path, user_db_path)
+        impl(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path,
+             const elevation_source& terrain)
+            : planner(db_path, user_db_path, terrain)
         {
         }
 
@@ -90,7 +91,11 @@ namespace osect
             worker.join();
             done = false;
             route_completion completion;
-            completion.route = std::move(result);
+            if(result)
+            {
+                completion.route = std::move(result->route);
+                completion.terrain_unchecked_nm = result->terrain_unchecked_nm;
+            }
             completion.error = std::move(error);
             completion.tag = tag;
             result.reset();
@@ -99,12 +104,14 @@ namespace osect
         }
     };
 
-    route_submitter::route_submitter(const std::filesystem::path& db_path) : pimpl(std::make_unique<impl>(db_path))
+    route_submitter::route_submitter(const std::filesystem::path& db_path, const elevation_source& terrain)
+        : pimpl(std::make_unique<impl>(db_path, terrain))
     {
     }
 
-    route_submitter::route_submitter(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path)
-        : pimpl(std::make_unique<impl>(db_path, user_db_path))
+    route_submitter::route_submitter(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path,
+                                     const elevation_source& terrain)
+        : pimpl(std::make_unique<impl>(db_path, user_db_path, terrain))
     {
     }
 

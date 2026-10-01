@@ -40,20 +40,6 @@ namespace
         return terrain.elevation_ft(lat, lon, terrain.max_zoom());
     }
 
-    // `lon` shifted by a whole turn to within 180 degrees of `reference`.
-    double unwrap_longitude(double lon, double reference)
-    {
-        if(lon - reference > 180.0)
-        {
-            return lon - 360.0;
-        }
-        if(lon - reference < -180.0)
-        {
-            return lon + 360.0;
-        }
-        return lon;
-    }
-
     std::optional<double> optional_max(const std::optional<double>& a, const std::optional<double>& b)
     {
         if(!a || !b)

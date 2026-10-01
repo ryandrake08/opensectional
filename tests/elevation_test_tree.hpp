@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -89,5 +90,55 @@ namespace osect::test
         std::ofstream output(path, std::ios::binary);
         const uint8_t* png = high ? hundred : zero;
         output.write(reinterpret_cast<const char*>(png), sizeof(zero));
+    }
+
+    // Writes a 1x1 Terrarium tile of `elevation_m` (to 1/256 m). The PNG
+    // holds one RGBA scanline in an uncompressed deflate block.
+    inline void write_elevation_tile_m(const std::filesystem::path& path, double elevation_m)
+    {
+        const auto crc32 = [](const std::string& bytes)
+        {
+            uint32_t crc = 0xFFFFFFFFU;
+            for(const char c : bytes)
+            {
+                crc ^= static_cast<uint8_t>(c);
+                for(int bit = 0; bit < 8; ++bit)
+                {
+                    crc = (crc >> 1U) ^ (0xEDB88320U & (0U - (crc & 1U)));
+                }
+            }
+            return crc ^ 0xFFFFFFFFU;
+        };
+        const auto big_endian = [](uint32_t value)
+        {
+            return std::string{static_cast<char>(value >> 24U), static_cast<char>(value >> 16U),
+                               static_cast<char>(value >> 8U), static_cast<char>(value)};
+        };
+        const auto chunk = [&](const std::string& type, const std::string& data)
+        { return big_endian(static_cast<uint32_t>(data.size())) + type + data + big_endian(crc32(type + data)); };
+
+        const double encoded = elevation_m + 32768.0;
+        const auto whole = static_cast<uint32_t>(std::floor(encoded));
+        const auto fraction = static_cast<uint32_t>(std::lround((encoded - std::floor(encoded)) * 256.0));
+        const std::string scanline{'\0', static_cast<char>(whole >> 8U), static_cast<char>(whole & 0xFFU),
+                                   static_cast<char>(fraction), static_cast<char>(0xFF)};
+
+        uint32_t a = 1;
+        uint32_t b = 0;
+        for(const char c : scanline)
+        {
+            a = (a + static_cast<uint8_t>(c)) % 65521U;
+            b = (b + a) % 65521U;
+        }
+        const auto length = static_cast<uint16_t>(scanline.size());
+        const std::string zlib = std::string{'\x78', '\x01', '\x01'} + static_cast<char>(length & 0xFFU) +
+                                 static_cast<char>(length >> 8U) + static_cast<char>(~length & 0xFFU) +
+                                 static_cast<char>((~length >> 8U) & 0xFFU) + scanline + big_endian((b << 16U) | a);
+        const std::string header{'\0', '\0', '\0', '\x01', '\0', '\0', '\0', '\x01', '\x08', '\x06', '\0', '\0', '\0'};
+
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream output(path, std::ios::binary);
+        output << std::string{"\x89PNG\r\n\x1a\n", 8} << chunk("IHDR", header) << chunk("IDAT", zlib)
+               << chunk("IEND", "");
     }
 }

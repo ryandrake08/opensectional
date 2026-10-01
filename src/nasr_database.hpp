@@ -334,6 +334,15 @@ namespace osect
         std::string jdate;
     };
 
+    // An obstacle's position and AMSL height, without its other DOF
+    // fields.
+    struct obstacle_height
+    {
+        double lat;
+        double lon;
+        int amsl_ht;
+    };
+
     // Column order follows FSS_BASE table
     struct fss
     {
@@ -525,6 +534,7 @@ namespace osect
         std::vector<sua_circle> query_sua_circles(const geo_bbox& bbox,
                                                   const filter_list& type_filter = std::nullopt) const;
         std::vector<obstacle> query_obstacles(const geo_bbox& bbox) const;
+        std::vector<obstacle_height> query_obstacle_heights(const geo_bbox& bbox) const;
         std::vector<artcc> query_artcc(const geo_bbox& bbox) const;
         std::vector<pja> query_pjas(const geo_bbox& bbox) const;
         std::vector<adiz> query_adiz(const geo_bbox& bbox) const;

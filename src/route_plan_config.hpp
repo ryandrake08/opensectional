@@ -12,7 +12,8 @@ namespace osect
     // any missing key. The returned options have `use_airways =
     // false` — the GUI is responsible for turning that on. Throws
     // std::runtime_error if a preference value is not one of
-    // PREFER / INCLUDE / AVOID / REJECT (case-insensitive), or if
+    // PREFER / INCLUDE / AVOID / REJECT (case-insensitive), if
+    // avoid_terrain is not true / false (case-insensitive), or if
     // validate_route_plan_options rejects the loaded values.
     route_planner::options load_route_plan_options(const ini_config& ini);
 

@@ -5,6 +5,7 @@
 #include "ini_config.hpp"
 #include "nasr_database.hpp"
 #include "route_plan_config.hpp"
+#include "elevation_source.hpp"
 #include "route_planner.hpp"
 #include "tmp_user_db.hpp"
 #include "user_database.hpp"
@@ -24,10 +25,16 @@ static const nasr_database& test_db()
     return db;
 }
 
+static const elevation_source& no_terrain()
+{
+    static const elevation_source terrain("missing-terrain-tree");
+    return terrain;
+}
+
 static const route_planner& test_planner()
 {
     static test::tmp_user_db user_db("planner_shared");
-    static route_planner planner("osect.db", user_db.db_file);
+    static route_planner planner("osect.db", user_db.db_file, no_terrain());
     return planner;
 }
 
@@ -36,7 +43,7 @@ static const route_planner& test_planner()
 static route_planner& cancellable_planner()
 {
     static test::tmp_user_db user_db("planner_cancel");
-    static route_planner planner("osect.db", user_db.db_file);
+    static route_planner planner("osect.db", user_db.db_file, no_terrain());
     return planner;
 }
 
@@ -247,12 +254,12 @@ TEST_CASE("plan_segment returns nullopt when max_leg is too tight")
 
 TEST_CASE("expand_sigils is a no-op when input has no '?'")
 {
-    CHECK(test_planner().expand_sigils("KSMF V23 KBFL", route_planner::options{}) == "KSMF V23 KBFL");
+    CHECK(test_planner().expand_sigils("KSMF V23 KBFL", route_planner::options{}).text == "KSMF V23 KBFL");
 }
 
 TEST_CASE("expand_sigils rewrites '?' with intermediate IDs")
 {
-    auto out = test_planner().expand_sigils("KSMF ? KBFL", route_planner::options{});
+    auto out = test_planner().expand_sigils("KSMF ? KBFL", route_planner::options{}).text;
     CHECK(out.find('?') == std::string::npos);
     CHECK(out.substr(0, 4) == "KSMF");
     CHECK(out.substr(out.size() - 4) == "KBFL");
@@ -263,8 +270,8 @@ TEST_CASE("expand_sigils rewrites '?' with intermediate IDs")
 
 TEST_CASE("expand_sigils accepts '?' without surrounding whitespace")
 {
-    auto a = test_planner().expand_sigils("KSMF?KBFL", route_planner::options{});
-    auto b = test_planner().expand_sigils("KSMF ? KBFL", route_planner::options{});
+    auto a = test_planner().expand_sigils("KSMF?KBFL", route_planner::options{}).text;
+    auto b = test_planner().expand_sigils("KSMF ? KBFL", route_planner::options{}).text;
     CHECK(a == b);
 }
 
@@ -274,23 +281,23 @@ TEST_CASE("expand_sigils throws route_plan_cancelled after request_cancel")
     // checked before each sigil segment.
     auto& p = cancellable_planner();
     p.request_cancel();
-    CHECK_THROWS_AS(p.expand_sigils("KSMF ? KSAC", route_planner::options{}), route_plan_cancelled);
+    CHECK_THROWS_AS(p.expand_sigils("KSMF ? KSAC", route_planner::options{}).text, route_plan_cancelled);
     p.clear_cancel();
 }
 
 TEST_CASE("expand_sigils rejects leading '?'")
 {
-    CHECK_THROWS_AS(test_planner().expand_sigils("? KBFL", route_planner::options{}), route_parse_error);
+    CHECK_THROWS_AS(test_planner().expand_sigils("? KBFL", route_planner::options{}).text, route_parse_error);
 }
 
 TEST_CASE("expand_sigils rejects trailing '?'")
 {
-    CHECK_THROWS_AS(test_planner().expand_sigils("KSMF ?", route_planner::options{}), route_parse_error);
+    CHECK_THROWS_AS(test_planner().expand_sigils("KSMF ?", route_planner::options{}).text, route_parse_error);
 }
 
 TEST_CASE("expand_sigils rejects consecutive '?'")
 {
-    CHECK_THROWS_AS(test_planner().expand_sigils("KSMF ? ? KBFL", route_planner::options{}),
+    CHECK_THROWS_AS(test_planner().expand_sigils("KSMF ? ? KBFL", route_planner::options{}).text,
                     route_parse_error);
 }
 
@@ -301,7 +308,7 @@ TEST_CASE("expand_sigils: '?' on both sides of an airway")
     // KSMF ? V23 ? KBFL: entry and exit on V23 via project-and-walk,
     // A* on both sides. The expanded text should contain V23 and
     // should re-parse successfully as a flight_route.
-    auto out = test_planner().expand_sigils("KSMF ? V23 ? KBFL", route_planner::options{});
+    auto out = test_planner().expand_sigils("KSMF ? V23 ? KBFL", route_planner::options{}).text;
     CHECK(out.find('?') == std::string::npos);
     CHECK(out.find("V23") != std::string::npos);
     CHECK(out.substr(0, 4) == "KSMF");
@@ -315,7 +322,7 @@ TEST_CASE("expand_sigils: '?' on exit side only (mixed pattern)")
 {
     // KSMF V23 ? KBFL: haversine entry, project-and-walk exit, A*
     // from exit to KBFL.
-    auto out = test_planner().expand_sigils("KSMF V23 ? KBFL", route_planner::options{});
+    auto out = test_planner().expand_sigils("KSMF V23 ? KBFL", route_planner::options{}).text;
     CHECK(out.find('?') == std::string::npos);
     CHECK(out.find("V23") != std::string::npos);
     flight_route route(out, test_db());
@@ -327,7 +334,7 @@ TEST_CASE("expand_sigils: '?' on entry side only (mixed pattern)")
 {
     // KSMF ? V23 KBFL: project-and-walk entry, A* from KSMF to
     // entry, haversine exit.
-    auto out = test_planner().expand_sigils("KSMF ? V23 KBFL", route_planner::options{});
+    auto out = test_planner().expand_sigils("KSMF ? V23 KBFL", route_planner::options{}).text;
     CHECK(out.find('?') == std::string::npos);
     CHECK(out.find("V23") != std::string::npos);
     flight_route route(out, test_db());
@@ -340,14 +347,14 @@ TEST_CASE("expand_sigils rejects airway on both sides of '?'")
     // `X ? Y` where both X and Y are airways is meaningless —
     // project-and-walk needs a point on the other side of each
     // airway to set direction.
-    CHECK_THROWS_AS(test_planner().expand_sigils("KSMF V23 ? V459 KBFL", route_planner::options{}),
+    CHECK_THROWS_AS(test_planner().expand_sigils("KSMF V23 ? V459 KBFL", route_planner::options{}).text,
                     route_parse_error);
 }
 
 TEST_CASE("expand_sigils accepts lat/lon coordinates at sigil boundaries")
 {
     // 384143N1213527W ≈ (38.695°, -121.591°) — near KSMF.
-    auto out = test_planner().expand_sigils("384143N1213527W ? KBFL", route_planner::options{});
+    auto out = test_planner().expand_sigils("384143N1213527W ? KBFL", route_planner::options{}).text;
     CHECK(out.find('?') == std::string::npos);
     CHECK(out.substr(0, 15) == "384143N1213527W");
 }
@@ -400,6 +407,43 @@ TEST_CASE("load_route_plan_options rejects unknown preference values")
     std::remove(path.c_str());
 }
 
+// Loads route_plan options from an ini holding `body` under [route_plan].
+static route_planner::options load_route_plan_body(const std::string& body)
+{
+    auto path = (std::filesystem::temp_directory_path() / "osect_route_plan_test_avoid.ini").string();
+    {
+        std::ofstream out(path);
+        out << "[route_plan]\n" << body;
+    }
+    struct remover
+    {
+        std::string path;
+        ~remover()
+        {
+            std::remove(path.c_str());
+        }
+    } remove{path};
+    return load_route_plan_options(ini_config(path));
+}
+
+TEST_CASE("load_route_plan_options defaults avoid_terrain to false")
+{
+    CHECK_FALSE(load_route_plan_options(ini_config{}).avoid_terrain);
+}
+
+TEST_CASE("load_route_plan_options reads avoid_terrain true and false")
+{
+    CHECK(load_route_plan_body("avoid_terrain = true\n").avoid_terrain);
+    CHECK(load_route_plan_body("avoid_terrain = TRUE\n").avoid_terrain);
+    CHECK_FALSE(load_route_plan_body("avoid_terrain = false\n").avoid_terrain);
+}
+
+TEST_CASE("load_route_plan_options rejects other avoid_terrain values")
+{
+    CHECK_THROWS_AS(load_route_plan_body("avoid_terrain = yes\n"), std::runtime_error);
+    CHECK_THROWS_AS(load_route_plan_body("avoid_terrain = REJECT\n"), std::runtime_error);
+}
+
 TEST_CASE("validate_route_plan_options accepts default options")
 {
     const route_planner::options options;
@@ -443,9 +487,9 @@ TEST_CASE("use_airways toggle changes path via fix-rejecting options")
         wp_subtype::airport_landplane)]
         = cost_include;
 
-    auto without = p.expand_sigils("KSMF ? KBFL", opts);
+    auto without = p.expand_sigils("KSMF ? KBFL", opts).text;
     opts.use_airways = true;
-    auto with    = p.expand_sigils("KSMF ? KBFL", opts);
+    auto with    = p.expand_sigils("KSMF ? KBFL", opts).text;
     CHECK(without != with);
 }
 
@@ -473,10 +517,10 @@ TEST_CASE("user waypoint resolves by name through node_index after refresh")
         auto w = udb.insert_waypoint(38.1, -121.0);
         CHECK(w.name == "WPT1");
     }
-    route_planner p("osect.db", tmp.db_file);
+    route_planner p("osect.db", tmp.db_file, no_terrain());
     // The refresh that exposes user waypoints fires inside
     // expand_sigils; node_index doesn't refresh on its own.
-    p.expand_sigils("KSMF KSAC", route_planner::options{});
+    p.expand_sigils("KSMF KSAC", route_planner::options{}).text;
     auto idx = rpta::node_index(p, "WPT1");
     REQUIRE(idx.has_value());
     const auto& n = rpta::get_node(p, *idx);
@@ -499,7 +543,7 @@ TEST_CASE("expand_sigils routes through a preferred user waypoint")
         user_database udb(tmp.db_file);
         udb.insert_waypoint(37.99, -121.05);
     }
-    route_planner p("osect.db", tmp.db_file);
+    route_planner p("osect.db", tmp.db_file, no_terrain());
 
     auto opts = user_opts(cost_prefer);
     for(std::size_t i = 0; i < opts.wp_cost.size(); ++i)
@@ -510,7 +554,7 @@ TEST_CASE("expand_sigils routes through a preferred user waypoint")
         }
     }
 
-    auto out = p.expand_sigils("KSMF ? KMER", opts);
+    auto out = p.expand_sigils("KSMF ? KMER", opts).text;
     CHECK(out.find("WPT1") != std::string::npos);
 }
 
@@ -523,20 +567,20 @@ TEST_CASE("expand_sigils ignores a rejected user waypoint")
         user_database udb(tmp.db_file);
         udb.insert_waypoint(37.99, -121.05);
     }
-    route_planner p("osect.db", tmp.db_file);
+    route_planner p("osect.db", tmp.db_file, no_terrain());
 
     auto opts = user_opts(cost_reject);
-    auto out = p.expand_sigils("KSMF ? KMER", opts);
+    auto out = p.expand_sigils("KSMF ? KMER", opts).text;
     CHECK(out.find("WPT1") == std::string::npos);
 }
 
 TEST_CASE("user waypoint set refreshes between expand_sigils calls")
 {
     test::tmp_user_db tmp("refresh");
-    route_planner p("osect.db", tmp.db_file);
+    route_planner p("osect.db", tmp.db_file, no_terrain());
 
     // No waypoints yet — WPT1 must not resolve.
-    p.expand_sigils("KSMF KSAC", route_planner::options{});
+    p.expand_sigils("KSMF KSAC", route_planner::options{}).text;
     CHECK_FALSE(rpta::node_index(p, "WPT1").has_value());
 
     // Insert a waypoint and re-run expand_sigils to trigger refresh.
@@ -544,7 +588,7 @@ TEST_CASE("user waypoint set refreshes between expand_sigils calls")
         user_database udb(tmp.db_file);
         udb.insert_waypoint(38.1, -121.0);
     }
-    p.expand_sigils("KSMF KSAC", route_planner::options{});
+    p.expand_sigils("KSMF KSAC", route_planner::options{}).text;
     CHECK(rpta::node_index(p, "WPT1").has_value());
 
     // Delete it and refresh again — the node disappears from the catalog.
@@ -554,7 +598,7 @@ TEST_CASE("user waypoint set refreshes between expand_sigils calls")
         REQUIRE(wps.size() == 1);
         udb.delete_waypoint(wps[0].waypoint_id);
     }
-    p.expand_sigils("KSMF KSAC", route_planner::options{});
+    p.expand_sigils("KSMF KSAC", route_planner::options{}).text;
     CHECK_FALSE(rpta::node_index(p, "WPT1").has_value());
 }
 

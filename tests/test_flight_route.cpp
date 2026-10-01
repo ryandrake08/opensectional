@@ -2,6 +2,7 @@
 #include "doctest/doctest.h"
 
 #include "flight_route.hpp"
+#include "elevation_source.hpp"
 #include "route_planner.hpp"
 #include "tmp_user_db.hpp"
 
@@ -19,10 +20,16 @@ static const nasr_database& test_db()
     return db;
 }
 
+static const elevation_source& no_terrain()
+{
+    static const elevation_source terrain("missing-terrain-tree");
+    return terrain;
+}
+
 static const route_planner& test_planner()
 {
     static test::tmp_user_db user_db("flight_route_shared");
-    static route_planner planner("osect.db", user_db.db_file);
+    static route_planner planner("osect.db", user_db.db_file, no_terrain());
     return planner;
 }
 
@@ -305,7 +312,7 @@ TEST_CASE("flight_route rejects raw '?' tokens")
 
 TEST_CASE("expand_sigils + flight_route plans between two airports")
 {
-    auto expanded = test_planner().expand_sigils("KSMF ? KBFL", route_planner::options{});
+    auto expanded = test_planner().expand_sigils("KSMF ? KBFL", route_planner::options{}).text;
     flight_route route(expanded, test_db());
     REQUIRE(route.waypoints.size() > 2);
     CHECK(waypoint_id(route.waypoints.front()) == "KSMF");
@@ -316,7 +323,7 @@ TEST_CASE("expand_sigils preserves intermediate via waypoints")
 {
     // KSMF ? LIN ? KBFL plans KSMF→LIN, then LIN→KBFL. LIN must
     // survive as a waypoint.
-    auto expanded = test_planner().expand_sigils("KSMF ? LIN ? KBFL", route_planner::options{});
+    auto expanded = test_planner().expand_sigils("KSMF ? LIN ? KBFL", route_planner::options{}).text;
     flight_route route(expanded, test_db());
     CHECK(waypoint_id(route.waypoints.front()) == "KSMF");
     CHECK(waypoint_id(route.waypoints.back()) == "KBFL");
@@ -329,7 +336,7 @@ TEST_CASE("expand_sigils preserves intermediate via waypoints")
 TEST_CASE("expand_sigils leaves direct segments alone")
 {
     // KSMF ? LIN KBFL plans only the first leg; LIN→KBFL is direct.
-    auto expanded = test_planner().expand_sigils("KSMF ? LIN KBFL", route_planner::options{});
+    auto expanded = test_planner().expand_sigils("KSMF ? LIN KBFL", route_planner::options{}).text;
     flight_route route(expanded, test_db());
     CHECK(waypoint_id(route.waypoints.front()) == "KSMF");
     CHECK(waypoint_id(route.waypoints.back()) == "KBFL");
@@ -337,7 +344,7 @@ TEST_CASE("expand_sigils leaves direct segments alone")
 
 TEST_CASE("planned route round-trips through to_text")
 {
-    auto expanded = test_planner().expand_sigils("KSMF ? KBFL", route_planner::options{});
+    auto expanded = test_planner().expand_sigils("KSMF ? KBFL", route_planner::options{}).text;
     flight_route route(expanded, test_db());
     auto text = route.to_text();
     CHECK(text.find('?') == std::string::npos);

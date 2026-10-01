@@ -244,4 +244,17 @@ namespace osect
         return {lon - dlon, lat - dlat, lon + dlon, lat + dlat};
     }
 
+    double unwrap_longitude(double lon, double reference)
+    {
+        if(lon - reference > 180.0)
+        {
+            return lon - 360.0;
+        }
+        if(lon - reference < -180.0)
+        {
+            return lon + 360.0;
+        }
+        return lon;
+    }
+
 } // namespace osect

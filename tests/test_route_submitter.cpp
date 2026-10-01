@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
 
+#include "elevation_source.hpp"
 #include "route_submitter.hpp"
 #include "tmp_user_db.hpp"
 
@@ -30,7 +31,8 @@ namespace
 TEST_CASE("route submitter delivers a resubmission and never the plan it replaced")
 {
     osect::test::tmp_user_db user_db("submitter_resubmit");
-    osect::route_submitter submitter("osect.db", user_db.db_file);
+    const osect::elevation_source terrain("missing-terrain-tree");
+    osect::route_submitter submitter("osect.db", user_db.db_file, terrain);
 
     // A cross-country plan, replaced while it may still be running.
     submitter.submit("KSEA ? KMIA", {}, 1);

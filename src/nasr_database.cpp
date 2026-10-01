@@ -50,6 +50,7 @@ namespace osect
         sqlite::statement stmt_sua_circle;
         sqlite::statement stmt_sua_circles_bbox;
         sqlite::statement stmt_obstacles;
+        sqlite::statement stmt_obstacle_heights;
         sqlite::statement stmt_artcc;
         sqlite::statement stmt_artcc_shape;
         sqlite::statement stmt_pjas;
@@ -384,6 +385,18 @@ namespace osect
                 )
             )",
                                              18))
+
+              ,
+              stmt_obstacle_heights(prepare_checked(db, R"(
+                SELECT LAT_DECIMAL, LON_DECIMAL, AMSL_HT
+                FROM OBS_BASE
+                WHERE rowid IN (
+                    SELECT id FROM OBS_BASE_RTREE
+                    WHERE max_lon >= ?1 AND min_lon <= ?3
+                      AND max_lat >= ?2 AND min_lat <= ?4
+                )
+            )",
+                                                    3))
 
               ,
               stmt_artcc(prepare_checked(db, R"(
@@ -1173,6 +1186,14 @@ namespace osect
                                                 s.column_text(12),  s.column_text(13), s.column_text(14),
                                                 s.column_text(15),  s.column_text(16), s.column_text(17)};
                             });
+    }
+
+    std::vector<obstacle_height> nasr_database::query_obstacle_heights(const geo_bbox& bbox) const
+    {
+        auto& d = *pimpl;
+        std::scoped_lock lock(d.mutex);
+        return d.query_bbox(d.stmt_obstacle_heights, bbox, [](sqlite::statement& s)
+                            { return obstacle_height{s.column_double(0), s.column_double(1), s.column_int(2)}; });
     }
 
     std::vector<artcc> nasr_database::query_artcc(const geo_bbox& bbox) const

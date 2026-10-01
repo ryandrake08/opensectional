@@ -77,7 +77,7 @@ namespace osect
                                                bbox_around(end.point.lat, end.point.lon, end.half_width_nm));
             windows.push_back(window);
             intervals.push_back(
-                {terrain.maximum_elevation_ft(window.lat_min, window.lon_min, window.lat_max, window.lon_max),
+                {window, terrain.maximum_elevation_ft(window.lat_min, window.lon_min, window.lat_max, window.lon_max),
                  std::nullopt, terrain.covers(window.lat_min, window.lon_min, window.lat_max, window.lon_max)});
         }
 

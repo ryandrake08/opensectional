@@ -23,9 +23,10 @@ namespace osect
     // union of the boxes of each station's half-width around it. Empty
     // when the corridor has no height data, or no obstacles. `covered` is
     // true when the corridor lies inside the terrain tree's coverage
-    // (elevation_source::covers).
+    // (elevation_source::covers). `window` is the box the maxima cover.
     struct corridor_interval
     {
+        geo_bbox window;
         std::optional<double> terrain_ft;
         std::optional<double> obstacle_ft;
         bool covered = false;
