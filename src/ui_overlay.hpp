@@ -107,6 +107,11 @@ namespace osect
         std::optional<terrain_shading> terrain_shading_changed;
         bool terrain_profile_open_changed = false;
 
+        // The Route window's content height changed this frame. It is
+        // auto-resized, and ImGui applies the new size on the next
+        // frame, so the caller draws again before rendering.
+        bool route_layout_changed = false;
+
         // The id of a tab the user just closed via its X button.
         // ui_overlay has already removed the panel; the caller is
         // responsible for removing the tab's route from map_widget
@@ -126,7 +131,7 @@ namespace osect
             return visibility_changed || search_query.has_value() || selected_hit_index.has_value() ||
                    route_submit.has_value() || cruise_altitude_changed.has_value() ||
                    terrain_shading_changed.has_value() || terrain_profile_open_changed || tab_closed.has_value() ||
-                   active_tab_changed.has_value();
+                   active_tab_changed.has_value() || route_layout_changed;
         }
     };
 

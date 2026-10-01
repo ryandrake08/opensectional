@@ -1259,6 +1259,23 @@ namespace osect
                 along_nm += haversine_distance_nm(points[i].lat, points[i].lon, points[i + 1].lat, points[i + 1].lon);
             }
         };
+        // The error for a segment plan_segment found no path for. When
+        // terrain avoidance is on and the segment plans without it, the
+        // error names terrain or obstacles within the required clearance
+        // of the cruise altitude.
+        const auto no_route =
+            [&](std::string message, const endpoint& origin, const endpoint& destination, const route_ends& ends)
+        {
+            auto without_terrain = opts;
+            without_terrain.avoid_terrain = false;
+            if(opts.avoid_terrain && plan_segment(origin, destination, without_terrain, ends))
+            {
+                const auto feet = [](double value) { return std::to_string(std::lround(value)); };
+                message += ": terrain or obstacles within " + feet(opts.margins.required_clearance_ft) +
+                           " ft of the cruise altitude";
+            }
+            return route_parse_error(message);
+        };
         const auto tokens_from = [&](std::size_t first)
         { return std::vector<std::string>(tokens.begin() + static_cast<std::ptrdiff_t>(first), tokens.end()); };
 
@@ -1301,7 +1318,7 @@ namespace osect
                     msg += left_tok;
                     msg += " to ";
                     msg += right_tok;
-                    throw route_parse_error(msg);
+                    throw no_route(msg, origin, destination, ends);
                 }
                 add_unchecked(origin, *path, destination, ends);
                 for(auto idx : *path)
@@ -1332,7 +1349,7 @@ namespace osect
                     msg += " (entry of ";
                     msg += right_tok;
                     msg += ")";
-                    throw route_parse_error(msg);
+                    throw no_route(msg, origin, destination, ends);
                 }
                 add_unchecked(origin, *path, destination, ends);
                 for(auto idx : *path)
@@ -1361,7 +1378,7 @@ namespace osect
                     msg += left_tok;
                     msg += ") to ";
                     msg += right_tok;
-                    throw route_parse_error(msg);
+                    throw no_route(msg, origin, destination, ends);
                 }
                 add_unchecked(origin, *path, destination, ends);
                 for(auto idx : *path)

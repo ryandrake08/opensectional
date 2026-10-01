@@ -82,6 +82,10 @@ namespace osect
         // appears ~10 px wide before it draws content on frame 2.
         bool needs_initial_tab_selection = true;
 
+        // The Route window's content height on the previous frame, for
+        // ui_overlay_result::route_layout_changed.
+        float route_content_height = 0.0F;
+
         // Data-status panel state. Empty until set_data_sources is
         // called; the panel renders nothing in that case.
         std::vector<data_source> sources;
@@ -793,6 +797,10 @@ namespace osect
                 d.last_reported_active_id = active_id;
             }
             d.needs_initial_tab_selection = false;
+
+            const float content_height = ImGui::GetCursorPosY();
+            result.route_layout_changed = content_height != d.route_content_height;
+            d.route_content_height = content_height;
         }
 
         // Data status panel, pinned to the bottom-left corner.

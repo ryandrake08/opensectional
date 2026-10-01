@@ -378,3 +378,94 @@ TEST_CASE("a plan without terrain avoidance reports nothing unchecked")
     opts.cruise_altitude_ft = OCEAN_CRUISE_FT;
     CHECK(planner.expand_sigils(A + " ? " + C, opts).terrain_unchecked_nm == 0.0);
 }
+
+namespace
+{
+    // A 30 NM max leg: no graph node lies within reach of the Pacific
+    // points, so a failed direct leg leaves no route.
+    route_planner::options short_legs(route_planner::options opts)
+    {
+        opts.max_leg_length_nm = 30.0;
+        return opts;
+    }
+}
+
+TEST_CASE("a plan blocked by terrain says terrain excluded the remaining legs")
+{
+    const test::temporary_tree tree("planner-blocked", tree_manifest("blocked", OCEAN_ZOOM));
+    write_tile_at(tree, OCEAN_ZOOM, OCEAN_LAT, east_of_a(12.0), OCEAN_CRUISE_FT + 500.0);
+    const elevation_source terrain(tree.path());
+    test::tmp_user_db user_db("planner_blocked");
+    const route_planner planner("osect.db", user_db.db_file, terrain);
+
+    CHECK_THROWS_WITH_AS(planner.expand_sigils(A + " ? " + C, short_legs(avoiding(OCEAN_CRUISE_FT))),
+                         ("no route from " + A + " to " + C +
+                          ": terrain or obstacles within 1000 ft of the cruise altitude")
+                             .c_str(),
+                         route_parse_error);
+}
+
+TEST_CASE("a plan without terrain avoidance crosses terrain that blocks one with it")
+{
+    const test::temporary_tree tree("planner-blocked-off", tree_manifest("blocked", OCEAN_ZOOM));
+    write_tile_at(tree, OCEAN_ZOOM, OCEAN_LAT, east_of_a(12.0), OCEAN_CRUISE_FT + 500.0);
+    const elevation_source terrain(tree.path());
+    test::tmp_user_db user_db("planner_blocked_off");
+    const route_planner planner("osect.db", user_db.db_file, terrain);
+
+    route_planner::options opts;
+    opts.cruise_altitude_ft = OCEAN_CRUISE_FT;
+    CHECK(planner.expand_sigils(A + " ? " + C, short_legs(opts)).text == A + " " + C);
+}
+
+TEST_CASE("a plan that fails only on the max leg length keeps the plain message")
+{
+    // 60 NM west of A: farther than the 30 NM max leg, with no terrain.
+    const std::string west = "360000N1251400W";
+    const test::temporary_tree tree("planner-max-leg", tree_manifest("max-leg", OCEAN_ZOOM));
+    const elevation_source terrain(tree.path());
+    test::tmp_user_db user_db("planner_max_leg");
+    const route_planner planner("osect.db", user_db.db_file, terrain);
+
+    CHECK_THROWS_WITH_AS(planner.expand_sigils(A + " ? " + west, short_legs(avoiding(OCEAN_CRUISE_FT))),
+                         ("no route from " + A + " to " + west).c_str(), route_parse_error);
+}
+
+TEST_CASE("a plan that fails without terrain avoidance too keeps the plain message")
+{
+    // Adak to Shemya has no route: gaps between the Aleutian waypoints
+    // exceed the 30 NM max leg. Terrain over the nearest waypoint at
+    // least 15 NM from Adak makes the terrain test reject edges on the
+    // way to that failure.
+    const auto padk = test_db().lookup_airports("PADK");
+    REQUIRE(padk.size() == 1);
+    const std::string shemya = "524300N1740700E";
+
+    test::tmp_user_db user_db("planner_aleutians");
+    const elevation_source no_tiles_yet("missing-terrain-tree");
+    const route_planner finder("osect.db", user_db.db_file, no_tiles_yet);
+    std::optional<rpta::node> nearest;
+    double nearest_nm = 0.0;
+    for(std::size_t i = 0; i < rpta::node_count(finder); ++i)
+    {
+        const auto& node = rpta::get_node(finder, i);
+        const double nm = haversine_distance_nm(padk.front().lat, padk.front().lon, node.lat, node.lon);
+        if(nm >= 15.0 && nm <= 30.0 && (!nearest || nm < nearest_nm))
+        {
+            nearest = node;
+            nearest_nm = nm;
+        }
+    }
+    REQUIRE(nearest);
+
+    const test::temporary_tree tree("planner-aleutians", tree_manifest("aleutians", OCEAN_ZOOM));
+    write_tile_at(tree, OCEAN_ZOOM, nearest->lat, nearest->lon, OCEAN_CRUISE_FT + 500.0);
+    const elevation_source terrain(tree.path());
+    const route_planner planner("osect.db", user_db.db_file, terrain);
+
+    route_planner::options without;
+    without.cruise_altitude_ft = OCEAN_CRUISE_FT;
+    REQUIRE_THROWS_AS(planner.expand_sigils("PADK ? " + shemya, short_legs(without)), route_parse_error);
+    CHECK_THROWS_WITH_AS(planner.expand_sigils("PADK ? " + shemya, short_legs(avoiding(OCEAN_CRUISE_FT))),
+                         ("no route from PADK to " + shemya).c_str(), route_parse_error);
+}
