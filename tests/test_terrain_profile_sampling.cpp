@@ -279,3 +279,61 @@ TEST_CASE("terrain profile refines stations around a narrow peak")
     const double distance_nm = osect::haversine_distance_nm(lat, 0.0, lat, 4.0);
     CHECK(profile.samples.size() < static_cast<std::size_t>(distance_nm / osect::TERRAIN_PROFILE_SAMPLE_INTERVAL_NM));
 }
+
+TEST_CASE("terrain profile includes obstacles in the corridor and excludes those beside it")
+{
+    // Starting in northern California, move to the tallest obstacle within
+    // half a degree until none nearby is taller. Both legs' corridors lie
+    // within half a degree of it.
+    const auto taller = [](const auto& a, const auto& b) { return a.amsl_ht < b.amsl_ht; };
+    const auto nearby = [](double lat, double lon)
+    { return test_db().query_obstacles({lon - 0.5, lat - 0.5, lon + 0.5, lat + 0.5}); };
+    auto candidates = nearby(37.5, -122.0);
+    REQUIRE_FALSE(candidates.empty());
+    auto tallest = *std::max_element(candidates.begin(), candidates.end(), taller);
+    for(;;)
+    {
+        candidates = nearby(tallest.lat, tallest.lon);
+        const auto next = *std::max_element(candidates.begin(), candidates.end(), taller);
+        if(next.amsl_ht <= tallest.amsl_ht)
+        {
+            break;
+        }
+        tallest = next;
+    }
+
+    // A 25 NM north-east leg centred on the obstacle, and the same leg
+    // moved 6 NM to its north-west, beyond the 4 NM corridor half-width.
+    const double nm_lat = 1.0 / 60.0;
+    const double nm_lon = 1.0 / (60.0 * std::cos(tallest.lat * M_PI / 180.0));
+    const auto leg = [&](double offset_nm)
+    {
+        const double lat = tallest.lat + offset_nm * std::sqrt(0.5) * nm_lat;
+        const double lon = tallest.lon - offset_nm * std::sqrt(0.5) * nm_lon;
+        const double half_nm = 12.5 * std::sqrt(0.5);
+        return std::vector<osect::route_waypoint>{
+            {osect::waypoint_kind::latlon, "A", lat - half_nm * nm_lat, lon - half_nm * nm_lon},
+            {osect::waypoint_kind::latlon, "B", lat + half_nm * nm_lat, lon + half_nm * nm_lon},
+        };
+    };
+    const auto highest_corridor = [](const osect::terrain_profile& profile)
+    {
+        std::optional<double> highest;
+        for(const auto& sample : profile.samples)
+        {
+            if(sample.corridor_elevation_ft && (!highest || *sample.corridor_elevation_ft > *highest))
+            {
+                highest = sample.corridor_elevation_ft;
+            }
+        }
+        return highest;
+    };
+
+    const osect::elevation_source terrain("missing-terrain-tree");
+    const auto over = osect::build_terrain_profile(leg(0.0), terrain, test_db(), std::nullopt);
+    const auto beside = osect::build_terrain_profile(leg(6.0), terrain, test_db(), std::nullopt);
+
+    CHECK(highest_corridor(over) == static_cast<double>(tallest.amsl_ht));
+    const auto beside_highest = highest_corridor(beside);
+    CHECK((!beside_highest || *beside_highest < tallest.amsl_ht));
+}

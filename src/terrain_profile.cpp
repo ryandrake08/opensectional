@@ -35,6 +35,10 @@ namespace
         return obstacles;
     }
 
+    // Along-track span of the consecutive station intervals whose
+    // obstacles are fetched in one database query.
+    constexpr double OBSTACLE_QUERY_SPAN_NM = 20.0;
+
     bool inside_bbox(const osect::obstacle& obstacle, const osect::geo_bbox& bbox)
     {
         double longitude = obstacle.lon;
@@ -341,7 +345,6 @@ namespace osect
 
         terrain_profile profile;
         std::vector<profile_station> stations{{0.0, {departure.lat, departure.lon}, departure_elevation_ft}};
-        std::vector<std::pair<std::size_t, std::size_t>> leg_sample_ranges;
         double leg_start_nm = 0.0;
         for(std::size_t leg_index = 0; leg_index + 1 < waypoints.size(); ++leg_index)
         {
@@ -353,7 +356,6 @@ namespace osect
             const airspace_point to_point{to.lat, unwrap_longitude(to.lon, from_point.lon)};
             const leg_stations leg{from_point, to_point, leg_start_nm, leg_distance_nm, min_interval_nm, terrain};
             const profile_station leg_end{leg_end_nm, to_point, elevation_at(&to, to.lat, to.lon, terrain, airports)};
-            const std::size_t first_sample = leg_index == 0 ? 0 : stations.size();
 
             std::vector<double> piece_ends_nm;
             for(const double distance_nm : required_distances_nm)
@@ -379,7 +381,6 @@ namespace osect
             }
 
             profile.legs.push_back({leg_index, leg_start_nm, leg_end_nm, std::nullopt, std::nullopt, false});
-            leg_sample_ranges.emplace_back(first_sample, stations.size());
             leg_start_nm = leg_end_nm;
         }
 
@@ -390,10 +391,11 @@ namespace osect
                    std::clamp(distance_from_terminal_nm / TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM, 0.0, 1.0);
         };
 
-        // Each interval's corridor maximum covers the corridor swept between
-        // its two stations, and each station takes the larger of its two
-        // intervals, so a line between adjacent stations never falls below
-        // the terrain anywhere in the corridor between them.
+        // Each interval's terrain and obstacle maxima cover the corridor
+        // swept between its two stations, and each station takes the larger
+        // of its two intervals, so a line between adjacent stations never
+        // falls below the terrain or obstacles anywhere in the corridor
+        // between them.
         std::vector<geo_bbox> interval_windows;
         std::vector<std::optional<double>> interval_maxima_ft;
         for(std::size_t station_index = 0; station_index + 1 < stations.size(); ++station_index)
@@ -408,69 +410,58 @@ namespace osect
                 terrain.maximum_elevation_ft(window.lat_min, window.lon_min, window.lat_max, window.lon_max));
         }
 
-        std::vector<geo_bbox> windows;
-        windows.reserve(stations.size());
+        // Obstacles are fetched for runs of consecutive intervals and
+        // assigned to each interval whose window contains them.
+        std::vector<std::optional<double>> interval_obstacle_maxima_ft(interval_windows.size());
+        for(std::size_t first = 0; include_obstacles && first < interval_windows.size();)
+        {
+            geo_bbox run_window = interval_windows[first];
+            std::size_t end = first + 1;
+            while(end < interval_windows.size() &&
+                  stations[end + 1].distance_nm - stations[first].distance_nm <= OBSTACLE_QUERY_SPAN_NM)
+            {
+                run_window = bbox_union(run_window, interval_windows[end]);
+                ++end;
+            }
+            for(const auto& obstacle : obstacles_in_bbox(airports, run_window))
+            {
+                for(std::size_t interval = first; interval < end; ++interval)
+                {
+                    if(inside_bbox(obstacle, interval_windows[interval]))
+                    {
+                        interval_obstacle_maxima_ft[interval] =
+                            optional_max(interval_obstacle_maxima_ft[interval], static_cast<double>(obstacle.amsl_ht));
+                    }
+                }
+            }
+            first = end;
+        }
+
         for(std::size_t station_index = 0; station_index < stations.size(); ++station_index)
         {
             const auto& station = stations[station_index];
             profile.samples.push_back(
                 {station.distance_nm, station.elevation_ft, std::nullopt, std::nullopt, false, false});
+            auto& sample = profile.samples.back();
             if(corridor_half_width_at(station.distance_nm) == 0.0)
             {
-                windows.push_back(bbox_around(station.point.lat, station.point.lon, 0.0));
-                profile.samples.back().corridor_elevation_ft = station.elevation_ft;
+                sample.corridor_elevation_ft = station.elevation_ft;
                 continue;
             }
 
             const bool has_previous = station_index > 0;
             const bool has_next = station_index + 1 < stations.size();
-            if(has_previous && has_next)
-            {
-                windows.push_back(bbox_union(interval_windows[station_index - 1], interval_windows[station_index]));
-            }
-            else
-            {
-                windows.push_back(has_previous ? interval_windows[station_index - 1] : interval_windows[station_index]);
-            }
-            profile.samples.back().corridor_elevation_ft =
+            sample.corridor_elevation_ft =
                 optional_max(has_previous ? interval_maxima_ft[station_index - 1] : std::nullopt,
                              has_next ? interval_maxima_ft[station_index] : std::nullopt);
-        }
-
-        if(include_obstacles)
-        {
-            for(const auto& [first_sample, end_sample] : leg_sample_ranges)
+            const auto obstacle_maximum_ft =
+                optional_max(has_previous ? interval_obstacle_maxima_ft[station_index - 1] : std::nullopt,
+                             has_next ? interval_obstacle_maxima_ft[station_index] : std::nullopt);
+            if(obstacle_maximum_ft)
             {
-                geo_bbox leg_bbox = windows[first_sample];
-                for(std::size_t sample_index = first_sample + 1; sample_index < end_sample; ++sample_index)
-                {
-                    leg_bbox.lon_min = std::min(leg_bbox.lon_min, windows[sample_index].lon_min);
-                    leg_bbox.lat_min = std::min(leg_bbox.lat_min, windows[sample_index].lat_min);
-                    leg_bbox.lon_max = std::max(leg_bbox.lon_max, windows[sample_index].lon_max);
-                    leg_bbox.lat_max = std::max(leg_bbox.lat_max, windows[sample_index].lat_max);
-                }
-
-                const auto obstacles = obstacles_in_bbox(airports, leg_bbox);
-                for(std::size_t sample_index = first_sample; sample_index < end_sample; ++sample_index)
-                {
-                    for(const auto& obstacle : obstacles)
-                    {
-                        if(!inside_bbox(obstacle, windows[sample_index]))
-                        {
-                            continue;
-                        }
-                        profile.samples[sample_index].has_obstacle = true;
-                        const auto obstacle_elevation_ft = static_cast<double>(obstacle.amsl_ht);
-                        const bool obstacle_only = !profile.samples[sample_index].corridor_elevation_ft ||
-                                                   profile.samples[sample_index].corridor_from_obstacle;
-                        if(!profile.samples[sample_index].corridor_elevation_ft ||
-                           obstacle_elevation_ft > *profile.samples[sample_index].corridor_elevation_ft)
-                        {
-                            profile.samples[sample_index].corridor_elevation_ft = obstacle_elevation_ft;
-                            profile.samples[sample_index].corridor_from_obstacle = obstacle_only;
-                        }
-                    }
-                }
+                sample.has_obstacle = true;
+                sample.corridor_from_obstacle = !sample.corridor_elevation_ft;
+                sample.corridor_elevation_ft = optional_max(sample.corridor_elevation_ft, obstacle_maximum_ft);
             }
         }
 
