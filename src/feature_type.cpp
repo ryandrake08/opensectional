@@ -230,6 +230,16 @@ namespace osect
             }
         }
 
+        // Fill `outer` with `holes` cut out, then clear both for the next
+        // polygon.
+        void fill_and_clear(std::vector<glm::vec2>& outer, std::vector<std::vector<glm::vec2>>& holes,
+                            const glm::vec4& color, polygon_fill_data& out)
+        {
+            triangulate_polygon(outer, holes, color, out);
+            outer.clear();
+            holes.clear();
+        }
+
         // Tag every polyline pushed to `pd` at or after index `first` as a
         // fixed-pixel-size icon anchored at world-Mercator (cx, cy). The
         // emit_*_icon helpers build their shapes in a pixel-offset frame
@@ -3333,15 +3343,6 @@ namespace osect
 
             std::vector<glm::vec2> outer;
             std::vector<std::vector<glm::vec2>> holes;
-            auto flush = [&]()
-            {
-                if(!outer.empty())
-                {
-                    triangulate_polygon(outer, holes, fill_color, fill_out);
-                }
-                outer.clear();
-                holes.clear();
-            };
             std::vector<glm::vec2> ring;
             for(const auto& part : v.parts)
             {
@@ -3353,11 +3354,11 @@ namespace osect
                 }
                 else
                 {
-                    flush();
+                    fill_and_clear(outer, holes, fill_color, fill_out);
                     outer = ring;
                 }
             }
-            flush();
+            fill_and_clear(outer, holes, fill_color, fill_out);
         }
 
         void sua_type::build_selection(const build_context& ctx, const feature& f, polyline_data& out,
@@ -3370,15 +3371,6 @@ namespace osect
 
             std::vector<glm::vec2> outer;
             std::vector<std::vector<glm::vec2>> holes;
-            auto flush = [&]()
-            {
-                if(!outer.empty())
-                {
-                    triangulate_polygon(outer, holes, fill_color, fill_out);
-                }
-                outer.clear();
-                holes.clear();
-            };
             std::vector<glm::vec2> ring;
             for(const auto& stratum : v.strata)
             {
@@ -3399,11 +3391,11 @@ namespace osect
                     }
                     else
                     {
-                        flush();
+                        fill_and_clear(outer, holes, fill_color, fill_out);
                         outer = ring;
                     }
                 }
-                flush();
+                fill_and_clear(outer, holes, fill_color, fill_out);
             }
         }
 
