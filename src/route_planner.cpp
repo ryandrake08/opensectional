@@ -860,12 +860,6 @@ namespace osect
 
         std::priority_queue<open_entry> open;
 
-        auto heuristic = [&](std::size_t n) -> double
-        {
-            return haversine_distance_nm(nodes[n].lat, nodes[n].lon, destination.lat, destination.lon) *
-                   heuristic_factor;
-        };
-
         // Cost factor of a single A* step. `from_st` is nullopt
         // when the step originates from the synthetic origin
         // endpoint; in that case only the destination subtype
@@ -915,7 +909,10 @@ namespace osect
             sc.g[to] = tentative;
             sc.along[to] = from_along_nm + dist_nm;
             sc.came_from[to] = from;
-            open.push({tentative + heuristic(to), to});
+            const double heuristic =
+                haversine_distance_nm(nodes[to].lat, nodes[to].lon, destination.lat, destination.lon) *
+                heuristic_factor;
+            open.push({tentative + heuristic, to});
         };
 
         auto expand_around = [&](double from_lat, double from_lon, std::size_t from_index)
@@ -1270,8 +1267,8 @@ namespace osect
             without_terrain.avoid_terrain = false;
             if(opts.avoid_terrain && plan_segment(origin, destination, without_terrain, ends))
             {
-                const auto feet = [](double value) { return std::to_string(std::lround(value)); };
-                message += ": terrain or obstacles within " + feet(opts.margins.required_clearance_ft) +
+                message += ": terrain or obstacles within " +
+                           std::to_string(std::lround(opts.margins.required_clearance_ft)) +
                            " ft of the cruise altitude";
             }
             return route_parse_error(message);

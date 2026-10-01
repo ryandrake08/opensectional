@@ -232,12 +232,12 @@ namespace osect
                 {
                     continue;
                 }
-                const auto fraction_at = [&](double distance_nm)
-                { return (distance_nm - previous.distance_nm) / (current.distance_nm - previous.distance_nm); };
                 const auto altitude_at = [&](double distance_nm)
                 {
+                    const auto fraction =
+                        (distance_nm - previous.distance_nm) / (current.distance_nm - previous.distance_nm);
                     return *previous.aircraft_altitude_ft +
-                           (*current.aircraft_altitude_ft - *previous.aircraft_altitude_ft) * fraction_at(distance_nm);
+                           (*current.aircraft_altitude_ft - *previous.aircraft_altitude_ft) * fraction;
                 };
                 const auto warning_color = span.severity == terrain_profile_clearance_severity::terrain_intersection
                                                ? terrain_intersection

@@ -268,13 +268,6 @@ namespace osect
 
         auto step = (exit_idx > entry_idx) ? 1 : -1;
 
-        // Is the segment between points[pos] and points[pos+step] a gap?
-        auto crosses_gap = [&](int pos)
-        {
-            auto g = (step == 1) ? pos : pos + step;
-            return g >= 0 && g < static_cast<int>(points.size()) && points[g].gap_after;
-        };
-
         // Finalize a contiguous section of length `section.size()` as
         // either an airway_ref (>= 2 points) or a bare waypoint (1).
         // A 0-length section is skipped.
@@ -302,7 +295,8 @@ namespace osect
             {
                 break;
             }
-            if(crosses_gap(i))
+            // A gap between two points is flagged on the lower-indexed one.
+            if(points[std::min(i, i + step)].gap_after)
             {
                 flush(section, result);
                 // Step across the gap and emit the far side as an
