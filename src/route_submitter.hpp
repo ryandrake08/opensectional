@@ -52,15 +52,19 @@ namespace osect
     public:
         // Constructs an internal route_planner against `db_path`. The
         // planner's database handle is distinct from the rendering
-        // thread's so the worker doesn't contend on its mutex.
+        // thread's so the worker doesn't contend on its mutex. The
+        // overload taking a user_db_path is for tests that need a
+        // disposable user.db.
         explicit route_submitter(const std::filesystem::path& db_path);
+        route_submitter(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path);
         ~route_submitter();
 
         route_submitter(const route_submitter&) = delete;
         route_submitter& operator=(const route_submitter&) = delete;
 
-        // Begin expanding `text` on a background thread. Any prior
-        // submission that hasn't been drained is joined and dropped.
+        // Begin expanding `text` on a background thread. A prior
+        // submission still planning is cancelled, and one that hasn't
+        // been drained is dropped; neither is ever delivered.
         // `opts` is captured by value so the caller can mutate or
         // destroy its copy immediately. `text` must be non-empty;
         // callers handle the "clear route" case directly without

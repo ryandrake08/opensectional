@@ -31,6 +31,15 @@ static const route_planner& test_planner()
     return planner;
 }
 
+// A planner of its own for the cancellation tests, so a request they
+// leave set cannot affect the shared planner.
+static route_planner& cancellable_planner()
+{
+    static test::tmp_user_db user_db("planner_cancel");
+    static route_planner planner("osect.db", user_db.db_file);
+    return planner;
+}
+
 // Brevity alias for the test-only proxy that grants access to the
 // planner's catalog and A* primitives.
 using rpta = route_planner_test_access;
@@ -180,6 +189,29 @@ TEST_CASE("plan_segment longer route needs intermediates")
     CHECK(final_d <= 85.0);
 }
 
+TEST_CASE("plan_segment throws route_plan_cancelled after request_cancel")
+{
+    // KSMF to KBFL needs A* steps (see above), so the request is seen.
+    auto& p = cancellable_planner();
+    auto ksmf = *rpta::node_index(p, "KSMF");
+    auto kbfl = *rpta::node_index(p, "KBFL");
+    p.request_cancel();
+    CHECK_THROWS_AS(rpta::plan_segment(p, endpoint_at(p, ksmf), endpoint_at(p, kbfl), {}), route_plan_cancelled);
+    p.clear_cancel();
+}
+
+TEST_CASE("plan_segment plans normally after clear_cancel")
+{
+    auto& p = cancellable_planner();
+    auto ksmf = *rpta::node_index(p, "KSMF");
+    auto kbfl = *rpta::node_index(p, "KBFL");
+    p.request_cancel();
+    p.clear_cancel();
+    auto path = rpta::plan_segment(p, endpoint_at(p, ksmf), endpoint_at(p, kbfl), {});
+    REQUIRE(path.has_value());
+    CHECK_FALSE(path->empty());
+}
+
 TEST_CASE("plan_segment accepts synthetic lat/lon endpoints")
 {
     // Synthetic origin at KSMF's coords, destination = KSAC. ~12 nm,
@@ -234,6 +266,16 @@ TEST_CASE("expand_sigils accepts '?' without surrounding whitespace")
     auto a = test_planner().expand_sigils("KSMF?KBFL", route_planner::options{});
     auto b = test_planner().expand_sigils("KSMF ? KBFL", route_planner::options{});
     CHECK(a == b);
+}
+
+TEST_CASE("expand_sigils throws route_plan_cancelled after request_cancel")
+{
+    // KSMF-KSAC is a direct leg with no A* steps; the request is
+    // checked before each sigil segment.
+    auto& p = cancellable_planner();
+    p.request_cancel();
+    CHECK_THROWS_AS(p.expand_sigils("KSMF ? KSAC", route_planner::options{}), route_plan_cancelled);
+    p.clear_cancel();
 }
 
 TEST_CASE("expand_sigils rejects leading '?'")

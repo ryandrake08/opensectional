@@ -140,6 +140,17 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/osect.db")
         ${CMAKE_SOURCE_DIR}/src/user_database.cpp)
     target_link_libraries(test_route_planner PRIVATE sqlite_wrapper sdl_wrapper)
     osect_apply_app_definitions(test_route_planner)
+
+    add_osect_test(route_submitter
+        ${CMAKE_SOURCE_DIR}/src/route_submitter.cpp
+        ${CMAKE_SOURCE_DIR}/src/route_planner.cpp
+        ${CMAKE_SOURCE_DIR}/src/nasr_database.cpp
+        ${CMAKE_SOURCE_DIR}/src/data_source.cpp
+        ${CMAKE_SOURCE_DIR}/src/geo_math.cpp
+        ${CMAKE_SOURCE_DIR}/src/flight_route.cpp
+        ${CMAKE_SOURCE_DIR}/src/user_database.cpp)
+    target_link_libraries(test_route_submitter PRIVATE sqlite_wrapper sdl_wrapper)
+    osect_apply_app_definitions(test_route_submitter)
 else()
     message(STATUS "Skipping NASR integration tests: osect.db is missing")
 endif()

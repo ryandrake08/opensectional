@@ -20,12 +20,14 @@ namespace osect
         {
         }
 
+        impl(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path)
+            : planner(db_path, user_db_path)
+        {
+        }
+
         ~impl()
         {
-            if(worker.joinable())
-            {
-                worker.join();
-            }
+            cancel_worker();
         }
 
         impl(const impl&) = delete;
@@ -33,12 +35,20 @@ namespace osect
         impl(impl&&) = delete;
         impl& operator=(impl&&) = delete;
 
-        void submit(const std::string& text, const route_planner::options& opts, std::uint64_t tag)
+        // Stops a running plan at its next A* step and joins it.
+        void cancel_worker()
         {
             if(worker.joinable())
             {
+                planner.request_cancel();
                 worker.join();
+                planner.clear_cancel();
             }
+        }
+
+        void submit(const std::string& text, const route_planner::options& opts, std::uint64_t tag)
+        {
+            cancel_worker();
             result.reset();
             error.clear();
             this->tag = tag;
@@ -49,6 +59,12 @@ namespace osect
                     try
                     {
                         result.emplace(planner.parse(text, opts));
+                    }
+                    catch(const route_plan_cancelled&)
+                    {
+                        // The canceller joins this thread and discards
+                        // its state.
+                        return;
                     }
                     catch(const std::exception& e)
                     {
@@ -84,6 +100,11 @@ namespace osect
     };
 
     route_submitter::route_submitter(const std::filesystem::path& db_path) : pimpl(std::make_unique<impl>(db_path))
+    {
+    }
+
+    route_submitter::route_submitter(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path)
+        : pimpl(std::make_unique<impl>(db_path, user_db_path))
     {
     }
 

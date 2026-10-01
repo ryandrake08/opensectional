@@ -5,6 +5,7 @@
 #include "nasr_database.hpp"
 #include "user_database.hpp"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -325,6 +326,18 @@ namespace osect
         // it — so we keep one scratch buffer here and reset it via
         // the dirty list between runs.
         mutable astar_scratch scratch;
+
+        // Set by request_cancel from another thread; checked at each
+        // A* step and sigil segment.
+        std::atomic<bool> cancel_requested{false};
+
+        void throw_if_cancelled() const
+        {
+            if(cancel_requested)
+            {
+                throw route_plan_cancelled();
+            }
+        }
 
         const nasr_database db;
         // Read-only handle to user.db. The user-waypoint set is read
@@ -685,6 +698,7 @@ namespace osect
 
         while(!open.empty())
         {
+            pimpl->throw_if_cancelled();
             auto [f, n] = open.top();
             open.pop();
             if(sc.closed[n])
@@ -910,6 +924,8 @@ namespace osect
 
         for(auto s : sigils)
         {
+            pimpl->throw_if_cancelled();
+
             // Emit tokens between the previous cursor and this sigil
             // verbatim. Airway tokens sitting in this range are
             // emitted unchanged — they're handled by flight_route's
@@ -1034,6 +1050,16 @@ namespace osect
             user_waypoints.push_back({waypoint_kind::user, w.name, w.lat, w.lon});
         }
         return {expand_sigils(text, opts), pimpl->db, user_waypoints};
+    }
+
+    void route_planner::request_cancel()
+    {
+        pimpl->cancel_requested = true;
+    }
+
+    void route_planner::clear_cancel()
+    {
+        pimpl->cancel_requested = false;
     }
 
 } // namespace osect

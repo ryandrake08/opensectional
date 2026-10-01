@@ -6,12 +6,22 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace osect
 {
     class nasr_database;
+
+    // Thrown by route_planner::expand_sigils and route_planner::parse
+    // after route_planner::request_cancel.
+    struct route_plan_cancelled : std::runtime_error
+    {
+        route_plan_cancelled() : std::runtime_error("route planning cancelled")
+        {
+        }
+    };
 
     // Test-access proxy declared below. `friend` permission lets
     // test_route_planner reach catalog and A* internals without
@@ -76,7 +86,8 @@ namespace osect
         // sigil is rejected.
         //
         // Throws route_parse_error on invalid sigil placement or
-        // when no path can be found.
+        // when no path can be found, and route_plan_cancelled at the
+        // next A* step or sigil segment while a cancel is requested.
         std::string expand_sigils(const std::string& text, const options& opts) const;
 
         // Convenience: expand sigils and parse the result into a
@@ -84,8 +95,13 @@ namespace osect
         // Equivalent to `flight_route(expand_sigils(text, opts), db)`
         // but doesn't expose the database. Throws route_parse_error
         // on sigil-grammar errors, A* failure, or token-resolution
-        // failure.
+        // failure, and route_plan_cancelled as expand_sigils does.
         flight_route parse(const std::string& text, const options& opts) const;
+
+        // Makes a plan running on another thread, and any plan started
+        // later, throw route_plan_cancelled until clear_cancel().
+        void request_cancel();
+        void clear_cancel();
 
     private:
         // ---- Catalog and A* primitives ----
@@ -140,7 +156,8 @@ namespace osect
         // intermediate waypoints in order. Origin and destination
         // are NOT included. Empty result means a direct leg
         // satisfies `max_leg_length_nm`. nullopt means no viable
-        // path within that constraint.
+        // path within that constraint. Throws route_plan_cancelled
+        // at an A* step while a cancel is requested.
         std::optional<std::vector<std::size_t>> plan_segment(const endpoint& origin, const endpoint& destination,
                                                              const options& opts) const;
 
