@@ -69,7 +69,8 @@ namespace osect
             // Without terrain data, terrain avoidance is off.
             plan_options.avoid_terrain = plan_options.avoid_terrain && terrain.available();
             plan_options.margins = terrain_style(ini).margins;
-            ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways);
+            ui.set_route_planner_defaults(plan_options.max_leg_length_nm, plan_options.use_airways,
+                                          plan_options.avoid_terrain);
         }
 
         void remove_queued_profile(route_id id)
@@ -255,11 +256,13 @@ namespace osect
 
             // Snapshot the GUI knobs into the planner options for
             // this submission. ini-driven preferences are already in
-            // plan_options; we just overlay max_leg, use-airways, and
-            // the cruise altitude from the panel that submitted.
+            // plan_options; we just overlay max_leg, use-airways,
+            // avoid-terrain, and the cruise altitude from the panel
+            // that submitted.
             auto opts = plan_options;
             opts.max_leg_length_nm = req.max_leg_nm;
             opts.use_airways = req.use_airways;
+            opts.avoid_terrain = req.avoid_terrain;
             opts.cruise_altitude_ft = ui.cruise_altitude_ft(req.tab_id);
             if(auto err = validate_route_plan_options(opts); !err.empty())
             {
@@ -309,6 +312,7 @@ namespace osect
                                   " nm of planned legs outside terrain coverage");
                 }
                 ui.set_route_state(tag, route);
+                ui.set_route_terrain_unchecked(tag, status.completion->terrain_unchecked_nm);
 
                 auto it = tab_to_route.find(tag);
                 route_id rid = 0;

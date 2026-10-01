@@ -46,6 +46,9 @@ namespace osect
         // Per-tab planner knobs.
         double max_leg_nm = default_max_leg_length_nm;
         bool use_airways = default_use_airways;
+        bool avoid_terrain = default_avoid_terrain;
+        // NM of planned legs whose terrain was not checked; 0 for none.
+        double terrain_unchecked_nm = 0.0;
         std::string cruise_altitude_text;
         std::optional<double> cruise_altitude_ft;
     };
@@ -149,6 +152,7 @@ namespace osect
         }
         auto& p = pimpl->panels[i];
         p.error.clear();
+        p.terrain_unchecked_nm = 0.0;
         p.has_route = true;
         // Snap the input buffer to the canonical shorthand so
         // auto-corrected entry/exit points are reflected.
@@ -165,6 +169,17 @@ namespace osect
         auto& p = pimpl->panels[i];
         p.has_route = false;
         p.error = error;
+        p.terrain_unchecked_nm = 0.0;
+    }
+
+    void ui_overlay::set_route_terrain_unchecked(std::uint64_t tab_id, double unchecked_nm)
+    {
+        auto i = pimpl->find_panel(tab_id);
+        if(i >= pimpl->panels.size())
+        {
+            return;
+        }
+        pimpl->panels[i].terrain_unchecked_nm = unchecked_nm;
     }
 
     void ui_overlay::set_route_planning(std::uint64_t tab_id, bool pending)
@@ -217,7 +232,7 @@ namespace osect
         pimpl->last_reported_active_id = tab_id;
     }
 
-    void ui_overlay::set_route_planner_defaults(double max_leg_nm, bool use_airways)
+    void ui_overlay::set_route_planner_defaults(double max_leg_nm, bool use_airways, bool avoid_terrain)
     {
         // Seed the initial panel created at construction so the app
         // starts with the user's configured defaults. Only the
@@ -228,6 +243,7 @@ namespace osect
         {
             pimpl->panels.front().max_leg_nm = max_leg_nm;
             pimpl->panels.front().use_airways = use_airways;
+            pimpl->panels.front().avoid_terrain = avoid_terrain;
         }
     }
 
@@ -595,6 +611,20 @@ namespace osect
                         ImGui::SameLine();
                         ImGui::SetNextItemWidth(90.0F);
                         ImGui::InputDouble("Max leg (nm)", &p.max_leg_nm, 0.0, 0.0, "%.0f");
+                        // Without terrain data the option is off and
+                        // greyed, with the reason beside it.
+                        ImGui::BeginDisabled(!terrain_available);
+                        bool avoid_terrain = terrain_available && p.avoid_terrain;
+                        if(ImGui::Checkbox("Avoid terrain", &avoid_terrain))
+                        {
+                            p.avoid_terrain = avoid_terrain;
+                        }
+                        ImGui::EndDisabled();
+                        if(!terrain_available)
+                        {
+                            ImGui::SameLine();
+                            ImGui::TextDisabled("(no terrain data installed)");
+                        }
                         ImGui::SetNextItemWidth(120.0F);
                         const auto altitude_text_before = p.cruise_altitude_text;
                         if(ImGui::InputText("Cruise altitude (ft)", &p.cruise_altitude_text))
@@ -632,6 +662,7 @@ namespace osect
                             req.text = p.text_buf;
                             req.max_leg_nm = p.max_leg_nm;
                             req.use_airways = p.use_airways;
+                            req.avoid_terrain = terrain_available && p.avoid_terrain;
                             result.route_submit = std::move(req);
                         }
 
@@ -646,6 +677,14 @@ namespace osect
                         {
                             ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
                             ImGui::TextWrapped("%s", p.error.c_str());
+                            ImGui::PopStyleColor();
+                        }
+                        else if(p.terrain_unchecked_nm > 0.0)
+                        {
+                            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 200, 60, 255));
+                            ImGui::TextWrapped("Terrain not checked along %.0f nm of planned legs: no terrain data "
+                                               "there.",
+                                               std::ceil(p.terrain_unchecked_nm));
                             ImGui::PopStyleColor();
                         }
 
@@ -691,6 +730,7 @@ namespace osect
                                 req.tab_id = p.id;
                                 req.max_leg_nm = p.max_leg_nm;
                                 req.use_airways = p.use_airways;
+                                req.avoid_terrain = false;
                                 result.route_submit = std::move(req);
                             }
                         }
@@ -711,6 +751,7 @@ namespace osect
                     // tabs carries the user's last-used settings.
                     p.max_leg_nm = d.panels[d.active_panel_index].max_leg_nm;
                     p.use_airways = d.panels[d.active_panel_index].use_airways;
+                    p.avoid_terrain = d.panels[d.active_panel_index].avoid_terrain;
                     p.cruise_altitude_text = d.panels[d.active_panel_index].cruise_altitude_text;
                     p.cruise_altitude_ft = d.panels[d.active_panel_index].cruise_altitude_ft;
                     d.panels.push_back(std::move(p));

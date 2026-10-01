@@ -96,6 +96,7 @@ namespace osect
             std::string text;
             double max_leg_nm;
             bool use_airways;
+            bool avoid_terrain;
         };
         std::optional<route_submit_request> route_submit;
 
@@ -156,8 +157,15 @@ namespace osect
 
         // Mark the panel for `tab_id` as holding a planned route.
         // Snaps the input buffer to the canonical shorthand (so any
-        // entry/exit auto-corrections appear) and clears any error.
+        // entry/exit auto-corrections appear) and clears any error and
+        // terrain warning.
         void set_route_state(std::uint64_t tab_id, const flight_route& route);
+
+        // Show, beneath the input of the panel for `tab_id`, that
+        // terrain was not checked along `unchecked_nm` of its planned
+        // legs; 0 shows nothing. Cleared by set_route_state and
+        // clear_route_state.
+        void set_route_terrain_unchecked(std::uint64_t tab_id, double unchecked_nm);
 
         // Mark the panel for `tab_id` as having no planned route.
         // `error` is shown in red beneath the input when non-empty —
@@ -195,7 +203,7 @@ namespace osect
         // created panels. Typically called once at startup with
         // values loaded from ini. Existing panels keep whatever
         // values their user already set.
-        void set_route_planner_defaults(double max_leg_nm, bool use_airways);
+        void set_route_planner_defaults(double max_leg_nm, bool use_airways, bool avoid_terrain);
         std::optional<double> cruise_altitude_ft(std::uint64_t tab_id) const;
         void set_terrain_shading(terrain_shading mode);
         void open_terrain_profile();

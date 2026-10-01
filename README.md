@@ -487,8 +487,8 @@ corridor whose terrain and obstacles the profile checks, default 8) and
 `required_clearance` (feet the aircraft trace must stay above the corridor
 maximum, default 1000). The Route
 panel's per-tab **Cruise altitude (ft)** field is blank until entered and
-drives `cruise_relative` shading for the active tab only; it does not yet
-affect route planning. See the commented
+drives `cruise_relative` shading for the active tab and terrain avoidance
+when that tab plans a route. See the commented
 block in `osect.ini` for the full list and defaults. The layer panel's
 **Terrain shading** radio group switches among the three modes for the current
 session without changing the ini file. Cruise-relative shading falls back to
@@ -564,7 +564,11 @@ Insert a `?` between two waypoints (or between a waypoint and an airway token) a
 | `KSMF ? V23 ? KBFL` | Picks V23 entry/exit by *project-and-walk* (project the airport onto V23, pick the adjacent fix nearer the other endpoint), then plans the off-airway segments. |
 | `KSMF V23 ? KBFL` | Haversine-nearest entry (existing behavior), project-and-walk exit, plan the exit→KBFL leg. |
 
-The "Use airways" checkbox in the Route panel turns on the airway-class preference (Victor PREFER by default, etc.) and forces airway-routable navaids and WP/RP/CN/MR fixes to INCLUDE for that submission. The "Max leg (nm)" input next to it caps any single A\* hop at the chosen distance. While planning runs on a background thread the input is disabled and an animated indicator is shown. Cross-country plans (e.g. `KSFO ? KJFK`) take a couple of seconds; short hops are imperceptible.
+The "Use airways" checkbox in the Route panel turns on the airway-class preference (Victor PREFER by default, etc.) and forces airway-routable navaids and WP/RP/CN/MR fixes to INCLUDE for that submission. The "Max leg (nm)" input next to it caps any single A\* hop at the chosen distance.
+
+The "Avoid terrain" checkbox keeps planned legs clear of terrain and obstacles: a leg is taken only when the highest terrain or DOF obstacle in its corridor (the `[route_terrain]` `corridor_width`) is at least `required_clearance` below the tab's cruise altitude.
+
+While planning runs on a background thread the input is disabled and an animated indicator is shown. Cross-country plans (e.g. `KSFO ? KJFK`) take a couple of seconds; short hops are imperceptible.
 
 Routing preferences are configured in the `[route_plan]` section of an `osect.ini` override file (see [Configuration](#configuration)). Each waypoint subtype (airport, balloonport, seaplane base, gliderport, heliport, ultralight, VOR, VORTAC, VOR/DME, DME, NDB, NDB/DME, VFR fix) and each airway class (Victor, Jet, RNAV, color, other) takes one of `PREFER` / `INCLUDE` / `AVOID` / `REJECT` (cost multipliers 0.8 / 1.0 / 1.25 / 1000). A separate `route_airway_gap` key controls how A\* prices crossings of published airway discontinuities — `PREFER` makes following a named airway through its gaps cost-attractive; `INCLUDE` is neutral; `AVOID`/`REJECT` push the planner toward switching airways.
 
