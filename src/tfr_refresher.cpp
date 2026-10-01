@@ -18,6 +18,9 @@
 
 namespace osect
 {
+    // Interval between TFR list refreshes.
+    constexpr auto TFR_REFRESH_PERIOD = std::chrono::minutes(15);
+
     namespace
     {
         // ---- minimal JSON-array string extractor ----
@@ -88,8 +91,6 @@ namespace osect
     }
 
     // ----------------- impl -----------------
-
-    constexpr auto TFR_REFRESH_PERIOD = std::chrono::minutes(15);
 
     struct tfr_refresher::impl
     {

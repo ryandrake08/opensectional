@@ -9,6 +9,13 @@
 
 namespace osect
 {
+    // maximum_elevation_ft reads the coarsest pyramid level at which its
+    // box spans this many texels on each axis, or the finest level. Texels
+    // the box only partly overlaps add at most one texel of terrain beyond
+    // each edge, so more texels report less terrain outside the box at the
+    // cost of more texel reads.
+    inline constexpr double ELEVATION_BBOX_MIN_TEXELS = 4.0;
+
     class elevation_source
     {
         struct impl;
@@ -46,7 +53,7 @@ namespace osect
         std::optional<double> elevation_ft(double lat, double lon, int zoom) const;
         // Returns the conservative maximum terrain elevation in a geographic
         // box, read from the coarsest pyramid level at which the box spans
-        // four texels on each axis.
+        // ELEVATION_BBOX_MIN_TEXELS texels on each axis.
         std::optional<double> maximum_elevation_ft(double lat_min, double lon_min, double lat_max,
                                                    double lon_max) const;
     };

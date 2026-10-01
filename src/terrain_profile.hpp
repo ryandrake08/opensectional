@@ -22,6 +22,10 @@ namespace osect
     inline constexpr double TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM = 10.0;
     inline constexpr double TERRAIN_PROFILE_REQUIRED_CLEARANCE_FT = 1000.0;
 
+    // Along-track span of the consecutive station intervals whose
+    // obstacles are fetched in one database query.
+    inline constexpr double TERRAIN_PROFILE_OBSTACLE_QUERY_SPAN_NM = 20.0;
+
     enum class terrain_profile_phase
     {
         climb,

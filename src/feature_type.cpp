@@ -60,6 +60,40 @@ namespace osect
         constexpr auto LETTER_WIDTH_PX = 2.0F;
         constexpr auto SYMBOL_FILL_PX = 50.0F;
 
+        // -- Labels, selection, and routes ------------------------------------
+
+        // Label placement priorities (higher = placed first in overlap pass).
+        constexpr auto LABEL_PRIORITY_AIRPORT_TOWERED = 100;
+        constexpr auto LABEL_PRIORITY_AIRPORT_UNTOWERED = 80;
+        constexpr auto LABEL_PRIORITY_USER_WAYPOINT = 70;
+        constexpr auto LABEL_PRIORITY_NAVAID_VOR = 60;
+        constexpr auto LABEL_PRIORITY_NAVAID_NDB = 40;
+        constexpr auto LABEL_PRIORITY_AIRWAY = 50;
+        constexpr auto LABEL_PRIORITY_FIX_AIRWAY = 30;
+        constexpr auto LABEL_PRIORITY_FIX_OTHER = 20;
+        constexpr auto LABEL_PRIORITY_AIRSPACE = 10;
+
+        constexpr auto AIRSPACE_LABEL_MIN_ZOOM = 10;
+
+        // Airspace labels sit this fraction of the way from the polygon
+        // centroid (or circle centre) to the chosen edge point.
+        constexpr auto LABEL_EDGE_WEIGHT = 0.7;
+
+        constexpr auto AIRWAY_LABEL_ANGLE_THRESHOLD = 30.0F * static_cast<float>(M_PI) / 180.0F;
+        constexpr auto AIRWAY_LABEL_INTERVAL = 6;
+
+        // Navaid clearance radius, in multiples of SYMBOL_RADIUS_PX.
+        constexpr auto NAV_CLEARANCE = 2.0;
+
+        // Halo scale used for the filled-disc glow behind a selected point
+        // feature: airport_outer (1.2) × 1.5.
+        constexpr auto HALO_SCALE = 1.8;
+        // Segments in a route waypoint's selection halo.
+        constexpr auto HALO_SEGMENTS = 24;
+
+        // Alpha multiplier for routes other than the active one.
+        constexpr auto INACTIVE_ROUTE_ALPHA = 0.4F;
+
         // -- Polyline geometry helpers -----------------------------------------
 
         // AABB overlap between a polyline's bounding box and a query
@@ -1605,19 +1639,6 @@ namespace osect
 
         // -- Icon emitters --------------------------------------------------
 
-        // Label placement priorities (higher = placed first in overlap pass).
-        constexpr auto LABEL_PRIORITY_AIRPORT_TOWERED = 100;
-        constexpr auto LABEL_PRIORITY_AIRPORT_UNTOWERED = 80;
-        constexpr auto LABEL_PRIORITY_USER_WAYPOINT = 70;
-        constexpr auto LABEL_PRIORITY_NAVAID_VOR = 60;
-        constexpr auto LABEL_PRIORITY_NAVAID_NDB = 40;
-        constexpr auto LABEL_PRIORITY_AIRWAY = 50;
-        constexpr auto LABEL_PRIORITY_FIX_AIRWAY = 30;
-        constexpr auto LABEL_PRIORITY_FIX_OTHER = 20;
-        constexpr auto LABEL_PRIORITY_AIRSPACE = 10;
-
-        constexpr auto AIRSPACE_LABEL_MIN_ZOOM = 10;
-
         uint8_t to_u8(float f)
         {
             return static_cast<uint8_t>(f * 255.0F);
@@ -2094,7 +2115,6 @@ namespace osect
             {
                 return;
             }
-            constexpr auto NAV_CLEARANCE = 2.0;
 
             const auto& navaids = ctx.db.query_navaids(request_bbox(ctx.req));
             auto r = SYMBOL_RADIUS_PX;
@@ -2150,9 +2170,6 @@ namespace osect
             }
             return a;
         }
-
-        constexpr auto AIRWAY_LABEL_ANGLE_THRESHOLD = 30.0F * static_cast<float>(M_PI) / 180.0F;
-        constexpr auto AIRWAY_LABEL_INTERVAL = 6;
 
         void airway_type::build(const build_context& ctx) const
         {
@@ -2576,9 +2593,8 @@ namespace osect
                 }
             }
 
-            // Blend 70% edge midpoint, 30% centroid
-            constexpr auto EDGE_WEIGHT = 0.7;
-            return {best_mx * EDGE_WEIGHT + cx * (1.0 - EDGE_WEIGHT), best_my * EDGE_WEIGHT + cy * (1.0 - EDGE_WEIGHT)};
+            return {best_mx * LABEL_EDGE_WEIGHT + cx * (1.0 - LABEL_EDGE_WEIGHT),
+                    best_my * LABEL_EDGE_WEIGHT + cy * (1.0 - LABEL_EDGE_WEIGHT)};
         }
 
         // Label position for a circular airspace: a point on the
@@ -2605,8 +2621,8 @@ namespace osect
             auto cmy = lat_to_my(lat);
             auto emx = lon_to_mx(edge_lon) + mx_offset;
             auto emy = lat_to_my(edge_lat);
-            constexpr auto EDGE_WEIGHT = 0.7;
-            return {emx * EDGE_WEIGHT + cmx * (1.0 - EDGE_WEIGHT), emy * EDGE_WEIGHT + cmy * (1.0 - EDGE_WEIGHT)};
+            return {emx * LABEL_EDGE_WEIGHT + cmx * (1.0 - LABEL_EDGE_WEIGHT),
+                    emy * LABEL_EDGE_WEIGHT + cmy * (1.0 - LABEL_EDGE_WEIGHT)};
         }
 
         void sua_type::build(const build_context& ctx) const
@@ -3055,10 +3071,6 @@ namespace osect
         }
 
         // -- build_selection() bodies ---------------------------------------
-
-        // Halo scale used for the filled-disc glow behind a selected point
-        // feature: airport_outer (1.2) × 1.5.
-        constexpr auto HALO_SCALE = 1.8;
 
         void emit_halo(polyline_data& out, double cx, double cy, double r_base)
         {
@@ -3701,8 +3713,7 @@ namespace osect
                 }
                 else if(!is_active)
                 {
-                    constexpr auto INACTIVE_ALPHA = 0.4F;
-                    ls.a *= INACTIVE_ALPHA;
+                    ls.a *= INACTIVE_ROUTE_ALPHA;
                 }
 
                 for(std::size_t i = 1; i < wps.size(); ++i)
@@ -3735,7 +3746,6 @@ namespace osect
                     return;
                 }
 
-                constexpr auto HALO_SCALE = 1.8;
                 auto halo_r = SYMBOL_RADIUS_PX * HALO_SCALE;
                 auto fill_px = halo_r;
 
@@ -3757,7 +3767,6 @@ namespace osect
                     auto cx = lon_to_mx(wp.lon) + ctx.mx_offset;
                     auto cy = lat_to_my(wp.lat);
 
-                    constexpr auto HALO_SEGMENTS = 24;
                     std::vector<glm::vec2> pts;
                     pts.reserve(HALO_SEGMENTS);
                     for(int s = 0; s < HALO_SEGMENTS; ++s)

@@ -35,10 +35,6 @@ namespace
         return obstacles;
     }
 
-    // Along-track span of the consecutive station intervals whose
-    // obstacles are fetched in one database query.
-    constexpr double OBSTACLE_QUERY_SPAN_NM = 20.0;
-
     bool inside_bbox(const osect::obstacle& obstacle, const osect::geo_bbox& bbox)
     {
         double longitude = obstacle.lon;
@@ -418,7 +414,7 @@ namespace osect
             geo_bbox run_window = interval_windows[first];
             std::size_t end = first + 1;
             while(end < interval_windows.size() &&
-                  stations[end + 1].distance_nm - stations[first].distance_nm <= OBSTACLE_QUERY_SPAN_NM)
+                  stations[end + 1].distance_nm - stations[first].distance_nm <= TERRAIN_PROFILE_OBSTACLE_QUERY_SPAN_NM)
             {
                 run_window = bbox_union(run_window, interval_windows[end]);
                 ++end;

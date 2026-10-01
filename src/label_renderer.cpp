@@ -38,6 +38,8 @@ namespace osect
     constexpr auto LABEL_OFFSET_Y = 24.0F;
     constexpr auto LABEL_PAD_X = 4.0F;
     constexpr auto LABEL_PAD_Y = 2.0F;
+    // Gap between the upper and lower lines of a composite airspace label
+    constexpr auto COMPOSITE_GAP = 3.0F;
 
     // Fill color (white) and outline color (black)
     constexpr uint8_t FILL_R = 255, FILL_G = 255, FILL_B = 255, FILL_A = 255;
@@ -144,7 +146,6 @@ namespace osect
             }
 
             // Composite airspace label
-            constexpr auto COMPOSITE_GAP = 3.0F;
 
             auto uf = sdl::text(pimpl->engine, pimpl->font, lc.upper_text.c_str());
             auto lf = sdl::text(pimpl->engine, pimpl->font, lc.lower_text.c_str());
@@ -314,7 +315,6 @@ namespace osect
         pimpl->fill_vertices.clear();
         pimpl->fill_indices.clear();
 
-        constexpr auto COMPOSITE_GAP = 3.0F;
         auto ofs = static_cast<float>(pimpl->outline_font.get_outline() * 2);
 
         for(size_t i = 0; i < pimpl->visible.size(); i++)

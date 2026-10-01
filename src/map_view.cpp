@@ -6,6 +6,10 @@ namespace osect
 {
     constexpr auto EARTH_RADIUS = 6378137.0;
 
+    // Zoom range the view's extent is clamped to.
+    constexpr auto MIN_ZOOM = 3.0;
+    constexpr auto MAX_ZOOM = 18.0;
+
     double lon_to_mx(double lon)
     {
         return lon * HALF_CIRCUMFERENCE / 180.0;
@@ -177,10 +181,8 @@ namespace osect
 
     void map_view::clamp_extent()
     {
-        constexpr auto min_zoom = 3.0;
-        constexpr auto max_zoom = 18.0;
-        auto max_extent = half_extent_for_zoom(min_zoom);
-        auto min_extent = half_extent_for_zoom(max_zoom);
+        auto max_extent = half_extent_for_zoom(MIN_ZOOM);
+        auto min_extent = half_extent_for_zoom(MAX_ZOOM);
         half_extent_y = std::min(half_extent_y, max_extent);
         half_extent_y = std::max(half_extent_y, min_extent);
     }

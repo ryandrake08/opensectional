@@ -15,6 +15,8 @@
 
 namespace
 {
+    constexpr double FEET_PER_METRE = 3.280839895013123;
+
     std::string read_file(const std::filesystem::path& path)
     {
         std::ifstream input(path);
@@ -447,7 +449,7 @@ namespace osect
         {
             return std::nullopt;
         }
-        return elevation_m * 3.280839895013123;
+        return elevation_m * FEET_PER_METRE;
     }
 
     std::optional<double> elevation_source::maximum_elevation_ft(double lat_min, double lon_min, double lat_max,
@@ -483,17 +485,13 @@ namespace osect
             return address.key.y * pimpl->tile_size + address.pixel_y - pimpl->skirt + 0.5;
         };
 
-        // The coarsest level at which the box spans this many texels on
-        // each axis, or the finest level. Texels the box only partly
-        // overlaps add at most one texel of terrain beyond each edge.
-        constexpr double minimum_box_texels = 4.0;
         int zoom = pimpl->max_zoom;
         for(int candidate = pimpl->min_zoom; candidate <= pimpl->max_zoom; candidate++)
         {
             const double world_pixels = static_cast<double>(1 << candidate) * pimpl->tile_size;
             const double height_pixels = global_y(lat_min, candidate) - global_y(lat_max, candidate);
-            if(longitude_width / 360.0 * world_pixels >= minimum_box_texels - 1e-9 &&
-               height_pixels >= minimum_box_texels - 1e-9)
+            if(longitude_width / 360.0 * world_pixels >= ELEVATION_BBOX_MIN_TEXELS - 1e-9 &&
+               height_pixels >= ELEVATION_BBOX_MIN_TEXELS - 1e-9)
             {
                 zoom = candidate;
                 break;
@@ -561,6 +559,6 @@ namespace osect
         {
             return std::nullopt;
         }
-        return maximum_m * 3.280839895013123;
+        return maximum_m * FEET_PER_METRE;
     }
 } // namespace osect

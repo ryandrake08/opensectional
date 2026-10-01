@@ -10,6 +10,13 @@
 
 namespace osect
 {
+    // Maximum cross-track distance of the intermediate waypoints for
+    // airway_ize to replace a run with its airway. Tight tolerance: false
+    // positives silently reroute the user, so only coerce airways that are
+    // effectively a single straight line. 0.5 NM is an order of magnitude
+    // tighter than enroute airway width (4 NM each side of centerline).
+    static constexpr auto COERCE_XTE_NM = 0.5;
+
     // ---------------------------------------------------------------
     // Lat/lon parsing and formatting (file-local)
     // ---------------------------------------------------------------
@@ -958,12 +965,6 @@ namespace osect
     //    A length-2 run isn't collapsed — "A AWY B" has more tokens
     //    than "A B".
     // ---------------------------------------------------------------
-
-    // Tight tolerance: false positives silently reroute the user, so
-    // only coerce airways that are effectively a single straight line.
-    // 0.5 NM is an order of magnitude tighter than enroute airway
-    // width (4 NM each side of centerline).
-    static constexpr auto COERCE_XTE_NM = 0.5;
 
     void flight_route::airway_ize(const nasr_database& db)
     {

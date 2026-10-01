@@ -261,6 +261,11 @@ constexpr auto PICK_BOX_EXACT_SIZE_PIXELS = 4;
 // SDL left mouse button value
 constexpr uint8_t BUTTON_LEFT = 1;
 
+// Zoom level used to focus a point feature. Chart_style's per-type min_zoom
+// thresholds show navaids by ~z9, airports by ~z7, and fixes by ~z10, so
+// zoom 12 shows all of them.
+constexpr auto POINT_FOCUS_ZOOM = 12;
+
 namespace osect
 {
     enum class route_drag_mode
@@ -1394,11 +1399,8 @@ namespace osect
         d.view.center_x = lon_to_mx(cx);
         d.view.center_y = lat_to_my(cy);
 
-        // Degenerate bbox (point entity) → use a fixed close-in zoom level so
-        // the feature is guaranteed visible under chart_style's per-type
-        // min_zoom thresholds (navaids appear by ~z9, airports by ~z7, fixes
-        // by ~z10 — zoom 12 covers all of them comfortably).
-        constexpr auto POINT_FOCUS_ZOOM = 12;
+        // Degenerate bbox (point entity) → zoom to POINT_FOCUS_ZOOM so the
+        // feature is visible.
         auto is_point = (bbox->lon_min == bbox->lon_max && bbox->lat_min == bbox->lat_max);
         if(is_point)
         {
@@ -1579,7 +1581,6 @@ namespace osect
         auto is_point = (lon_min == lon_max && lat_min == lat_max);
         if(is_point)
         {
-            constexpr auto POINT_FOCUS_ZOOM = 12;
             d.view.zoom_to_level(POINT_FOCUS_ZOOM);
         }
         else
