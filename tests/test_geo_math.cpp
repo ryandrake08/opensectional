@@ -93,6 +93,33 @@ TEST_CASE("geodesic_interpolate keeps longitude continuous across antimeridian")
     }
 }
 
+TEST_CASE("geodesic_point matches geodesic_interpolate at the same fraction")
+{
+    auto pts = geodesic_interpolate(33.94, -118.40, 40.64, -73.78, 100.0);
+    REQUIRE(pts.size() > 3);
+    const auto segments = static_cast<double>(pts.size() - 1);
+    for(size_t i = 0; i < pts.size(); ++i)
+    {
+        auto point = geodesic_point(33.94, -118.40, 40.64, -73.78, static_cast<double>(i) / segments);
+        CHECK(point.lat == doctest::Approx(pts[i].lat)); // transcendental
+        CHECK(point.lon == doctest::Approx(pts[i].lon));
+    }
+}
+
+TEST_CASE("geodesic_point keeps longitude near the start across the antimeridian")
+{
+    auto point = geodesic_point(10.0, 170.0, 10.0, -170.0, 0.75);
+    CHECK(point.lon > 180.0);
+    CHECK(point.lon < 190.0);
+}
+
+TEST_CASE("geodesic_point returns the start of a zero-length arc")
+{
+    auto point = geodesic_point(37.0, -122.0, 37.0, -122.0, 0.5);
+    CHECK(point.lat == 37.0);
+    CHECK(point.lon == -122.0);
+}
+
 TEST_CASE("geodesic_circle keeps longitude continuous when crossing antimeridian")
 {
     // Center near the dateline with a large radius so the ring wraps

@@ -10,8 +10,13 @@ namespace osect
     class nasr_database;
     struct route_waypoint;
 
-    // Maximum along-track distance between centreline profile stations.
+    // Profile stations are spaced between these along-track distances.
+    // An interval is subdivided until its conservative terrain maximum is
+    // within the elevation tolerance of its lower endpoint, or until it
+    // reaches the minimum interval.
     inline constexpr double TERRAIN_PROFILE_SAMPLE_INTERVAL_NM = 0.5;
+    inline constexpr double TERRAIN_PROFILE_MAX_SAMPLE_INTERVAL_NM = 2.0;
+    inline constexpr double TERRAIN_PROFILE_ELEVATION_TOLERANCE_FT = 100.0;
     inline constexpr std::size_t TERRAIN_PROFILE_MIN_SAMPLES = 100;
     inline constexpr double TERRAIN_PROFILE_CORRIDOR_HALF_WIDTH_NM = 4.0;
     inline constexpr double TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM = 10.0;

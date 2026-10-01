@@ -44,7 +44,9 @@ namespace osect
         data_source data_source_row() const;
         // Samples one terrain tile and converts the result to feet.
         std::optional<double> elevation_ft(double lat, double lon, int zoom) const;
-        // Returns the conservative maximum terrain elevation in a geographic box.
+        // Returns the conservative maximum terrain elevation in a geographic
+        // box, read from the coarsest pyramid level at which the box spans
+        // four texels on each axis.
         std::optional<double> maximum_elevation_ft(double lat_min, double lon_min, double lat_max,
                                                    double lon_max) const;
     };

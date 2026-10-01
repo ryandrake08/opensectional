@@ -195,6 +195,42 @@ namespace osect
         return pts;
     }
 
+    airspace_point geodesic_point(double lat1, double lon1, double lat2, double lon2, double fraction)
+    {
+        auto rlat1 = lat1 * M_PI / 180.0;
+        auto rlon1 = lon1 * M_PI / 180.0;
+        auto rlat2 = lat2 * M_PI / 180.0;
+        auto rlon2 = lon2 * M_PI / 180.0;
+
+        auto dlat = rlat2 - rlat1;
+        auto dlon = rlon2 - rlon1;
+        auto a = std::sin(dlat * 0.5) * std::sin(dlat * 0.5) +
+                 std::cos(rlat1) * std::cos(rlat2) * std::sin(dlon * 0.5) * std::sin(dlon * 0.5);
+        auto d = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
+        if(d == 0.0)
+        {
+            return {lat1, lon1};
+        }
+
+        auto sin_d = std::sin(d);
+        auto A = std::sin((1.0 - fraction) * d) / sin_d;
+        auto B = std::sin(fraction * d) / sin_d;
+        auto x = A * std::cos(rlat1) * std::cos(rlon1) + B * std::cos(rlat2) * std::cos(rlon2);
+        auto y = A * std::cos(rlat1) * std::sin(rlon1) + B * std::cos(rlat2) * std::sin(rlon2);
+        auto z = A * std::sin(rlat1) + B * std::sin(rlat2);
+        auto lat = std::atan2(z, std::sqrt(x * x + y * y)) * 180.0 / M_PI;
+        auto lon = std::atan2(y, x) * 180.0 / M_PI;
+        if(lon - lon1 > 180.0)
+        {
+            lon -= 360.0;
+        }
+        else if(lon - lon1 < -180.0)
+        {
+            lon += 360.0;
+        }
+        return {lat, lon};
+    }
+
     double nm_to_deg_lon(double nm, double lat)
     {
         auto cos_lat = std::cos(lat * M_PI / 180.0);

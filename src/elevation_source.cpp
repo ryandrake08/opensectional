@@ -483,12 +483,17 @@ namespace osect
             return address.key.y * pimpl->tile_size + address.pixel_y - pimpl->skirt + 0.5;
         };
 
+        // The coarsest level at which the box spans this many texels on
+        // each axis, or the finest level. Texels the box only partly
+        // overlaps add at most one texel of terrain beyond each edge.
+        constexpr double minimum_box_texels = 4.0;
         int zoom = pimpl->max_zoom;
         for(int candidate = pimpl->min_zoom; candidate <= pimpl->max_zoom; candidate++)
         {
             const double world_pixels = static_cast<double>(1 << candidate) * pimpl->tile_size;
             const double height_pixels = global_y(lat_min, candidate) - global_y(lat_max, candidate);
-            if(longitude_width / 360.0 * world_pixels >= 1.0 - 1e-9 && height_pixels >= 1.0 - 1e-9)
+            if(longitude_width / 360.0 * world_pixels >= minimum_box_texels - 1e-9 &&
+               height_pixels >= minimum_box_texels - 1e-9)
             {
                 zoom = candidate;
                 break;

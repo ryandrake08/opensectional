@@ -1,7 +1,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
 
+#include "elevation_address.hpp"
 #include "elevation_source.hpp"
+#include "elevation_test_tree.hpp"
 #include "flight_route.hpp"
 #include "geo_math.hpp"
 #include "nasr_database.hpp"
@@ -17,9 +19,28 @@ namespace
         static const osect::nasr_database db("osect.db");
         return db;
     }
+
+    constexpr double HUNDRED_METRES_FT = 328.0839895013123;
+
+    // Writes 1x1-pixel tiles at `zoom` covering columns [x_first, x_last]
+    // and rows [y_first, y_last]. The tile containing `peak`, when given,
+    // is 100 m; all others are 0 m.
+    void write_tiles(const std::filesystem::path& tree, int zoom, int x_first, int x_last, int y_first, int y_last,
+                     std::optional<osect::tile_key> peak = std::nullopt)
+    {
+        for(int x = x_first; x <= x_last; ++x)
+        {
+            for(int y = y_first; y <= y_last; ++y)
+            {
+                const bool high = peak && peak->x == x && peak->y == y;
+                osect::test::write_elevation_tile(
+                    tree / std::to_string(zoom) / std::to_string(x) / (std::to_string(y) + ".png"), high);
+            }
+        }
+    }
 }
 
-TEST_CASE("terrain profile samples airport route at the profile interval")
+TEST_CASE("terrain profile keeps stations within the maximum interval without terrain data")
 {
     const auto airports = test_db().lookup_airports("O61");
     const auto destination = test_db().lookup_airports("KMER");
@@ -36,9 +57,11 @@ TEST_CASE("terrain profile samples airport route at the profile interval")
 
     const double distance_nm = osect::haversine_distance_nm(
         airports.front().lat, airports.front().lon, destination.front().lat, destination.front().lon);
-    REQUIRE(profile.samples.size() == static_cast<std::size_t>(std::ceil(
-                                          distance_nm / osect::TERRAIN_PROFILE_SAMPLE_INTERVAL_NM)) +
-                                          1);
+    for(std::size_t i = 1; i < profile.samples.size(); ++i)
+    {
+        CHECK(profile.samples[i].distance_nm - profile.samples[i - 1].distance_nm <=
+              osect::TERRAIN_PROFILE_MAX_SAMPLE_INTERVAL_NM);
+    }
 
     REQUIRE(profile.samples.front().centreline_elevation_ft);
     CHECK(*profile.samples.front().centreline_elevation_ft == airports.front().elev);
@@ -183,4 +206,76 @@ TEST_CASE("terrain profile derives maxima, MSA, and clearance spans")
     REQUIRE(profile.legs.front().msa_ft);
     CHECK(*profile.legs.front().msa_ft == *profile.legs.front().maximum_elevation_ft + 100000.0);
     CHECK_FALSE(profile.clearance_spans.empty());
+}
+
+TEST_CASE("terrain profile keeps flat terrain at the maximum station interval")
+{
+    constexpr int zoom = 8;
+    osect::test::temporary_tree tree("osect-profile-flat", osect::test::manifest("flat", 1, 0, zoom, zoom, 1.0));
+    const auto first = osect::address_elevation(0.5, 0.2, zoom, 1, 0).key;
+    const auto last = osect::address_elevation(0.5, 5.4, zoom, 1, 0).key;
+    write_tiles(tree.path(), zoom, first.x, last.x, first.y - 1, first.y + 1);
+
+    const std::vector<osect::route_waypoint> waypoints{
+        {osect::waypoint_kind::latlon, "A", 0.5, 0.2},
+        {osect::waypoint_kind::latlon, "B", 0.5, 5.4},
+    };
+    const osect::elevation_source terrain(tree.path());
+    const osect::terrain_profile profile =
+        osect::build_terrain_profile(waypoints, terrain, test_db(), std::nullopt, {}, 4.0, false);
+
+    const double distance_nm = osect::haversine_distance_nm(0.5, 0.2, 0.5, 5.4);
+    const double terminal_nm = osect::TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM;
+    const double interval_nm = osect::TERRAIN_PROFILE_MAX_SAMPLE_INTERVAL_NM;
+    const auto terminal_stations = static_cast<std::size_t>(std::ceil(terminal_nm / interval_nm));
+    const auto cruise_stations =
+        static_cast<std::size_t>(std::ceil((distance_nm - 2.0 * terminal_nm) / interval_nm));
+    CHECK(profile.samples.size() == 2 * terminal_stations + cruise_stations + 1);
+    for(const auto& sample : profile.samples)
+    {
+        CHECK(sample.centreline_elevation_ft == 0.0);
+    }
+}
+
+TEST_CASE("terrain profile refines stations around a narrow peak")
+{
+    constexpr int zoom = 15;
+    constexpr double lat = 0.005;
+    constexpr double peak_lon = 2.003;
+    osect::test::temporary_tree tree("osect-profile-peak", osect::test::manifest("peak", 1, 0, zoom, zoom, 1.0));
+    const auto peak = osect::address_elevation(lat, peak_lon, zoom, 1, 0).key;
+    write_tiles(tree.path(), zoom, peak.x - 2, peak.x + 2, peak.y - 1, peak.y + 1, peak);
+
+    const std::vector<osect::route_waypoint> waypoints{
+        {osect::waypoint_kind::latlon, "A", lat, 0.0},
+        {osect::waypoint_kind::latlon, "B", lat, 4.0},
+    };
+    const osect::elevation_source terrain(tree.path());
+    const osect::terrain_profile profile =
+        osect::build_terrain_profile(waypoints, terrain, test_db(), std::nullopt, {}, 4.0, false);
+
+    const auto highest = std::max_element(profile.samples.begin(), profile.samples.end(),
+                                          [](const auto& a, const auto& b)
+                                          { return a.centreline_elevation_ft < b.centreline_elevation_ft; });
+    REQUIRE(highest->centreline_elevation_ft);
+    CHECK(*highest->centreline_elevation_ft == doctest::Approx(HUNDRED_METRES_FT));
+
+    // The corridor line between the stations around the peak stays at or
+    // above it.
+    const double peak_nm = osect::haversine_distance_nm(lat, 0.0, lat, peak_lon);
+    const auto after = std::find_if(profile.samples.begin(), profile.samples.end(),
+                                    [&](const auto& sample) { return sample.distance_nm > peak_nm; });
+    REQUIRE(after != profile.samples.begin());
+    REQUIRE(after != profile.samples.end());
+    const auto before = after - 1;
+    REQUIRE(before->corridor_elevation_ft);
+    REQUIRE(after->corridor_elevation_ft);
+    CHECK(*before->corridor_elevation_ft == doctest::Approx(HUNDRED_METRES_FT));
+    CHECK(*after->corridor_elevation_ft == doctest::Approx(HUNDRED_METRES_FT));
+
+    // Stations within the tiles are spaced no wider than the minimum
+    // interval; stations away from the data stay at the maximum interval.
+    CHECK(after->distance_nm - before->distance_nm <= osect::TERRAIN_PROFILE_SAMPLE_INTERVAL_NM);
+    const double distance_nm = osect::haversine_distance_nm(lat, 0.0, lat, 4.0);
+    CHECK(profile.samples.size() < static_cast<std::size_t>(distance_nm / osect::TERRAIN_PROFILE_SAMPLE_INTERVAL_NM));
 }

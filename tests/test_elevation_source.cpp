@@ -2,6 +2,7 @@
 #include "doctest/doctest.h"
 
 #include "elevation_source.hpp"
+#include "elevation_test_tree.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -9,63 +10,9 @@
 
 namespace
 {
-    class temporary_tree
-    {
-        std::filesystem::path path_;
-
-    public:
-        // Creates a new directory named <temp>/<name>-<n> for the first n
-        // not already taken; create_directory fails when the name exists, so
-        // concurrent runs never share a directory.
-        temporary_tree(const std::string& name, const std::string& contents)
-        {
-            const auto base = std::filesystem::temp_directory_path() / (name + "-");
-            for(int i = 0; i < 1000 && path_.empty(); ++i)
-            {
-                const std::filesystem::path candidate = base.string() + std::to_string(i);
-                if(std::filesystem::create_directory(candidate))
-                {
-                    path_ = candidate;
-                }
-            }
-            REQUIRE_FALSE(path_.empty());
-            std::ofstream(path_ / "manifest.json") << contents;
-        }
-
-        ~temporary_tree()
-        {
-            std::error_code ec;
-            std::filesystem::remove_all(path_, ec);
-        }
-
-        temporary_tree(const temporary_tree&) = delete;
-        temporary_tree& operator=(const temporary_tree&) = delete;
-
-        const std::filesystem::path& path() const
-        {
-            return path_;
-        }
-    };
-
-    std::string manifest(const std::string& dataset, int tile_pixels, int skirt_pixels, int min_zoom, int max_zoom,
-                         double precision, const std::string& datum = "EGM2008",
-                         const std::string& water_mask = {}, bool surface_model = false)
-    {
-        return "{\n"
-               "  \"dataset\": \"" + dataset + "\",\n"
-               "  \"dataset_display_name\": \"" + dataset + " display\",\n"
-               "  \"source_version\": \"2026-01-01\",\n"
-               "  \"attribution\": \"Test data\",\n"
-               "  \"is_surface_model\": " + std::string(surface_model ? "true" : "false") + ",\n"
-               "  \"vertical_datum\": \"" + datum + "\",\n"
-               "  \"vertical_precision_m\": " + std::to_string(precision) + ",\n"
-               "  \"tile_pixels\": " + std::to_string(tile_pixels) + ",\n"
-               "  \"skirt_pixels\": " + std::to_string(skirt_pixels) + ",\n"
-               "  \"min_zoom\": " + std::to_string(min_zoom) + ",\n"
-               "  \"max_zoom\": " + std::to_string(max_zoom) +
-               (water_mask.empty() ? "" : ",\n  \"water_mask\": " + water_mask) + "\n"
-               "}\n";
-    }
+    using osect::test::manifest;
+    using osect::test::temporary_tree;
+    using osect::test::write_elevation_tile;
 
     void write_tile(const std::filesystem::path& path)
     {
@@ -77,24 +24,6 @@ namespace
         std::filesystem::create_directories(path.parent_path());
         std::ofstream output(path, std::ios::binary);
         output.write(reinterpret_cast<const char*>(png), sizeof(png));
-    }
-
-    void write_elevation_tile(const std::filesystem::path& path, bool high)
-    {
-        static constexpr uint8_t zero[] = {
-            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
-            8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 104, 96, 96,
-            248, 15, 0, 3, 4, 1, 128, 11, 131, 200, 20, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
-        };
-        static constexpr uint8_t hundred[] = {
-            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
-            8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 104, 72, 97,
-            248, 15, 0, 4, 48, 1, 228, 10, 106, 56, 133, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
-        };
-        std::filesystem::create_directories(path.parent_path());
-        std::ofstream output(path, std::ios::binary);
-        const uint8_t* png = high ? hundred : zero;
-        output.write(reinterpret_cast<const char*>(png), sizeof(zero));
     }
 }
 
@@ -270,16 +199,28 @@ TEST_CASE("Elevation source finds the conservative bbox maximum")
     CHECK_FALSE(source.maximum_elevation_ft(-10.0, -90.0, 10.0, -90.0));
 }
 
-TEST_CASE("Elevation source uses the coarsest suitable pyramid level")
+TEST_CASE("Elevation source reads the coarsest level spanning four texels")
 {
-    temporary_tree tree("osect-elevation-source-pyramid", manifest("pyramid", 1, 0, 0, 1, 1.0));
-    write_elevation_tile(tree.path() / "0" / "0" / "0.png", true);
-    write_elevation_tile(tree.path() / "1" / "0" / "1.png", false);
-    write_elevation_tile(tree.path() / "1" / "1" / "1.png", false);
+    // 1-pixel tiles: the world is 2 texels wide at zoom 1 and 4 at zoom 2.
+    temporary_tree tree("osect-elevation-source-pyramid", manifest("pyramid", 1, 0, 1, 3, 1.0));
+    for(int x = 0; x < 2; ++x)
+    {
+        for(int y = 0; y < 2; ++y)
+        {
+            write_elevation_tile(tree.path() / "1" / std::to_string(x) / (std::to_string(y) + ".png"), true);
+        }
+    }
+    for(int x = 0; x < 4; ++x)
+    {
+        for(int y = 0; y < 4; ++y)
+        {
+            write_elevation_tile(tree.path() / "2" / std::to_string(x) / (std::to_string(y) + ".png"), false);
+        }
+    }
 
     const osect::elevation_source source(tree.path());
     const std::optional<double> maximum = source.maximum_elevation_ft(-90.0, -180.0, 90.0, 180.0);
 
     REQUIRE(maximum);
-    CHECK(*maximum == doctest::Approx(328.0839895013123));
+    CHECK(*maximum == 0.0);
 }

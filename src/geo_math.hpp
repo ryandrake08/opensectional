@@ -25,6 +25,10 @@ namespace osect
     std::vector<airspace_point> geodesic_interpolate(double lat1, double lon1, double lat2, double lon2,
                                                      double max_segment_nm = GEODESIC_INTERPOLATION_THRESHOLD_NM);
 
+    // Point at `fraction` (0 to 1) of the great-circle arc from (lat1, lon1)
+    // to (lat2, lon2). The returned longitude is within 180 degrees of lon1.
+    airspace_point geodesic_point(double lat1, double lon1, double lat2, double lon2, double fraction);
+
     // Great-circle distance between two lat/lon points, in nautical
     // miles. Spherical-earth approximation.
     double haversine_distance_nm(double lat1, double lon1, double lat2, double lon2);
