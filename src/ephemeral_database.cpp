@@ -575,7 +575,7 @@ namespace osect
         {
             const int tfr_id = sp.column_int(0);
             const int area_id = sp.column_int(1);
-            airspace_point p{};
+            geo_point p{};
             p.lat = sp.column_double(2);
             p.lon = sp.column_double(3);
             const auto loc = area_idx.at(std::make_pair(tfr_id, area_id));

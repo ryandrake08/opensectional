@@ -102,7 +102,7 @@ namespace osect
         // possible only for polylines that fully enclose the bbox
         // without touching it — TFRs are small enough that this case
         // doesn't occur in practice.
-        bool polyline_intersects_bbox(const std::vector<airspace_point>& points, const geo_bbox& bbox)
+        bool polyline_intersects_bbox(const std::vector<geo_point>& points, const geo_bbox& bbox)
         {
             if(points.empty())
             {
@@ -129,19 +129,19 @@ namespace osect
         // into chunks of at most MAX_POINTS, each overlapping the next
         // by 1 point, with the final chunk wrapping back to the first
         // point so the ring renders closed. Used inside tfr_type::build
-        // to turn the per-area airspace_point list (read from
+        // to turn the per-area geo_point list (read from
         // ephemeral.db) into renderable polyline segments per build —
         // no segment cache anywhere.
         constexpr std::size_t TFR_MAX_POINTS = 32;
 
-        std::vector<std::vector<airspace_point>> tfr_subdivide_ring(const std::vector<airspace_point>& points)
+        std::vector<std::vector<geo_point>> tfr_subdivide_ring(const std::vector<geo_point>& points)
         {
-            std::vector<std::vector<airspace_point>> chunks;
+            std::vector<std::vector<geo_point>> chunks;
             if(points.empty())
             {
                 return chunks;
             }
-            std::vector<airspace_point> closed = points;
+            std::vector<geo_point> closed = points;
             if(closed.front().lat != closed.back().lat || closed.front().lon != closed.back().lon)
             {
                 closed.push_back(closed.front());
@@ -157,8 +157,8 @@ namespace osect
             while(offset < n - 1)
             {
                 const std::size_t end = std::min(offset + TFR_MAX_POINTS, n);
-                std::vector<airspace_point> chunk(closed.begin() + static_cast<std::ptrdiff_t>(offset),
-                                                  closed.begin() + static_cast<std::ptrdiff_t>(end));
+                std::vector<geo_point> chunk(closed.begin() + static_cast<std::ptrdiff_t>(offset),
+                                             closed.begin() + static_cast<std::ptrdiff_t>(end));
                 const auto& chunk_last = closed[end - 1];
                 if(end == n && (chunk_last.lat != closed.front().lat || chunk_last.lon != closed.front().lon))
                 {
@@ -352,7 +352,7 @@ namespace osect
 
         // Project a sequence of lat/lon points to Mercator and append
         // as a polyline. Long edges are subdivided along the great circle.
-        void add_polyline(polyline_data& pd, const std::vector<airspace_point>& points, const line_style& ls,
+        void add_polyline(polyline_data& pd, const std::vector<geo_point>& points, const line_style& ls,
                           double mx_offset)
         {
             if(points.size() < 2)
@@ -422,7 +422,7 @@ namespace osect
 
         // -- Geometry picking helpers -------------------------------------------
 
-        bool point_in_ring(double px, double py, const std::vector<airspace_point>& ring)
+        bool point_in_ring(double px, double py, const std::vector<geo_point>& ring)
         {
             auto inside = false;
             for(size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++)
@@ -467,7 +467,7 @@ namespace osect
         // regardless of whether the point is inside or outside the
         // ring — used by the exact-pick short-circuit, where "exact"
         // means the click is on the boundary, not somewhere inside.
-        double distance_to_ring_nm(double px, double py, const std::vector<airspace_point>& ring)
+        double distance_to_ring_nm(double px, double py, const std::vector<geo_point>& ring)
         {
             if(ring.size() < 2)
             {
@@ -2517,7 +2517,7 @@ namespace osect
         // Standard ray-cast point-in-polygon, with polygon points
         // projected to mercator and shifted by mx_offset to match the
         // current antimeridian copy.
-        bool polygon_contains_mercator(const std::vector<airspace_point>& pts, double mx_offset, double qx, double qy)
+        bool polygon_contains_mercator(const std::vector<geo_point>& pts, double mx_offset, double qx, double qy)
         {
             if(pts.size() < 3)
             {
@@ -2544,8 +2544,8 @@ namespace osect
         // (as drawn at this mx_offset) encloses the viewport center,
         // snap the anchor to the viewport center so a "you are inside
         // this airspace" indicator stays on screen.
-        std::pair<double, double> polygon_label_pos(const std::vector<airspace_point>& pts, double mx_offset,
-                                                    double view_mx, double view_my)
+        std::pair<double, double> polygon_label_pos(const std::vector<geo_point>& pts, double mx_offset, double view_mx,
+                                                    double view_my)
         {
             if(pts.size() < 2)
             {
@@ -3084,7 +3084,7 @@ namespace osect
 
         // Convert a polygon ring to Mercator vec2s, interpolating
         // long edges along the great circle.
-        void ring_to_mercator(const std::vector<airspace_point>& pts, std::vector<glm::vec2>& out_ring)
+        void ring_to_mercator(const std::vector<geo_point>& pts, std::vector<glm::vec2>& out_ring)
         {
             out_ring.clear();
             if(pts.empty())

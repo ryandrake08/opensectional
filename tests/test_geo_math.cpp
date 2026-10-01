@@ -1,8 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
-
 #include "geo_math.hpp"
-
 #include <cmath>
 #include <vector>
 
@@ -28,7 +26,7 @@ TEST_CASE("geodesic_circle points all lie at the requested radius")
     for(const auto& p : pts)
     {
         double d = haversine_distance_nm(center_lat, center_lon, p.lat, p.lon);
-        CHECK(std::abs(d - radius_nm) < 0.05);    // < 0.2% error
+        CHECK(std::abs(d - radius_nm) < 0.05); // < 0.2% error
     }
 }
 
@@ -71,8 +69,7 @@ TEST_CASE("geodesic_interpolate subdivides long arcs")
     // No segment exceeds threshold (with small numerical slack)
     for(size_t i = 1; i < pts.size(); ++i)
     {
-        double d = haversine_distance_nm(pts[i-1].lat, pts[i-1].lon,
-                                pts[i].lat, pts[i].lon);
+        double d = haversine_distance_nm(pts[i - 1].lat, pts[i - 1].lon, pts[i].lat, pts[i].lon);
         CHECK(d <= max_seg_nm + 0.5);
     }
 }
@@ -88,7 +85,7 @@ TEST_CASE("geodesic_interpolate keeps longitude continuous across antimeridian")
     // but no adjacent pair should jump by > 180 degrees.
     for(size_t i = 1; i < pts.size(); ++i)
     {
-        double dlon = std::abs(pts[i].lon - pts[i-1].lon);
+        double dlon = std::abs(pts[i].lon - pts[i - 1].lon);
         CHECK(dlon < 180.0);
     }
 }
@@ -128,14 +125,14 @@ TEST_CASE("geodesic_circle keeps longitude continuous when crossing antimeridian
 
     for(size_t i = 1; i < pts.size(); ++i)
     {
-        double dlon = std::abs(pts[i].lon - pts[i-1].lon);
+        double dlon = std::abs(pts[i].lon - pts[i - 1].lon);
         CHECK(dlon < 180.0);
     }
 }
 
 TEST_CASE("nearest_to returns the closest candidate")
 {
-    std::vector<airspace_point> pts = {{40.0, -100.0}, {37.0, -122.0}, {25.0, -80.0}};
+    std::vector<geo_point> pts = {{40.0, -100.0}, {37.0, -122.0}, {25.0, -80.0}};
 
     // Query near San Francisco — the second point should win.
     auto it = nearest_to(pts, 37.5, -122.3);
@@ -147,15 +144,15 @@ TEST_CASE("nearest_to returns the closest candidate")
 
 TEST_CASE("nearest_to returns end() for an empty range")
 {
-    std::vector<airspace_point> pts;
+    std::vector<geo_point> pts;
     CHECK(nearest_to(pts, 0.0, 0.0) == pts.end());
 }
 
 TEST_CASE("true_course_deg: cardinal directions")
 {
     // bearing via atan2, scaled by 180/M_PI (non-power-of-2 divide)
-    CHECK(true_course_deg(0.0, 0.0, 1.0, 0.0) == doctest::Approx(0.0));   // due north
-    CHECK(true_course_deg(0.0, 0.0, 0.0, 1.0) == doctest::Approx(90.0));  // due east
+    CHECK(true_course_deg(0.0, 0.0, 1.0, 0.0) == doctest::Approx(0.0));    // due north
+    CHECK(true_course_deg(0.0, 0.0, 0.0, 1.0) == doctest::Approx(90.0));   // due east
     CHECK(true_course_deg(0.0, 0.0, -1.0, 0.0) == doctest::Approx(180.0)); // due south
     CHECK(true_course_deg(0.0, 0.0, 0.0, -1.0) == doctest::Approx(270.0)); // due west
 }

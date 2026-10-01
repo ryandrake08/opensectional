@@ -13,7 +13,7 @@ namespace osect
         constexpr auto NM_PER_DEG = 60.0;
     }
 
-    std::vector<airspace_point> geodesic_circle(double center_lat, double center_lon, double radius_nm, int n)
+    std::vector<geo_point> geodesic_circle(double center_lat, double center_lon, double radius_nm, int n)
     {
         auto lat1 = center_lat * M_PI / 180.0;
         auto lon1 = center_lon * M_PI / 180.0;
@@ -24,7 +24,7 @@ namespace osect
         auto sin_d = std::sin(d);
         auto cos_d = std::cos(d);
 
-        std::vector<airspace_point> pts;
+        std::vector<geo_point> pts;
         pts.reserve(n + 1);
         auto prev_lon = center_lon;
         for(int i = 0; i <= n; i++)
@@ -142,8 +142,8 @@ namespace osect
         return std::sqrt((px - fx) * (px - fx) + (py - fy) * (py - fy));
     }
 
-    std::vector<airspace_point> geodesic_interpolate(double lat1, double lon1, double lat2, double lon2,
-                                                     double max_segment_nm)
+    std::vector<geo_point> geodesic_interpolate(double lat1, double lon1, double lat2, double lon2,
+                                                double max_segment_nm)
     {
         auto rlat1 = lat1 * M_PI / 180.0;
         auto rlon1 = lon1 * M_PI / 180.0;
@@ -164,7 +164,7 @@ namespace osect
         }
 
         auto sin_d = std::sin(d);
-        std::vector<airspace_point> pts;
+        std::vector<geo_point> pts;
         pts.reserve(segments + 1);
         auto prev_lon = lon1;
         for(int i = 0; i <= segments; i++)
@@ -195,7 +195,7 @@ namespace osect
         return pts;
     }
 
-    airspace_point geodesic_point(double lat1, double lon1, double lat2, double lon2, double fraction)
+    geo_point geodesic_point(double lat1, double lon1, double lat2, double lon2, double fraction)
     {
         auto rlat1 = lat1 * M_PI / 180.0;
         auto rlon1 = lon1 * M_PI / 180.0;

@@ -117,7 +117,7 @@ namespace osect
 
     struct polygon_ring
     {
-        std::vector<airspace_point> points;
+        std::vector<geo_point> points;
         bool is_hole;
     };
 
@@ -134,7 +134,7 @@ namespace osect
         std::string max_alt_ref; // "MSL" or "AGL"
         int min_alt_ft;
         std::string min_alt_ref;
-        std::vector<airspace_point> shape; // empty if point/radius
+        std::vector<geo_point> shape; // empty if point/radius
     };
 
     // Column order follows RWY_SEG table
@@ -151,7 +151,7 @@ namespace osect
     // A polygon ring within a special use airspace stratum.
     struct sua_ring
     {
-        std::vector<airspace_point> points;
+        std::vector<geo_point> points;
         bool is_hole = false;
         bool is_circle = false;
         double circle_lon = 0;
@@ -269,7 +269,7 @@ namespace osect
         std::string location;
         std::string working_hours;
         std::string military;
-        std::vector<std::vector<airspace_point>> parts;
+        std::vector<std::vector<geo_point>> parts;
     };
 
     // Subdivided polyline segments for rendering (tight R-tree bbox)
@@ -277,14 +277,14 @@ namespace osect
     {
         std::string altitude; // ARTCC only: "LOW", "HIGH", "UNLIMITED"
         std::string type;     // ARTCC only: "ARTCC", "CTA", "FIR", "CTA/FIR", "UTA"
-        std::vector<airspace_point> points;
+        std::vector<geo_point> points;
     };
 
     struct airspace_segment
     {
         std::string airspace_class; // "B", "C", "D", "E"
         std::string local_type;     // "CLASS_B", "CLASS_C", etc.
-        std::vector<airspace_point> points;
+        std::vector<geo_point> points;
     };
 
     struct sua_segment
@@ -294,7 +294,7 @@ namespace osect
         std::string upper_ft_ref;
         int lower_ft_val;
         std::string lower_ft_ref;
-        std::vector<airspace_point> points;
+        std::vector<geo_point> points;
     };
 
     // Render-only narrow row (render path doesn't need polygon rings or
@@ -406,7 +406,7 @@ namespace osect
         std::string state;
         std::string country_code;
         std::string cross_ref;
-        std::vector<airspace_point> points;
+        std::vector<geo_point> points;
     };
 
     // Column order follows CLS_ARSP_BASE table

@@ -15,19 +15,19 @@ namespace osect
 
     // Generate points on a geodesic circle (constant great-circle distance
     // from center). Returns n+1 points (closed ring).
-    std::vector<airspace_point> geodesic_circle(double center_lat, double center_lon, double radius_nm,
-                                                int n = GEODESIC_CIRCLE_SEGMENTS);
+    std::vector<geo_point> geodesic_circle(double center_lat, double center_lon, double radius_nm,
+                                           int n = GEODESIC_CIRCLE_SEGMENTS);
 
     // Subdivide a great-circle arc between two points so that no segment
     // exceeds max_segment_nm. Returns the full sequence including both
     // endpoints. If the arc is already short enough, returns just the
     // two endpoints.
-    std::vector<airspace_point> geodesic_interpolate(double lat1, double lon1, double lat2, double lon2,
-                                                     double max_segment_nm = GEODESIC_INTERPOLATION_THRESHOLD_NM);
+    std::vector<geo_point> geodesic_interpolate(double lat1, double lon1, double lat2, double lon2,
+                                                double max_segment_nm = GEODESIC_INTERPOLATION_THRESHOLD_NM);
 
     // Point at `fraction` (0 to 1) of the great-circle arc from (lat1, lon1)
     // to (lat2, lon2). The returned longitude is within 180 degrees of lon1.
-    airspace_point geodesic_point(double lat1, double lon1, double lat2, double lon2, double fraction);
+    geo_point geodesic_point(double lat1, double lon1, double lat2, double lon2, double fraction);
 
     // Great-circle distance between two lat/lon points, in nautical
     // miles. Spherical-earth approximation.

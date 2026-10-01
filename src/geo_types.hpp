@@ -10,7 +10,7 @@ namespace osect
         double lat_max;
     };
 
-    struct airspace_point
+    struct geo_point
     {
         double lat;
         double lon;

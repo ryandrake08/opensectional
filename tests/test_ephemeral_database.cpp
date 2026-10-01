@@ -1,8 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
-
 #include "ephemeral_database.hpp"
-
 #include <chrono>
 #include <filesystem>
 #include <sqlite/database.hpp>
@@ -11,8 +9,8 @@
 #include <string>
 #include <vector>
 
-using osect::airspace_point;
 using osect::ephemeral_database;
+using osect::geo_point;
 using osect::tfr;
 using osect::tfr_area;
 
@@ -23,8 +21,8 @@ namespace
         std::filesystem::path path;
         explicit tmp_dir(const char* tag)
         {
-            const auto base = std::filesystem::temp_directory_path() /
-                ("osect_ephemeral_db_test_" + std::string(tag) + "_");
+            const auto base =
+                std::filesystem::temp_directory_path() / ("osect_ephemeral_db_test_" + std::string(tag) + "_");
             for(int i = 0; i < 1000; ++i)
             {
                 const auto candidate = base.string() + std::to_string(i);
@@ -45,7 +43,10 @@ namespace
         tmp_dir(const tmp_dir&) = delete;
         tmp_dir& operator=(const tmp_dir&) = delete;
 
-        std::filesystem::path db_file() const { return path / "ephemeral.db"; }
+        std::filesystem::path db_file() const
+        {
+            return path / "ephemeral.db";
+        }
     };
 
     // area_id is per-TFR sequential (1, 2, 3, ...) — both fixtures
@@ -55,58 +56,58 @@ namespace
     tfr make_tfr_a()
     {
         tfr t{};
-        t.tfr_id              = 1;
-        t.notam_id            = "1/0001";
-        t.tfr_type            = "SECURITY";
-        t.facility            = "ZOA";
-        t.date_effective      = "2026-05-01T00:00:00";
-        t.date_expire         = "2099-01-01T00:00:00";
-        t.description         = "fixture A";
-        t.date_issued         = "2026-04-30T12:00:00";
-        t.city                = "San Francisco";
-        t.state               = "CALIFORNIA";
-        t.coord_facility      = "ZOA";
+        t.tfr_id = 1;
+        t.notam_id = "1/0001";
+        t.tfr_type = "SECURITY";
+        t.facility = "ZOA";
+        t.date_effective = "2026-05-01T00:00:00";
+        t.date_expire = "2099-01-01T00:00:00";
+        t.description = "fixture A";
+        t.date_issued = "2026-04-30T12:00:00";
+        t.city = "San Francisco";
+        t.state = "CALIFORNIA";
+        t.coord_facility = "ZOA";
         t.coord_facility_name = "Oakland Center";
         t.coord_facility_type = "ARTCC";
-        t.coord_phone         = "555-1234";
-        t.coord_freq          = "125.35";
-        t.poc_name            = "John Doe";
-        t.poc_org             = "USSS";
-        t.poc_phone           = "555-5678";
-        t.poc_freq            = "123.45";
-        t.time_zone           = "PDT";
-        t.expire_time_zone    = "PST";
+        t.coord_phone = "555-1234";
+        t.coord_freq = "125.35";
+        t.poc_name = "John Doe";
+        t.poc_org = "USSS";
+        t.poc_phone = "555-5678";
+        t.poc_freq = "123.45";
+        t.time_zone = "PDT";
+        t.expire_time_zone = "PST";
 
         tfr_area a1{};
-        a1.area_id        = 1;
-        a1.area_name      = "Area 1";
-        a1.upper_ft_val   = 1000;
-        a1.upper_ft_ref   = "MSL";
-        a1.lower_ft_val   = 0;
-        a1.lower_ft_ref   = "SFC";
-        a1.date_effective   = "2026-05-01T00:00:00";
-        a1.date_expire      = "2099-01-01T00:00:00";
-        a1.start_time       = "1300";
-        a1.end_time         = "2200";
+        a1.area_id = 1;
+        a1.area_name = "Area 1";
+        a1.upper_ft_val = 1000;
+        a1.upper_ft_ref = "MSL";
+        a1.lower_ft_val = 0;
+        a1.lower_ft_ref = "SFC";
+        a1.date_effective = "2026-05-01T00:00:00";
+        a1.date_expire = "2099-01-01T00:00:00";
+        a1.start_time = "1300";
+        a1.end_time = "2200";
         a1.is_time_separate = "TRUE";
-        a1.day_code         = "MTWTF";
-        a1.instructions     = "Contact ZOA on 125.35 prior to entering.\nLine two.";
-        a1.points.push_back(airspace_point{37.0, -122.0});
-        a1.points.push_back(airspace_point{37.1, -122.0});
-        a1.points.push_back(airspace_point{37.0, -121.9});
+        a1.day_code = "MTWTF";
+        a1.instructions = "Contact ZOA on 125.35 prior to entering.\nLine two.";
+        a1.points.push_back(geo_point{37.0, -122.0});
+        a1.points.push_back(geo_point{37.1, -122.0});
+        a1.points.push_back(geo_point{37.0, -121.9});
         t.areas.push_back(std::move(a1));
 
         tfr_area a2{};
-        a2.area_id        = 2;
-        a2.area_name      = "Area 2";
-        a2.upper_ft_val   = 5000;
-        a2.upper_ft_ref   = "MSL";
-        a2.lower_ft_val   = 1000;
-        a2.lower_ft_ref   = "MSL";
-        a2.points.push_back(airspace_point{38.0, -123.0});
-        a2.points.push_back(airspace_point{38.2, -123.0});
-        a2.points.push_back(airspace_point{38.2, -122.8});
-        a2.points.push_back(airspace_point{38.0, -122.8});
+        a2.area_id = 2;
+        a2.area_name = "Area 2";
+        a2.upper_ft_val = 5000;
+        a2.upper_ft_ref = "MSL";
+        a2.lower_ft_val = 1000;
+        a2.lower_ft_ref = "MSL";
+        a2.points.push_back(geo_point{38.0, -123.0});
+        a2.points.push_back(geo_point{38.2, -123.0});
+        a2.points.push_back(geo_point{38.2, -122.8});
+        a2.points.push_back(geo_point{38.0, -122.8});
         t.areas.push_back(std::move(a2));
 
         return t;
@@ -115,20 +116,20 @@ namespace
     tfr make_tfr_b()
     {
         tfr t{};
-        t.tfr_id    = 2;
-        t.notam_id  = "1/0002";
-        t.tfr_type  = "VIP";
-        t.facility  = "ZLA";
+        t.tfr_id = 2;
+        t.notam_id = "1/0002";
+        t.tfr_type = "VIP";
+        t.facility = "ZLA";
         t.description = "fixture B";
 
         tfr_area a{};
-        a.area_id      = 1;
-        a.area_name    = "B-only area";
+        a.area_id = 1;
+        a.area_name = "B-only area";
         a.upper_ft_val = 17999;
         a.upper_ft_ref = "MSL";
-        a.points.push_back(airspace_point{34.0, -118.0});
-        a.points.push_back(airspace_point{34.1, -118.0});
-        a.points.push_back(airspace_point{34.0, -117.9});
+        a.points.push_back(geo_point{34.0, -118.0});
+        a.points.push_back(geo_point{34.1, -118.0});
+        a.points.push_back(geo_point{34.0, -117.9});
         t.areas.push_back(std::move(a));
 
         return t;
@@ -150,9 +151,7 @@ TEST_CASE("ephemeral_database: a const handle reads what another connection wrot
     {
         ephemeral_database writer(d.db_file());
         writer.replace_tfrs({make_tfr_a()});
-        writer.set_source_meta("tfr",
-                               std::chrono::system_clock::from_time_t(1700000000),
-                               "etag-ro");
+        writer.set_source_meta("tfr", std::chrono::system_clock::from_time_t(1700000000), "etag-ro");
     }
     // A separate handle, held const so it can only read. WAL makes the
     // first connection's committed rows visible to this one.
@@ -177,46 +176,46 @@ TEST_CASE("ephemeral_database: replace_tfrs + query_tfrs round-trip")
 
     for(std::size_t i = 0; i < in.size(); ++i)
     {
-        CHECK(out[i].tfr_id              == in[i].tfr_id);
-        CHECK(out[i].notam_id            == in[i].notam_id);
-        CHECK(out[i].tfr_type            == in[i].tfr_type);
-        CHECK(out[i].facility            == in[i].facility);
-        CHECK(out[i].date_effective      == in[i].date_effective);
-        CHECK(out[i].date_expire         == in[i].date_expire);
-        CHECK(out[i].description         == in[i].description);
-        CHECK(out[i].date_issued         == in[i].date_issued);
-        CHECK(out[i].city                == in[i].city);
-        CHECK(out[i].state               == in[i].state);
-        CHECK(out[i].coord_facility      == in[i].coord_facility);
+        CHECK(out[i].tfr_id == in[i].tfr_id);
+        CHECK(out[i].notam_id == in[i].notam_id);
+        CHECK(out[i].tfr_type == in[i].tfr_type);
+        CHECK(out[i].facility == in[i].facility);
+        CHECK(out[i].date_effective == in[i].date_effective);
+        CHECK(out[i].date_expire == in[i].date_expire);
+        CHECK(out[i].description == in[i].description);
+        CHECK(out[i].date_issued == in[i].date_issued);
+        CHECK(out[i].city == in[i].city);
+        CHECK(out[i].state == in[i].state);
+        CHECK(out[i].coord_facility == in[i].coord_facility);
         CHECK(out[i].coord_facility_name == in[i].coord_facility_name);
         CHECK(out[i].coord_facility_type == in[i].coord_facility_type);
-        CHECK(out[i].coord_phone         == in[i].coord_phone);
-        CHECK(out[i].coord_freq          == in[i].coord_freq);
-        CHECK(out[i].poc_name            == in[i].poc_name);
-        CHECK(out[i].poc_org             == in[i].poc_org);
-        CHECK(out[i].poc_phone           == in[i].poc_phone);
-        CHECK(out[i].poc_freq            == in[i].poc_freq);
-        CHECK(out[i].time_zone           == in[i].time_zone);
-        CHECK(out[i].expire_time_zone    == in[i].expire_time_zone);
+        CHECK(out[i].coord_phone == in[i].coord_phone);
+        CHECK(out[i].coord_freq == in[i].coord_freq);
+        CHECK(out[i].poc_name == in[i].poc_name);
+        CHECK(out[i].poc_org == in[i].poc_org);
+        CHECK(out[i].poc_phone == in[i].poc_phone);
+        CHECK(out[i].poc_freq == in[i].poc_freq);
+        CHECK(out[i].time_zone == in[i].time_zone);
+        CHECK(out[i].expire_time_zone == in[i].expire_time_zone);
 
         REQUIRE(out[i].areas.size() == in[i].areas.size());
         for(std::size_t j = 0; j < in[i].areas.size(); ++j)
         {
-            const auto& a_in  = in[i].areas[j];
+            const auto& a_in = in[i].areas[j];
             const auto& a_out = out[i].areas[j];
-            CHECK(a_out.area_id        == a_in.area_id);
-            CHECK(a_out.area_name      == a_in.area_name);
-            CHECK(a_out.upper_ft_val   == a_in.upper_ft_val);
-            CHECK(a_out.upper_ft_ref   == a_in.upper_ft_ref);
-            CHECK(a_out.lower_ft_val   == a_in.lower_ft_val);
-            CHECK(a_out.lower_ft_ref   == a_in.lower_ft_ref);
-            CHECK(a_out.date_effective   == a_in.date_effective);
-            CHECK(a_out.date_expire      == a_in.date_expire);
-            CHECK(a_out.start_time       == a_in.start_time);
-            CHECK(a_out.end_time         == a_in.end_time);
+            CHECK(a_out.area_id == a_in.area_id);
+            CHECK(a_out.area_name == a_in.area_name);
+            CHECK(a_out.upper_ft_val == a_in.upper_ft_val);
+            CHECK(a_out.upper_ft_ref == a_in.upper_ft_ref);
+            CHECK(a_out.lower_ft_val == a_in.lower_ft_val);
+            CHECK(a_out.lower_ft_ref == a_in.lower_ft_ref);
+            CHECK(a_out.date_effective == a_in.date_effective);
+            CHECK(a_out.date_expire == a_in.date_expire);
+            CHECK(a_out.start_time == a_in.start_time);
+            CHECK(a_out.end_time == a_in.end_time);
             CHECK(a_out.is_time_separate == a_in.is_time_separate);
-            CHECK(a_out.day_code         == a_in.day_code);
-            CHECK(a_out.instructions     == a_in.instructions);
+            CHECK(a_out.day_code == a_in.day_code);
+            CHECK(a_out.instructions == a_in.instructions);
 
             REQUIRE(a_out.points.size() == a_in.points.size());
             for(std::size_t k = 0; k < a_in.points.size(); ++k)
@@ -285,9 +284,7 @@ TEST_CASE("ephemeral_database: schema-version mismatch rebuilds tfr group, leave
     {
         ephemeral_database db(d.db_file());
         db.replace_tfrs({make_tfr_a()});
-        db.set_source_meta("tfr",
-                           std::chrono::system_clock::from_time_t(1700000000),
-                           "old-etag");
+        db.set_source_meta("tfr", std::chrono::system_clock::from_time_t(1700000000), "old-etag");
         REQUIRE(db.query_tfrs().size() == 1);
     }
 

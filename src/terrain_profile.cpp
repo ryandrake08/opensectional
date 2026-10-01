@@ -111,7 +111,7 @@ namespace
     struct profile_station
     {
         double distance_nm;
-        osect::airspace_point point;
+        osect::geo_point point;
         std::optional<double> elevation_ft;
     };
 
@@ -119,8 +119,8 @@ namespace
     // longitudes are continuous with `from`.
     struct leg_stations
     {
-        osect::airspace_point from;
-        osect::airspace_point to;
+        osect::geo_point from;
+        osect::geo_point to;
         double start_nm;
         double distance_nm;
         double min_interval_nm;
@@ -348,8 +348,8 @@ namespace osect
             const auto& to = waypoints[leg_index + 1];
             const double leg_distance_nm = haversine_distance_nm(from.lat, from.lon, to.lat, to.lon);
             const double leg_end_nm = leg_start_nm + leg_distance_nm;
-            const airspace_point from_point = stations.back().point;
-            const airspace_point to_point{to.lat, unwrap_longitude(to.lon, from_point.lon)};
+            const geo_point from_point = stations.back().point;
+            const geo_point to_point{to.lat, unwrap_longitude(to.lon, from_point.lon)};
             const leg_stations leg{from_point, to_point, leg_start_nm, leg_distance_nm, min_interval_nm, terrain};
             const profile_station leg_end{leg_end_nm, to_point, elevation_at(&to, to.lat, to.lon, terrain, airports)};
 

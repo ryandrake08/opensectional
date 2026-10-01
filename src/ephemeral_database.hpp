@@ -26,7 +26,7 @@ namespace osect
         std::string is_time_separate; // "TRUE" / "FALSE" — daily-recurring flag
         std::string day_code;         // days-of-week mask (FAA encoding)
         std::string instructions;     // multiple <txtInstr> joined with '\n'
-        std::vector<airspace_point> points;
+        std::vector<geo_point> points;
     };
 
     struct tfr
@@ -65,7 +65,7 @@ namespace osect
         std::string upper_ft_ref;
         int lower_ft_val;
         std::string lower_ft_ref;
-        std::vector<airspace_point> points;
+        std::vector<geo_point> points;
     };
 
     // SQLite-backed persistence for runtime-fetched (ephemeral) data
