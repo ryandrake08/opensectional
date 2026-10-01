@@ -9,6 +9,7 @@
 #include <fstream>
 #include <string>
 #include <unistd.h>
+#include <vector>
 
 namespace
 {
@@ -123,6 +124,52 @@ TEST_CASE("chart_style rejects negative numeric overrides")
         ini_config ini(f.path);
         CHECK_NOTHROW(osect::chart_style{ini});
     }
+}
+
+TEST_CASE("ARTCC styles map by altitude, then by oceanic type")
+{
+    tmp_ini f(
+        "[artcc_low]\nline_width = 1\n"
+        "[artcc_high]\nline_width = 2\n"
+        "[artcc_unlimited_cta]\nmin_zoom = 3\nline_width = 3\n"
+        "[artcc_unlimited_fir]\nline_width = 4\n"
+        "[artcc_unlimited_uta]\nmin_zoom = 3\nline_width = 5\n");
+    ini_config ini(f.path);
+    osect::chart_style cs(ini);
+
+    const auto widths = [&](const std::string& altitude, const std::string& type, double zoom)
+    {
+        std::vector<float> out;
+        for(const auto* fs : cs.visible_artcc_styles(altitude, type, zoom))
+        {
+            out.push_back(fs->line_width);
+        }
+        return out;
+    };
+
+    CHECK(widths("LOW", "ARTCC", 5.0) == std::vector<float>{1.0F});
+    CHECK(widths("HIGH", "ARTCC", 5.0) == std::vector<float>{2.0F});
+    CHECK(widths("UNLIMITED", "UTA", 5.0) == std::vector<float>{5.0F});
+    CHECK(widths("UNLIMITED", "CTA", 5.0) == std::vector<float>{3.0F});
+    CHECK(widths("UNLIMITED", "FIR", 5.0) == std::vector<float>{4.0F});
+    CHECK(widths("UNLIMITED", "CTA/FIR", 5.0) == std::vector<float>{3.0F, 4.0F});
+    CHECK(widths("UNLIMITED", "OTHER", 5.0) == std::vector<float>{1.0F});
+    CHECK(widths("LOW", "ARTCC", 2.0).empty());
+
+    CHECK(cs.artcc_style("UNLIMITED", "CTA/FIR").line_width == 3.0F);
+    CHECK(cs.artcc_visible("UNLIMITED", "CTA/FIR", 5.0));
+    CHECK_FALSE(cs.artcc_visible("UNLIMITED", "CTA/FIR", 2.0));
+}
+
+TEST_CASE("ARTCC CTA/FIR is visible when only its FIR style is")
+{
+    ini_config empty;
+    osect::chart_style cs(empty);
+
+    // Defaults hide artcc_unlimited_cta (min_zoom 99) and show artcc_unlimited_fir from zoom 3.
+    CHECK(cs.artcc_visible("UNLIMITED", "CTA/FIR", 5.0));
+    CHECK(cs.visible_artcc_styles("UNLIMITED", "CTA/FIR", 5.0).size() == 1);
+    CHECK_FALSE(cs.artcc_visible("UNLIMITED", "CTA", 5.0));
 }
 
 TEST_CASE("repo osect.ini reproduces the defaults-only style")

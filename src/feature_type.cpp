@@ -2919,13 +2919,10 @@ namespace osect
                 {
                     continue;
                 }
-                ctx.styles.for_each_visible_artcc_style(seg.altitude, seg.type, ctx.req.zoom,
-                                                        [&](const feature_style& fs)
-                                                        {
-                                                            auto ls = to_line_style(fs);
-                                                            add_polyline(ctx.poly[layer_artcc], seg.points, ls,
-                                                                         ctx.mx_offset);
-                                                        });
+                for(const auto* fs : ctx.styles.visible_artcc_styles(seg.altitude, seg.type, ctx.req.zoom))
+                {
+                    add_polyline(ctx.poly[layer_artcc], seg.points, to_line_style(*fs), ctx.mx_offset);
+                }
             }
 
             if(ctx.req.zoom < AIRSPACE_LABEL_MIN_ZOOM)

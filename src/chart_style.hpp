@@ -1,5 +1,4 @@
 #pragma once
-#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -78,11 +77,12 @@ namespace osect
         // true if either is visible, artcc_style returns the primary.
         bool artcc_visible(const std::string& altitude, const std::string& type, double zoom) const;
         const feature_style& artcc_style(const std::string& altitude, const std::string& type) const;
-        // Invoke `f` once per applicable style that is visible at this zoom.
-        // Used by the renderer to draw CTA/FIR polygons twice (under CTA
-        // and FIR styles) while drawing every other polygon once.
-        void for_each_visible_artcc_style(const std::string& altitude, const std::string& type, double zoom,
-                                          const std::function<void(const feature_style&)>& f) const;
+
+        // Every applicable style that is visible at this zoom. The renderer
+        // draws CTA/FIR polygons under both the CTA and FIR styles and
+        // every other polygon under one.
+        std::vector<const feature_style*> visible_artcc_styles(const std::string& altitude, const std::string& type,
+                                                               double zoom) const;
 
         // ADIZ visibility and style
         bool adiz_visible(double zoom) const;

@@ -692,44 +692,42 @@ namespace osect
         return "sua_moa";
     }
 
-    // Walk the style keys applicable to an ARTCC polygon. Domestic sectors
+    // The style keys applicable to an ARTCC polygon. Domestic sectors
     // map by ALTITUDE (LOW/HIGH). Oceanic (UNLIMITED) polygons map by TYPE,
     // and a CTA/FIR polygon is drawn under both the CTA and FIR styles.
-    template <typename F>
-    static void for_each_artcc_key(const std::string& altitude, const std::string& type, const F& f)
+    static const std::vector<const char*>& artcc_keys(const std::string& altitude, const std::string& type)
     {
+        static const std::vector<const char*> low{"artcc_low"};
+        static const std::vector<const char*> high{"artcc_high"};
+        static const std::vector<const char*> uta{"artcc_unlimited_uta"};
+        static const std::vector<const char*> cta{"artcc_unlimited_cta"};
+        static const std::vector<const char*> fir{"artcc_unlimited_fir"};
+        static const std::vector<const char*> cta_fir{"artcc_unlimited_cta", "artcc_unlimited_fir"};
         if(altitude == "LOW")
         {
-            f("artcc_low");
-            return;
+            return low;
         }
         if(altitude == "HIGH")
         {
-            f("artcc_high");
-            return;
+            return high;
         }
         if(type == "UTA")
         {
-            f("artcc_unlimited_uta");
-            return;
+            return uta;
         }
         if(type == "CTA")
         {
-            f("artcc_unlimited_cta");
-            return;
+            return cta;
         }
         if(type == "FIR")
         {
-            f("artcc_unlimited_fir");
-            return;
+            return fir;
         }
         if(type == "CTA/FIR")
         {
-            f("artcc_unlimited_cta");
-            f("artcc_unlimited_fir");
-            return;
+            return cta_fir;
         }
-        f("artcc_low");
+        return low;
     }
 
     // Airport
@@ -827,45 +825,29 @@ namespace osect
     // ARTCC — a single polygon may map to multiple style keys (CTA/FIR → both
     // CTA and FIR). artcc_visible returns true if any mapped key is visible;
     // artcc_style returns the primary (first) mapped style, used for selection
-    // highlight and labels. Rendering of all applicable styles is via
-    // for_each_visible_artcc_style on chart_style.
+    // highlight and labels. visible_artcc_styles returns every applicable
+    // style visible at the zoom, for rendering.
     bool chart_style::artcc_visible(const std::string& altitude, const std::string& type, double zoom) const
     {
-        bool any_visible = false;
-        for_each_artcc_key(altitude, type,
-                           [&](const char* key)
-                           {
-                               if(visible(key, zoom))
-                               {
-                                   any_visible = true;
-                               }
-                           });
-        return any_visible;
+        const auto& keys = artcc_keys(altitude, type);
+        return std::any_of(keys.begin(), keys.end(), [&](const char* k) { return visible(k, zoom); });
     }
     const feature_style& chart_style::artcc_style(const std::string& altitude, const std::string& type) const
     {
-        const feature_style* first = nullptr;
-        for_each_artcc_key(altitude, type,
-                           [&](const char* key)
-                           {
-                               if(!first)
-                               {
-                                   first = &get(key);
-                               }
-                           });
-        return *first;
+        return get(artcc_keys(altitude, type).front());
     }
-    void chart_style::for_each_visible_artcc_style(const std::string& altitude, const std::string& type, double zoom,
-                                                   const std::function<void(const feature_style&)>& f) const
+    std::vector<const feature_style*> chart_style::visible_artcc_styles(const std::string& altitude,
+                                                                        const std::string& type, double zoom) const
     {
-        for_each_artcc_key(altitude, type,
-                           [&](const char* key)
-                           {
-                               if(visible(key, zoom))
-                               {
-                                   f(get(key));
-                               }
-                           });
+        std::vector<const feature_style*> out;
+        for(const char* key : artcc_keys(altitude, type))
+        {
+            if(visible(key, zoom))
+            {
+                out.push_back(&get(key));
+            }
+        }
+        return out;
     }
 
     // ADIZ
