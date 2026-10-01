@@ -449,7 +449,9 @@ namespace osect
             return inside;
         }
 
-        bool point_in_multi_ring(double lon, double lat, const std::vector<polygon_ring>& rings)
+        // `Ring` is any type with `points` and `is_hole` (polygon_ring, sua_ring).
+        template <typename Ring>
+        bool point_in_multi_ring(double lon, double lat, const std::vector<Ring>& rings)
         {
             auto inside = false;
             for(const auto& ring : rings)
@@ -785,20 +787,7 @@ namespace osect
                     {
                         continue;
                     }
-                    auto inside = false;
-                    for(const auto& ring : stratum.parts)
-                    {
-                        if(point_in_ring(ctx.click_lon, ctx.click_lat, ring.points))
-                        {
-                            if(ring.is_hole)
-                            {
-                                inside = false;
-                                break;
-                            }
-                            inside = true;
-                        }
-                    }
-                    if(!inside)
+                    if(!point_in_multi_ring(ctx.click_lon, ctx.click_lat, stratum.parts))
                     {
                         continue;
                     }
