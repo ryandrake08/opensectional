@@ -6,6 +6,7 @@
 #include "route_plan_config.hpp"
 #include "route_submitter.hpp"
 #include "terrain_profile_worker.hpp"
+#include "terrain_style.hpp"
 #include "ui_overlay.hpp"
 #include "user_database.hpp"
 #include <cstddef>
@@ -59,7 +60,8 @@ namespace osect
               map(map),
               udb(udb),
               submitter(db_path),
-              profile_worker(terrain.available() ? std::make_optional<terrain_profile_worker>(terrain, db_path)
+              profile_worker(terrain.available() ? std::make_optional<terrain_profile_worker>(
+                                                       terrain, db_path, terrain_style(ini).margins)
                                                  : std::nullopt),
               plan_options(load_route_plan_options(ini))
         {

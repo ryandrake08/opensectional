@@ -176,9 +176,11 @@ namespace osect
         read_into(ini, "terrain.sun_azimuth", sun_azimuth_deg);
         read_into(ini, "terrain.sun_altitude", sun_altitude_deg);
         read_into(ini, "terrain.exaggeration", vertical_exaggeration);
-        read_into(ini, "terrain.cruise_warning", cruise_warning_ft);
-        read_into(ini, "terrain.cruise_caution", cruise_caution_ft);
-        read_into(ini, "terrain.cruise_clear", cruise_clear_ft);
+        read_into(ini, "route_terrain.cruise_warning", cruise_warning_ft);
+        read_into(ini, "route_terrain.cruise_caution", cruise_caution_ft);
+        read_into(ini, "route_terrain.cruise_clear", cruise_clear_ft);
+        read_into(ini, "route_terrain.corridor_width", margins.corridor_width_nm);
+        read_into(ini, "route_terrain.required_clearance", margins.required_clearance_ft);
         read_into(ini, "terrain.gpu_cache", gpu_tile_cache);
         read_into(ini, "terrain.cpu_cache", cpu_tile_cache);
         if(ini.exists("terrain.ramp"))
@@ -227,6 +229,14 @@ namespace osect
             reject("cruise bands", "need 0 <= warning < caution < clear",
                    std::to_string(cruise_warning_ft) + " / " + std::to_string(cruise_caution_ft) + " / " +
                        std::to_string(cruise_clear_ft));
+        }
+        if(!std::isfinite(margins.corridor_width_nm) || margins.corridor_width_nm <= 0.0)
+        {
+            reject("corridor_width", "must be > 0", std::to_string(margins.corridor_width_nm));
+        }
+        if(!std::isfinite(margins.required_clearance_ft) || margins.required_clearance_ft < 0.0)
+        {
+            reject("required_clearance", "must be >= 0", std::to_string(margins.required_clearance_ft));
         }
         if(gpu_tile_cache < 1)
         {

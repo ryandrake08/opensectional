@@ -18,13 +18,19 @@ namespace osect
     inline constexpr double TERRAIN_PROFILE_MAX_SAMPLE_INTERVAL_NM = 2.0;
     inline constexpr double TERRAIN_PROFILE_ELEVATION_TOLERANCE_FT = 100.0;
     inline constexpr std::size_t TERRAIN_PROFILE_MIN_SAMPLES = 100;
-    inline constexpr double TERRAIN_PROFILE_CORRIDOR_HALF_WIDTH_NM = 4.0;
     inline constexpr double TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM = 10.0;
-    inline constexpr double TERRAIN_PROFILE_REQUIRED_CLEARANCE_FT = 1000.0;
 
     // Along-track span of the consecutive station intervals whose
     // obstacles are fetched in one database query.
     inline constexpr double TERRAIN_PROFILE_OBSTACLE_QUERY_SPAN_NM = 20.0;
+
+    // Full width of the corridor centred on the route, and the terrain
+    // clearance below which the aircraft trace is flagged.
+    struct terrain_profile_margins
+    {
+        double corridor_width_nm = 8.0;
+        double required_clearance_ft = 1000.0;
+    };
 
     enum class terrain_profile_phase
     {
@@ -78,6 +84,7 @@ namespace osect
         std::vector<terrain_profile_leg> legs;
         std::optional<double> maximum_elevation_ft;
         std::vector<terrain_profile_clearance_span> clearance_spans;
+        terrain_profile_margins margins;
     };
 
     // Fixed geometric climb and descent gradients, in feet per NM.
@@ -94,7 +101,5 @@ namespace osect
     terrain_profile build_terrain_profile(const std::vector<route_waypoint>& waypoints, const elevation_source& terrain,
                                           const nasr_database& airports, std::optional<double> cruise_altitude_ft,
                                           terrain_profile_gradients gradients = {},
-                                          double corridor_half_width_nm = TERRAIN_PROFILE_CORRIDOR_HALF_WIDTH_NM,
-                                          bool include_obstacles = true,
-                                          double required_clearance_ft = TERRAIN_PROFILE_REQUIRED_CLEARANCE_FT);
+                                          terrain_profile_margins margins = {}, bool include_obstacles = true);
 } // namespace osect

@@ -269,8 +269,8 @@ namespace osect
 {
     terrain_profile build_terrain_profile(const std::vector<route_waypoint>& waypoints, const elevation_source& terrain,
                                           const nasr_database& airports, std::optional<double> cruise_altitude_ft,
-                                          terrain_profile_gradients gradients, double corridor_half_width_nm,
-                                          bool include_obstacles, double required_clearance_ft)
+                                          terrain_profile_gradients gradients, terrain_profile_margins margins,
+                                          bool include_obstacles)
     {
         if(waypoints.size() < 2)
         {
@@ -285,11 +285,11 @@ namespace osect
         {
             throw std::runtime_error("terrain profile cruise altitude must be finite");
         }
-        if(!std::isfinite(corridor_half_width_nm) || corridor_half_width_nm <= 0.0)
+        if(!std::isfinite(margins.corridor_width_nm) || margins.corridor_width_nm <= 0.0)
         {
-            throw std::runtime_error("terrain profile corridor half-width must be positive");
+            throw std::runtime_error("terrain profile corridor width must be positive");
         }
-        if(!std::isfinite(required_clearance_ft) || required_clearance_ft < 0.0)
+        if(!std::isfinite(margins.required_clearance_ft) || margins.required_clearance_ft < 0.0)
         {
             throw std::runtime_error("terrain profile required clearance must be non-negative");
         }
@@ -340,6 +340,7 @@ namespace osect
                                     required_distances_nm.end());
 
         terrain_profile profile;
+        profile.margins = margins;
         std::vector<profile_station> stations{{0.0, {departure.lat, departure.lon}, departure_elevation_ft}};
         double leg_start_nm = 0.0;
         for(std::size_t leg_index = 0; leg_index + 1 < waypoints.size(); ++leg_index)
@@ -383,7 +384,7 @@ namespace osect
         const auto corridor_half_width_at = [&](double distance_nm)
         {
             const auto distance_from_terminal_nm = std::min(distance_nm, route_distance_nm - distance_nm);
-            return corridor_half_width_nm *
+            return margins.corridor_width_nm / 2.0 *
                    std::clamp(distance_from_terminal_nm / TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM, 0.0, 1.0);
         };
 
@@ -485,7 +486,7 @@ namespace osect
             }
             if(leg.maximum_elevation_ft)
             {
-                leg.msa_ft = *leg.maximum_elevation_ft + required_clearance_ft;
+                leg.msa_ft = *leg.maximum_elevation_ft + margins.required_clearance_ft;
             }
         }
 
@@ -512,7 +513,7 @@ namespace osect
                 }
                 else if(sample.distance_nm >= TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM &&
                         route_distance_nm - sample.distance_nm >= TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM &&
-                        *sample.aircraft_altitude_ft < *sample.corridor_elevation_ft + required_clearance_ft)
+                        *sample.aircraft_altitude_ft < *sample.corridor_elevation_ft + margins.required_clearance_ft)
                 {
                     severity = terrain_profile_clearance_severity::below_clearance;
                 }

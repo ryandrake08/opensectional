@@ -479,8 +479,13 @@ range as the height tiles and adds roughly 6–20% to the store;
 
 The `[terrain]` section of the ini controls how the relief is drawn:
 shading `mode` (`hillshade` / `hypsometric` / `cruise_relative`),
-`opacity`, sun `sun_azimuth` / `sun_altitude`, `exaggeration`, the
-hypsometric colour `ramp`, and the `cruise_relative` band edges. The Route
+`opacity`, sun `sun_azimuth` / `sun_altitude`, `exaggeration`,
+and the hypsometric colour `ramp`. The `[route_terrain]` section covers
+how routes interact with terrain: the `cruise_relative` band edges and the
+terrain profile's margins, `corridor_width` (full width in NM of the
+corridor whose terrain and obstacles the profile checks, default 8) and
+`required_clearance` (feet the aircraft trace must stay above the corridor
+maximum, default 1000). The Route
 panel's per-tab **Cruise altitude (ft)** field is blank until entered and
 drives `cruise_relative` shading for the active tab only; it does not yet
 affect route planning. See the commented

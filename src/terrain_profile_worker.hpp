@@ -19,15 +19,17 @@ namespace osect
         std::string error;
     };
 
-    // Computes one route profile at a time on a worker thread. New requests
-    // replace an undrained completed request.
+    // Computes one route profile at a time on a worker thread, with the
+    // margins given at construction. New requests replace an undrained
+    // completed request.
     class terrain_profile_worker
     {
         struct impl;
         std::unique_ptr<impl> pimpl;
 
     public:
-        terrain_profile_worker(const elevation_source& terrain, const std::filesystem::path& db_path);
+        terrain_profile_worker(const elevation_source& terrain, const std::filesystem::path& db_path,
+                               terrain_profile_margins margins);
         ~terrain_profile_worker();
 
         terrain_profile_worker(const terrain_profile_worker&) = delete;

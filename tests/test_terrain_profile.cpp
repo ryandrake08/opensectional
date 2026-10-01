@@ -32,6 +32,7 @@ TEST_CASE("terrain profile value types retain profile results")
         {leg},
         1200.0,
         {span},
+        {},
     };
     osect::terrain_profile_gradients gradients{300.0, 318.0};
 

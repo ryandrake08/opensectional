@@ -54,6 +54,8 @@ TEST_CASE("defaults-only terrain_style")
     CHECK(s.cruise_clear_ft == 2000.0F);
     CHECK(s.gpu_tile_cache == 128);
     CHECK(s.cpu_tile_cache == 128);
+    CHECK(s.margins.corridor_width_nm == 8.0);
+    CHECK(s.margins.required_clearance_ft == 1000.0);
 
     REQUIRE(s.ramp.size() >= 2);
     CHECK(s.ramp.front().elevation_m == 0.0F);
@@ -89,12 +91,13 @@ TEST_CASE("terrain_style overrides")
         "sun_azimuth = 270\n"
         "sun_altitude = 30\n"
         "exaggeration = 1.5\n"
-        "cruise_warning = 300\n"
-        "cruise_caution = 800\n"
-        "cruise_clear = 1600\n"
         "gpu_cache = 64\n"
         "cpu_cache = 32\n"
-        "ramp = 0:#204030, 1000:#a0b070, 3000:#ffffff\n");
+        "ramp = 0:#204030, 1000:#a0b070, 3000:#ffffff\n"
+        "[route_terrain]\n"
+        "cruise_warning = 300\n"
+        "cruise_caution = 800\n"
+        "cruise_clear = 1600\n");
     osect::terrain_style s(ini.load());
 
     CHECK(s.mode == osect::terrain_shading::cruise_relative);
@@ -130,11 +133,30 @@ TEST_CASE("terrain_style short-hex ramp color")
     CHECK(s.ramp[0].b == doctest::Approx(0x33 / 255.0F));
 }
 
+TEST_CASE("terrain_style profile margin overrides")
+{
+    tmp_ini ini("[route_terrain]\ncorridor_width = 10\nrequired_clearance = 2000\n");
+    osect::terrain_style s(ini.load());
+    CHECK(s.margins.corridor_width_nm == 10.0);
+    CHECK(s.margins.required_clearance_ft == 2000.0);
+}
+
+TEST_CASE("terrain_style accepts zero required clearance")
+{
+    tmp_ini ini("[route_terrain]\nrequired_clearance = 0\n");
+    CHECK(osect::terrain_style(ini.load()).margins.required_clearance_ft == 0.0);
+}
+
 TEST_CASE("terrain_style rejects bad values")
 {
     const auto rejects = [](const std::string& body)
     {
         tmp_ini ini("[terrain]\n" + body);
+        CHECK_THROWS_AS(osect::terrain_style(ini.load()), std::runtime_error);
+    };
+    const auto rejects_route = [](const std::string& body)
+    {
+        tmp_ini ini("[route_terrain]\n" + body);
         CHECK_THROWS_AS(osect::terrain_style(ini.load()), std::runtime_error);
     };
 
@@ -147,9 +169,12 @@ TEST_CASE("terrain_style rejects bad values")
     rejects("mode = shaded\n");
     rejects("gpu_cache = 0\n");
     rejects("cpu_cache = 0\n");
-    rejects("cruise_warning = 1500\n"); // exceeds default caution (1000)
     rejects("ramp = 1000:#ffffff\n");   // single stop
     rejects("ramp = 1000:#fff, 500:#000\n"); // descending
     rejects("ramp = 1000:teal\n");           // not a hex color
     rejects("ramp = high:#fff, low:#000\n"); // non-numeric elevation
+    rejects_route("corridor_width = 0\n");
+    rejects_route("corridor_width = -4\n");
+    rejects_route("required_clearance = -1\n");
+    rejects_route("cruise_warning = 1500\n"); // exceeds default caution (1000)
 }

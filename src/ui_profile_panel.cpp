@@ -11,10 +11,10 @@ namespace osect
     {
         constexpr float DRAWER_HEIGHT_PX = 220.0F;
         constexpr float MARGIN_PX = 12.0F;
-        constexpr double CLEARANCE_FT = TERRAIN_PROFILE_REQUIRED_CLEARANCE_FT;
 
         std::optional<double> maximum_elevation(const terrain_profile& profile)
         {
+            const double clearance_ft = profile.margins.required_clearance_ft;
             std::optional<double> maximum;
             for(const auto& sample : profile.samples)
             {
@@ -28,8 +28,8 @@ namespace osect
                 }
                 if(sample.corridor_elevation_ft)
                 {
-                    maximum = maximum ? std::max(*maximum, *sample.corridor_elevation_ft + CLEARANCE_FT)
-                                      : *sample.corridor_elevation_ft + CLEARANCE_FT;
+                    maximum = maximum ? std::max(*maximum, *sample.corridor_elevation_ft + clearance_ft)
+                                      : *sample.corridor_elevation_ft + clearance_ft;
                 }
             }
             return maximum;
@@ -185,10 +185,12 @@ namespace osect
             const auto band_color = from_obstacle ? obstacle_clearance : clearance;
             const auto previous_lower = point_at(previous.distance_nm, *previous.corridor_elevation_ft);
             const auto current_lower = point_at(current.distance_nm, *current.corridor_elevation_ft);
-            draw_list->AddQuadFilled(previous_lower, current_lower,
-                                     point_at(current.distance_nm, *current.corridor_elevation_ft + CLEARANCE_FT),
-                                     point_at(previous.distance_nm, *previous.corridor_elevation_ft + CLEARANCE_FT),
-                                     band_color);
+            draw_list->AddQuadFilled(
+                previous_lower, current_lower,
+                point_at(current.distance_nm, *current.corridor_elevation_ft + profile->margins.required_clearance_ft),
+                point_at(previous.distance_nm,
+                         *previous.corridor_elevation_ft + profile->margins.required_clearance_ft),
+                band_color);
             draw_list->AddLine(previous_lower, current_lower, line_color, 2.0F);
         }
 

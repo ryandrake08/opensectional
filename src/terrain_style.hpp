@@ -1,5 +1,6 @@
 #pragma once
 
+#include "terrain_profile.hpp"
 #include <vector>
 
 class ini_config;
@@ -21,9 +22,12 @@ namespace osect
         float b;
     };
 
-    // Shaded-relief rendering parameters: hardcoded defaults, optionally
-    // overridden by the [terrain] INI section. Constructing with an
-    // out-of-range value throws std::runtime_error naming the key.
+    // Shaded-relief rendering parameters and route-against-terrain
+    // settings: hardcoded defaults, optionally overridden by the INI.
+    // [terrain] holds the relief and cache keys; [route_terrain] holds
+    // the cruise_relative band edges and the profile margins.
+    // Constructing with an out-of-range value throws std::runtime_error
+    // naming the key.
     struct terrain_style
     {
         explicit terrain_style(const ini_config& ini);
@@ -48,6 +52,9 @@ namespace osect
         float cruise_warning_ft = 500.0F;
         float cruise_caution_ft = 1000.0F;
         float cruise_clear_ft = 2000.0F;
+
+        // Route terrain-profile corridor width and required clearance.
+        terrain_profile_margins margins;
 
         // GPU tile LRU capacity.
         int gpu_tile_cache = 128;

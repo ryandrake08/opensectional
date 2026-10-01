@@ -11,13 +11,14 @@ namespace osect
     {
         const elevation_source& terrain;
         nasr_database airports;
+        terrain_profile_margins margins;
         std::thread worker;
         std::atomic<bool> done{false};
         std::optional<terrain_profile> result;
         std::string error;
 
-        impl(const elevation_source& terrain, const std::filesystem::path& db_path)
-            : terrain(terrain), airports(db_path)
+        impl(const elevation_source& terrain, const std::filesystem::path& db_path, terrain_profile_margins margins)
+            : terrain(terrain), airports(db_path), margins(margins)
         {
         }
 
@@ -49,7 +50,8 @@ namespace osect
                 {
                     try
                     {
-                        result = build_terrain_profile(waypoints, terrain, airports, cruise_altitude_ft, gradients);
+                        result =
+                            build_terrain_profile(waypoints, terrain, airports, cruise_altitude_ft, gradients, margins);
                     }
                     catch(const std::exception& e)
                     {
@@ -80,8 +82,9 @@ namespace osect
     };
 
     terrain_profile_worker::terrain_profile_worker(const elevation_source& terrain,
-                                                   const std::filesystem::path& db_path)
-        : pimpl(std::make_unique<impl>(terrain, db_path))
+                                                   const std::filesystem::path& db_path,
+                                                   terrain_profile_margins margins)
+        : pimpl(std::make_unique<impl>(terrain, db_path, margins))
     {
     }
 

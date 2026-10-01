@@ -13,10 +13,10 @@ namespace osect
     }
 }
 
-TEST_CASE("terrain profile worker delivers an asynchronous result")
+TEST_CASE("terrain profile worker delivers an asynchronous result with its margins")
 {
     const osect::elevation_source terrain("missing-terrain-tree");
-    osect::terrain_profile_worker worker(terrain, "osect.db");
+    osect::terrain_profile_worker worker(terrain, "osect.db", {12.0, 2000.0});
     worker.submit({{osect::waypoint_kind::airport, "O61", 38.684, -120.98752777},
                    {osect::waypoint_kind::airport, "KMER", 37.38048444, -120.56818638}},
                   10000.0, {});
@@ -31,4 +31,6 @@ TEST_CASE("terrain profile worker delivers an asynchronous result")
     REQUIRE(status.error.empty());
     REQUIRE(status.result);
     CHECK_FALSE(status.result->samples.empty());
+    CHECK(status.result->margins.corridor_width_nm == 12.0);
+    CHECK(status.result->margins.required_clearance_ft == 2000.0);
 }

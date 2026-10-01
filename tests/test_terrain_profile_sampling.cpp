@@ -53,7 +53,7 @@ TEST_CASE("terrain profile keeps stations within the maximum interval without te
     };
     const osect::elevation_source terrain("missing-terrain-tree");
     const osect::terrain_profile profile = osect::build_terrain_profile(
-        waypoints, terrain, test_db(), 10000.0, osect::terrain_profile_gradients{300.0, 318.0}, 4.0, false);
+        waypoints, terrain, test_db(), 10000.0, osect::terrain_profile_gradients{300.0, 318.0}, {}, false);
 
     const double distance_nm = osect::haversine_distance_nm(
         airports.front().lat, airports.front().lon, destination.front().lat, destination.front().lon);
@@ -90,7 +90,7 @@ TEST_CASE("terrain profile omits aircraft trace without a cruise altitude")
     };
     const osect::elevation_source terrain("missing-terrain-tree");
     const osect::terrain_profile profile = osect::build_terrain_profile(
-        waypoints, terrain, test_db(), std::nullopt, osect::terrain_profile_gradients{}, 4.0, false);
+        waypoints, terrain, test_db(), std::nullopt, osect::terrain_profile_gradients{}, {}, false);
 
     for(std::size_t i = 0; i < profile.samples.size(); ++i)
     {
@@ -122,7 +122,7 @@ TEST_CASE("terrain profile starts descent from the arrival gradient")
     constexpr double descent_gradient_ft_per_nm = 318.0;
     const osect::elevation_source terrain("missing-terrain-tree");
     const osect::terrain_profile profile = osect::build_terrain_profile(
-        waypoints, terrain, test_db(), cruise_altitude_ft, {300.0, descent_gradient_ft_per_nm}, 4.0, false);
+        waypoints, terrain, test_db(), cruise_altitude_ft, {300.0, descent_gradient_ft_per_nm}, {}, false);
 
     const double descent_start_nm = profile.samples.back().distance_nm -
                                     (cruise_altitude_ft - arrival.front().elev) / descent_gradient_ft_per_nm;
@@ -196,7 +196,7 @@ TEST_CASE("terrain profile derives maxima, MSA, and clearance spans")
     };
     const osect::elevation_source terrain("missing-terrain-tree");
     const osect::terrain_profile profile = osect::build_terrain_profile(
-        waypoints, terrain, test_db(), 10000.0, osect::terrain_profile_gradients{300.0, 318.0}, 4.0, true, 100000.0);
+        waypoints, terrain, test_db(), 10000.0, osect::terrain_profile_gradients{300.0, 318.0}, {8.0, 100000.0});
 
     REQUIRE(profile.maximum_elevation_ft);
     CHECK(std::all_of(profile.samples.begin() + 1, profile.samples.end() - 1, [](const auto& sample)
@@ -205,6 +205,7 @@ TEST_CASE("terrain profile derives maxima, MSA, and clearance spans")
     REQUIRE(profile.legs.front().maximum_elevation_ft);
     REQUIRE(profile.legs.front().msa_ft);
     CHECK(*profile.legs.front().msa_ft == *profile.legs.front().maximum_elevation_ft + 100000.0);
+    CHECK(profile.margins.required_clearance_ft == 100000.0);
     CHECK_FALSE(profile.clearance_spans.empty());
 }
 
@@ -222,7 +223,7 @@ TEST_CASE("terrain profile keeps flat terrain at the maximum station interval")
     };
     const osect::elevation_source terrain(tree.path());
     const osect::terrain_profile profile =
-        osect::build_terrain_profile(waypoints, terrain, test_db(), std::nullopt, {}, 4.0, false);
+        osect::build_terrain_profile(waypoints, terrain, test_db(), std::nullopt, {}, {}, false);
 
     const double distance_nm = osect::haversine_distance_nm(0.5, 0.2, 0.5, 5.4);
     const double terminal_nm = osect::TERRAIN_PROFILE_TERMINAL_CORRIDOR_DISTANCE_NM;
@@ -252,7 +253,7 @@ TEST_CASE("terrain profile refines stations around a narrow peak")
     };
     const osect::elevation_source terrain(tree.path());
     const osect::terrain_profile profile =
-        osect::build_terrain_profile(waypoints, terrain, test_db(), std::nullopt, {}, 4.0, false);
+        osect::build_terrain_profile(waypoints, terrain, test_db(), std::nullopt, {}, {}, false);
 
     const auto highest = std::max_element(profile.samples.begin(), profile.samples.end(),
                                           [](const auto& a, const auto& b)
@@ -303,7 +304,8 @@ TEST_CASE("terrain profile includes obstacles in the corridor and excludes those
     }
 
     // A 25 NM north-east leg centred on the obstacle, and the same leg
-    // moved 6 NM to its north-west, beyond the 4 NM corridor half-width.
+    // moved 6 NM to its north-west, beyond half the default 8 NM corridor
+    // width and within half of a 16 NM one.
     const double nm_lat = 1.0 / 60.0;
     const double nm_lon = 1.0 / (60.0 * std::cos(tallest.lat * M_PI / 180.0));
     const auto leg = [&](double offset_nm)
@@ -332,8 +334,11 @@ TEST_CASE("terrain profile includes obstacles in the corridor and excludes those
     const osect::elevation_source terrain("missing-terrain-tree");
     const auto over = osect::build_terrain_profile(leg(0.0), terrain, test_db(), std::nullopt);
     const auto beside = osect::build_terrain_profile(leg(6.0), terrain, test_db(), std::nullopt);
+    const auto beside_wide =
+        osect::build_terrain_profile(leg(6.0), terrain, test_db(), std::nullopt, {}, {16.0, 1000.0});
 
     CHECK(highest_corridor(over) == static_cast<double>(tallest.amsl_ht));
     const auto beside_highest = highest_corridor(beside);
     CHECK((!beside_highest || *beside_highest < tallest.amsl_ht));
+    CHECK(highest_corridor(beside_wide) == static_cast<double>(tallest.amsl_ht));
 }
