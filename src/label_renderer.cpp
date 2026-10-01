@@ -1,5 +1,6 @@
 #include "label_renderer.hpp"
 #include "render_context.hpp"
+#include "uniform_buffer.hpp"
 #include <glm/ext/matrix_clip_space.hpp>
 #include <algorithm>
 #include <cmath>
@@ -15,7 +16,6 @@
 #include <sdl/text.hpp>
 #include <sdl/text_engine.hpp>
 #include <sdl/transfer_buffer.hpp>
-#include <sdl/uniform_buffer.hpp>
 #include <vector>
 #include <NotoSans_Regular_ttf.h>
 
@@ -481,7 +481,7 @@ namespace osect
         auto proj = glm::orthoLH_ZO(0.0F, static_cast<float>(viewport_width), 0.0F, static_cast<float>(viewport_height),
                                     -1.0F, 1.0F);
 
-        auto uniforms = sdl::uniform_buffer{};
+        auto uniforms = uniform_buffer{};
         uniforms.projection_matrix = proj;
         uniforms.y_min = -1e9F;
         uniforms.y_max = 1e9F;

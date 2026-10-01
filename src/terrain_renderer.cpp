@@ -8,6 +8,7 @@
 #include "tile_key.hpp"
 #include "tile_loader.hpp"
 #include "tile_quad.hpp"
+#include "uniform_buffer.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -25,7 +26,6 @@
 #include <sdl/surface.hpp>
 #include <sdl/texture.hpp>
 #include <sdl/transfer_buffer.hpp>
-#include <sdl/uniform_buffer.hpp>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -308,7 +308,7 @@ namespace osect
 
     void terrain_renderer::render(sdl::render_pass& pass, const render_context& ctx, const glm::mat4& view_matrix) const
     {
-        sdl::uniform_buffer uniforms;
+        uniform_buffer uniforms;
         uniforms.projection_matrix = ctx.projection_matrix;
         uniforms.view_matrix = view_matrix;
         const int dim = pimpl->source.tile_size() + 2 * pimpl->source.skirt();

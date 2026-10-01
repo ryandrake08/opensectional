@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-namespace sdl
+namespace osect
 {
     // ============================================================================
     // Uniform Buffer Structures
@@ -80,4 +80,4 @@ namespace sdl
         {
         }
     };
-} // namespace sdl
+} // namespace osect

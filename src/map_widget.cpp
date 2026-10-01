@@ -15,6 +15,7 @@
 #include "tile_renderer.hpp"
 #include "ui_overlay.hpp"
 #include "ui_popup_manager.hpp"
+#include "uniform_buffer.hpp"
 #include "user_database.hpp"
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_projection.hpp>
@@ -35,7 +36,6 @@
 #include <sdl/shader.hpp>
 #include <sdl/texture.hpp>
 #include <sdl/transfer_buffer.hpp>
-#include <sdl/uniform_buffer.hpp>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -1783,7 +1783,7 @@ namespace osect
         ctx.current_pass = render_pass_id::trianglelist_0;
         if(d.grid_buffer && d.grid_buffer->count() > 0)
         {
-            sdl::uniform_buffer uniforms;
+            uniform_buffer uniforms;
             uniforms.projection_matrix = ctx.projection_matrix;
             pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
             pass.push_fragment_uniforms(0, &uniforms, sizeof(uniforms));

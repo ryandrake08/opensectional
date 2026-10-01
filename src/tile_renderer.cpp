@@ -5,6 +5,7 @@
 #include "tile_key.hpp"
 #include "tile_loader.hpp"
 #include "tile_quad.hpp"
+#include "uniform_buffer.hpp"
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -17,7 +18,6 @@
 #include <sdl/surface.hpp>
 #include <sdl/texture.hpp>
 #include <sdl/transfer_buffer.hpp>
-#include <sdl/uniform_buffer.hpp>
 #include <string>
 #include <vector>
 
@@ -171,7 +171,7 @@ namespace osect
             return;
         }
 
-        auto uniforms = sdl::uniform_buffer{};
+        auto uniforms = uniform_buffer{};
         uniforms.projection_matrix = ctx.projection_matrix;
         uniforms.view_matrix = view_matrix;
 

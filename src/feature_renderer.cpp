@@ -5,6 +5,7 @@
 #include "map_view.hpp"
 #include "render_context.hpp"
 #include "ui_overlay.hpp"
+#include "uniform_buffer.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -16,7 +17,6 @@
 #include <sdl/pipeline.hpp>
 #include <sdl/render_pass.hpp>
 #include <sdl/transfer_buffer.hpp>
-#include <sdl/uniform_buffer.hpp>
 
 namespace osect
 {
@@ -234,7 +234,7 @@ namespace osect
         {
             if(pimpl->fill_buffer && pimpl->fill_buffer->count() > 0)
             {
-                sdl::uniform_buffer uniforms;
+                uniform_buffer uniforms;
                 uniforms.projection_matrix = ctx.projection_matrix;
                 uniforms.view_matrix = view_matrix;
                 pass.push_vertex_uniforms(0, &uniforms, sizeof(uniforms));
