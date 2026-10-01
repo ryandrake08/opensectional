@@ -1,12 +1,11 @@
 #pragma once
 
+#include "lru_map.hpp"
 #include "tile_key.hpp"
 #include <cstddef>
 #include <functional>
-#include <list>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 
 namespace osect
 {
@@ -17,19 +16,8 @@ namespace osect
     // (no tile on disk) is cached as null.
     class elevation_tile_cache
     {
-        struct entry
-        {
-            std::shared_ptr<const elevation_tile> tile;
-            std::list<tile_key>::iterator recency;
-        };
-
-        std::size_t capacity_;
         std::mutex mutex_;
-        std::unordered_map<tile_key, entry> entries_;
-        std::list<tile_key> recency_; // most recently used first
-
-        // Promotes an entry to most recently used. Caller holds mutex_.
-        void touch(std::unordered_map<tile_key, entry>::iterator it);
+        lru_map<tile_key, std::shared_ptr<const elevation_tile>> tiles_;
 
     public:
         explicit elevation_tile_cache(std::size_t capacity);

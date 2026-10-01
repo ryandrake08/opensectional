@@ -32,6 +32,7 @@ endfunction()
 
 # Pure-header tests (no extra sources needed)
 add_osect_test(altitude_filter)
+add_osect_test(lru_map)
 add_osect_test(tile_cache)
 add_osect_test(tile_key)
 add_osect_test(tile_quad ${CMAKE_SOURCE_DIR}/src/tile_quad.cpp ${CMAKE_SOURCE_DIR}/src/map_view.cpp)

@@ -204,3 +204,27 @@ TEST_CASE("tile_cache::request_tile stops at the minimum zoom")
 
     CHECK(loader.requested.empty());
 }
+
+TEST_CASE("tile_cache stops tracking freed tiles once they outnumber its capacity")
+{
+    osect::tile_cache<resource> cache(0, 15, 256, 2);
+    for(int x = 0; x < 50; x++)
+    {
+        cache.put({15, x, 0}, std::make_shared<resource>());
+    }
+
+    CHECK(cache.tracked_count() <= 4);
+}
+
+TEST_CASE("tile_cache keeps finding an evicted tile that is still held elsewhere")
+{
+    osect::tile_cache<resource> cache(0, 15, 256, 2);
+    auto held = std::make_shared<resource>();
+    cache.put({15, 0, 0}, held);
+    for(int x = 1; x < 50; x++)
+    {
+        cache.put({15, x, 0}, std::make_shared<resource>());
+    }
+
+    CHECK(cache.find({15, 0, 0}) == held);
+}

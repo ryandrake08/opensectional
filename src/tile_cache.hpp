@@ -1,11 +1,12 @@
 #pragma once
 
+#include "lru_map.hpp"
 #include "map_view.hpp"
 #include "tile_key.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <list>
+#include <iterator>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -32,7 +33,7 @@ namespace osect
         // Tiles exist at zoom levels min_zoom..max_zoom, each tile_pixels
         // on a side.
         tile_cache(int min_zoom, int max_zoom, int tile_pixels, std::size_t capacity)
-            : min_zoom(min_zoom), max_zoom(max_zoom), tile_pixels(tile_pixels), capacity(capacity)
+            : min_zoom(min_zoom), max_zoom(max_zoom), tile_pixels(tile_pixels), retained(capacity)
         {
         }
 
@@ -98,7 +99,17 @@ namespace osect
         void put(const tile_key& key, std::shared_ptr<resource_t> resource)
         {
             resources[key] = resource;
-            touch(key, std::move(resource));
+            retained.put(key, std::move(resource));
+
+            // An entry outlives its tile once nothing holds the tile; sweep
+            // the expired entries when they outnumber the retained set.
+            if(resources.size() > 2 * retained.capacity())
+            {
+                for(auto it = resources.begin(); it != resources.end();)
+                {
+                    it = it->second.expired() ? resources.erase(it) : std::next(it);
+                }
+            }
         }
 
         std::shared_ptr<resource_t> find(const tile_key& key)
@@ -112,7 +123,7 @@ namespace osect
             auto resource = it->second.lock();
             if(resource)
             {
-                touch(key, resource);
+                retained.put(key, resource);
             }
             return resource;
         }
@@ -131,6 +142,14 @@ namespace osect
                 }
             }
             return false;
+        }
+
+        // Stored tiles the cache still tracks: every tile it can find, plus
+        // freed tiles not yet swept. Bounded by twice the capacity plus the
+        // evicted tiles held elsewhere.
+        std::size_t tracked_count() const
+        {
+            return resources.size();
         }
 
         // For each visible tile that isn't cached, the nearest cached
@@ -175,7 +194,6 @@ namespace osect
         int min_zoom;
         int max_zoom;
         int tile_pixels;
-        std::size_t capacity;
         int current_zoom = 0;
         std::vector<tile_key> visible;
         int cached_zoom = -1;
@@ -184,10 +202,10 @@ namespace osect
         int cached_ty_min = 0;
         int cached_ty_max = 0;
         bool has_cached_range = false;
+        // Every resource ever stored, found for as long as something holds
+        // it; retained keeps the most recently used alive.
         std::unordered_map<tile_key, std::weak_ptr<resource_t>> resources;
-        std::list<std::pair<tile_key, std::shared_ptr<resource_t>>> lru;
-        std::unordered_map<tile_key, typename std::list<std::pair<tile_key, std::shared_ptr<resource_t>>>::iterator>
-            lru_index;
+        lru_map<tile_key, std::shared_ptr<resource_t>> retained;
 
         static tile_key ancestor_uv(const tile_key& display_tile, int ancestor_zoom, float& u0, float& v0, float& u1,
                                     float& v1)
@@ -201,24 +219,6 @@ namespace osect
             u1 = static_cast<float>(u0 + 1.0 / scale);
             v1 = static_cast<float>(v0 + 1.0 / scale);
             return {ancestor_zoom, wrapped_x / scale, display_tile.y / scale};
-        }
-
-        void touch(const tile_key& key, std::shared_ptr<resource_t> resource)
-        {
-            auto it = lru_index.find(key);
-            if(it != lru_index.end())
-            {
-                lru.erase(it->second);
-            }
-            lru.push_front({key, std::move(resource)});
-            lru_index[key] = lru.begin();
-
-            if(lru_index.size() > capacity)
-            {
-                auto last = std::prev(lru.end());
-                lru_index.erase(last->first);
-                lru.pop_back();
-            }
         }
 
         template <typename loader_t>
