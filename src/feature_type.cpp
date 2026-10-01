@@ -1970,7 +1970,8 @@ namespace osect
 
         // --- PJA / MAA point icons (diamond with a letter) ---
 
-        void emit_pja_point_icon(polyline_data& pd, double cx, double cy, double r, const feature_style& fs)
+        void emit_lettered_diamond_icon(polyline_data& pd, double cx, double cy, double r,
+                                        const std::vector<float>& letter, const feature_style& fs)
         {
             auto ls = to_line_style(fs);
             ls.fill_width = SYMBOL_FILL_PX;
@@ -1988,59 +1989,36 @@ namespace osect
             auto lh = r * LETTER_HEIGHT;
             auto lw = lh * LETTER_ASPECT;
             auto white_ls = line_style{LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
-            add_letter(pd, letter_P, 0, 0, lw, lh, white_ls);
+            add_letter(pd, letter, 0, 0, lw, lh, white_ls);
             mark_icon(pd, first, cx, cy);
         }
 
-        void emit_maa_point_icon(polyline_data& pd, double cx, double cy, double r, const maa& m,
-                                 const feature_style& fs)
+        // Every MAA type in the current NASR data has a glyph. If a future
+        // release adds a new category, fail loudly so we pick a glyph instead
+        // of silently rendering a naked diamond.
+        const std::vector<float>& maa_letter(const std::string& type)
         {
-            auto ls = to_line_style(fs);
-            ls.fill_width = SYMBOL_FILL_PX;
-            auto first = pd.polylines.size();
-            auto fr = static_cast<float>(r);
-            pd.polylines.push_back({
-                {fr, 0.0F},
-                {0.0F, fr},
-                {-fr, 0.0F},
-                {0.0F, -fr},
-                {fr, 0.0F},
-            });
-            pd.styles.push_back(ls);
-
-            // Every MAA type in the current NASR data has a glyph. If
-            // a future release adds a new category, fail loudly so we
-            // pick a glyph instead of silently rendering a naked diamond.
-            const std::vector<float>& ld = [&]() -> const std::vector<float>&
+            if(type == "AEROBATIC PRACTICE")
             {
-                if(m.type == "AEROBATIC PRACTICE")
-                {
-                    return letter_A;
-                }
-                if(m.type == "GLIDER")
-                {
-                    return letter_G;
-                }
-                if(m.type == "HANG GLIDER")
-                {
-                    return letter_H;
-                }
-                if(m.type == "ULTRALIGHT")
-                {
-                    return letter_U;
-                }
-                if(m.type == "SPACE LAUNCH")
-                {
-                    return letter_S;
-                }
-                throw std::runtime_error("Unknown MAA type: " + m.type);
-            }();
-
-            auto lh = r * LETTER_HEIGHT;
-            auto lw = lh * LETTER_ASPECT;
-            auto white_ls = line_style{LETTER_WIDTH_PX, 0, 0, 0, 1, 1, 1, 1, 0};
-            add_letter(pd, ld, 0, 0, lw, lh, white_ls);
-            mark_icon(pd, first, cx, cy);
+                return letter_A;
+            }
+            if(type == "GLIDER")
+            {
+                return letter_G;
+            }
+            if(type == "HANG GLIDER")
+            {
+                return letter_H;
+            }
+            if(type == "ULTRALIGHT")
+            {
+                return letter_U;
+            }
+            if(type == "SPACE LAUNCH")
+            {
+                return letter_S;
+            }
+            throw std::runtime_error("Unknown MAA type: " + type);
         }
 
         void emit_comm_icon(polyline_data& pd, double cx, double cy, double r, const line_style& ls)
@@ -2754,7 +2732,7 @@ namespace osect
                     auto cx = lon_to_mx(p.lon) + ctx.mx_offset;
                     auto cy = lat_to_my(p.lat);
                     auto r = SYMBOL_RADIUS_PX;
-                    emit_pja_point_icon(ctx.poly[layer_pja], cx, cy, r, ctx.styles.pja_point_style());
+                    emit_lettered_diamond_icon(ctx.poly[layer_pja], cx, cy, r, letter_P, ctx.styles.pja_point_style());
                 }
             }
         }
@@ -2794,7 +2772,8 @@ namespace osect
                     auto cx = lon_to_mx(m.lon) + ctx.mx_offset;
                     auto cy = lat_to_my(m.lat);
                     auto r = SYMBOL_RADIUS_PX;
-                    emit_maa_point_icon(ctx.poly[layer_maa], cx, cy, r, m, ctx.styles.maa_point_style());
+                    emit_lettered_diamond_icon(ctx.poly[layer_maa], cx, cy, r, maa_letter(m.type),
+                                               ctx.styles.maa_point_style());
                 }
 
                 if(is_area && ctx.req.zoom >= AIRSPACE_LABEL_MIN_ZOOM)
@@ -3258,7 +3237,7 @@ namespace osect
             {
                 auto g = point_selection_geom_for(v, ctx.req);
                 emit_halo(out, g.cx, g.cy, g.r_base);
-                emit_pja_point_icon(out, g.cx, g.cy, g.r_base, ctx.styles.pja_point_style());
+                emit_lettered_diamond_icon(out, g.cx, g.cy, g.r_base, letter_P, ctx.styles.pja_point_style());
             }
         }
 
@@ -3287,7 +3266,7 @@ namespace osect
             {
                 auto g = point_selection_geom_for(v, ctx.req);
                 emit_halo(out, g.cx, g.cy, g.r_base);
-                emit_maa_point_icon(out, g.cx, g.cy, g.r_base, v, ctx.styles.maa_point_style());
+                emit_lettered_diamond_icon(out, g.cx, g.cy, g.r_base, maa_letter(v.type), ctx.styles.maa_point_style());
             }
         }
 
