@@ -20,11 +20,12 @@ import numpy as np
 import rasterio
 import rasterio.features
 import rasterio.transform
+from rasterio.merge import merge as rasterio_merge
+from rasterio.warp import Resampling, reproject
+
 import terrain_common
 import terrain_datum
 import terrain_manifest
-from rasterio.merge import merge as rasterio_merge
-from rasterio.warp import Resampling, reproject
 from terrain_datasets import get_adapter
 from tile_math import (
     EARTH_RADIUS_M,

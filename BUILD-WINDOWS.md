@@ -69,7 +69,7 @@ To actually use the app, build `osect.db`, `basemap/`, and `terrain/` as
 described under "Data Preparation" in `README.md`. On Windows, use
 Windows-native Python (python.org or the Microsoft Store) from `cmd.exe` or
 PowerShell rather than MSYS2's Python: several geospatial dependencies in
-`tools/requirements.txt` install more easily as Windows wheels. The venv's
+the `pyproject.toml` `tools` dependency group install more easily as Windows wheels. The venv's
 interpreter is `tools\env\Scripts\python`.
 
 ## Headless Windows hosts

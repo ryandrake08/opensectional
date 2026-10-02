@@ -312,6 +312,7 @@ def test_build_water_pass_builds_sidecar_and_pyramid():
         x, y = lonlat_to_tile_xy(0.2, 0.2, z)
         height_tiles = sorted(tiles_covering_bounds(0.0, 0.0, 0.4, 0.4, z))
         result = build_water_pass(source_dir, adapter, output_dir, z - 2, z, height_tiles, 1)
+        assert result is not None
         assert result == (z - 2, z, result[2])
 
         water = terrain_common.decode_water_array(
@@ -341,6 +342,7 @@ def test_build_water_pass_builds_to_height_max_zoom():
         height_tiles = sorted(tiles_covering_bounds(0.0, 0.0, 0.4, 0.4, height_zoom))
         result = build_water_pass(source_dir, adapter, output_dir, height_zoom - 1, height_zoom,
                                   height_tiles, 1)
+        assert result is not None
         assert result[1] == height_zoom
         assert all_tiles_at(height_zoom, os.path.join(output_dir, "water"))
     return True
@@ -355,9 +357,10 @@ def test_build_water_pass_returns_none_without_water_sources():
 def test_gshhg_water_provider_rasterizes_a_shoreline():
     """A minimal GSHHG-layout zip with one land polygon: the provider
     returns ocean outside it and land inside."""
-    from build_terrain import _GshhgWaterProvider
     import fiona
-    from shapely.geometry import mapping, box as _box
+    from shapely.geometry import box as _box, mapping
+
+    from build_terrain import _GshhgWaterProvider
 
     with tempfile.TemporaryDirectory() as d:
         shp_dir = os.path.join(d, "GSHHS_shp", "i")

@@ -28,17 +28,17 @@ def retry(fn, *, label, attempts=6):
     backoff. A non-retryable HTTPError (e.g. 404) or any other exception
     propagates immediately."""
     delay = 1.0
-    for attempt in range(1, attempts + 1):
+    for attempt in range(1, attempts):
         try:
             return fn()
         except urllib.error.HTTPError as e:
-            if e.code not in _RETRYABLE_STATUS or attempt == attempts:
+            if e.code not in _RETRYABLE_STATUS:
                 raise
         except (urllib.error.URLError, *_RETRYABLE_ERRORS):
-            if attempt == attempts:
-                raise
+            pass
         sleep_s = delay + random.uniform(0.0, 0.5)
         print(f"  {label}: transient network error, retry {attempt}/{attempts - 1} in {sleep_s:.0f}s",
               file=sys.stderr)
         time.sleep(sleep_s)
         delay = min(delay * 2, 30.0)
+    return fn()

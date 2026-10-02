@@ -1,0 +1,56 @@
+# Dependencies and static-check configuration for the Python tools in tools/.
+#
+# tools/ is a directory of scripts, not an installable package, so its
+# dependencies are a PEP 735 group. Install them into a venv from the repo
+# root (--group needs pip 25.1+, which --upgrade-deps provides):
+#   python3 -m venv --upgrade-deps tools/env
+#   tools/env/bin/pip install --group tools
+
+[dependency-groups]
+tools = [
+    "beautifulsoup4>=4.12",
+    "fiona>=1.9",
+    "numpy>=1.26",
+    "pillow>=10.0",
+    "pyproj>=3.6",
+    "rasterio>=1.3",
+    "shapely>=2.0",
+    # Static checks (tools/check-all.sh).
+    "basedpyright>=1.40",
+    "ruff>=0.16",
+]
+
+[tool.ruff]
+target-version = "py314"
+
+# tools/ modules import each other as flat siblings on sys.path (no package).
+# Tell ruff that so import sorting classifies them first-party, not third-party.
+src = ["tools"]
+
+[tool.ruff.lint]
+# Rule families are selected explicitly rather than relying on ruff's default
+# set. Start conservative; widen the select as the code is brought into line
+# with more families.
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import sorting
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",  # line length is not capped (matches the C++ side)
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+# basedpyright reads [tool.pyright] as well as [tool.basedpyright]; the former
+# also applies to stock pyright and Pylance.
+[tool.pyright]
+include = ["tools"]
+exclude = ["**/__pycache__", "tools/env*", "tools/proj_grids"]
+typeCheckingMode = "standard"
+pythonVersion = "3.14"
+executionEnvironments = [
+    { root = "tools" },
+]

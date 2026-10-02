@@ -13,7 +13,7 @@ cmake --preset release
 cmake --build --preset release -j
 
 # 3. Set up Python venv for data build tools
-cd tools && python3 -m venv env && env/bin/pip install -r requirements.txt && cd ..
+python3 -m venv --upgrade-deps tools/env && tools/env/bin/pip install --group tools
 
 # 4. Download FAA data (prints build command when done)
 tools/env/bin/python3 tools/download_faa.py nasr_data
@@ -381,7 +381,7 @@ basemap tile directory, and the terrain elevation tile directory.
 Set up the Python environment, download FAA data, and build the database:
 
 ```bash
-cd tools && python3 -m venv env && env/bin/pip install -r requirements.txt && cd ..
+python3 -m venv --upgrade-deps tools/env && tools/env/bin/pip install --group tools
 
 # Download all FAA data (prints build command when done)
 tools/env/bin/python3 tools/download_faa.py nasr_data
@@ -748,14 +748,14 @@ tools/env/bin/python3 tools/test_nasr_queries.py osect.db
 ### Python tool checks
 
 ```bash
-source tools/env/bin/activate   # any venv built from tools/requirements.txt
+source tools/env/bin/activate   # any venv built from the pyproject.toml tools group
 tools/check-all.sh
 ```
 
-Runs ruff (lint, `ruff.toml`) and basedpyright (types, "standard" mode,
-`pyrightconfig.json`) over `tools/` using the active venv. basedpyright is the
-pyright type-checker engine — the same one behind VS Code's Pylance. Both come
-from `tools/requirements.txt`; basedpyright bundles its own Node runtime.
+Runs ruff (lint) and basedpyright (types, "standard" mode) over `tools/` using
+the active venv, configured in `pyproject.toml`. basedpyright is the
+pyright type-checker engine — the same one behind VS Code's Pylance. Both are in
+the `tools` dependency group; basedpyright bundles its own Node runtime.
 
 The per-tool `test_*.py` suites are standalone scripts — run one directly with
 the venv interpreter (`tools/env/bin/python3 tools/test_terrain_datasets.py`).

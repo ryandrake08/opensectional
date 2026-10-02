@@ -2,6 +2,7 @@
 """Tests for terrain downloads using a local HTTP server."""
 
 import contextlib
+import email.message
 import functools
 import http.server
 import os
@@ -382,7 +383,7 @@ def test_main_bounds_the_submission_backlog():
         with lock:
             started.append(tile.local_name)
         if tile.local_name == names[1] + ".tif":
-            raise urllib.error.HTTPError(tile.url, 404, "Not Found", None, None)
+            raise urllib.error.HTTPError(tile.url, 404, "Not Found", email.message.Message(), None)
         open(dest_path, "wb").close()
         return "downloaded"
 
