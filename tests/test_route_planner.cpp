@@ -9,10 +9,13 @@
 #include "route_planner.hpp"
 #include "tmp_user_db.hpp"
 #include "user_database.hpp"
+#include "geo_math.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 
 using namespace osect;
@@ -194,6 +197,123 @@ TEST_CASE("plan_segment longer route needs intermediates")
                               std::pow((dest.lon - prev_lon) * 60.0 *
                                         std::cos(prev_lat * 3.14159 / 180.0), 2));
     CHECK(final_d <= 85.0);
+}
+
+// Cost modifier of node `idx` under `opts` (airways off), 1.0 for the
+// segment's origin and destination.
+static double node_modifier(const route_planner& p, std::size_t idx, std::size_t origin, std::size_t destination,
+                            const route_planner::options& opts)
+{
+    if(idx == origin || idx == destination)
+    {
+        return 1.0;
+    }
+    return opts.wp_cost.at(static_cast<std::size_t>(rpta::get_node(p, idx).subtype));
+}
+
+// Cost of the leg a → b: its length times both ends' modifiers.
+static double leg_cost(const route_planner& p, std::size_t a, std::size_t b, std::size_t origin,
+                       std::size_t destination, const route_planner::options& opts)
+{
+    const auto& na = rpta::get_node(p, a);
+    const auto& nb = rpta::get_node(p, b);
+    return haversine_distance_nm(na.lat, na.lon, nb.lat, nb.lon) *
+           node_modifier(p, a, origin, destination, opts) * node_modifier(p, b, origin, destination, opts);
+}
+
+// Cost of origin → path → destination.
+static double path_cost(const route_planner& p, std::size_t origin, const std::vector<std::size_t>& path,
+                        std::size_t destination, const route_planner::options& opts)
+{
+    std::vector<std::size_t> all{origin};
+    all.insert(all.end(), path.begin(), path.end());
+    all.push_back(destination);
+    double total = 0.0;
+    for(std::size_t i = 0; i + 1 < all.size(); ++i)
+    {
+        total += leg_cost(p, all[i], all[i + 1], origin, destination, opts);
+    }
+    return total;
+}
+
+// Cheapest origin → destination cost over legs of at most max_leg
+// between nodes inside the endpoints' bounding box grown by
+// `margin_deg`, by Dijkstra over the complete graph.
+static double cheapest_in_box(const route_planner& p, std::size_t origin, std::size_t destination,
+                              const route_planner::options& opts, double margin_deg)
+{
+    const auto& o = rpta::get_node(p, origin);
+    const auto& d = rpta::get_node(p, destination);
+    const double lat_min = std::min(o.lat, d.lat) - margin_deg;
+    const double lat_max = std::max(o.lat, d.lat) + margin_deg;
+    const double lon_min = std::min(o.lon, d.lon) - margin_deg;
+    const double lon_max = std::max(o.lon, d.lon) + margin_deg;
+    std::vector<std::size_t> box;
+    for(std::size_t i = 0; i < rpta::node_count(p); ++i)
+    {
+        const auto& n = rpta::get_node(p, i);
+        if(n.lat >= lat_min && n.lat <= lat_max && n.lon >= lon_min && n.lon <= lon_max)
+        {
+            box.push_back(i);
+        }
+    }
+    const auto inf = std::numeric_limits<double>::infinity();
+    std::vector<double> cost(box.size(), inf);
+    std::vector<bool> done(box.size(), false);
+    const auto start = static_cast<std::size_t>(std::find(box.begin(), box.end(), origin) - box.begin());
+    const auto goal = static_cast<std::size_t>(std::find(box.begin(), box.end(), destination) - box.begin());
+    cost[start] = 0.0;
+    for(;;)
+    {
+        std::size_t u = box.size();
+        for(std::size_t i = 0; i < box.size(); ++i)
+        {
+            if(!done[i] && cost[i] < inf && (u == box.size() || cost[i] < cost[u]))
+            {
+                u = i;
+            }
+        }
+        if(u == box.size() || u == goal)
+        {
+            return cost[goal];
+        }
+        done[u] = true;
+        const auto& a = rpta::get_node(p, box[u]);
+        for(std::size_t v = 0; v < box.size(); ++v)
+        {
+            const auto& b = rpta::get_node(p, box[v]);
+            if(done[v] || haversine_distance_nm(a.lat, a.lon, b.lat, b.lon) > opts.max_leg_length_nm)
+            {
+                continue;
+            }
+            cost[v] = std::min(cost[v], cost[u] + leg_cost(p, box[u], box[v], origin, destination, opts));
+        }
+    }
+}
+
+TEST_CASE("plan_segment costs the final leg")
+{
+    // Every modifier is at least 1, so the direct-leg shortcut holds and
+    // the planner's route is the cheapest; it can't cost more than the
+    // cheapest one restricted to a box. With AVOID nodes, the final leg
+    // out of one costs extra and must count toward the route's cost.
+    const auto& p = test_planner();
+    route_planner::options opts;
+    opts.wp_cost.fill(cost_avoid);
+    opts.wp_cost.at(static_cast<std::size_t>(wp_subtype::airport_landplane)) = cost_include;
+    opts.wp_cost.at(static_cast<std::size_t>(wp_subtype::navaid_vor)) = cost_include;
+    for(const auto& [from, to] : {std::pair{"KLAX", "KSAN"}, std::pair{"KSFO", "KBIH"}})
+    {
+        CAPTURE(from);
+        CAPTURE(to);
+        const auto origin = *rpta::node_index(p, from);
+        const auto destination = *rpta::node_index(p, to);
+        const auto path = rpta::plan_segment(p, endpoint_at(p, origin), endpoint_at(p, destination), opts);
+        REQUIRE(path.has_value());
+        // The two sums add in different orders.
+        CHECK(path_cost(p, origin, *path, destination, opts) <=
+              cheapest_in_box(p, origin, destination, opts, 1.0) + 1e-9);
+    }
 }
 
 TEST_CASE("plan_segment throws route_plan_cancelled after request_cancel")

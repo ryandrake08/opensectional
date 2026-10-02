@@ -354,14 +354,14 @@ namespace osect
         }
 
         // Cost of a single A* step of `dist_nm`. `from_st` is nullopt when
-        // the step originates from the synthetic origin endpoint; in that
-        // case only the destination subtype contributes. `airway_factor`
-        // is 1.0 for non-airway edges.
-        double edge_cost(std::optional<wp_subtype> from_st, wp_subtype to_st, double dist_nm, double airway_factor,
-                         const route_planner::options& opts)
+        // the step originates from the segment origin and `to_st` when it
+        // ends at the segment destination; a nullopt end contributes no
+        // modifier. `airway_factor` is 1.0 for non-airway edges.
+        double edge_cost(std::optional<wp_subtype> from_st, std::optional<wp_subtype> to_st, double dist_nm,
+                         double airway_factor, const route_planner::options& opts)
         {
             auto from_mod = from_st ? effective_wp_cost(*from_st, opts) : 1.0;
-            auto to_mod = effective_wp_cost(to_st, opts);
+            auto to_mod = to_st ? effective_wp_cost(*to_st, opts) : 1.0;
             return dist_nm * from_mod * to_mod * airway_factor;
         }
     }
@@ -893,6 +893,34 @@ namespace osect
 
         std::priority_queue<open_entry> open;
 
+        // The destination is the search target: a final leg within
+        // max_leg that passes the terrain test offers it at the leg's
+        // start g plus the leg's cost, and the search ends when it pops.
+        // `goal_from` is the leg's start, PREV_FROM_ORIGIN for the direct
+        // leg.
+        const auto GOAL = N;
+        double goal_g = INF;
+        auto goal_from = NPOS;
+        auto offer_goal = [&](std::size_t from, std::optional<wp_subtype> from_st, double from_lat, double from_lon,
+                              double from_along_nm)
+        {
+            const auto d = haversine_distance_nm(from_lat, from_lon, destination.lat, destination.lon);
+            if(d > max_leg)
+            {
+                return;
+            }
+            const auto from_g = (from == PREV_FROM_ORIGIN) ? 0.0 : sc.g[from];
+            const auto tentative = from_g + edge_cost(from_st, std::nullopt, d, 1.0, opts);
+            if(tentative >= goal_g ||
+               !terrain_clear(from_lat, from_lon, from_along_nm, destination.lat, destination.lon))
+            {
+                return;
+            }
+            goal_g = tentative;
+            goal_from = from;
+            open.push({tentative, GOAL});
+        };
+
         // `from_lat`, `from_lon`, and `from_along_nm` locate `from`,
         // which may be the origin; `dist_nm` is the edge's length.
         auto relax = [&](std::size_t from, std::size_t to, double cost, double from_lat, double from_lon,
@@ -944,6 +972,7 @@ namespace osect
                 from_st = nodes[from_index].subtype;
             }
             const double from_along_nm = from_index == PREV_FROM_ORIGIN ? 0.0 : sc.along[from_index];
+            offer_goal(from_index, from_st, from_lat, from_lon, from_along_nm);
 
             sc.hits.clear();
             pimpl->grid.query(bbox, sc.hits);
@@ -1004,20 +1033,13 @@ namespace osect
             pimpl->throw_if_cancelled();
             auto [f, n] = open.top();
             open.pop();
-            if(sc.closed[n])
-            {
-                continue;
-            }
-            sc.closed[n] = 1;
 
-            // Goal test: if the final direct leg from n to destination
-            // fits within max_leg and passes the terrain test, n is the
-            // last intermediate node.
-            if(haversine_distance_nm(nodes[n].lat, nodes[n].lon, destination.lat, destination.lon) <= max_leg &&
-               terrain_clear(nodes[n].lat, nodes[n].lon, sc.along[n], destination.lat, destination.lon))
+            // goal_g only decreases and each decrease pushes an entry, so
+            // the first GOAL entry to pop carries goal_g and goal_from.
+            if(n == GOAL)
             {
                 std::vector<std::size_t> path;
-                auto cur = n;
+                auto cur = goal_from;
                 while(cur != PREV_FROM_ORIGIN)
                 {
                     path.push_back(cur);
@@ -1026,6 +1048,11 @@ namespace osect
                 std::reverse(path.begin(), path.end());
                 return path;
             }
+            if(sc.closed[n])
+            {
+                continue;
+            }
+            sc.closed[n] = 1;
 
             expand_around(nodes[n].lat, nodes[n].lon, n);
         }
