@@ -266,9 +266,9 @@ namespace osect
         pimpl->terrain_mode = mode;
     }
 
-    void ui_overlay::open_terrain_profile()
+    void ui_overlay::toggle_terrain_profile()
     {
-        pimpl->profile_panel.open_drawer();
+        pimpl->profile_panel.toggle();
     }
 
     bool ui_overlay::terrain_profile_open() const

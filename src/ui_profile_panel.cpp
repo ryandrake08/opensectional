@@ -41,11 +41,6 @@ namespace osect
         return open_;
     }
 
-    void ui_profile_panel::open_drawer()
-    {
-        open_ = true;
-    }
-
     void ui_profile_panel::toggle()
     {
         open_ = !open_;

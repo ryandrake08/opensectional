@@ -211,7 +211,7 @@ namespace osect
         void set_route_planner_defaults(double max_leg_nm, bool use_airways, bool avoid_terrain);
         std::optional<double> cruise_altitude_ft(std::uint64_t tab_id) const;
         void set_terrain_shading(terrain_shading mode);
-        void open_terrain_profile();
+        void toggle_terrain_profile();
         bool terrain_profile_open() const;
 
         // Seed the data-status panel with the per-source freshness

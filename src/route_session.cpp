@@ -539,7 +539,7 @@ namespace osect
             {
                 return false;
             }
-            ui.open_terrain_profile();
+            ui.toggle_terrain_profile();
             return true;
         }
 
