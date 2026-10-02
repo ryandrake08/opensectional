@@ -4,6 +4,7 @@
 #include "chart_type.hpp"
 #include "ephemeral_database.hpp"
 #include "geo_math.hpp"
+#include "geo_polygon.hpp"
 #include "map_view.hpp"
 #include "nasr_database.hpp"
 #include "ui_overlay.hpp" // for the layer enum
@@ -431,43 +432,6 @@ namespace osect
         }
 
         // -- Geometry picking helpers -------------------------------------------
-
-        bool point_in_ring(double px, double py, const std::vector<geo_point>& ring)
-        {
-            auto inside = false;
-            for(size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++)
-            {
-                auto yi = ring[i].lat;
-                auto yj = ring[j].lat;
-                auto xi = ring[i].lon;
-                auto xj = ring[j].lon;
-                if(((yi > py) != (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi))
-                {
-                    inside = !inside;
-                }
-            }
-            return inside;
-        }
-
-        // `Ring` is any type with `points` and `is_hole` (polygon_ring, sua_ring).
-        template <typename Ring>
-        bool point_in_multi_ring(double lon, double lat, const std::vector<Ring>& rings)
-        {
-            auto inside = false;
-            for(const auto& ring : rings)
-            {
-                if(point_in_ring(lon, lat, ring.points))
-                {
-                    if(ring.is_hole)
-                    {
-                        inside = false;
-                        break;
-                    }
-                    inside = true;
-                }
-            }
-            return inside;
-        }
 
         bool point_in_circle_nm(double px, double py, double cx, double cy, double radius_nm)
         {

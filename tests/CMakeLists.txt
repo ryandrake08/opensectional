@@ -32,6 +32,7 @@ endfunction()
 
 # Pure-header tests (no extra sources needed)
 add_osect_test(altitude_filter)
+add_osect_test(geo_polygon)
 add_osect_test(lru_map)
 add_osect_test(tile_cache)
 add_osect_test(tile_key)
