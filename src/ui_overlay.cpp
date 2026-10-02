@@ -47,6 +47,7 @@ namespace osect
         double max_leg_nm = default_max_leg_length_nm;
         bool use_airways = default_use_airways;
         bool avoid_terrain = default_avoid_terrain;
+        bool avoid_airspace = default_avoid_airspace;
         // NM of planned legs whose terrain was not checked; 0 for none.
         double terrain_unchecked_nm = 0.0;
         std::string cruise_altitude_text;
@@ -236,7 +237,8 @@ namespace osect
         pimpl->last_reported_active_id = tab_id;
     }
 
-    void ui_overlay::set_route_planner_defaults(double max_leg_nm, bool use_airways, bool avoid_terrain)
+    void ui_overlay::set_route_planner_defaults(double max_leg_nm, bool use_airways, bool avoid_terrain,
+                                                bool avoid_airspace)
     {
         // Seed the initial panel created at construction so the app
         // starts with the user's configured defaults. Only the
@@ -248,6 +250,7 @@ namespace osect
             pimpl->panels.front().max_leg_nm = max_leg_nm;
             pimpl->panels.front().use_airways = use_airways;
             pimpl->panels.front().avoid_terrain = avoid_terrain;
+            pimpl->panels.front().avoid_airspace = avoid_airspace;
         }
     }
 
@@ -629,6 +632,8 @@ namespace osect
                             ImGui::SameLine();
                             ImGui::TextDisabled("(no terrain data installed)");
                         }
+                        ImGui::SameLine();
+                        ImGui::Checkbox("Avoid airspace", &p.avoid_airspace);
                         ImGui::SetNextItemWidth(120.0F);
                         const auto altitude_text_before = p.cruise_altitude_text;
                         if(ImGui::InputText("Cruise altitude (ft)", &p.cruise_altitude_text))
@@ -667,6 +672,7 @@ namespace osect
                             req.max_leg_nm = p.max_leg_nm;
                             req.use_airways = p.use_airways;
                             req.avoid_terrain = terrain_available && p.avoid_terrain;
+                            req.avoid_airspace = p.avoid_airspace;
                             result.route_submit = std::move(req);
                         }
 
@@ -735,6 +741,7 @@ namespace osect
                                 req.max_leg_nm = p.max_leg_nm;
                                 req.use_airways = p.use_airways;
                                 req.avoid_terrain = false;
+                                req.avoid_airspace = false;
                                 result.route_submit = std::move(req);
                             }
                         }
@@ -756,6 +763,7 @@ namespace osect
                     p.max_leg_nm = d.panels[d.active_panel_index].max_leg_nm;
                     p.use_airways = d.panels[d.active_panel_index].use_airways;
                     p.avoid_terrain = d.panels[d.active_panel_index].avoid_terrain;
+                    p.avoid_airspace = d.panels[d.active_panel_index].avoid_airspace;
                     p.cruise_altitude_text = d.panels[d.active_panel_index].cruise_altitude_text;
                     p.cruise_altitude_ft = d.panels[d.active_panel_index].cruise_altitude_ft;
                     d.panels.push_back(std::move(p));

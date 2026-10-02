@@ -97,6 +97,7 @@ namespace osect
             double max_leg_nm;
             bool use_airways;
             bool avoid_terrain;
+            bool avoid_airspace;
         };
         std::optional<route_submit_request> route_submit;
 
@@ -208,7 +209,7 @@ namespace osect
         // created panels. Typically called once at startup with
         // values loaded from ini. Existing panels keep whatever
         // values their user already set.
-        void set_route_planner_defaults(double max_leg_nm, bool use_airways, bool avoid_terrain);
+        void set_route_planner_defaults(double max_leg_nm, bool use_airways, bool avoid_terrain, bool avoid_airspace);
         std::optional<double> cruise_altitude_ft(std::uint64_t tab_id) const;
         void set_terrain_shading(terrain_shading mode);
         void toggle_terrain_profile();

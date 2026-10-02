@@ -568,6 +568,8 @@ The "Use airways" checkbox in the Route panel turns on the airway-class preferen
 
 The "Avoid terrain" checkbox keeps planned legs clear of terrain and obstacles: a leg is taken only when the highest terrain or DOF obstacle in its corridor (the `[route_terrain]` `corridor_width`) is at least `required_clearance` below the tab's cruise altitude.
 
+The "Avoid airspace" checkbox keeps planned legs out of special-use airspace and TFRs at the tab's cruise altitude, which it requires. Each airspace class (prohibited, restricted, warning, alert, MOA, NSA, TFR) takes `INCLUDE` / `AVOID` / `REJECT` from the `route_airspace_*` keys in `[route_plan]`
+
 While planning runs on a background thread the input is disabled and an animated indicator is shown. Cross-country plans (e.g. `KSFO ? KJFK`) take a couple of seconds; short hops are imperceptible.
 
 Routing preferences are configured in the `[route_plan]` section of an `osect.ini` override file (see [Configuration](#configuration)). Each waypoint subtype (airport, balloonport, seaplane base, gliderport, heliport, ultralight, VOR, VORTAC, VOR/DME, DME, NDB, NDB/DME, VFR fix) and each airway class (Victor, Jet, RNAV, color, other) takes one of `PREFER` / `INCLUDE` / `AVOID` / `REJECT` (cost multipliers 0.8 / 1.0 / 1.25 / 1000). A separate `route_airway_gap` key controls how A\* prices crossings of published airway discontinuities — `PREFER` makes following a named airway through its gaps cost-attractive; `INCLUDE` is neutral; `AVOID`/`REJECT` push the planner toward switching airways.

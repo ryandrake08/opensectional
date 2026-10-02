@@ -57,11 +57,12 @@ namespace osect
         // Constructs an internal route_planner against `db_path`. The
         // planner's database handle is distinct from the rendering
         // thread's so the worker doesn't contend on its mutex. The
-        // overload taking a user_db_path is for tests that need a
-        // disposable user.db. `terrain` must outlive the submitter.
+        // overload taking user and ephemeral database paths is for tests
+        // that need disposable ones. `terrain` must outlive the
+        // submitter.
         route_submitter(const std::filesystem::path& db_path, const elevation_source& terrain);
         route_submitter(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path,
-                        const elevation_source& terrain);
+                        const std::filesystem::path& ephemeral_db_path, const elevation_source& terrain);
         ~route_submitter();
 
         route_submitter(const route_submitter&) = delete;

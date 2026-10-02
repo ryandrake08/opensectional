@@ -29,7 +29,7 @@ static const elevation_source& no_terrain()
 static const route_planner& test_planner()
 {
     static test::tmp_user_db user_db("flight_route_shared");
-    static route_planner planner("osect.db", user_db.db_file, no_terrain());
+    static route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, no_terrain());
     return planner;
 }
 

@@ -312,6 +312,7 @@ add_executable(osect
     src/ui_popup_manager.cpp
     src/route_plan_config.cpp
     src/route_planner.cpp
+    src/airspace_index.cpp
     src/route_session.cpp
     src/route_submitter.cpp
     src/chart_style.cpp

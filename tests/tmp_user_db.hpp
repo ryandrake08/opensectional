@@ -6,10 +6,13 @@
 
 namespace osect::test
 {
+    // A disposable directory holding a user.db and an ephemeral.db,
+    // removed on destruction.
     class tmp_user_db
     {
     public:
         std::filesystem::path db_file;
+        std::filesystem::path ephemeral_db_file;
 
         explicit tmp_user_db(const char* tag)
         {
@@ -23,6 +26,7 @@ namespace osect::test
                     dir = candidate;
                     std::filesystem::create_directories(dir);
                     db_file = dir / "user.db";
+                    ephemeral_db_file = dir / "ephemeral.db";
                     return;
                 }
             }

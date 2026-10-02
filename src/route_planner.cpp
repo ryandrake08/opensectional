@@ -1,5 +1,7 @@
 #include "route_planner.hpp"
+#include "airspace_index.hpp"
 #include "elevation_source.hpp"
+#include "ephemeral_database.hpp"
 #include "flight_route.hpp" // parse_latlon, route_parse_error
 #include "geo_math.hpp"
 #include "geo_types.hpp"
@@ -415,6 +417,21 @@ namespace osect
         // fresh on each parse() so a waypoint created since
         // construction still resolves in route text.
         const user_database udb;
+        // Read-only handle to ephemeral.db, read for its TFRs.
+        const ephemeral_database eph;
+
+        // Airspace volumes: SUA from osect.db, loaded once, and TFRs,
+        // reloaded on each expand_sigils that avoids airspace.
+        const airspace_index sua_airspace;
+        airspace_index tfr_airspace;
+        // Indices of the volumes over the current segment's origin or
+        // destination, which the segment ignores.
+        std::vector<std::size_t> sua_exempt;
+        std::vector<std::size_t> tfr_exempt;
+        // Crossings of edges in the current segment, whose outcome
+        // depends only on their ends, the exemptions, and the options.
+        // Cleared with the exemptions.
+        std::unordered_map<edge_key, airspace_index::crossing, edge_key_hash> airspace_memo;
 
         // NASR-only catalog size. Indices [nasr_node_count,
         // nodes.size()) hold user waypoints, refreshed per parse()
@@ -423,9 +440,84 @@ namespace osect
         std::size_t nasr_node_count = 0;
 
         impl(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path,
-             const elevation_source& terrain)
-            : db(db_path), terrain(terrain), obstacles(db), udb(user_db_path)
+             const std::filesystem::path& ephemeral_db_path, const elevation_source& terrain)
+            : db(db_path),
+              terrain(terrain),
+              obstacles(db),
+              udb(user_db_path),
+              eph(ephemeral_db_path),
+              sua_airspace(sua_volumes(db.query_sua({-180.0, -90.0, 180.0, 90.0}), terrain))
         {
+        }
+
+        // Reloads the TFR volumes from ephemeral.db.
+        void refresh_tfr_airspace()
+        {
+            tfr_airspace = airspace_index(tfr_volumes(eph.query_tfrs(), terrain));
+        }
+
+        // Exempts the volumes over `origin` or `destination` from the
+        // segment between them, and forgets the previous segment's
+        // crossings.
+        void exempt_airspace_over(const geo_point& origin, const geo_point& destination)
+        {
+            airspace_memo.clear();
+            sua_exempt.clear();
+            tfr_exempt.clear();
+            for(const auto& point : {origin, destination})
+            {
+                const auto sua = sua_airspace.containing(point);
+                sua_exempt.insert(sua_exempt.end(), sua.begin(), sua.end());
+                const auto tfr = tfr_airspace.containing(point);
+                tfr_exempt.insert(tfr_exempt.end(), tfr.begin(), tfr.end());
+            }
+        }
+
+        // The costliest airspace, SUA or TFR, the edge `from` -> `to`
+        // passes through at the cruise altitude, skipping the current
+        // segment's exemptions.
+        airspace_index::crossing crossing(const geo_point& from, const geo_point& to, const route_plan_options& opts)
+        {
+            const edge_key key{from.lat, from.lon, to.lat, to.lon};
+            if(const auto it = airspace_memo.find(key); it != airspace_memo.end())
+            {
+                return it->second;
+            }
+            auto worst =
+                sua_airspace.costliest_crossing(from, to, *opts.cruise_altitude_ft, opts.airspace_cost, sua_exempt);
+            const auto tfr =
+                tfr_airspace.costliest_crossing(from, to, *opts.cruise_altitude_ft, opts.airspace_cost, tfr_exempt);
+            if(tfr.cost > worst.cost)
+            {
+                worst = tfr;
+            }
+            airspace_memo.emplace(key, worst);
+            return worst;
+        }
+
+        // Names of the airspace at cost_reject crossed by the legs
+        // `origin` -> `path` -> `destination`, in route order without
+        // repeats.
+        std::vector<std::string> rejected_airspace(const geo_point& origin, const std::vector<std::size_t>& path,
+                                                   const geo_point& destination, const route_plan_options& opts)
+        {
+            exempt_airspace_over(origin, destination);
+            std::vector<geo_point> points{origin};
+            for(const auto idx : path)
+            {
+                points.push_back({nodes[idx].lat, nodes[idx].lon});
+            }
+            points.push_back(destination);
+            std::vector<std::string> names;
+            for(std::size_t i = 0; i + 1 < points.size(); ++i)
+            {
+                const auto c = crossing(points[i], points[i + 1], opts);
+                if(c.cost >= cost_reject && std::find(names.begin(), names.end(), c.volume->name) == names.end())
+                {
+                    names.push_back(c.volume->name);
+                }
+            }
+            return names;
         }
 
         // The current user waypoints, for resolving route text with
@@ -689,13 +781,13 @@ namespace osect
     };
 
     route_planner::route_planner(const std::filesystem::path& db_path, const elevation_source& terrain)
-        : route_planner(db_path, user_database::default_path(), terrain)
+        : route_planner(db_path, user_database::default_path(), ephemeral_database::default_path(), terrain)
     {
     }
 
     route_planner::route_planner(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path,
-                                 const elevation_source& terrain)
-        : pimpl(std::make_unique<impl>(db_path, user_db_path, terrain))
+                                 const std::filesystem::path& ephemeral_db_path, const elevation_source& terrain)
+        : pimpl(std::make_unique<impl>(db_path, user_db_path, ephemeral_db_path, terrain))
     {
         auto add_node = [&](std::string id, node_kind kind, wp_subtype sub, double lat, double lon)
         {
@@ -817,8 +909,24 @@ namespace osect
                 throw route_parse_error("terrain avoidance needs terrain data");
             }
         }
+        if(opts.avoid_airspace && !opts.cruise_altitude_ft)
+        {
+            throw route_parse_error("airspace avoidance needs a cruise altitude");
+        }
         pimpl->terrain_memo.clear();
         pimpl->reset_node_terrain();
+        if(opts.avoid_airspace)
+        {
+            pimpl->exempt_airspace_over({origin.lat, origin.lon}, {destination.lat, destination.lon});
+        }
+
+        // The airspace cost factor of an edge, cost_include when airspace
+        // avoidance is off.
+        auto airspace_factor = [&](double from_lat, double from_lon, double to_lat, double to_lon)
+        {
+            return opts.avoid_airspace ? pimpl->crossing({from_lat, from_lon}, {to_lat, to_lon}, opts).cost
+                                       : cost_include;
+        };
 
         // True when terrain avoidance is off or the edge passes the
         // terrain test. `from_along_nm` is the along-path distance from
@@ -836,8 +944,10 @@ namespace osect
         // Direct leg short-circuit. Note: even at uniform cost,
         // this is correct because no intermediate path can be
         // cheaper than the direct great-circle when the heuristic
-        // is admissible.
+        // is admissible. A direct leg through costed airspace is left
+        // to the search, which weighs it against going around.
         if(haversine_distance_nm(origin.lat, origin.lon, destination.lat, destination.lon) <= max_leg &&
+           airspace_factor(origin.lat, origin.lon, destination.lat, destination.lon) == cost_include &&
            terrain_clear(origin.lat, origin.lon, 0.0, destination.lat, destination.lon))
         {
             return std::vector<std::size_t>{};
@@ -910,8 +1020,16 @@ namespace osect
                 return;
             }
             const auto from_g = (from == PREV_FROM_ORIGIN) ? 0.0 : sc.g[from];
-            const auto tentative = from_g + edge_cost(from_st, std::nullopt, d, 1.0, opts);
-            if(tentative >= goal_g ||
+            const auto cost = edge_cost(from_st, std::nullopt, d, 1.0, opts);
+            // Airspace factors are at least 1, so a leg already too
+            // costly without one stays too costly.
+            if(from_g + cost >= goal_g)
+            {
+                return;
+            }
+            const auto factor = airspace_factor(from_lat, from_lon, destination.lat, destination.lon);
+            const auto tentative = from_g + cost * factor;
+            if(factor >= cost_reject || tentative >= goal_g ||
                !terrain_clear(from_lat, from_lon, from_along_nm, destination.lat, destination.lon))
             {
                 return;
@@ -927,8 +1045,15 @@ namespace osect
                          double from_along_nm, double dist_nm)
         {
             auto from_g = (from == PREV_FROM_ORIGIN) ? 0.0 : sc.g[from];
-            auto tentative = from_g + cost;
-            if(tentative >= sc.g[to])
+            // Airspace factors are at least 1, so an edge already too
+            // costly without one stays too costly.
+            if(from_g + cost >= sc.g[to])
+            {
+                return;
+            }
+            const auto factor = airspace_factor(from_lat, from_lon, nodes[to].lat, nodes[to].lon);
+            auto tentative = from_g + cost * factor;
+            if(factor >= cost_reject || tentative >= sc.g[to])
             {
                 return;
             }
@@ -1163,6 +1288,10 @@ namespace osect
         // so A* and resolve_point can see them. User waypoints are
         // mutable at runtime; the NASR catalog is not.
         pimpl->refresh_user_waypoints();
+        if(opts.avoid_airspace)
+        {
+            pimpl->refresh_tfr_airspace();
+        }
 
         auto tokens = tokenize_with_sigils(text);
 
@@ -1284,12 +1413,29 @@ namespace osect
             }
         };
         // The error for a segment plan_segment found no path for. When
-        // terrain avoidance is on and the segment plans without it, the
-        // error names terrain or obstacles within the required clearance
-        // of the cruise altitude.
+        // airspace avoidance is on and the segment plans without it, the
+        // error names the rejected airspace that route crosses.
+        // Otherwise, when terrain avoidance is on and the segment plans
+        // without it, the error names terrain or obstacles within the
+        // required clearance of the cruise altitude.
         const auto no_route =
             [&](std::string message, const endpoint& origin, const endpoint& destination, const route_ends& ends)
         {
+            auto without_airspace = opts;
+            without_airspace.avoid_airspace = false;
+            if(opts.avoid_airspace)
+            {
+                if(const auto path = plan_segment(origin, destination, without_airspace, ends))
+                {
+                    const auto names = pimpl->rejected_airspace({origin.lat, origin.lon}, *path,
+                                                                {destination.lat, destination.lon}, opts);
+                    for(std::size_t i = 0; i < names.size(); ++i)
+                    {
+                        message += (i == 0 ? ": blocked by " : ", ") + names[i];
+                    }
+                    return route_parse_error(message);
+                }
+            }
             auto without_terrain = opts;
             without_terrain.avoid_terrain = false;
             if(opts.avoid_terrain && plan_segment(origin, destination, without_terrain, ends))

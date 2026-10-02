@@ -128,7 +128,7 @@ namespace
     const route_planner& ridge_planner()
     {
         static test::tmp_user_db user_db("planner_ridge");
-        static const route_planner planner("osect.db", user_db.db_file, ridge_terrain());
+        static const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, ridge_terrain());
         return planner;
     }
 
@@ -234,7 +234,7 @@ TEST_CASE("terrain avoidance excludes a leg past an obstacle within the required
     const test::temporary_tree tree("planner-obstacle", tree_manifest("obstacle", OCEAN_ZOOM));
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_obstacle");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     // 40 NM north-south through the obstacle: it is 20 NM from both
     // ends, outside the terminal tapers.
@@ -255,7 +255,7 @@ TEST_CASE("terrain within the required clearance is allowed inside the departure
     write_tile_at(tree, OCEAN_ZOOM, OCEAN_LAT, east_of_a(3.0), OCEAN_CRUISE_FT - 500.0);
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_departure_taper");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     CHECK(expand_or_empty(planner, A + " ? " + C, avoiding(OCEAN_CRUISE_FT)) == A + " " + C);
 }
@@ -266,7 +266,7 @@ TEST_CASE("terrain above cruise is excluded inside the departure taper")
     write_tile_at(tree, OCEAN_ZOOM, OCEAN_LAT, east_of_a(3.0), OCEAN_CRUISE_FT + 500.0);
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_departure_above");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     CHECK(expand_or_empty(planner, A + " ? " + C, avoiding(OCEAN_CRUISE_FT)) != A + " " + C);
 }
@@ -277,7 +277,7 @@ TEST_CASE("terrain within the required clearance is excluded outside the tapers"
     write_tile_at(tree, OCEAN_ZOOM, OCEAN_LAT, east_of_a(12.0), OCEAN_CRUISE_FT - 500.0);
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_en_route");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     CHECK(expand_or_empty(planner, A + " ? " + C, avoiding(OCEAN_CRUISE_FT)) != A + " " + C);
 }
@@ -288,7 +288,7 @@ TEST_CASE("terrain within the required clearance is allowed inside the destinati
     write_tile_at(tree, OCEAN_ZOOM, OCEAN_LAT, east_of_a(3.0), OCEAN_CRUISE_FT - 500.0);
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_destination_taper");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     CHECK(expand_or_empty(planner, C + " ? " + A, avoiding(OCEAN_CRUISE_FT)) == C + " " + A);
 }
@@ -303,7 +303,7 @@ TEST_CASE("the departure taper continues past a fixed leg into a planned segment
     write_tile_at(tree, OCEAN_ZOOM, OCEAN_LAT, east_of_a(8.05), OCEAN_CRUISE_FT - 500.0);
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_departure_offset");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     CHECK(expand_or_empty(planner, B + " ? " + C, avoiding(OCEAN_CRUISE_FT)) == B + " " + C);
     CHECK(expand_or_empty(planner, A + " " + B + " ? " + C, avoiding(OCEAN_CRUISE_FT)) != A + " " + B + " " + C);
@@ -315,7 +315,7 @@ TEST_CASE("the destination taper continues past a fixed leg after a planned segm
     write_tile_at(tree, OCEAN_ZOOM, OCEAN_LAT, east_of_a(8.05), OCEAN_CRUISE_FT - 500.0);
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_destination_offset");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     CHECK(expand_or_empty(planner, C + " ? " + B, avoiding(OCEAN_CRUISE_FT)) == C + " " + B);
     CHECK(expand_or_empty(planner, C + " ? " + B + " " + A, avoiding(OCEAN_CRUISE_FT)) != C + " " + B + " " + A);
@@ -336,7 +336,7 @@ TEST_CASE("terrain avoidance needs terrain data to plan a sigil")
 {
     const elevation_source terrain("missing-terrain-tree");
     test::tmp_user_db user_db("planner_no_terrain");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
     CHECK_THROWS_WITH_AS(planner.expand_sigils(A + " ? " + C, avoiding(OCEAN_CRUISE_FT)),
                          "terrain avoidance needs terrain data", route_parse_error);
 }
@@ -348,7 +348,7 @@ TEST_CASE("a planned leg outside the terrain coverage is crossed and reported un
                                     tree_manifest("coverage", OCEAN_ZOOM, "[-123.9, 35, -120, 37]"));
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_coverage");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     const auto expansion = planner.expand_sigils(A + " ? " + C, avoiding(OCEAN_CRUISE_FT));
     CHECK(expansion.text == A + " " + C);
@@ -361,7 +361,7 @@ TEST_CASE("a planned leg inside the terrain coverage reports nothing unchecked")
     const test::temporary_tree tree("planner-covered", tree_manifest("covered", OCEAN_ZOOM));
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_covered");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     CHECK(planner.expand_sigils(A + " ? " + C, avoiding(OCEAN_CRUISE_FT)).terrain_unchecked_nm == 0.0);
 }
@@ -372,7 +372,7 @@ TEST_CASE("a plan without terrain avoidance reports nothing unchecked")
                                     tree_manifest("coverage", OCEAN_ZOOM, "[-123.9, 35, -120, 37]"));
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_unchecked_off");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     route_planner::options opts;
     opts.cruise_altitude_ft = OCEAN_CRUISE_FT;
@@ -396,7 +396,7 @@ TEST_CASE("a plan blocked by terrain says terrain excluded the remaining legs")
     write_tile_at(tree, OCEAN_ZOOM, OCEAN_LAT, east_of_a(12.0), OCEAN_CRUISE_FT + 500.0);
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_blocked");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     CHECK_THROWS_WITH_AS(planner.expand_sigils(A + " ? " + C, short_legs(avoiding(OCEAN_CRUISE_FT))),
                          ("no route from " + A + " to " + C +
@@ -411,7 +411,7 @@ TEST_CASE("a plan without terrain avoidance crosses terrain that blocks one with
     write_tile_at(tree, OCEAN_ZOOM, OCEAN_LAT, east_of_a(12.0), OCEAN_CRUISE_FT + 500.0);
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_blocked_off");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     route_planner::options opts;
     opts.cruise_altitude_ft = OCEAN_CRUISE_FT;
@@ -425,7 +425,7 @@ TEST_CASE("a plan that fails only on the max leg length keeps the plain message"
     const test::temporary_tree tree("planner-max-leg", tree_manifest("max-leg", OCEAN_ZOOM));
     const elevation_source terrain(tree.path());
     test::tmp_user_db user_db("planner_max_leg");
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     CHECK_THROWS_WITH_AS(planner.expand_sigils(A + " ? " + west, short_legs(avoiding(OCEAN_CRUISE_FT))),
                          ("no route from " + A + " to " + west).c_str(), route_parse_error);
@@ -443,7 +443,7 @@ TEST_CASE("a plan that fails without terrain avoidance too keeps the plain messa
 
     test::tmp_user_db user_db("planner_aleutians");
     const elevation_source no_tiles_yet("missing-terrain-tree");
-    const route_planner finder("osect.db", user_db.db_file, no_tiles_yet);
+    const route_planner finder("osect.db", user_db.db_file, user_db.ephemeral_db_file, no_tiles_yet);
     std::optional<rpta::node> nearest;
     double nearest_nm = 0.0;
     for(std::size_t i = 0; i < rpta::node_count(finder); ++i)
@@ -461,7 +461,7 @@ TEST_CASE("a plan that fails without terrain avoidance too keeps the plain messa
     const test::temporary_tree tree("planner-aleutians", tree_manifest("aleutians", OCEAN_ZOOM));
     write_tile_at(tree, OCEAN_ZOOM, nearest->lat, nearest->lon, OCEAN_CRUISE_FT + 500.0);
     const elevation_source terrain(tree.path());
-    const route_planner planner("osect.db", user_db.db_file, terrain);
+    const route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     route_planner::options without;
     without.cruise_altitude_ft = OCEAN_CRUISE_FT;

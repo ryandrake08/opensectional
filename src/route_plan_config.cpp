@@ -70,6 +70,20 @@ namespace osect
             }
             return parse_pref(key, ini.get<std::string>(key));
         }
+
+        // Read an airspace preference key with a default: INCLUDE,
+        // AVOID, or REJECT. Throws on PREFER, which would make the
+        // planner seek airspace out.
+        double airspace_pref_or(const ini_config& ini, const std::string& key, double fallback)
+        {
+            const auto cost = pref_or(ini, key, fallback);
+            if(cost == cost_prefer)
+            {
+                throw std::runtime_error("route_plan: PREFER is not allowed for key '" + key +
+                                         "' (expected INCLUDE / AVOID / REJECT)");
+            }
+            return cost;
+        }
     }
 
     route_planner::options load_route_plan_options(const ini_config& ini)
@@ -144,6 +158,25 @@ namespace osect
         o.use_airways = default_use_airways;
 
         o.avoid_terrain = bool_or(ini, "route_plan.avoid_terrain", default_avoid_terrain);
+
+        // Airspace classes: prohibited, restricted, and TFR REJECT;
+        // warning and NSA AVOID; MOA and alert INCLUDE.
+        using sc = airspace_class;
+        o.avoid_airspace = bool_or(ini, "route_plan.avoid_airspace", default_avoid_airspace);
+        o.airspace_cost[static_cast<std::size_t>(sc::prohibited)] =
+            airspace_pref_or(ini, "route_plan.route_airspace_prohibited", REJ);
+        o.airspace_cost[static_cast<std::size_t>(sc::restricted)] =
+            airspace_pref_or(ini, "route_plan.route_airspace_restricted", REJ);
+        o.airspace_cost[static_cast<std::size_t>(sc::warning)] =
+            airspace_pref_or(ini, "route_plan.route_airspace_warning", cost_avoid);
+        o.airspace_cost[static_cast<std::size_t>(sc::alert)] =
+            airspace_pref_or(ini, "route_plan.route_airspace_alert", INCL);
+        o.airspace_cost[static_cast<std::size_t>(sc::moa)] =
+            airspace_pref_or(ini, "route_plan.route_airspace_moa", INCL);
+        o.airspace_cost[static_cast<std::size_t>(sc::nsa)] =
+            airspace_pref_or(ini, "route_plan.route_airspace_nsa", cost_avoid);
+        o.airspace_cost[static_cast<std::size_t>(sc::tfr)] =
+            airspace_pref_or(ini, "route_plan.route_airspace_tfr", REJ);
 
         if(auto err = validate_route_plan_options(o); !err.empty())
         {

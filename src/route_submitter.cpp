@@ -21,8 +21,8 @@ namespace osect
         }
 
         impl(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path,
-             const elevation_source& terrain)
-            : planner(db_path, user_db_path, terrain)
+             const std::filesystem::path& ephemeral_db_path, const elevation_source& terrain)
+            : planner(db_path, user_db_path, ephemeral_db_path, terrain)
         {
         }
 
@@ -110,8 +110,8 @@ namespace osect
     }
 
     route_submitter::route_submitter(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path,
-                                     const elevation_source& terrain)
-        : pimpl(std::make_unique<impl>(db_path, user_db_path, terrain))
+                                     const std::filesystem::path& ephemeral_db_path, const elevation_source& terrain)
+        : pimpl(std::make_unique<impl>(db_path, user_db_path, ephemeral_db_path, terrain))
     {
     }
 

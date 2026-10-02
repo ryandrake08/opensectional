@@ -37,7 +37,7 @@ static const elevation_source& no_terrain()
 static const route_planner& test_planner()
 {
     static test::tmp_user_db user_db("planner_shared");
-    static route_planner planner("osect.db", user_db.db_file, no_terrain());
+    static route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, no_terrain());
     return planner;
 }
 
@@ -46,7 +46,7 @@ static const route_planner& test_planner()
 static route_planner& cancellable_planner()
 {
     static test::tmp_user_db user_db("planner_cancel");
-    static route_planner planner("osect.db", user_db.db_file, no_terrain());
+    static route_planner planner("osect.db", user_db.db_file, user_db.ephemeral_db_file, no_terrain());
     return planner;
 }
 
@@ -564,6 +564,52 @@ TEST_CASE("load_route_plan_options rejects other avoid_terrain values")
     CHECK_THROWS_AS(load_route_plan_body("avoid_terrain = REJECT\n"), std::runtime_error);
 }
 
+TEST_CASE("load_route_plan_options defaults avoid_airspace to false")
+{
+    CHECK_FALSE(load_route_plan_options(ini_config{}).avoid_airspace);
+}
+
+TEST_CASE("load_route_plan_options reads avoid_airspace")
+{
+    CHECK(load_route_plan_body("avoid_airspace = true\n").avoid_airspace);
+    CHECK_FALSE(load_route_plan_body("avoid_airspace = false\n").avoid_airspace);
+    CHECK_THROWS_AS(load_route_plan_body("avoid_airspace = yes\n"), std::runtime_error);
+}
+
+TEST_CASE("load_route_plan_options defaults the airspace preferences")
+{
+    const auto opts = load_route_plan_options(ini_config{});
+    const auto cost = [&](airspace_class c) { return opts.airspace_cost.at(static_cast<std::size_t>(c)); };
+    CHECK(cost(airspace_class::prohibited) == cost_reject);
+    CHECK(cost(airspace_class::restricted) == cost_reject);
+    CHECK(cost(airspace_class::tfr) == cost_reject);
+    CHECK(cost(airspace_class::warning) == cost_avoid);
+    CHECK(cost(airspace_class::nsa) == cost_avoid);
+    CHECK(cost(airspace_class::moa) == cost_include);
+    CHECK(cost(airspace_class::alert) == cost_include);
+}
+
+TEST_CASE("load_route_plan_options reads airspace preferences")
+{
+    const auto opts = load_route_plan_body("route_airspace_restricted = AVOID\n"
+                                           "route_airspace_moa = REJECT\n"
+                                           "route_airspace_tfr = INCLUDE\n");
+    CHECK(opts.airspace_cost.at(static_cast<std::size_t>(airspace_class::restricted)) == cost_avoid);
+    CHECK(opts.airspace_cost.at(static_cast<std::size_t>(airspace_class::moa)) == cost_reject);
+    CHECK(opts.airspace_cost.at(static_cast<std::size_t>(airspace_class::tfr)) == cost_include);
+}
+
+TEST_CASE("the bundled osect.ini states the default airspace preferences")
+{
+    CHECK(load_route_plan_options(ini_config("osect.ini")).airspace_cost ==
+          load_route_plan_options(ini_config{}).airspace_cost);
+}
+
+TEST_CASE("load_route_plan_options rejects PREFER for airspace")
+{
+    CHECK_THROWS_AS(load_route_plan_body("route_airspace_warning = PREFER\n"), std::runtime_error);
+}
+
 TEST_CASE("validate_route_plan_options accepts default options")
 {
     const route_planner::options options;
@@ -637,7 +683,7 @@ TEST_CASE("user waypoint resolves by name through node_index after refresh")
         auto w = udb.insert_waypoint(38.1, -121.0);
         CHECK(w.name == "WPT1");
     }
-    route_planner p("osect.db", tmp.db_file, no_terrain());
+    route_planner p("osect.db", tmp.db_file, tmp.ephemeral_db_file, no_terrain());
     // The refresh that exposes user waypoints fires inside
     // expand_sigils; node_index doesn't refresh on its own.
     p.expand_sigils("KSMF KSAC", route_planner::options{}).text;
@@ -663,7 +709,7 @@ TEST_CASE("expand_sigils routes through a preferred user waypoint")
         user_database udb(tmp.db_file);
         udb.insert_waypoint(37.99, -121.05);
     }
-    route_planner p("osect.db", tmp.db_file, no_terrain());
+    route_planner p("osect.db", tmp.db_file, tmp.ephemeral_db_file, no_terrain());
 
     auto opts = user_opts(cost_prefer);
     for(std::size_t i = 0; i < opts.wp_cost.size(); ++i)
@@ -687,7 +733,7 @@ TEST_CASE("expand_sigils ignores a rejected user waypoint")
         user_database udb(tmp.db_file);
         udb.insert_waypoint(37.99, -121.05);
     }
-    route_planner p("osect.db", tmp.db_file, no_terrain());
+    route_planner p("osect.db", tmp.db_file, tmp.ephemeral_db_file, no_terrain());
 
     auto opts = user_opts(cost_reject);
     auto out = p.expand_sigils("KSMF ? KMER", opts).text;
@@ -697,7 +743,7 @@ TEST_CASE("expand_sigils ignores a rejected user waypoint")
 TEST_CASE("user waypoint set refreshes between expand_sigils calls")
 {
     test::tmp_user_db tmp("refresh");
-    route_planner p("osect.db", tmp.db_file, no_terrain());
+    route_planner p("osect.db", tmp.db_file, tmp.ephemeral_db_file, no_terrain());
 
     // No waypoints yet — WPT1 must not resolve.
     p.expand_sigils("KSMF KSAC", route_planner::options{}).text;

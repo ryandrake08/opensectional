@@ -67,14 +67,16 @@ namespace osect
 
         // Open the NASR database at `db_path` and build the
         // routable-waypoint catalog and airway adjacency by scanning
-        // APT_BASE / NAV_BASE / FIX_BASE / AWY_SEG. The user-waypoint
-        // database opens at user_database::default_path(); the
-        // overload taking a user_db_path is for tests that need a
-        // disposable user.db. `terrain` is read for terrain avoidance
-        // and must outlive the planner.
+        // APT_BASE / NAV_BASE / FIX_BASE / AWY_SEG, and the SUA strata
+        // for airspace avoidance. The user-waypoint database opens at
+        // user_database::default_path() and the TFR database at
+        // ephemeral_database::default_path(); the overload taking
+        // their paths is for tests that need disposable ones. `terrain`
+        // is read for terrain and airspace avoidance and must outlive
+        // the planner.
         route_planner(const std::filesystem::path& db_path, const elevation_source& terrain);
         route_planner(const std::filesystem::path& db_path, const std::filesystem::path& user_db_path,
-                      const elevation_source& terrain);
+                      const std::filesystem::path& ephemeral_db_path, const elevation_source& terrain);
         ~route_planner();
 
         route_planner(const route_planner&) = delete;

@@ -23,6 +23,7 @@ namespace osect
     inline constexpr double default_max_leg_length_nm = 80.0;
     inline constexpr bool default_use_airways = false;
     inline constexpr bool default_avoid_terrain = false;
+    inline constexpr bool default_avoid_airspace = false;
 
     // Fine-grained per-node classification. Drives the
     // per-waypoint cost modifier in the A* search. Layout matters:
@@ -72,6 +73,24 @@ namespace osect
         count
     };
 
+    // Kind of airspace the planner can avoid: the SUA types plus TFRs.
+    enum class airspace_class : std::uint8_t
+    {
+        prohibited, // SUA PA
+        restricted, // SUA RA
+        warning,    // SUA WA
+        alert,      // SUA AA
+        moa,        // SUA MOA
+        nsa,        // SUA NSA
+        tfr,
+
+        count
+    };
+
+    // Per-airspace-class cost modifier: cost_include, cost_avoid, or
+    // cost_reject.
+    using airspace_costs = std::array<double, static_cast<std::size_t>(airspace_class::count)>;
+
     // Configuration for the A* route planner. Held by callers (the
     // ini-driven defaults populate one of these; the GUI overlays
     // its knobs onto it; route_submitter passes the result to the
@@ -112,6 +131,18 @@ namespace osect
         // no terrain data, fails with route_parse_error.
         bool avoid_terrain = default_avoid_terrain;
 
+        // When true, an edge that passes through airspace at
+        // `cruise_altitude_ft` costs the most `airspace_cost` of the
+        // classes it passes through, and an edge at cost_reject is never
+        // taken. Airspace over a segment's origin or destination is
+        // ignored for that segment. Planning a `?` with this set and no
+        // cruise altitude fails with route_parse_error.
+        bool avoid_airspace = default_avoid_airspace;
+
+        // Per-airspace-class cost modifier, applied when
+        // `avoid_airspace` is true.
+        airspace_costs airspace_cost;
+
         // Cruise altitude, feet MSL. Unset when the route panel tab
         // has none.
         std::optional<double> cruise_altitude_ft;
@@ -120,10 +151,11 @@ namespace osect
         // terrain profile.
         terrain_profile_margins margins;
 
-        route_plan_options() : wp_cost{}, awy_cost{}
+        route_plan_options() : wp_cost{}, awy_cost{}, airspace_cost{}
         {
             wp_cost.fill(cost_include);
             awy_cost.fill(cost_include);
+            airspace_cost.fill(cost_include);
         }
     };
 

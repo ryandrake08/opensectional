@@ -32,7 +32,7 @@ TEST_CASE("route submitter delivers a resubmission and never the plan it replace
 {
     osect::test::tmp_user_db user_db("submitter_resubmit");
     const osect::elevation_source terrain("missing-terrain-tree");
-    osect::route_submitter submitter("osect.db", user_db.db_file, terrain);
+    osect::route_submitter submitter("osect.db", user_db.db_file, user_db.ephemeral_db_file, terrain);
 
     // A cross-country plan, replaced while it may still be running.
     submitter.submit("KSEA ? KMIA", {}, 1);
